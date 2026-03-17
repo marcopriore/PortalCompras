@@ -36,6 +36,7 @@ const buyerNavItems: NavItem[] = [
   { title: "Requisições", href: "/comprador/requisicoes", icon: ClipboardList },
   { title: "Pedidos", href: "/comprador/pedidos", icon: ShoppingCart },
   { title: "Cotações", href: "/comprador/cotacoes", icon: FileText },
+  { title: "Itens", href: "/comprador/itens", icon: Package },
   { title: "Fornecedores", href: "/comprador/fornecedores", icon: Building2 },
   { title: "Relatórios", href: "/comprador/relatorios", icon: BarChart3 },
   { title: "Configurações", href: "/comprador/configuracoes", icon: Settings },
