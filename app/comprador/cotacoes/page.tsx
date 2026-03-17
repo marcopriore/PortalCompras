@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Plus, Eye, Users, BarChart2, MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -12,53 +12,43 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { QuotationForm } from "@/components/forms/quotation-form"
+import { createClient } from "@/lib/supabase/client"
 
 interface Quotation {
   id: string
-  titulo: string
-  categoria: string
-  status: "rascunho" | "aberta" | "em_analise" | "encerrada" | "cancelada"
-  dataLimite: string
-  numPropostas: number
-  valorEstimado: number
-  dataCriacao: string
+  code: string
+  description: string
+  status: "draft" | "waiting" | "analysis" | "completed" | "cancelled"
+  category: string | null
+  payment_condition: string | null
+  response_deadline: string | null
+  created_at: string
 }
 
 const statusConfig = {
-  rascunho: { label: "Rascunho", variant: "outline" as const },
-  aberta: { label: "Aberta", variant: "default" as const },
-  em_analise: { label: "Em Análise", variant: "secondary" as const },
-  encerrada: { label: "Encerrada", variant: "outline" as const },
-  cancelada: { label: "Cancelada", variant: "destructive" as const },
+  draft: { label: "Rascunho", variant: "outline" as const },
+  waiting: { label: "Aguardando Resposta", variant: "default" as const },
+  analysis: { label: "Em Análise", variant: "secondary" as const },
+  completed: { label: "Concluída", variant: "outline" as const },
+  cancelled: { label: "Cancelada", variant: "destructive" as const },
 }
 
-const mockQuotations: Quotation[] = [
-  { id: "COT-001", titulo: "Material de escritório 2026", categoria: "Suprimentos", status: "aberta", dataLimite: "20/03/2026", numPropostas: 5, valorEstimado: 15000, dataCriacao: "13/03/2026" },
-  { id: "COT-002", titulo: "Equipamentos de TI", categoria: "Tecnologia", status: "em_analise", dataLimite: "18/03/2026", numPropostas: 8, valorEstimado: 120000, dataCriacao: "10/03/2026" },
-  { id: "COT-003", titulo: "Serviços de limpeza anual", categoria: "Serviços", status: "aberta", dataLimite: "25/03/2026", numPropostas: 3, valorEstimado: 85000, dataCriacao: "08/03/2026" },
-  { id: "COT-004", titulo: "Móveis corporativos", categoria: "Mobiliário", status: "encerrada", dataLimite: "05/03/2026", numPropostas: 6, valorEstimado: 45000, dataCriacao: "01/03/2026" },
-  { id: "COT-005", titulo: "Uniformes funcionários", categoria: "Vestuário", status: "rascunho", dataLimite: "-", numPropostas: 0, valorEstimado: 28000, dataCriacao: "12/03/2026" },
-  { id: "COT-006", titulo: "Manutenção predial", categoria: "Serviços", status: "aberta", dataLimite: "22/03/2026", numPropostas: 4, valorEstimado: 95000, dataCriacao: "07/03/2026" },
-  { id: "COT-007", titulo: "Licenças Microsoft 365", categoria: "Software", status: "cancelada", dataLimite: "10/03/2026", numPropostas: 2, valorEstimado: 65000, dataCriacao: "28/02/2026" },
-  { id: "COT-008", titulo: "Frota de veículos", categoria: "Transporte", status: "em_analise", dataLimite: "15/03/2026", numPropostas: 7, valorEstimado: 350000, dataCriacao: "25/02/2026" },
+const filterOptions = [
+  { label: "Rascunho", value: "draft" },
+  { label: "Aguardando Resposta", value: "waiting" },
+  { label: "Em Análise", value: "analysis" },
+  { label: "Concluída", value: "completed" },
+  { label: "Cancelada", value: "cancelled" },
 ]
 
 export default function CotacoesPage() {
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [quotations, setQuotations] = useState<Quotation[]>([])
+  const [loadingData, setLoadingData] = useState(true)
 
   const columns: Column<Quotation>[] = [
-    { key: "id", header: "ID", className: "font-medium" },
-    { key: "titulo", header: "Título" },
-    { key: "categoria", header: "Categoria" },
+    { key: "code", header: "ID", className: "font-medium" },
+    { key: "description", header: "Descrição" },
+    { key: "category", header: "Categoria", cell: (item) => item.category ?? "-" },
     {
       key: "status",
       header: "Status",
@@ -68,31 +58,19 @@ export default function CotacoesPage() {
         </Badge>
       ),
     },
-    { key: "dataLimite", header: "Data Limite" },
     {
-      key: "numPropostas",
-      header: "Propostas",
-      cell: (item) => (
-        <span className="inline-flex items-center gap-1">
-          <Users className="h-4 w-4 text-muted-foreground" />
-          {item.numPropostas}
-        </span>
-      ),
+      key: "response_deadline",
+      header: "Data Limite",
+      cell: (item) =>
+        item.response_deadline
+          ? new Date(item.response_deadline).toLocaleDateString("pt-BR")
+          : "-",
     },
     {
-      key: "valorEstimado",
-      header: "Valor Est.",
-      cell: (item) => `R$ ${item.valorEstimado.toLocaleString("pt-BR")}`,
-      className: "text-right",
+      key: "created_at",
+      header: "Criado em",
+      cell: (item) => new Date(item.created_at).toLocaleDateString("pt-BR"),
     },
-  ]
-
-  const filterOptions = [
-    { label: "Rascunho", value: "rascunho" },
-    { label: "Aberta", value: "aberta" },
-    { label: "Em Análise", value: "em_analise" },
-    { label: "Encerrada", value: "encerrada" },
-    { label: "Cancelada", value: "cancelada" },
   ]
 
   const actions = (item: Quotation) => (
@@ -109,13 +87,13 @@ export default function CotacoesPage() {
             Ver Detalhes
           </Link>
         </DropdownMenuItem>
-        {item.status === "aberta" && (
+        {item.status === "waiting" && (
           <DropdownMenuItem>
             <Users className="mr-2 h-4 w-4" />
             Convidar Fornecedores
           </DropdownMenuItem>
         )}
-        {(item.status === "aberta" || item.status === "em_analise") && item.numPropostas > 0 && (
+        {(item.status === "waiting" || item.status === "analysis") && (
           <DropdownMenuItem asChild>
             <Link href={`/comprador/cotacoes/${item.id}/equalizacao`}>
               <BarChart2 className="mr-2 h-4 w-4" />
@@ -127,6 +105,27 @@ export default function CotacoesPage() {
     </DropdownMenu>
   )
 
+  useEffect(() => {
+    const fetchQuotations = async () => {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from("quotations")
+        .select(
+          "id, code, description, status, category, payment_condition, response_deadline, created_at",
+        )
+        .eq("company_id", "00000000-0000-0000-0000-000000000001")
+        .order("created_at", { ascending: false })
+
+      if (error) {
+        console.error("Erro ao buscar cotações:", error)
+      } else {
+        setQuotations(data ?? [])
+      }
+      setLoadingData(false)
+    }
+    fetchQuotations()
+  }, [])
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -136,34 +135,27 @@ export default function CotacoesPage() {
             Gerencie suas solicitações de cotação
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Nova Cotação
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Nova Cotação (RFQ)</DialogTitle>
-              <DialogDescription>
-                Crie uma nova solicitação de cotação para fornecedores
-              </DialogDescription>
-            </DialogHeader>
-            <QuotationForm onSuccess={() => setIsDialogOpen(false)} />
-          </DialogContent>
-        </Dialog>
+        <Button asChild>
+          <Link href="/comprador/cotacoes/nova">
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Cotação
+          </Link>
+        </Button>
       </div>
 
-      <DataTable
-        data={mockQuotations}
-        columns={columns}
-        searchPlaceholder="Buscar cotações..."
-        searchKey="titulo"
-        filterOptions={filterOptions}
-        filterKey="status"
-        actions={actions}
-      />
+      {loadingData ? (
+        <p className="text-sm text-muted-foreground">Carregando cotações...</p>
+      ) : (
+        <DataTable
+          data={quotations}
+          columns={columns}
+          searchPlaceholder="Buscar cotações..."
+          searchKey="description"
+          filterOptions={filterOptions}
+          filterKey="status"
+          actions={actions}
+        />
+      )}
     </div>
   )
 }
