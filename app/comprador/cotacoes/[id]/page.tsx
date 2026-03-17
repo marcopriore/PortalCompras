@@ -4,6 +4,7 @@ import { use, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { useUser } from '@/lib/hooks/useUser'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -110,6 +111,7 @@ export default function QuotationDetailsPage({
 }) {
   const router = useRouter()
   const { id } = use(params)
+  const { companyId } = useUser()
 
   const [quotation, setQuotation] = useState<Quotation | null>(null)
   const [items, setItems] = useState<QuotationItem[]>([])
@@ -129,6 +131,8 @@ export default function QuotationDetailsPage({
   }
 
   useEffect(() => {
+    if (!companyId) return
+
     const fetchData = async () => {
       setLoading(true)
       setError(null)
@@ -142,6 +146,7 @@ export default function QuotationDetailsPage({
             'id, code, description, status, category, payment_condition, response_deadline, created_at',
           )
           .eq('id', id)
+          .eq('company_id', companyId!)
           .single()
 
         if (quotationError || !quotationData) {
@@ -176,7 +181,7 @@ export default function QuotationDetailsPage({
     }
 
     fetchData()
-  }, [id])
+  }, [id, companyId])
 
   const handleStatusUpdate = async (newStatus: QuotationStatus) => {
     if (!quotation) return
@@ -188,6 +193,7 @@ export default function QuotationDetailsPage({
         .from('quotations')
         .update({ status: newStatus })
         .eq('id', quotation.id)
+        .eq('company_id', companyId!)
 
       if (updateError) {
         toast.error('Não foi possível atualizar o status da cotação.')
