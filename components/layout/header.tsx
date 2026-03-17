@@ -2,9 +2,8 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Bell, Search, ChevronDown, LogOut, User, Settings } from "lucide-react"
+import { Bell, ChevronDown, LogOut, User, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,14 +14,19 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-
 interface HeaderProps {
   userName: string
   userEmail: string
   userInitials: string
+  tenantSelector?: React.ReactNode
 }
 
-export function Header({ userName, userEmail, userInitials }: HeaderProps) {
+export function Header({
+  userName,
+  userEmail,
+  userInitials,
+  tenantSelector,
+}: HeaderProps) {
   const router = useRouter()
 
   const [notifications] = useState([
@@ -47,13 +51,7 @@ export function Header({ userName, userEmail, userInitials }: HeaderProps) {
   return (
     <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between">
       <div className="flex items-center gap-4 flex-1 max-w-xl">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar cotações, fornecedores, pedidos..."
-            className="pl-9 bg-secondary border-0"
-          />
-        </div>
+        {tenantSelector}
       </div>
 
       <div className="flex items-center gap-2">

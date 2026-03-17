@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const response = NextResponse.next()
 
   const supabase = createServerClient(
@@ -22,22 +22,22 @@ export async function middleware(request: NextRequest) {
   )
 
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
+    data: { user },
+  } = await supabase.auth.getUser()
 
   const { pathname } = request.nextUrl
   const isAuthRoute = pathname === '/login'
   const isProtectedRoute =
     pathname.startsWith('/comprador') || pathname.startsWith('/fornecedor')
 
-  if (!session && isProtectedRoute) {
+  if (!user && isProtectedRoute) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = '/login'
     redirectUrl.searchParams.set('redirectTo', pathname)
     return NextResponse.redirect(redirectUrl)
   }
 
-  if (session && isAuthRoute) {
+  if (user && isAuthRoute) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = '/comprador'
     return NextResponse.redirect(redirectUrl)
@@ -47,6 +47,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/comprador/:path*', '/fornecedor/:path*', '/login'],
+  matcher: ['/comprador/:path*', '/fornecedor/:path*', '/admin/:path*', '/login'],
 }
 
