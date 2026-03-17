@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { logAudit } from "@/lib/audit"
 interface HeaderProps {
   userName: string
   userEmail: string
@@ -39,6 +40,13 @@ export function Header({
 
   const handleLogout = async () => {
     try {
+      await logAudit({
+        eventType: "user.logout",
+        description: "Logout realizado",
+        userName,
+        metadata: { email: userEmail },
+      })
+
       await fetch("/api/auth/logout", {
         method: "POST",
       })

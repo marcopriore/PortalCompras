@@ -7,6 +7,7 @@ import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
+import { logAudit } from '@/lib/audit'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -95,7 +96,6 @@ export default function NovaContatacaoPage() {
   const [loadingAction, setLoadingAction] = useState<'draft' | 'submit' | null>(null)
 
   const { userId, companyId, loading: userLoading } = useUser()
-  console.log('useUser:', { userId, companyId, userLoading })
 
   const today = useMemo(() => format(new Date(), 'dd/MM/yyyy', { locale: ptBR }), [])
 
@@ -147,9 +147,8 @@ export default function NovaContatacaoPage() {
           category: category ?? null,
           payment_condition: payment ?? null,
           response_deadline: deadline ? deadline.toISOString().split('T')[0] : null,
-          created_by: userId!,
         })
-        .select('id')
+        .select('id, code, status')
         .single()
 
       if (error) {
@@ -203,6 +202,17 @@ export default function NovaContatacaoPage() {
           return
         }
       }
+
+      await logAudit({
+        eventType: 'quotation.created',
+        description: `Cotação ${data.code} criada`,
+        companyId: companyId!,
+        userId: userId ?? null,
+        userName: userId ?? null,
+        entity: 'quotations',
+        entityId: quotationId,
+        metadata: { code: data.code, status: data.status },
+      })
 
       toast.success(
         status === 'draft'

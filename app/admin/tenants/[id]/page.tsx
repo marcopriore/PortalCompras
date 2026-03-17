@@ -35,6 +35,7 @@ import {
   Users,
   UserCheck,
 } from 'lucide-react'
+import { logAudit } from '@/lib/audit'
 
 type Tenant = {
   id: string
@@ -241,13 +242,29 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
 
     if (data) {
       setTenant(data as Tenant)
+      await logAudit({
+        eventType: 'tenant.updated',
+        description: `Tenant "${editForm.name}" atualizado`,
+        companyId: tenant.id,
+        entity: 'companies',
+        entityId: tenant.id,
+        metadata: { name: editForm.name, status: editForm.status },
+      })
     }
     setSaving(false)
     setEditOpen(false)
   }
 
-  const handleImpersonate = () => {
+  const handleImpersonate = async () => {
     if (!tenant) return
+    await logAudit({
+      eventType: 'impersonation',
+      description: `Superadmin acessou tenant "${tenant.name}"`,
+      companyId: tenant.id,
+      entity: 'companies',
+      entityId: tenant.id,
+      metadata: { tenantId: tenant.id, tenantName: tenant.name },
+    })
     document.cookie = `selected_company_id=${tenant.id}; path=/; max-age=86400`
     router.push('/comprador')
   }

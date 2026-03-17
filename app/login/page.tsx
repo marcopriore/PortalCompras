@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { logAudit } from '@/lib/audit'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -27,6 +28,13 @@ export default function LoginPage() {
         toast.error(error.message || 'Erro ao entrar. Verifique suas credenciais.')
         return
       }
+
+      await logAudit({
+        eventType: 'user.login',
+        description: `Login realizado por ${email}`,
+        userName: email,
+        metadata: { email },
+      })
 
       router.push('/comprador')
     } catch {

@@ -28,6 +28,8 @@ import {
 import { Building2, CheckCircle2, Users, Eye, LogIn, Plus } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { logAudit } from '@/lib/audit'
+import { useUser } from '@/lib/hooks/useUser'
 
 type Company = {
   id: string
@@ -88,6 +90,7 @@ export default function AdminTenantsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState(initialForm)
   const [totalUsers, setTotalUsers] = useState<number>(0)
+  const { userId } = useUser()
 
   useEffect(() => {
     const supabase = createClient()
@@ -203,6 +206,15 @@ export default function AdminTenantsPage() {
       setForm(initialForm)
       setFormOpen(false)
       toast.success('Tenant criado com sucesso!')
+
+      await logAudit({
+        eventType: 'tenant.created',
+        description: `Tenant "${form.name}" criado`,
+        userName: form.adminName,
+        entity: 'companies',
+        entityId: (company as Company).id,
+        metadata: { name: form.name, cnpj: form.cnpj },
+      })
     } catch (err) {
       console.error('Erro inesperado ao criar tenant:', err)
       toast.error('Erro inesperado ao criar tenant.')
@@ -211,7 +223,15 @@ export default function AdminTenantsPage() {
     }
   }
 
-  const handleImpersonate = (tenantId: string) => {
+  const handleImpersonate = async (tenantId: string, tenantName: string) => {
+    await logAudit({
+      eventType: 'impersonation',
+      description: `Superadmin acessou tenant "${tenantName}"`,
+      companyId: tenantId,
+      entity: 'companies',
+      entityId: tenantId,
+      metadata: { tenantId, tenantName },
+    })
     document.cookie = `selected_company_id=${tenantId}; path=/; max-age=86400`
     router.push('/comprador')
   }
@@ -342,7 +362,7 @@ export default function AdminTenantsPage() {
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() => handleImpersonate(tenant.id)}
+                        onClick={() => handleImpersonate(tenant.id, tenant.name)}
                       >
                         <LogIn className="mr-1 h-4 w-4" />
                         Acessar

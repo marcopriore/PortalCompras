@@ -24,6 +24,7 @@ import {
   FileText,
   Package,
 } from 'lucide-react'
+import { logAudit } from '@/lib/audit'
 
 type QuotationStatus = 'draft' | 'waiting' | 'analysis' | 'completed' | 'cancelled'
 
@@ -111,7 +112,7 @@ export default function QuotationDetailsPage({
 }) {
   const router = useRouter()
   const { id } = use(params)
-  const { companyId } = useUser()
+  const { companyId, userId } = useUser()
 
   const [quotation, setQuotation] = useState<Quotation | null>(null)
   const [items, setItems] = useState<QuotationItem[]>([])
@@ -206,6 +207,16 @@ export default function QuotationDetailsPage({
         toast.success('Cotação enviada com sucesso!')
       } else if (newStatus === 'cancelled') {
         toast.success('Cotação cancelada.')
+        await logAudit({
+          eventType: 'quotation.cancelled',
+          description: `Cotação ${quotation.code} cancelada`,
+          companyId: companyId ?? null,
+          userId: userId ?? null,
+          userName: userId ?? null,
+          entity: 'quotations',
+          entityId: quotation.id,
+          metadata: { code: quotation.code },
+        })
       }
     } catch {
       toast.error('Erro ao atualizar o status da cotação.')
