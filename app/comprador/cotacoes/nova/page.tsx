@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -89,6 +90,8 @@ export default function NovaContatacaoPage() {
   const [selectedSuppliers, setSelectedSuppliers] = useState<Supplier[]>([])
   const [errors, setErrors] = useState<Record<string, boolean>>({})
   const [open, setOpen] = useState({ general: true, items: true, suppliers: true })
+  const [loading, setLoading] = useState(false)
+  const [loadingAction, setLoadingAction] = useState<'draft' | 'submit' | null>(null)
 
   const today = useMemo(() => format(new Date(), 'dd/MM/yyyy', { locale: ptBR }), [])
 
@@ -127,19 +130,118 @@ export default function NovaContatacaoPage() {
     setSupplierSearch('')
   }
 
-  const handleSubmit = () => {
+  const saveQuotation = async (status: 'draft' | 'waiting') => {
+    const supabase = createClient()
+
+    try {
+      const { data, error } = await supabase
+        .from('quotations')
+        .insert({
+          company_id: '00000000-0000-0000-0000-000000000001',
+          description,
+          status,
+          category: category ?? null,
+          payment_condition: payment ?? null,
+          response_deadline: deadline ? deadline.toISOString().split('T')[0] : null,
+        })
+        .select('id')
+        .single()
+
+      if (error) {
+        console.error('Erro quotations detalhado:', JSON.stringify(error))
+        toast.error('Erro ao salvar cotação. Tente novamente.')
+        setLoading(false)
+        return
+      }
+
+      if (!data) {
+        toast.error('Erro ao salvar cotação. Tente novamente.')
+        setLoading(false)
+        return
+      }
+
+      const quotationId = data.id as string
+
+      if (selectedItems.length > 0) {
+        const { error: itemsError } = await supabase.from('quotation_items').insert(
+          selectedItems.map((item) => ({
+            quotation_id: quotationId,
+            company_id: '00000000-0000-0000-0000-000000000001',
+            material_code: item.code,
+            material_description: item.description,
+            unit_of_measure: item.unit_of_measure,
+            quantity: item.quantity,
+            complementary_spec: item.spec || null,
+          })),
+        )
+
+        if (itemsError) {
+          toast.error('Erro ao salvar itens da cotação. Tente novamente.')
+          return
+        }
+      }
+
+      if (selectedSuppliers.length > 0) {
+        const { error: suppliersError } = await supabase.from('quotation_suppliers').insert(
+          selectedSuppliers.map((s) => ({
+            quotation_id: quotationId,
+            company_id: '00000000-0000-0000-0000-000000000001',
+            supplier_id: s.id,
+            supplier_name: s.name,
+            supplier_cnpj: s.cnpj,
+          })),
+        )
+
+        if (suppliersError) {
+          toast.error('Erro ao salvar fornecedores da cotação. Tente novamente.')
+          return
+        }
+      }
+
+      toast.success(
+        status === 'draft'
+          ? 'Rascunho salvo com sucesso!'
+          : 'Cotação enviada com sucesso!',
+      )
+      router.push('/comprador/cotacoes')
+    } catch {
+      toast.error('Erro ao salvar cotação. Tente novamente.')
+    }
+  }
+
+  const handleSubmit = async () => {
     const newErrors = { description: !description.trim(), deadline: !deadline }
     if (newErrors.description || newErrors.deadline) {
       setErrors(newErrors)
-      const missing = [newErrors.description && 'Descrição', newErrors.deadline && 'Data Limite'].filter(Boolean)
+      const missing = [newErrors.description && 'Descrição', newErrors.deadline && 'Data Limite'].filter(
+        Boolean,
+      )
       toast.error(`Preencha os campos obrigatórios: ${missing.join(', ')}`)
       return
     }
+
     setErrors({})
-    toast.success('Cotação enviada com sucesso!')
+    setLoading(true)
+    setLoadingAction('submit')
+    try {
+      await saveQuotation('waiting')
+    } finally {
+      setLoading(false)
+      setLoadingAction(null)
+    }
   }
 
-  const handleDraft = () => { setErrors({}); toast.success('Rascunho salvo com sucesso!') }
+  const handleDraft = async () => {
+    setErrors({})
+    setLoading(true)
+    setLoadingAction('draft')
+    try {
+      await saveQuotation('draft')
+    } finally {
+      setLoading(false)
+      setLoadingAction(null)
+    }
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -156,9 +258,20 @@ export default function NovaContatacaoPage() {
           </div>
         </div>
         <div className="flex items-center gap-2 pl-11 sm:pl-0">
-          <Button type="button" variant="outline" onClick={() => router.push('/comprador/cotacoes')}>Cancelar</Button>
-          <Button type="button" variant="outline" onClick={handleDraft}>Salvar Rascunho</Button>
-          <Button type="button" onClick={handleSubmit}>Enviar Cotação</Button>
+          <Button type="button" variant="outline" onClick={() => router.push('/comprador/cotacoes')}>
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleDraft}
+            disabled={loading}
+          >
+            {loading && loadingAction === 'draft' ? 'Salvando...' : 'Salvar Rascunho'}
+          </Button>
+          <Button type="button" onClick={handleSubmit} disabled={loading}>
+            {loading && loadingAction === 'submit' ? 'Salvando...' : 'Enviar Cotação'}
+          </Button>
         </div>
       </div>
 
