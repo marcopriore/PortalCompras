@@ -72,7 +72,13 @@ export function SpendAnalysisChart() {
   )
 }
 
-export function QuotationStatusChart() {
+interface QuotationStatusChartProps {
+  data?: { name: string; value: number; color: string }[]
+}
+
+export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
+  const chartData = data && data.length > 0 ? data : quotationStatusData
+
   return (
     <Card>
       <CardHeader>
@@ -84,7 +90,7 @@ export function QuotationStatusChart() {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={quotationStatusData}
+                data={chartData}
                 cx="50%"
                 cy="50%"
                 innerRadius={60}
@@ -92,7 +98,7 @@ export function QuotationStatusChart() {
                 paddingAngle={2}
                 dataKey="value"
               >
-                {quotationStatusData.map((entry, index) => (
+                {chartData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
