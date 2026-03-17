@@ -1,19 +1,33 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from '@/components/ui/sheet'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Building2, CheckCircle2, Users, Eye, LogIn, Plus } from 'lucide-react'
+import { format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 
 type Company = {
   id: string
@@ -31,21 +45,61 @@ const initialForm = {
   adminPassword: '',
 }
 
+const AVATAR_COLORS = [
+  '#4f46e5',
+  '#0891b2',
+  '#059669',
+  '#d97706',
+  '#dc2626',
+  '#7c3aed',
+  '#db2777',
+  '#0284c7',
+] as const
+
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join('')
+}
+
+function getAvatarColor(name: string): string {
+  const index = name.charCodeAt(0) % AVATAR_COLORS.length
+  return AVATAR_COLORS[index]
+}
+
+function maskCNPJ(value: string): string {
+  return value
+    .replace(/\D/g, '')
+    .slice(0, 14)
+    .replace(/^(\d{2})(\d)/, '$1.$2')
+    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d)/, '.$1/$2')
+    .replace(/(\d{4})(\d)/, '$1-$2')
+}
+
 export default function AdminTenantsPage() {
+  const router = useRouter()
   const [tenants, setTenants] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState(initialForm)
+  const [totalUsers, setTotalUsers] = useState<number>(0)
 
   useEffect(() => {
     const supabase = createClient()
-    const fetchTenants = async () => {
+    const fetchData = async () => {
       setLoading(true)
-      const { data, error } = await supabase
-        .from('companies')
-        .select('id, name, cnpj, status, created_at')
-        .order('created_at', { ascending: false })
+      const [{ data, error }, { count, error: usersError }] = await Promise.all([
+        supabase
+          .from('companies')
+          .select('id, name, cnpj, status, created_at')
+          .order('created_at', { ascending: false }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+      ])
 
       if (error) {
         console.error('Erro ao buscar tenants:', error)
@@ -53,10 +107,17 @@ export default function AdminTenantsPage() {
       } else {
         setTenants((data as Company[]) ?? [])
       }
+
+      if (usersError) {
+        console.error('Erro ao contar usuários:', usersError)
+      } else if (typeof count === 'number') {
+        setTotalUsers(count)
+      }
+
       setLoading(false)
     }
 
-    fetchTenants()
+    fetchData()
   }, [])
 
   const handleChange = (field: keyof typeof initialForm, value: string) => {
@@ -64,7 +125,12 @@ export default function AdminTenantsPage() {
   }
 
   const createTenant = async () => {
-    if (!form.name.trim() || !form.adminName.trim() || !form.adminEmail.trim() || !form.adminPassword.trim()) {
+    if (
+      !form.name.trim() ||
+      !form.adminName.trim() ||
+      !form.adminEmail.trim() ||
+      !form.adminPassword.trim()
+    ) {
       toast.error('Preencha todos os campos obrigatórios.')
       return
     }
@@ -145,73 +211,162 @@ export default function AdminTenantsPage() {
     }
   }
 
+  const handleImpersonate = (tenantId: string) => {
+    document.cookie = `selected_company_id=${tenantId}; path=/; max-age=86400`
+    router.push('/comprador')
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      {/* Cards de métricas */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-xl p-5 flex items-center gap-4 border border-blue-100 bg-blue-50">
+          <div className="rounded-full bg-blue-100 p-3 flex items-center justify-center">
+            <Building2 className="w-7 h-7 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-sm text-blue-600 font-medium">Total de Tenants</p>
+            <p className="text-3xl font-bold text-blue-700">{tenants.length}</p>
+          </div>
+        </div>
+        <div className="rounded-xl p-5 flex items-center gap-4 border border-green-100 bg-green-50">
+          <div className="rounded-full bg-green-100 p-3 flex items-center justify-center">
+            <CheckCircle2 className="w-7 h-7 text-green-600" />
+          </div>
+          <div>
+            <p className="text-sm text-green-600 font-medium">Tenants Ativos</p>
+            <p className="text-3xl font-bold text-green-700">
+              {tenants.filter((t) => t.status === 'active').length}
+            </p>
+          </div>
+        </div>
+        <div className="rounded-xl p-5 flex items-center gap-4 border border-purple-100 bg-purple-50">
+          <div className="rounded-full bg-purple-100 p-3 flex items-center justify-center">
+            <Users className="w-7 h-7 text-purple-600" />
+          </div>
+          <div>
+            <p className="text-sm text-purple-600 font-medium">Total de Usuários</p>
+            <p className="text-3xl font-bold text-purple-700">{totalUsers}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Cabeçalho da seção */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Tenants</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
+            Lista de Tenants
+          </h1>
           <p className="text-sm text-muted-foreground">
-            Gerencie as empresas (tenants) configuradas na plataforma.
+            Empresas cadastradas na plataforma
           </p>
         </div>
         <Button type="button" onClick={() => setFormOpen(true)}>
-          + Novo Tenant
+          <Plus className="mr-2 h-4 w-4" />
+          Novo Tenant
         </Button>
       </div>
 
+      {/* Tabela */}
       {loading ? (
         <p className="text-sm text-muted-foreground">Carregando tenants...</p>
       ) : tenants.length === 0 ? (
-        <div className="rounded-md border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
-          Nenhum tenant cadastrado.
-        </div>
+        <Card>
+          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+            Nenhum tenant cadastrado.
+          </CardContent>
+        </Card>
       ) : (
-        <table className="w-full text-sm">
-          <thead className="border-b border-border text-xs text-muted-foreground">
-            <tr>
-              <th className="px-2 py-2 text-left">Nome</th>
-              <th className="px-2 py-2 text-left">CNPJ</th>
-              <th className="px-2 py-2 text-left">Status</th>
-              <th className="px-2 py-2 text-left">Data Criação</th>
-              <th className="px-2 py-2 text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {tenants.map((tenant) => (
-              <tr key={tenant.id} className="border-b border-border last:border-0">
-                <td className="px-2 py-2 align-top">{tenant.name}</td>
-                <td className="px-2 py-2 align-top">{tenant.cnpj || '-'}</td>
-                <td className="px-2 py-2 align-top">
-                  <Badge variant={tenant.status === 'active' ? 'default' : 'outline'}>
-                    {tenant.status === 'active' ? 'Ativo' : tenant.status}
-                  </Badge>
-                </td>
-                <td className="px-2 py-2 align-top">
-                  {tenant.created_at
-                    ? new Date(tenant.created_at).toLocaleDateString('pt-BR')
-                    : '-'}
-                </td>
-                <td className="px-2 py-2 align-top text-right">
-                  <Button type="button" variant="outline" size="sm">
-                    Acessar
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="rounded-lg border border-border bg-card">
+          <Table>
+            <TableHeader className="bg-muted/30">
+              <TableRow>
+                <TableHead className="px-3 py-2">Empresa</TableHead>
+                <TableHead className="px-3 py-2">Status</TableHead>
+                <TableHead className="px-3 py-2">Data de Criação</TableHead>
+                <TableHead className="px-3 py-2 text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tenants.map((tenant) => (
+                <TableRow
+                  key={tenant.id}
+                  className="border-border hover:bg-muted/50 transition-colors"
+                >
+                  <TableCell className="px-3 py-2 align-top">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
+                        style={{ backgroundColor: getAvatarColor(tenant.name) }}
+                      >
+                        {getInitials(tenant.name)}
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">{tenant.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {tenant.cnpj || '-'}
+                        </p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-2 align-top">
+                    <Badge
+                      variant={tenant.status === 'active' ? 'outline' : 'destructive'}
+                      className={
+                        tenant.status === 'active'
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                          : undefined
+                      }
+                    >
+                      {tenant.status === 'active' ? 'Ativo' : 'Inativo'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="px-3 py-2 align-top text-sm text-muted-foreground">
+                    {tenant.created_at
+                      ? format(new Date(tenant.created_at), 'dd/MM/yyyy', {
+                          locale: ptBR,
+                        })
+                      : '-'}
+                  </TableCell>
+                  <TableCell className="px-3 py-2 align-top text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => router.push(`/admin/tenants/${tenant.id}`)}
+                      >
+                        <Eye className="mr-1 h-4 w-4" />
+                        Ver
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handleImpersonate(tenant.id)}
+                      >
+                        <LogIn className="mr-1 h-4 w-4" />
+                        Acessar
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
 
-      <Sheet open={formOpen} onOpenChange={setFormOpen}>
-        <SheetContent className="w-full max-w-md sm:max-w-lg">
-          <SheetHeader>
-            <SheetTitle>Novo Tenant</SheetTitle>
-            <SheetDescription>
+      {/* Dialog Novo Tenant */}
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Novo Tenant</DialogTitle>
+            <DialogDescription>
               Cadastre uma nova empresa e o usuário administrador responsável pelo acesso.
-            </SheetDescription>
-          </SheetHeader>
+            </DialogDescription>
+          </DialogHeader>
 
-          <div className="mt-6 space-y-4">
+          <div className="mt-4 space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="name">Nome da Empresa *</Label>
               <Input
@@ -224,8 +379,12 @@ export default function AdminTenantsPage() {
               <Label htmlFor="cnpj">CNPJ</Label>
               <Input
                 id="cnpj"
+                placeholder="00.000.000/0001-00"
                 value={form.cnpj}
-                onChange={(e) => handleChange('cnpj', e.target.value)}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, cnpj: maskCNPJ(e.target.value) }))
+                }
+                maxLength={18}
               />
             </div>
             <div className="space-y-1.5">
@@ -259,13 +418,18 @@ export default function AdminTenantsPage() {
             </div>
           </div>
 
-          <div className="mt-6 flex justify-end">
-            <Button type="button" onClick={createTenant} disabled={submitting}>
+          <DialogFooter>
+            <Button
+              type="button"
+              className="w-full"
+              onClick={createTenant}
+              disabled={submitting}
+            >
               {submitting ? 'Criando...' : 'Criar Tenant'}
             </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

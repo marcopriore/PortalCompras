@@ -1,59 +1,115 @@
-import Link from "next/link"
-import { redirect } from "next/navigation"
-import { cookies } from "next/headers"
-import { createClient } from "@/lib/supabase/server"
+ "use client"
 
-export default async function AdminLayout({
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { usePathname, useRouter } from "next/navigation"
+import { LogOut, Building2, ScrollText } from "lucide-react"
+import { useUser } from "@/lib/hooks/useUser"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { createClient as createBrowserClient } from "@/lib/supabase/client"
+
+export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const pathname = usePathname()
+  const router = useRouter()
+  const { userId } = useUser()
+  const [adminName, setAdminName] = useState<string>("")
 
-  if (!user) {
-    redirect("/login")
+  useEffect(() => {
+    if (!userId) return
+    const fetchName = async () => {
+      const supabase = createBrowserClient()
+      const { data } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", userId)
+        .single()
+      if (data?.full_name) setAdminName(data.full_name as string)
+    }
+    fetchName()
+  }, [userId])
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" })
+    } finally {
+      router.push("/login")
+    }
   }
 
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("is_superadmin")
-    .eq("id", user.id)
-    .single()
-
-  if (error || !profile?.is_superadmin) {
-    redirect("/comprador")
+  const getTitle = () => {
+    if (pathname.startsWith("/admin/tenants")) return "Tenants"
+    if (pathname.startsWith("/admin/logs")) return "Logs do Sistema"
+    return "Admin"
   }
+
+  const navItems = [
+    { href: "/admin/tenants", label: "Tenants", icon: Building2 },
+    { href: "/admin/logs", label: "Logs", icon: ScrollText },
+  ]
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="flex w-64 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
-        <div className="flex h-16 items-center border-b border-border px-4">
-          <span className="text-lg font-semibold">ProcureMax Admin</span>
+      <aside className="flex w-60 flex-col bg-[oklch(0.12_0.02_250)] text-white">
+        <div className="flex h-16 items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-semibold">ProcureMax</span>
+            <span className="text-xs bg-red-600 text-white px-1.5 py-0.5 rounded font-medium">
+              Admin
+            </span>
+          </div>
         </div>
-        <nav className="flex-1 space-y-1 px-4 py-3 text-sm">
-          <Link href="/admin/tenants" className="block rounded-md px-3 py-2 hover:bg-accent">
-            Tenants
-          </Link>
+        <hr className="border-border/20 my-3" />
+        <nav className="flex-1 space-y-1 px-3 text-sm">
+          {navItems.map((item) => {
+            const isActive =
+              pathname === item.href || pathname.startsWith(item.href + "/")
+            const Icon = item.icon
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors",
+                  isActive
+                    ? "text-white bg-white/15 font-medium"
+                    : "text-white/60 hover:text-white hover:bg-white/10",
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{item.label}</span>
+              </Link>
+            )
+          })}
         </nav>
-        <form
-          action="/api/auth/logout"
-          method="POST"
-          className="border-t border-border px-4 py-3"
-        >
-          <button
-            type="submit"
-            className="w-full rounded-md px-3 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
+        <div className="px-3 pb-4 pt-2 mt-auto">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={handleLogout}
+            className="w-full justify-start gap-2 text-red-400 hover:text-red-300 hover:bg-white/10"
           >
-            Sair
-          </button>
-        </form>
+            <LogOut className="h-4 w-4" />
+            <span>Sair</span>
+          </Button>
+        </div>
       </aside>
-      <main className="flex-1 overflow-auto bg-background p-6">
-        {children}
-      </main>
+      <div className="flex flex-1 flex-col min-h-screen bg-background">
+        <header className="h-14 border-b border-border bg-card flex items-center px-6 justify-between">
+          <h1 className="text-sm font-medium text-foreground">{getTitle()}</h1>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">
+              {adminName ? adminName[0].toUpperCase() : "?"}
+            </div>
+            <span>{adminName || "Admin"}</span>
+          </div>
+        </header>
+        <main className="flex-1 p-6">{children}</main>
+      </div>
     </div>
   )
 }
