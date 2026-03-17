@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Bell, Search, ChevronDown, LogOut, User, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,11 +18,13 @@ import { Badge } from "@/components/ui/badge"
 
 interface HeaderProps {
   userName: string
-  userRole: string
+  userEmail: string
   userInitials: string
 }
 
-export function Header({ userName, userRole, userInitials }: HeaderProps) {
+export function Header({ userName, userEmail, userInitials }: HeaderProps) {
+  const router = useRouter()
+
   const [notifications] = useState([
     { id: 1, title: "Nova cotação recebida", time: "5 min atrás", unread: true },
     { id: 2, title: "Proposta aprovada", time: "1h atrás", unread: true },
@@ -29,6 +32,17 @@ export function Header({ userName, userRole, userInitials }: HeaderProps) {
   ])
 
   const unreadCount = notifications.filter((n) => n.unread).length
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+      })
+      router.push("/login")
+    } catch {
+      router.push("/login")
+    }
+  }
 
   return (
     <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between">
@@ -85,7 +99,7 @@ export function Header({ userName, userRole, userInitials }: HeaderProps) {
               </Avatar>
               <div className="hidden md:flex flex-col items-start">
                 <span className="text-sm font-medium">{userName}</span>
-                <span className="text-xs text-muted-foreground">{userRole}</span>
+                <span className="text-xs text-muted-foreground">{userEmail}</span>
               </div>
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
             </Button>
@@ -102,7 +116,7 @@ export function Header({ userName, userRole, userInitials }: HeaderProps) {
               Configurações
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-destructive">
+            <DropdownMenuItem className="text-destructive" onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" />
               Sair
             </DropdownMenuItem>

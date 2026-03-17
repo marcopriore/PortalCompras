@@ -10,10 +10,10 @@ export default function FornecedorDashboardLayout({
     <div className="flex h-screen overflow-hidden">
       <Sidebar type="fornecedor" />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Header 
-          userName="Maria Santos" 
-          userRole="Tech Solutions Ltda" 
-          userInitials="MS" 
+        <Header
+          userName="Maria Santos"
+          userEmail="fornecedor@example.com"
+          userInitials="MS"
         />
         <main className="flex-1 overflow-auto p-6 bg-background">
           {children}
