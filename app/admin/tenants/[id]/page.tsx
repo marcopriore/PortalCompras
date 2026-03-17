@@ -60,8 +60,6 @@ type Metrics = {
   quotations: number
   suppliers: number
   items: number
-  activeUsers: number
-  totalUsers: number
 }
 
 function maskCNPJ(value: string): string {
@@ -121,8 +119,6 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     quotations: 0,
     suppliers: 0,
     items: 0,
-    activeUsers: 0,
-    totalUsers: 0,
   })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'overview' | 'users'>('overview')
@@ -137,6 +133,9 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
   const [customFrom, setCustomFrom] = useState<string>('')
   const [customTo, setCustomTo] = useState<string>('')
 
+  const totalUsers = profiles.length
+  const activeUsers = profiles.filter((p) => p.status === 'active').length
+
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true)
@@ -146,7 +145,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
         supabase.from('companies').select('*').eq('id', id).single(),
         supabase
           .from('profiles')
-          .select('id, full_name, role, status, created_at, updated_at')
+          .select('id, full_name, role, status, created_at')
           .eq('company_id', id)
           .order('created_at', { ascending: false }),
       ])
@@ -161,15 +160,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
       }
 
       if (profilesRes.data) {
-        const profilesData = profilesRes.data as Profile[]
-        setProfiles(profilesData)
-        const total = profilesData.length
-        const active = profilesData.filter((p) => p.status === 'active').length
-        setMetrics((m) => ({
-          ...m,
-          activeUsers: active,
-          totalUsers: total,
-        }))
+        setProfiles(profilesRes.data as Profile[])
       }
 
       setLoading(false)
@@ -505,7 +496,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                     Usuários Ativos
                   </p>
                   <p className="text-xl font-bold text-orange-700">
-                    {metrics.activeUsers}/{metrics.totalUsers}
+                    {activeUsers}/{totalUsers}
                   </p>
                 </div>
               </div>

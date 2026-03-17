@@ -248,30 +248,44 @@ export default function TenantUsersPage() {
     setSubmitting(true)
     try {
       const supabase = createClient()
-      await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .update({ role: editForm.role, status: editForm.status })
         .eq('id', selectedProfile.id)
+        .select('id, role, status')
 
-      await logAudit({
-        eventType: 'user.updated',
-        description: `Usuário "${selectedProfile.full_name}" atualizado`,
-        companyId,
-        userId,
-        entity: 'profiles',
-        entityId: selectedProfile.id,
-        metadata: { role: editForm.role, status: editForm.status },
-      })
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error('Erro ao atualizar perfil:', error)
+        return
+      }
 
-      setProfiles((prev) =>
-        prev.map((p) =>
-          p.id === selectedProfile.id
-            ? { ...p, role: editForm.role, status: editForm.status }
-            : p,
-        ),
-      )
-      setEditOpen(false)
-      setSelectedProfile(null)
+      if (data && data[0]) {
+        const updated = data[0]
+        await logAudit({
+          eventType: 'user.updated',
+          description: `Usuário "${selectedProfile.full_name}" atualizado`,
+          companyId,
+          userId,
+          entity: 'profiles',
+          entityId: selectedProfile.id,
+          metadata: { role: editForm.role, status: editForm.status },
+        })
+
+        setProfiles((prev) =>
+          prev.map((p) =>
+            p.id === selectedProfile.id
+              ? {
+                  ...p,
+                  role: updated.role ?? editForm.role,
+                  status: updated.status ?? editForm.status,
+                }
+              : p,
+          ),
+        )
+        setEditOpen(false)
+        setSelectedProfile(null)
+      }
     } finally {
       setSubmitting(false)
     }
