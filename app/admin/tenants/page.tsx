@@ -145,64 +145,31 @@ export default function AdminTenantsPage() {
 
     setSubmitting(true)
     try {
-      const supabase = createClient()
-
-      const { data: company, error: companyError } = await supabase
-        .from('companies')
-        .insert({
+      const response = await fetch('/api/admin/create-tenant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           name: form.name,
           cnpj: form.cnpj || null,
-          status: 'active',
-        })
-        .select('id, name, cnpj, status, created_at')
-        .single()
-
-      if (companyError || !company) {
-        console.error('Erro ao criar company:', companyError)
-        toast.error('Erro ao criar tenant.')
-        setSubmitting(false)
-        return
-      }
-
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-      const serviceRoleKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
-
-      if (!supabaseUrl || !serviceRoleKey) {
-        toast.error('Configuração do Supabase ausente (service role).')
-        setSubmitting(false)
-        return
-      }
-
-      // TODO: mover o uso da service_role key para um ambiente apenas server-side em produção.
-      const adminUsersUrl = `${supabaseUrl}/auth/v1/admin/users`
-
-      const response = await fetch(adminUsersUrl, {
-        method: 'POST',
-        headers: {
-          apikey: serviceRoleKey,
-          Authorization: `Bearer ${serviceRoleKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: form.adminEmail,
-          password: form.adminPassword,
-          email_confirm: true,
-          user_metadata: {
-            full_name: form.adminName,
-            company_id: company.id,
-          },
+          adminName: form.adminName,
+          adminEmail: form.adminEmail,
+          adminPassword: form.adminPassword,
         }),
       })
 
+      const payload = await response.json().catch(() => ({}))
+
       if (!response.ok) {
-        const errorBody = await response.json().catch(() => null)
-        console.error('Erro ao criar usuário admin:', errorBody)
-        toast.error(errorBody?.message || 'Erro ao criar usuário admin.')
+        // eslint-disable-next-line no-console
+        console.error('Erro ao criar tenant via API:', payload)
+        toast.error(payload?.error || 'Erro ao criar tenant.')
         setSubmitting(false)
         return
       }
 
-      setTenants((prev) => [company as Company, ...prev])
+      const company = payload.company as Company
+
+      setTenants((prev) => [company, ...prev])
       setForm(initialForm)
       setFormOpen(false)
       toast.success('Tenant criado com sucesso!')
@@ -212,10 +179,11 @@ export default function AdminTenantsPage() {
         description: `Tenant "${form.name}" criado`,
         userName: form.adminName,
         entity: 'companies',
-        entityId: (company as Company).id,
+        entityId: company.id,
         metadata: { name: form.name, cnpj: form.cnpj },
       })
     } catch (err) {
+      // eslint-disable-next-line no-console
       console.error('Erro inesperado ao criar tenant:', err)
       toast.error('Erro inesperado ao criar tenant.')
     } finally {
