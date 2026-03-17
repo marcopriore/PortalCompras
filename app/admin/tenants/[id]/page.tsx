@@ -33,6 +33,7 @@ import {
   Building2,
   Package,
   Users,
+  UserCheck,
 } from 'lucide-react'
 
 type Tenant = {
@@ -49,12 +50,17 @@ type Profile = {
   role: string
   status: string
   created_at: string
+  updated_at: string
 }
+
+type PeriodFilter = '7d' | '30d' | '6m' | 'custom'
 
 type Metrics = {
   quotations: number
   suppliers: number
   items: number
+  activeUsers: number
+  totalUsers: number
 }
 
 function maskCNPJ(value: string): string {
@@ -92,6 +98,15 @@ function getAvatarColor(name: string): string {
   return AVATAR_COLORS[index]
 }
 
+function getPeriodStart(period: PeriodFilter, customFrom: string): Date | null {
+  const now = new Date()
+  if (period === '7d') return new Date(now.setDate(now.getDate() - 7))
+  if (period === '30d') return new Date(now.setDate(now.getDate() - 30))
+  if (period === '6m') return new Date(now.setMonth(now.getMonth() - 6))
+  if (period === 'custom' && customFrom) return new Date(customFrom)
+  return null
+}
+
 type TenantDetailPageProps = {
   params: Promise<{ id: string }>
 }
@@ -105,11 +120,11 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     quotations: 0,
     suppliers: 0,
     items: 0,
+    activeUsers: 0,
+    totalUsers: 0,
   })
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'details' | 'users' | 'metrics'>(
-    'details',
-  )
+  const [activeTab, setActiveTab] = useState<'overview' | 'users'>('overview')
   const [editOpen, setEditOpen] = useState(false)
   const [editForm, setEditForm] = useState({
     name: '',
@@ -117,33 +132,23 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     status: 'active',
   })
   const [saving, setSaving] = useState(false)
+  const [period, setPeriod] = useState<PeriodFilter>('30d')
+  const [customFrom, setCustomFrom] = useState<string>('')
+  const [customTo, setCustomTo] = useState<string>('')
 
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true)
       const supabase = createClient()
 
-      const [tenantRes, profilesRes, quotationsRes, suppliersRes, itemsRes] =
-        await Promise.all([
-          supabase.from('companies').select('*').eq('id', id).single(),
-          supabase
-            .from('profiles')
-            .select('id, full_name, role, status, created_at')
-            .eq('company_id', id)
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('quotations')
-            .select('*', { count: 'exact', head: true })
-            .eq('company_id', id),
-          supabase
-            .from('suppliers')
-            .select('*', { count: 'exact', head: true })
-            .eq('company_id', id),
-          supabase
-            .from('items')
-            .select('*', { count: 'exact', head: true })
-            .eq('company_id', id),
-        ])
+      const [tenantRes, profilesRes] = await Promise.all([
+        supabase.from('companies').select('*').eq('id', id).single(),
+        supabase
+          .from('profiles')
+          .select('id, full_name, role, status, created_at, updated_at')
+          .eq('company_id', id)
+          .order('created_at', { ascending: false }),
+      ])
 
       if (tenantRes.data) {
         setTenant(tenantRes.data as Tenant)
@@ -155,20 +160,69 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
       }
 
       if (profilesRes.data) {
-        setProfiles(profilesRes.data as Profile[])
+        const profilesData = profilesRes.data as Profile[]
+        setProfiles(profilesData)
+        const total = profilesData.length
+        const active = profilesData.filter((p) => p.status === 'active').length
+        setMetrics((m) => ({
+          ...m,
+          activeUsers: active,
+          totalUsers: total,
+        }))
       }
-
-      setMetrics({
-        quotations: quotationsRes.count ?? 0,
-        suppliers: suppliersRes.count ?? 0,
-        items: itemsRes.count ?? 0,
-      })
 
       setLoading(false)
     }
 
     fetchAll()
   }, [id])
+
+  useEffect(() => {
+    if (!id) return
+    const fetchMetrics = async () => {
+      const supabase = createClient()
+      const periodStart = getPeriodStart(period, customFrom)
+      const periodEnd =
+        period === 'custom' && customTo ? new Date(customTo) : new Date()
+
+      let quotationsQuery = supabase
+        .from('quotations')
+        .select('*', { count: 'exact', head: true })
+        .eq('company_id', id)
+
+      const suppliersQuery = supabase
+        .from('suppliers')
+        .select('*', { count: 'exact', head: true })
+        .eq('company_id', id)
+
+      const itemsQuery = supabase
+        .from('items')
+        .select('*', { count: 'exact', head: true })
+        .eq('company_id', id)
+
+      if (periodStart) {
+        const isoStart = periodStart.toISOString()
+        const isoEnd = periodEnd.toISOString()
+        quotationsQuery = quotationsQuery
+          .gte('created_at', isoStart)
+          .lte('created_at', isoEnd)
+      }
+
+      const [quotationsRes, suppliersRes, itemsRes] = await Promise.all([
+        quotationsQuery,
+        suppliersQuery,
+        itemsQuery,
+      ])
+
+      setMetrics((m) => ({
+        ...m,
+        quotations: quotationsRes.count ?? 0,
+        suppliers: suppliersRes.count ?? 0,
+        items: itemsRes.count ?? 0,
+      }))
+    }
+    fetchMetrics()
+  }, [id, period, customFrom, customTo])
 
   const handleSave = async () => {
     if (!tenant) return
@@ -264,7 +318,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
 
       {/* Abas */}
       <div className="flex gap-1 border-b border-border mb-4">
-        {(['details', 'users', 'metrics'] as const).map((tab) => (
+        {(['overview', 'users'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -274,56 +328,170 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            {tab === 'details'
-              ? 'Detalhes'
-              : tab === 'users'
-              ? 'Usuários'
-              : 'Métricas'}
+            {tab === 'overview' ? 'Visão Geral' : 'Usuários'}
           </button>
         ))}
       </div>
 
       {/* Conteúdo das abas */}
-      {activeTab === 'details' && (
-        <div className="bg-card border border-border rounded-xl p-6">
-          <h2 className="font-semibold text-foreground mb-4">
-            Informações da Empresa
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Nome</p>
-              <p className="text-sm font-medium text-foreground">{tenant.name}</p>
+      {activeTab === 'overview' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Coluna esquerda: Informações da Empresa */}
+          <div className="bg-card border border-border rounded-xl p-6">
+            <h2 className="font-semibold text-foreground mb-4">
+              Informações da Empresa
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Nome</p>
+                <p className="text-sm font-medium text-foreground">
+                  {tenant.name}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">CNPJ</p>
+                <p className="text-sm font-medium text-foreground">
+                  {tenant.cnpj || '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Status</p>
+                <Badge
+                  variant={
+                    tenant.status === 'active' ? 'outline' : 'destructive'
+                  }
+                  className={
+                    tenant.status === 'active'
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                      : undefined
+                  }
+                >
+                  {tenant.status === 'active' ? 'Ativo' : 'Inativo'}
+                </Badge>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">
+                  Data de Criação
+                </p>
+                <p className="text-sm font-medium text-foreground">
+                  {format(new Date(tenant.created_at), 'dd/MM/yyyy', {
+                    locale: ptBR,
+                  })}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">CNPJ</p>
-              <p className="text-sm font-medium text-foreground">
-                {tenant.cnpj || '—'}
-              </p>
+          </div>
+
+          {/* Coluna direita: Métricas */}
+          <div className="bg-card border border-border rounded-xl p-6">
+            <div className="flex items-center justify-between mb-4 gap-2">
+              <h2 className="font-semibold text-foreground">Métricas de Uso</h2>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                {(['7d', '30d', '6m', 'custom'] as PeriodFilter[]).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                      period === p
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {p === '7d'
+                      ? '7 dias'
+                      : p === '30d'
+                      ? '30 dias'
+                      : p === '6m'
+                      ? '6 meses'
+                      : 'Personalizado'}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Status</p>
-              <Badge
-                variant={
-                  tenant.status === 'active' ? 'outline' : 'destructive'
-                }
-                className={
-                  tenant.status === 'active'
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                    : undefined
-                }
-              >
-                {tenant.status === 'active' ? 'Ativo' : 'Inativo'}
-              </Badge>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">
-                Data de Criação
-              </p>
-              <p className="text-sm font-medium text-foreground">
-                {format(new Date(tenant.created_at), 'dd/MM/yyyy', {
-                  locale: ptBR,
-                })}
-              </p>
+
+            {period === 'custom' && (
+              <div className="flex gap-2 mt-3">
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    De
+                  </label>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-background text-foreground"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    Até
+                  </label>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-background text-foreground"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="rounded-lg p-3 flex items-center gap-3 border border-blue-100 bg-blue-50">
+                <div className="rounded-full bg-blue-100 p-2">
+                  <FileText className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-blue-600 font-medium">
+                    Cotações no período
+                  </p>
+                  <p className="text-xl font-bold text-blue-700">
+                    {metrics.quotations}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg p-3 flex items-center gap-3 border border-green-100 bg-green-50">
+                <div className="rounded-full bg-green-100 p-2">
+                  <Building2 className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-green-600 font-medium">
+                    Fornecedores
+                  </p>
+                  <p className="text-xl font-bold text-green-700">
+                    {metrics.suppliers}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg p-3 flex items-center gap-3 border border-purple-100 bg-purple-50">
+                <div className="rounded-full bg-purple-100 p-2">
+                  <Package className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-purple-600 font-medium">
+                    Itens cadastrados
+                  </p>
+                  <p className="text-xl font-bold text-purple-700">
+                    {metrics.items}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg p-3 flex items-center gap-3 border border-orange-100 bg-orange-50">
+                <div className="rounded-full bg-orange-100 p-2">
+                  <UserCheck className="w-5 h-5 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-orange-600 font-medium">
+                    Usuários Ativos
+                  </p>
+                  <p className="text-xl font-bold text-orange-700">
+                    {metrics.activeUsers}/{metrics.totalUsers}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -405,50 +573,6 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
               </Table>
             </div>
           )}
-        </div>
-      )}
-
-      {activeTab === 'metrics' && (
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-xl p-5 flex items-center gap-4 border border-blue-100 bg-blue-50">
-            <div className="rounded-full bg-blue-100 p-3 flex items-center justify-center">
-              <FileText className="w-7 h-7 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-blue-600 font-medium">
-                Total de Cotações
-              </p>
-              <p className="text-3xl font-bold text-blue-700">
-                {metrics.quotations}
-              </p>
-            </div>
-          </div>
-          <div className="rounded-xl p-5 flex items-center gap-4 border border-green-100 bg-green-50">
-            <div className="rounded-full bg-green-100 p-3 flex items-center justify-center">
-              <Building2 className="w-7 h-7 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-green-600 font-medium">
-                Fornecedores Cadastrados
-              </p>
-              <p className="text-3xl font-bold text-green-700">
-                {metrics.suppliers}
-              </p>
-            </div>
-          </div>
-          <div className="rounded-xl p-5 flex items-center gap-4 border border-purple-100 bg-purple-50">
-            <div className="rounded-full bg-purple-100 p-3 flex items-center justify-center">
-              <Package className="w-7 h-7 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-purple-600 font-medium">
-                Itens Cadastrados
-              </p>
-              <p className="text-3xl font-bold text-purple-700">
-                {metrics.items}
-              </p>
-            </div>
-          </div>
         </div>
       )}
 
