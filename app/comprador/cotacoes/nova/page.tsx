@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import { useUser } from '@/lib/hooks/useUser'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -93,6 +94,9 @@ export default function NovaContatacaoPage() {
   const [loading, setLoading] = useState(false)
   const [loadingAction, setLoadingAction] = useState<'draft' | 'submit' | null>(null)
 
+  const { userId, companyId, loading: userLoading } = useUser()
+  console.log('useUser:', { userId, companyId, userLoading })
+
   const today = useMemo(() => format(new Date(), 'dd/MM/yyyy', { locale: ptBR }), [])
 
   const filteredItems = useMemo(() => {
@@ -137,12 +141,13 @@ export default function NovaContatacaoPage() {
       const { data, error } = await supabase
         .from('quotations')
         .insert({
-          company_id: '00000000-0000-0000-0000-000000000001',
+          company_id: companyId!,
           description,
           status,
           category: category ?? null,
           payment_condition: payment ?? null,
           response_deadline: deadline ? deadline.toISOString().split('T')[0] : null,
+          created_by: userId!,
         })
         .select('id')
         .single()
@@ -166,7 +171,7 @@ export default function NovaContatacaoPage() {
         const { error: itemsError } = await supabase.from('quotation_items').insert(
           selectedItems.map((item) => ({
             quotation_id: quotationId,
-            company_id: '00000000-0000-0000-0000-000000000001',
+            company_id: companyId!,
             material_code: item.code,
             material_description: item.description,
             unit_of_measure: item.unit_of_measure,
@@ -185,14 +190,15 @@ export default function NovaContatacaoPage() {
         const { error: suppliersError } = await supabase.from('quotation_suppliers').insert(
           selectedSuppliers.map((s) => ({
             quotation_id: quotationId,
-            company_id: '00000000-0000-0000-0000-000000000001',
-            supplier_id: s.id,
+            company_id: companyId!,
+            supplier_id: userId!,
             supplier_name: s.name,
             supplier_cnpj: s.cnpj,
           })),
         )
 
         if (suppliersError) {
+          console.error('Erro suppliers:', JSON.stringify(suppliersError))
           toast.error('Erro ao salvar fornecedores da cotação. Tente novamente.')
           return
         }
@@ -265,11 +271,15 @@ export default function NovaContatacaoPage() {
             type="button"
             variant="outline"
             onClick={handleDraft}
-            disabled={loading}
+            disabled={loading || userLoading || !companyId}
           >
             {loading && loadingAction === 'draft' ? 'Salvando...' : 'Salvar Rascunho'}
           </Button>
-          <Button type="button" onClick={handleSubmit} disabled={loading}>
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={loading || userLoading || !companyId}
+          >
             {loading && loadingAction === 'submit' ? 'Salvando...' : 'Enviar Cotação'}
           </Button>
         </div>

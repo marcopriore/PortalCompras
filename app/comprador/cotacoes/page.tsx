@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/lib/hooks/useUser"
 
 interface Quotation {
   id: string
@@ -44,6 +45,8 @@ const filterOptions = [
 export default function CotacoesPage() {
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [loadingData, setLoadingData] = useState(true)
+
+  const { companyId, loading: userLoading } = useUser()
 
   const columns: Column<Quotation>[] = [
     { key: "code", header: "ID", className: "font-medium" },
@@ -107,13 +110,17 @@ export default function CotacoesPage() {
 
   useEffect(() => {
     const fetchQuotations = async () => {
+      if (!companyId) {
+        return
+      }
+
       const supabase = createClient()
       const { data, error } = await supabase
         .from("quotations")
         .select(
           "id, code, description, status, category, payment_condition, response_deadline, created_at",
         )
-        .eq("company_id", "00000000-0000-0000-0000-000000000001")
+        .eq("company_id", companyId)
         .order("created_at", { ascending: false })
 
       if (error) {
@@ -123,8 +130,9 @@ export default function CotacoesPage() {
       }
       setLoadingData(false)
     }
+
     fetchQuotations()
-  }, [])
+  }, [companyId])
 
   return (
     <div className="space-y-6">
@@ -143,7 +151,7 @@ export default function CotacoesPage() {
         </Button>
       </div>
 
-      {loadingData ? (
+      {userLoading || loadingData ? (
         <p className="text-sm text-muted-foreground">Carregando cotações...</p>
       ) : (
         <DataTable
