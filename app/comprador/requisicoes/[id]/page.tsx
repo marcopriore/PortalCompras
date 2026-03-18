@@ -32,7 +32,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { AlertCircle, ChevronLeft } from "lucide-react"
+import { AlertCircle, ChevronLeft, FileText } from "lucide-react"
 
 type Priority = "normal" | "urgent" | "critical"
 type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
@@ -117,7 +117,7 @@ export default function RequisicaoDetailPage({
 }) {
   const router = useRouter()
   const { companyId, userId } = useUser()
-  const { hasPermission } = usePermissions()
+  const { hasPermission, hasFeature } = usePermissions()
   const { id } = React.use(params)
 
   const [requisition, setRequisition] = React.useState<Requisition | null>(null)
@@ -130,6 +130,7 @@ export default function RequisicaoDetailPage({
 
   const [rejectReason, setRejectReason] = React.useState("")
   const [actionSubmitting, setActionSubmitting] = React.useState(false)
+  const [linkedQuotation, setLinkedQuotation] = React.useState<{ id: string; code: string } | null>(null)
 
   React.useEffect(() => {
     if (!id) return
@@ -148,7 +149,24 @@ export default function RequisicaoDetailPage({
       ])
 
       if (!alive) return
-      setRequisition(((rRes.data as any) ?? null) as Requisition | null)
+      const reqData = ((rRes.data as any) ?? null) as Requisition | null
+
+      let linked: { id: string; code: string } | null = null
+      const quotationId = reqData?.quotation_id
+      if (quotationId) {
+        const { data: qData } = await supabase
+          .from("quotations")
+          .select("id, code")
+          .eq("id", quotationId)
+          .single()
+
+        if (qData?.id && qData?.code) {
+          linked = { id: qData.id as string, code: qData.code as string }
+        }
+      }
+
+      setRequisition(reqData)
+      setLinkedQuotation(linked)
       setItems(((iRes.data as unknown) as RequisitionItem[]) ?? [])
       setLoading(false)
     }
@@ -262,70 +280,9 @@ export default function RequisicaoDetailPage({
     }
   }
 
-  const handleGenerateQuotation = async () => {
-    if (!requisition || !userId || !companyId) return
-    setActionSubmitting(true)
-    try {
-      const supabase = createClient()
-
-      const { data: quotationRes } = await supabase
-        .from("quotations")
-        .insert({
-          company_id: companyId,
-          description: requisition.title,
-          status: "draft",
-          category: null,
-          created_by: userId,
-        })
-        .select("id")
-        .single()
-
-      const newQuotationId = (quotationRes as any)?.id as string | undefined
-      if (!newQuotationId) return
-
-      const quotationItemsPayload = items.map((it) => ({
-        quotation_id: newQuotationId,
-        company_id: companyId,
-        material_code: it.material_code,
-        material_description: it.material_description,
-        quantity: it.quantity,
-        unit_of_measure: it.unit_of_measure,
-      }))
-
-      await supabase.from("quotation_items").insert(quotationItemsPayload)
-
-      await supabase
-        .from("requisitions")
-        .update({
-          status: "in_quotation",
-          quotation_id: newQuotationId,
-        })
-        .eq("id", requisition.id)
-
-      await logAudit({
-        eventType: "quotation.created",
-        description: `Cotação gerada a partir da requisição ${requisition.code}`,
-        companyId,
-        userId,
-        entity: "quotations",
-        entityId: newQuotationId,
-      })
-
-      setRequisition((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: "in_quotation",
-              quotation_id: newQuotationId,
-            }
-          : prev,
-      )
-
-      setQuotationOpen(false)
-      router.push(`/comprador/cotacoes/${newQuotationId}`)
-    } finally {
-      setActionSubmitting(false)
-    }
+  const handleGerarCotacao = () => {
+    if (!requisition) return
+    router.push(`/comprador/cotacoes/nova?requisition_id=${requisition.id}`)
   }
 
   if (loading) {
@@ -385,6 +342,15 @@ export default function RequisicaoDetailPage({
         <div className="flex items-center gap-2">
           {priorityMeta && <Badge className={priorityMeta.className}>{priorityMeta.label}</Badge>}
           {statusMeta && <Badge className={statusMeta.className}>{statusMeta.label}</Badge>}
+          {linkedQuotation && hasFeature("quotations") && (
+            <button
+              onClick={() => router.push(`/comprador/cotacoes/${linkedQuotation.id}`)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors cursor-pointer border border-blue-200"
+            >
+              <FileText className="w-3 h-3" />
+              {linkedQuotation.code}
+            </button>
+          )}
         </div>
       </div>
 
@@ -548,7 +514,7 @@ export default function RequisicaoDetailPage({
             <Button variant="outline" onClick={() => setQuotationOpen(false)} disabled={actionSubmitting}>
               Cancelar
             </Button>
-            <Button onClick={handleGenerateQuotation} disabled={actionSubmitting}>
+            <Button onClick={handleGerarCotacao} disabled={actionSubmitting}>
               {actionSubmitting ? "Gerando..." : "Confirmar"}
             </Button>
           </DialogFooter>

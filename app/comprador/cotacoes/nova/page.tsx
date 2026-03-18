@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
@@ -17,8 +17,15 @@ import { Textarea } from '@/components/ui/textarea'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
-  Building2, CalendarIcon, ChevronDown, ChevronLeft,
-  FileText, Package, Search, Trash2,
+  Building2,
+  CalendarIcon,
+  ChevronDown,
+  ChevronLeft,
+  FileText,
+  Package,
+  Search,
+  Trash2,
+  ClipboardList,
 } from 'lucide-react'
 
 type QuotationItem = { code: string; description: string; unit_of_measure: string }
@@ -77,8 +84,19 @@ function Section({
   )
 }
 
-export default function NovaContatacaoPage() {
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <NovaCotacaoContent />
+    </Suspense>
+  )
+}
+
+function NovaCotacaoContent() {
   const router = useRouter()
+
+  const searchParams = useSearchParams()
+  const requisitionId = searchParams.get('requisition_id')
 
   const [description, setDescription] = useState('')
   const [deadline, setDeadline] = useState<Date | undefined>()
@@ -98,6 +116,40 @@ export default function NovaContatacaoPage() {
   const { userId, companyId, loading: userLoading } = useUser()
 
   const today = useMemo(() => format(new Date(), 'dd/MM/yyyy', { locale: ptBR }), [])
+
+  useEffect(() => {
+    if (!requisitionId || !companyId) return
+    const fetchRequisition = async () => {
+      const supabase = createClient()
+      const [reqRes, itemsRes] = await Promise.all([
+        supabase.from('requisitions').select('*').eq('id', requisitionId).single(),
+        supabase
+          .from('requisition_items')
+          .select('*')
+          .eq('requisition_id', requisitionId),
+      ])
+
+      if (reqRes.data) {
+        const reqAny = reqRes.data as any
+        setDescription(() => reqAny.title ?? '')
+        setCategory(reqAny.commodity_group ?? '')
+      }
+
+      if (itemsRes.data && itemsRes.data.length > 0) {
+        setSelectedItems(
+          itemsRes.data.map((ri: any) => ({
+            code: ri.material_code ?? '',
+            description: ri.material_description ?? '',
+            quantity: ri.quantity ?? 1,
+            unit_of_measure: ri.unit_of_measure ?? '',
+            spec: ri.observations ?? '',
+          })),
+        )
+      }
+    }
+
+    fetchRequisition()
+  }, [requisitionId, companyId])
 
   const filteredItems = useMemo(() => {
     if (!itemSearch.trim()) return []
@@ -203,6 +255,23 @@ export default function NovaContatacaoPage() {
         }
       }
 
+      if (requisitionId) {
+        const { error: reqUpdateError } = await supabase
+          .from('requisitions')
+          .update({
+            status: 'in_quotation',
+            quotation_id: quotationId,
+          })
+          .eq('id', requisitionId)
+
+        if (reqUpdateError) {
+          console.error(
+            'Erro ao atualizar requisicao para in_quotation:',
+            JSON.stringify(reqUpdateError),
+          )
+        }
+      }
+
       await logAudit({
         eventType: 'quotation.created',
         description: `Cotação ${data.code} criada`,
@@ -294,6 +363,16 @@ export default function NovaContatacaoPage() {
           </Button>
         </div>
       </div>
+
+      {requisitionId && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4 flex items-center gap-3">
+          <ClipboardList className="w-5 h-5 text-blue-600 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-blue-800">Cotação gerada a partir de uma requisição</p>
+            <p className="text-xs text-blue-600">Os campos foram pré-preenchidos com os dados da requisição. Revise e complete antes de enviar.</p>
+          </div>
+        </div>
+      )}
 
       {/* Seção Dados Gerais */}
       <Section title="Dados gerais" icon={<FileText className="h-4 w-4 text-primary" />} sectionKey="general" open={open.general} onToggle={toggle}>
