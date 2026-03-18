@@ -45,7 +45,7 @@ export default function HomePage() {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
               <Package className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="font-bold text-lg">ProcureMax</span>
+            <span className="font-bold text-lg">Valore</span>
           </Link>
           <nav className="flex items-center gap-4">
             <Button variant="ghost" asChild>
@@ -195,7 +195,7 @@ export default function HomePage() {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
                 <Package className="h-4 w-4 text-primary-foreground" />
               </div>
-              <span className="font-semibold">ProcureMax</span>
+              <span className="font-semibold">Valore</span>
             </div>
             <p className="text-sm text-muted-foreground">
               Sistema de Gestão de Compras e Portal do Fornecedor

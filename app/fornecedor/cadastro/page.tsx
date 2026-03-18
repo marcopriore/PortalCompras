@@ -54,7 +54,7 @@ export default function CadastroPage() {
           </div>
           <div>
             <h1 className="text-xl font-bold">Cadastro de Fornecedor</h1>
-            <p className="text-sm text-muted-foreground">ProcureMax</p>
+            <p className="text-sm text-muted-foreground">Valore</p>
           </div>
         </div>
 
@@ -283,7 +283,7 @@ export default function CadastroPage() {
                         <Link href="#" className="text-primary hover:underline">
                           Política de Privacidade
                         </Link>{" "}
-                        da plataforma ProcureMax.
+                        da plataforma Valore.
                       </label>
                     </div>
                   </div>

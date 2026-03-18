@@ -8,6 +8,7 @@ import { useUser } from "@/lib/hooks/useUser"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { createClient as createBrowserClient } from "@/lib/supabase/client"
+import { ValoreLogo } from "@/components/ui/valore-logo"
 
 export default function AdminLayout({
   children,
@@ -57,8 +58,8 @@ export default function AdminLayout({
       <aside className="flex w-60 flex-col bg-[oklch(0.12_0.02_250)] text-white">
         <div className="flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <span className="text-lg font-semibold">ProcureMax</span>
-            <span className="text-xs bg-red-600 text-white px-1.5 py-0.5 rounded font-medium">
+            <ValoreLogo size={24} showName={true} nameColor="#ffffff" />
+            <span className="text-xs bg-red-600 text-white px-1.5 py-0.5 rounded font-medium ml-1">
               Admin
             </span>
           </div>

@@ -20,6 +20,7 @@ import {
   Building2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ValoreLogo } from "@/components/ui/valore-logo"
 import {
   Tooltip,
   TooltipContent,
@@ -78,15 +79,12 @@ export function Sidebar({ type }: SidebarProps) {
         <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
           {!collapsed && (
             <Link href={type === "comprador" ? "/comprador" : "/fornecedor"} className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
-                <Package className="h-4 w-4 text-sidebar-primary-foreground" />
-              </div>
-              <span className="font-semibold text-sm">ProcureMax</span>
+              <ValoreLogo size={28} showName={true} nameColor="#ffffff" />
             </Link>
           )}
           {collapsed && (
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary mx-auto">
-              <Package className="h-4 w-4 text-sidebar-primary-foreground" />
+            <div className="mx-auto">
+              <ValoreLogo size={28} showName={false} nameColor="#ffffff" />
             </div>
           )}
         </div>

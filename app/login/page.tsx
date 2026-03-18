@@ -51,7 +51,7 @@ export default function LoginPage() {
           <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
             <span className="text-sm font-bold text-primary-foreground">PM</span>
           </div>
-          <CardTitle className="text-xl">ProcureMax</CardTitle>
+          <CardTitle className="text-xl">Valore</CardTitle>
           <CardDescription className="text-sm text-muted-foreground">
             Acesse sua conta para gerenciar cotações e fornecedores.
           </CardDescription>
