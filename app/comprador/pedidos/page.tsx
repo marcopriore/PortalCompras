@@ -1,10 +1,15 @@
 "use client"
 
-import { useState } from "react"
-import { DataTable } from "@/components/data-table/data-table"
-import { StatusBadge } from "@/components/ui/status-badge"
+import * as React from "react"
+import { useRouter } from "next/navigation"
+import { format } from "date-fns"
+import { ptBR } from "date-fns/locale"
+import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/lib/hooks/useUser"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -13,179 +18,172 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Search, Filter, MoreHorizontal, Eye, FileText, Truck, Package, Clock, CheckCircle2, AlertCircle } from "lucide-react"
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  ShoppingCart,
+  Clock,
+  Send,
+  CheckCircle2,
+  Search,
+  Filter,
+  Eye,
+} from "lucide-react"
 
-const pedidosData = [
-  {
-    id: "PO-2024-001",
-    fornecedor: "Tech Solutions Ltda",
-    dataEmissao: "2024-01-15",
-    valorTotal: 45780.00,
-    status: "entregue",
-    prazoEntrega: "2024-01-25",
-    itens: 12,
-  },
-  {
-    id: "PO-2024-002",
-    fornecedor: "Industrial Parts S.A.",
-    dataEmissao: "2024-01-18",
-    valorTotal: 89200.00,
-    status: "em_transito",
-    prazoEntrega: "2024-02-01",
-    itens: 8,
-  },
-  {
-    id: "PO-2024-003",
-    fornecedor: "Office Supplies Co.",
-    dataEmissao: "2024-01-20",
-    valorTotal: 12500.00,
-    status: "confirmado",
-    prazoEntrega: "2024-02-05",
-    itens: 25,
-  },
-  {
-    id: "PO-2024-004",
-    fornecedor: "Global Materials Inc.",
-    dataEmissao: "2024-01-22",
-    valorTotal: 156000.00,
-    status: "pendente",
-    prazoEntrega: "2024-02-10",
-    itens: 5,
-  },
-  {
-    id: "PO-2024-005",
-    fornecedor: "Safety Equipment Ltd",
-    dataEmissao: "2024-01-23",
-    valorTotal: 34800.00,
-    status: "em_transito",
-    prazoEntrega: "2024-02-03",
-    itens: 15,
-  },
-  {
-    id: "PO-2024-006",
-    fornecedor: "Chemical Solutions",
-    dataEmissao: "2024-01-25",
-    valorTotal: 67900.00,
-    status: "parcial",
-    prazoEntrega: "2024-02-08",
-    itens: 10,
-  },
-]
+type PurchaseOrderStatus = "processing" | "sent" | "error" | "completed"
 
-const statusConfig = {
-  pendente: { label: "Pendente", variant: "warning" as const },
-  confirmado: { label: "Confirmado", variant: "info" as const },
-  em_transito: { label: "Em Trânsito", variant: "info" as const },
-  parcial: { label: "Entrega Parcial", variant: "warning" as const },
-  entregue: { label: "Entregue", variant: "success" as const },
-  cancelado: { label: "Cancelado", variant: "destructive" as const },
+type PurchaseOrder = {
+  id: string
+  code: string
+  supplier_name: string
+  supplier_cnpj: string | null
+  total_price: number | null
+  delivery_days: number | null
+  payment_condition: string | null
+  quotation_code: string | null
+  status: PurchaseOrderStatus
+  erp_error_message: string | null
+  created_at: string
+  updated_at: string | null
+  purchase_order_items: { id: string }[]
 }
 
-type Pedido = typeof pedidosData[0]
+type Filters = {
+  search: string
+  status: "all" | PurchaseOrderStatus
+  dateFrom: string
+  dateTo: string
+}
 
-const columns = [
-  {
-    key: "id",
-    header: "Nº Pedido",
-    cell: (item: Pedido) => (
-      <span className="font-medium text-primary">{item.id}</span>
-    ),
-  },
-  {
-    key: "fornecedor",
-    header: "Fornecedor",
-  },
-  {
-    key: "dataEmissao",
-    header: "Data Emissão",
-    cell: (item: Pedido) => (
-      <span>{new Date(item.dataEmissao).toLocaleDateString("pt-BR")}</span>
-    ),
-  },
-  {
-    key: "itens",
-    header: "Itens",
-    cell: (item: Pedido) => (
-      <span className="text-muted-foreground">{item.itens} itens</span>
-    ),
-  },
-  {
-    key: "valorTotal",
-    header: "Valor Total",
-    cell: (item: Pedido) => (
-      <span className="font-semibold">
-        {item.valorTotal.toLocaleString("pt-BR", {
-          style: "currency",
-          currency: "BRL",
-        })}
-      </span>
-    ),
-  },
-  {
-    key: "prazoEntrega",
-    header: "Prazo Entrega",
-    cell: (item: Pedido) => (
-      <span>{new Date(item.prazoEntrega).toLocaleDateString("pt-BR")}</span>
-    ),
-  },
-  {
-    key: "status",
-    header: "Status",
-    cell: (item: Pedido) => {
-      const config = statusConfig[item.status as keyof typeof statusConfig]
-      return <StatusBadge variant={config.variant}>{config.label}</StatusBadge>
-    },
-  },
-]
+const money = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+})
 
-const renderActions = (item: Pedido) => (
-  <DropdownMenu>
-    <DropdownMenuTrigger asChild>
-      <Button variant="ghost" size="icon" className="h-8 w-8">
-        <MoreHorizontal className="h-4 w-4" />
-      </Button>
-    </DropdownMenuTrigger>
-    <DropdownMenuContent align="end">
-      <DropdownMenuItem>
-        <Eye className="mr-2 h-4 w-4" />
-        Ver Detalhes
-      </DropdownMenuItem>
-      <DropdownMenuItem>
-        <FileText className="mr-2 h-4 w-4" />
-        Gerar PDF
-      </DropdownMenuItem>
-      <DropdownMenuItem>
-        <Truck className="mr-2 h-4 w-4" />
-        Rastrear Entrega
-      </DropdownMenuItem>
-    </DropdownMenuContent>
-  </DropdownMenu>
-)
+function getStatusMeta(status: PurchaseOrderStatus): { label: string; className: string } {
+  if (status === "processing") {
+    return {
+      label: "Em Processamento",
+      className: "bg-yellow-100 text-yellow-800",
+    }
+  }
+  if (status === "sent") {
+    return {
+      label: "Enviado ao ERP",
+      className: "bg-blue-100 text-blue-800",
+    }
+  }
+  if (status === "error") {
+    return {
+      label: "Erro no ERP",
+      className: "bg-red-100 text-red-800",
+    }
+  }
+  return {
+    label: "Concluído",
+    className: "bg-green-100 text-green-800",
+  }
+}
 
 export default function PedidosPage() {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("todos")
+  const router = useRouter()
+  const { companyId } = useUser()
 
-  const filteredData = pedidosData.filter((pedido) => {
-    const matchesSearch =
-      pedido.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      pedido.fornecedor.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === "todos" || pedido.status === statusFilter
-    return matchesSearch && matchesStatus
+  const [orders, setOrders] = React.useState<PurchaseOrder[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [filters, setFilters] = React.useState<Filters>({
+    search: "",
+    status: "all",
+    dateFrom: "",
+    dateTo: "",
   })
 
-  const metrics = {
-    total: pedidosData.length,
-    pendentes: pedidosData.filter((p) => p.status === "pendente").length,
-    emTransito: pedidosData.filter((p) => p.status === "em_transito").length,
-    entregues: pedidosData.filter((p) => p.status === "entregue").length,
+  React.useEffect(() => {
+    if (!companyId) return
+    const supabase = createClient()
+    let alive = true
+
+    const run = async () => {
+      setLoading(true)
+      const { data } = await supabase
+        .from("purchase_orders")
+        .select("id, code, supplier_name, supplier_cnpj, total_price, delivery_days, payment_condition, quotation_code, status, erp_error_message, created_at, updated_at, purchase_order_items(id)")
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false })
+
+      if (!alive) return
+      setOrders(((data as unknown) as PurchaseOrder[]) ?? [])
+      setLoading(false)
+    }
+
+    run()
+    return () => {
+      alive = false
+    }
+  }, [companyId])
+
+  const handleFilterChange =
+    (field: keyof Filters) =>
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setFilters((prev) => ({ ...prev, [field]: e.target.value }))
+    }
+
+  const handleStatusChange = (value: string) => {
+    setFilters((prev) => ({ ...prev, status: value as Filters["status"] }))
   }
+
+  const clearFilters = () => {
+    setFilters({
+      search: "",
+      status: "all",
+      dateFrom: "",
+      dateTo: "",
+    })
+  }
+
+  const filteredOrders = React.useMemo(() => {
+    return orders.filter((order) => {
+      const search = filters.search.trim().toLowerCase()
+      const matchesSearch =
+        !search ||
+        order.code.toLowerCase().includes(search) ||
+        order.supplier_name.toLowerCase().includes(search)
+
+      const matchesStatus =
+        filters.status === "all" || order.status === filters.status
+
+      let matchesDate = true
+      if (filters.dateFrom) {
+        matchesDate =
+          matchesDate && order.created_at >= `${filters.dateFrom}T00:00:00.000Z`
+      }
+      if (filters.dateTo) {
+        matchesDate =
+          matchesDate && order.created_at <= `${filters.dateTo}T23:59:59.999Z`
+      }
+
+      return matchesSearch && matchesStatus && matchesDate
+    })
+  }, [orders, filters])
+
+  const metrics = React.useMemo(() => {
+    const total = orders.length
+    const processing = orders.filter((o) => o.status === "processing").length
+    const sent = orders.filter((o) => o.status === "sent").length
+    const completed = orders.filter((o) => o.status === "completed").length
+    return { total, processing, sent, completed }
+  }, [orders])
+
+  const hasActiveFilters =
+    filters.search.trim() ||
+    filters.status !== "all" ||
+    filters.dateFrom ||
+    filters.dateTo
 
   return (
     <div className="flex flex-col gap-6">
@@ -202,7 +200,7 @@ export default function PedidosPage() {
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Total de Pedidos
             </CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
+            <ShoppingCart className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{metrics.total}</div>
@@ -211,71 +209,218 @@ export default function PedidosPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Pendentes
+              Em Processamento
             </CardTitle>
-            <Clock className="h-4 w-4 text-warning" />
+            <Clock className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-warning">{metrics.pendentes}</div>
+            <div className="text-2xl font-bold">{metrics.processing}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Em Trânsito
+              Enviados ao ERP
             </CardTitle>
-            <Truck className="h-4 w-4 text-primary" />
+            <Send className="h-4 w-4 text-indigo-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-primary">{metrics.emTransito}</div>
+            <div className="text-2xl font-bold">{metrics.sent}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Entregues
+              Concluídos
             </CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-success" />
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-success">{metrics.entregues}</div>
+            <div className="text-2xl font-bold">{metrics.completed}</div>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
+      <Card className="bg-muted/40 border border-border rounded-xl">
         <CardHeader>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle>Lista de Pedidos</CardTitle>
-            <div className="flex flex-col gap-2 sm:flex-row">
+          <CardTitle className="text-base">Filtros</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="search">Buscar</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Buscar pedido..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 w-full sm:w-64"
+                  id="search"
+                  placeholder="Buscar por nº do pedido ou fornecedor"
+                  value={filters.search}
+                  onChange={handleFilterChange("search")}
+                  className="pl-9"
                 />
               </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-40">
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select value={filters.status} onValueChange={handleStatusChange}>
+                <SelectTrigger id="status">
                   <Filter className="mr-2 h-4 w-4" />
-                  <SelectValue placeholder="Status" />
+                  <SelectValue placeholder="Todos os Status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="todos">Todos</SelectItem>
-                  <SelectItem value="pendente">Pendente</SelectItem>
-                  <SelectItem value="confirmado">Confirmado</SelectItem>
-                  <SelectItem value="em_transito">Em Trânsito</SelectItem>
-                  <SelectItem value="parcial">Entrega Parcial</SelectItem>
-                  <SelectItem value="entregue">Entregue</SelectItem>
+                  <SelectItem value="all">Todos os Status</SelectItem>
+                  <SelectItem value="processing">Em Processamento</SelectItem>
+                  <SelectItem value="sent">Enviado ao ERP</SelectItem>
+                  <SelectItem value="error">Erro no ERP</SelectItem>
+                  <SelectItem value="completed">Concluído</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2 md:col-span-1">
+              <div className="flex gap-2">
+                <div className="space-y-2 flex-1">
+                  <Label htmlFor="dateFrom">Data De</Label>
+                  <Input
+                    id="dateFrom"
+                    type="date"
+                    value={filters.dateFrom}
+                    onChange={handleFilterChange("dateFrom")}
+                  />
+                </div>
+                <div className="space-y-2 flex-1">
+                  <Label htmlFor="dateTo">Data Até</Label>
+                  <Input
+                    id="dateTo"
+                    type="date"
+                    value={filters.dateTo}
+                    onChange={handleFilterChange("dateTo")}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+          {hasActiveFilters && (
+            <div className="mt-4 flex justify-end">
+              <Button variant="ghost" size="sm" onClick={clearFilters}>
+                Limpar filtros
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Lista de Pedidos</CardTitle>
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span>
+              {filteredOrders.length} resultado
+              {filteredOrders.length === 1 ? "" : "s"}
+            </span>
           </div>
         </CardHeader>
         <CardContent>
-          <DataTable columns={columns} data={filteredData} actions={renderActions} />
+          {filteredOrders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <ShoppingCart className="h-10 w-10 text-muted-foreground" />
+              <p className="text-sm font-medium text-foreground">Nenhum pedido encontrado.</p>
+              <p className="text-xs text-muted-foreground">
+                Os pedidos são criados ao finalizar uma cotação.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nº Pedido</TableHead>
+                    <TableHead>Fornecedor</TableHead>
+                    <TableHead>Data Emissão</TableHead>
+                    <TableHead>Itens</TableHead>
+                    <TableHead>Valor Total</TableHead>
+                    <TableHead>Prazo Entrega</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredOrders.map((order) => {
+                    const statusMeta = getStatusMeta(order.status)
+                    const itemsCount = order.purchase_order_items?.length ?? 0
+                    const created = order.created_at
+                      ? format(new Date(order.created_at), "dd/MM/yyyy", {
+                          locale: ptBR,
+                        })
+                      : "—"
+                    const prazo =
+                      order.delivery_days != null ? `${order.delivery_days} dias` : "—"
+
+                    return (
+                      <React.Fragment key={order.id}>
+                        <TableRow>
+                          <TableCell>
+                            <button
+                              type="button"
+                              className="font-mono text-sm text-primary underline-offset-2 hover:underline"
+                              onClick={() =>
+                                router.push(`/comprador/pedidos/${order.id}`)
+                              }
+                            >
+                              {order.code}
+                            </button>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{order.supplier_name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {order.supplier_cnpj ?? "—"}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>{created}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {itemsCount} itens
+                          </TableCell>
+                          <TableCell className="font-semibold">
+                            {money.format(order.total_price ?? 0)}
+                          </TableCell>
+                          <TableCell>{prazo}</TableCell>
+                          <TableCell>
+                            <span
+                              className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusMeta.className}`}
+                            >
+                              {statusMeta.label}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                router.push(`/comprador/pedidos/${order.id}`)
+                              }
+                            >
+                              <Eye className="mr-2 h-4 w-4" />
+                              Ver
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                        {order.status === "error" && order.erp_error_message && (
+                          <TableRow>
+                            <TableCell colSpan={8}>
+                              <div className="mt-1 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                                {order.erp_error_message}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
