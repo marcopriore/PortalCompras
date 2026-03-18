@@ -1,172 +1,368 @@
 "use client"
 
-import { useState } from "react"
-import { Plus, Eye, Edit, MoreHorizontal, CheckCircle, XCircle } from "lucide-react"
+import * as React from "react"
+import { useRouter } from "next/navigation"
+import { format } from "date-fns"
+import { ptBR } from "date-fns/locale"
+
+import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
+
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { DataTable, Column } from "@/components/data-table/data-table"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { RequisitionForm } from "@/components/forms/requisition-form"
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 
-interface Requisition {
+import { ClipboardList, Clock, CheckCircle2, FileText, Search, Filter, Eye, Plus } from "lucide-react"
+
+type Priority = "normal" | "urgent" | "critical"
+type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
+
+type RequisitionItemRel = { id: string }
+
+type Requisition = {
   id: string
-  titulo: string
-  solicitante: string
-  departamento: string
-  status: "pendente" | "aprovado" | "rejeitado" | "em_andamento"
-  valor: number
-  dataCriacao: string
-  prioridade: "baixa" | "media" | "alta"
+  code: string
+  title: string
+  requester_name: string | null
+  cost_center: string | null
+  needed_by: string | null
+  priority: Priority
+  status: RequisitionStatus
+  created_at: string
+  requisition_items: RequisitionItemRel[]
 }
 
-const statusConfig = {
-  pendente: { label: "Pendente", variant: "outline" as const },
-  aprovado: { label: "Aprovado", variant: "default" as const },
-  rejeitado: { label: "Rejeitado", variant: "destructive" as const },
-  em_andamento: { label: "Em Andamento", variant: "secondary" as const },
+export function getStatusMeta(status: RequisitionStatus): { label: string; className: string } {
+  switch (status) {
+    case "pending":
+      return { label: "Aguardando Aprovação", className: "bg-yellow-100 text-yellow-800" }
+    case "approved":
+      return { label: "Aprovado", className: "bg-green-100 text-green-800" }
+    case "rejected":
+      return { label: "Rejeitado", className: "bg-red-100 text-red-800" }
+    case "in_quotation":
+      return { label: "Em Cotação", className: "bg-blue-100 text-blue-800" }
+    case "completed":
+      return { label: "Concluído", className: "bg-gray-100 text-gray-700" }
+  }
 }
 
-const prioridadeConfig = {
-  baixa: { label: "Baixa", className: "bg-muted text-muted-foreground" },
-  media: { label: "Média", className: "bg-warning/15 text-warning-foreground" },
-  alta: { label: "Alta", className: "bg-destructive/15 text-destructive" },
+export function getPriorityMeta(priority: Priority): { label: string; className: string } {
+  switch (priority) {
+    case "normal":
+      return { label: "Normal", className: "bg-gray-100 text-gray-700" }
+    case "urgent":
+      return { label: "Urgente", className: "bg-orange-100 text-orange-800" }
+    case "critical":
+      return { label: "Crítica", className: "bg-red-100 text-red-800" }
+  }
 }
 
-const mockRequisitions: Requisition[] = [
-  { id: "REQ-001", titulo: "Computadores para TI", solicitante: "Ana Costa", departamento: "Tecnologia", status: "pendente", valor: 45000, dataCriacao: "13/03/2026", prioridade: "alta" },
-  { id: "REQ-002", titulo: "Material de escritório", solicitante: "Carlos Lima", departamento: "Administrativo", status: "aprovado", valor: 2500, dataCriacao: "12/03/2026", prioridade: "baixa" },
-  { id: "REQ-003", titulo: "Móveis para sala de reunião", solicitante: "Maria Santos", departamento: "Facilities", status: "em_andamento", valor: 18000, dataCriacao: "11/03/2026", prioridade: "media" },
-  { id: "REQ-004", titulo: "Licenças de software", solicitante: "Pedro Oliveira", departamento: "Tecnologia", status: "aprovado", valor: 32000, dataCriacao: "10/03/2026", prioridade: "alta" },
-  { id: "REQ-005", titulo: "Equipamentos de segurança", solicitante: "Fernanda Rocha", departamento: "Segurança", status: "rejeitado", valor: 8500, dataCriacao: "09/03/2026", prioridade: "media" },
-  { id: "REQ-006", titulo: "Uniformes funcionários", solicitante: "José Silva", departamento: "RH", status: "pendente", valor: 12000, dataCriacao: "08/03/2026", prioridade: "baixa" },
-  { id: "REQ-007", titulo: "Ferramentas de manutenção", solicitante: "Roberto Alves", departamento: "Manutenção", status: "aprovado", valor: 5600, dataCriacao: "07/03/2026", prioridade: "media" },
-  { id: "REQ-008", titulo: "Ar condicionado", solicitante: "Lucia Mendes", departamento: "Facilities", status: "pendente", valor: 28000, dataCriacao: "06/03/2026", prioridade: "alta" },
-]
+function formatDateBR(iso: string | null): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return "—"
+  return format(d, "dd/MM/yyyy", { locale: ptBR })
+}
 
 export default function RequisicoesPage() {
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const router = useRouter()
+  const { companyId } = useUser()
+  const { hasPermission } = usePermissions()
 
-  const columns: Column<Requisition>[] = [
-    { key: "id", header: "ID", className: "font-medium" },
-    { key: "titulo", header: "Título" },
-    { key: "solicitante", header: "Solicitante" },
-    { key: "departamento", header: "Departamento" },
-    {
-      key: "status",
-      header: "Status",
-      cell: (item) => (
-        <Badge variant={statusConfig[item.status].variant}>
-          {statusConfig[item.status].label}
-        </Badge>
-      ),
-    },
-    {
-      key: "prioridade",
-      header: "Prioridade",
-      cell: (item) => (
-        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${prioridadeConfig[item.prioridade].className}`}>
-          {prioridadeConfig[item.prioridade].label}
-        </span>
-      ),
-    },
-    {
-      key: "valor",
-      header: "Valor",
-      cell: (item) => `R$ ${item.valor.toLocaleString("pt-BR")}`,
-      className: "text-right",
-    },
-    { key: "dataCriacao", header: "Data" },
-  ]
+  const [requisitions, setRequisitions] = React.useState<Requisition[]>([])
+  const [loading, setLoading] = React.useState(true)
 
-  const filterOptions = [
-    { label: "Pendente", value: "pendente" },
-    { label: "Aprovado", value: "aprovado" },
-    { label: "Rejeitado", value: "rejeitado" },
-    { label: "Em Andamento", value: "em_andamento" },
-  ]
+  const [search, setSearch] = React.useState("")
+  const [status, setStatus] = React.useState<"all" | RequisitionStatus>("all")
+  const [priority, setPriority] = React.useState<"all" | Priority>("all")
+  const [dateFrom, setDateFrom] = React.useState<string>("")
+  const [dateTo, setDateTo] = React.useState<string>("")
 
-  const actions = (item: Requisition) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon">
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem>
-          <Eye className="mr-2 h-4 w-4" />
-          Ver Detalhes
-        </DropdownMenuItem>
-        <DropdownMenuItem>
-          <Edit className="mr-2 h-4 w-4" />
-          Editar
-        </DropdownMenuItem>
-        {item.status === "pendente" && (
-          <>
-            <DropdownMenuItem className="text-success">
-              <CheckCircle className="mr-2 h-4 w-4" />
-              Aprovar
-            </DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">
-              <XCircle className="mr-2 h-4 w-4" />
-              Rejeitar
-            </DropdownMenuItem>
-          </>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
+  React.useEffect(() => {
+    if (!companyId) return
+    const supabase = createClient()
+
+    const run = async () => {
+      setLoading(true)
+      const { data } = await supabase
+        .from("requisitions")
+        .select("*, requisition_items(id)")
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: false })
+
+      setRequisitions(((data ?? []) as unknown) as Requisition[])
+      setLoading(false)
+    }
+
+    run()
+  }, [companyId])
+
+  const hasActiveFilters =
+    !!search.trim() || status !== "all" || priority !== "all" || !!dateFrom || !!dateTo
+
+  const filtered = React.useMemo(() => {
+    const q = search.trim().toLowerCase()
+
+    const fromTs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null
+    const toTs = dateTo ? new Date(`${dateTo}T23:59:59`).getTime() : null
+
+    return requisitions.filter((r) => {
+      const matchSearch =
+        !q || r.title.toLowerCase().includes(q) || r.code.toLowerCase().includes(q)
+
+      const matchStatus = status === "all" || r.status === status
+      const matchPriority = priority === "all" || r.priority === priority
+
+      const createdTs = new Date(r.created_at).getTime()
+      const matchFrom = fromTs == null || createdTs >= fromTs
+      const matchTo = toTs == null || createdTs <= toTs
+
+      return matchSearch && matchStatus && matchPriority && matchFrom && matchTo
+    })
+  }, [requisitions, search, status, priority, dateFrom, dateTo])
+
+  const metrics = React.useMemo(() => {
+    return {
+      total: requisitions.length,
+      pending: requisitions.filter((r) => r.status === "pending").length,
+      approved: requisitions.filter((r) => r.status === "approved").length,
+      inQuotation: requisitions.filter((r) => r.status === "in_quotation").length,
+    }
+  }, [requisitions])
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Requisições</h1>
           <p className="text-muted-foreground">
             Gerencie as requisições de compra da empresa
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Nova Requisição
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Nova Requisição</DialogTitle>
-              <DialogDescription>
-                Preencha os dados para criar uma nova requisição de compra
-              </DialogDescription>
-            </DialogHeader>
-            <RequisitionForm onSuccess={() => setIsDialogOpen(false)} />
-          </DialogContent>
-        </Dialog>
+
+        <Button
+          onClick={() => router.push("/comprador/requisicoes/nova")}
+          disabled={!hasPermission("requisition.create")}
+          title={!hasPermission("requisition.create") ? "Sem permissão" : undefined}
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          + Nova Requisição
+        </Button>
       </div>
 
-      <DataTable
-        data={mockRequisitions}
-        columns={columns}
-        searchPlaceholder="Buscar requisições..."
-        searchKey="titulo"
-        filterOptions={filterOptions}
-        filterKey="status"
-        actions={actions}
-      />
+      <Card className="bg-muted/40 border border-border rounded-xl p-4">
+        <CardContent className="p-0">
+          <div className="flex flex-wrap gap-4">
+            <div className="flex flex-col min-w-[220px]">
+              <p className="text-xs font-medium text-muted-foreground mb-1 block">Buscar</p>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por título ou código..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col w-[220px]">
+              <p className="text-xs font-medium text-muted-foreground mb-1 block">Status</p>
+              <Select value={status} onValueChange={(v) => setStatus(v as any)}>
+                <SelectTrigger>
+                  <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="pending">Aguardando Aprovação</SelectItem>
+                  <SelectItem value="approved">Aprovado</SelectItem>
+                  <SelectItem value="rejected">Rejeitado</SelectItem>
+                  <SelectItem value="in_quotation">Em Cotação</SelectItem>
+                  <SelectItem value="completed">Concluído</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col w-[220px]">
+              <p className="text-xs font-medium text-muted-foreground mb-1 block">Prioridade</p>
+              <Select value={priority} onValueChange={(v) => setPriority(v as any)}>
+                <SelectTrigger>
+                  <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+                  <SelectValue placeholder="Prioridade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="urgent">Urgente</SelectItem>
+                  <SelectItem value="critical">Crítica</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col w-[220px]">
+              <p className="text-xs font-medium text-muted-foreground mb-1 block">Data De</p>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            </div>
+            <div className="flex flex-col w-[220px]">
+              <p className="text-xs font-medium text-muted-foreground mb-1 block">Data Até</p>
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="flex justify-end mt-4">
+            {hasActiveFilters && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSearch("")
+                  setStatus("all")
+                  setPriority("all")
+                  setDateFrom("")
+                  setDateTo("")
+                }}
+              >
+                Limpar filtros
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total de Requisições</CardTitle>
+            <ClipboardList className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{metrics.total}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Aguardando Aprovação</CardTitle>
+            <Clock className="h-4 w-4 text-warning" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-warning">{metrics.pending}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Aprovadas</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-success" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-success">{metrics.approved}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Em Cotação</CardTitle>
+            <FileText className="h-4 w-4 text-indigo-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-indigo-500">{metrics.inQuotation}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">Lista de Requisições</CardTitle>
+          </div>
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span>{filtered.length} resultado(s)</span>
+          </div>
+        </CardHeader>
+
+        <CardContent>
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Carregando...</p>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+              <ClipboardList className="h-10 w-10 text-muted-foreground" />
+              <p className="text-sm font-medium text-foreground">Nenhuma requisição encontrada.</p>
+              <p className="text-xs text-muted-foreground">
+                {hasActiveFilters ? "Nenhuma requisição corresponde aos filtros atuais." : "Crie uma nova requisição ou aguarde importação do ERP."}
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Código</TableHead>
+                    <TableHead>Título</TableHead>
+                    <TableHead>Solicitante</TableHead>
+                    <TableHead>Centro de Custo</TableHead>
+                    <TableHead>Necessidade</TableHead>
+                    <TableHead className="text-center">Itens</TableHead>
+                    <TableHead>Prioridade</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((r) => {
+                    const s = getStatusMeta(r.status)
+                    const p = getPriorityMeta(r.priority)
+                    const itemsCount = r.requisition_items?.length ?? 0
+                    return (
+                      <TableRow key={r.id}>
+                        <TableCell>
+                          <button
+                            type="button"
+                            className="font-mono text-primary hover:underline underline-offset-2"
+                            onClick={() => router.push(`/comprador/requisicoes/${r.id}`)}
+                          >
+                            {r.code}
+                          </button>
+                        </TableCell>
+                        <TableCell className="font-medium">{r.title}</TableCell>
+                        <TableCell>{r.requester_name ?? "—"}</TableCell>
+                        <TableCell>{r.cost_center ?? "—"}</TableCell>
+                        <TableCell>{formatDateBR(r.needed_by)}</TableCell>
+                        <TableCell className="text-center text-muted-foreground">{itemsCount} itens</TableCell>
+                        <TableCell>
+                          <Badge className={p.className}>{p.label}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={s.className}>{s.label}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="outline" size="sm" onClick={() => router.push(`/comprador/requisicoes/${r.id}`)}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            Ver
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
+
