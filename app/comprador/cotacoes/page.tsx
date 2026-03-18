@@ -5,7 +5,6 @@ import Link from "next/link"
 import {
   Plus,
   Eye,
-  Users,
   BarChart2,
   MoreHorizontal,
   Search,
@@ -130,12 +129,6 @@ export default function CotacoesPage() {
             Ver Detalhes
           </Link>
         </DropdownMenuItem>
-        {item.status === "waiting" && (
-          <DropdownMenuItem>
-            <Users className="mr-2 h-4 w-4" />
-            Convidar Fornecedores
-          </DropdownMenuItem>
-        )}
         {(item.status === "waiting" || item.status === "analysis") && (
           <DropdownMenuItem
             asChild
