@@ -4,6 +4,8 @@ import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
 import {
   LayoutDashboard,
   FileText,
@@ -60,6 +62,10 @@ export function Sidebar({ type }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const pathname = usePathname()
   const navItems = type === "comprador" ? buyerNavItems : supplierNavItems
+  const { userId } = useUser()
+  const { hasPermission } = usePermissions()
+  void userId
+  void hasPermission
 
   return (
     <TooltipProvider delayDuration={0}>

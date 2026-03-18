@@ -26,6 +26,8 @@ import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
+import { usePermissions } from "@/lib/hooks/usePermissions"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 type QuotationItem = {
   id: string
@@ -109,6 +111,8 @@ export default function EqualizacaoPage({
 }) {
   const router = useRouter()
   const { companyId, userId } = useUser()
+  const { hasFeature, hasPermission } = usePermissions()
+  void hasFeature
 
   // Next.js 16: params é Promise
   const { id } = React.use(params)
@@ -713,22 +717,51 @@ export default function EqualizacaoPage({
                       </Button>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant={buttonVariant as any}
-                        disabled={isSelected || selecting === proposal.id}
-                        className={cn(isSelected && "text-green-600 border-green-200")}
-                        onClick={() => handleSelectProposal(proposal.id)}
-                      >
-                        {isSelected ? (
-                          <>
-                            <Check className="mr-2 h-4 w-4" />
-                            Selecionado
-                          </>
-                        ) : (
-                          "Selecionar"
-                        )}
-                      </Button>
+                      {!hasPermission("quotation.equalize") ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Button
+                                size="sm"
+                                variant={buttonVariant as any}
+                                disabled
+                                title="Sem permissão"
+                                className={cn(isSelected && "text-green-600 border-green-200")}
+                                onClick={() => handleSelectProposal(proposal.id)}
+                              >
+                                {isSelected ? (
+                                  <>
+                                    <Check className="mr-2 h-4 w-4" />
+                                    Selecionado
+                                  </>
+                                ) : (
+                                  "Selecionar"
+                                )}
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Você não tem permissão para esta ação
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant={buttonVariant as any}
+                          disabled={isSelected || selecting === proposal.id}
+                          className={cn(isSelected && "text-green-600 border-green-200")}
+                          onClick={() => handleSelectProposal(proposal.id)}
+                        >
+                          {isSelected ? (
+                            <>
+                              <Check className="mr-2 h-4 w-4" />
+                              Selecionado
+                            </>
+                          ) : (
+                            "Selecionar"
+                          )}
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
 
@@ -872,9 +905,22 @@ export default function EqualizacaoPage({
 
       <div className="flex justify-end gap-2">
         {proposalSelecionada && (
-          <Button onClick={() => router.push(`/comprador/cotacoes/${id}/novo-pedido`)}>
-            Finalizar Cotação
-          </Button>
+          !hasPermission("order.create") ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button disabled title="Sem permissão">
+                    Finalizar Cotação
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button onClick={() => router.push(`/comprador/cotacoes/${id}/novo-pedido`)}>
+              Finalizar Cotação
+            </Button>
+          )
         )}
       </div>
     </div>

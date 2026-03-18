@@ -34,6 +34,7 @@ import {
   Package,
   Users,
   UserCheck,
+  Puzzle,
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 
@@ -316,6 +317,14 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
           >
             <Pencil className="w-4 h-4 mr-1.5" />
             Editar
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/admin/tenants/${id}/features`)}
+          >
+            <Puzzle className="w-4 h-4 mr-1.5" />
+            Funcionalidades
           </Button>
           <Button size="sm" onClick={handleImpersonate}>
             <LogIn className="w-4 h-4 mr-1.5" />

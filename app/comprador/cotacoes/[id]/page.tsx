@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
+import { usePermissions } from '@/lib/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -113,6 +115,8 @@ export default function QuotationDetailsPage({
   const router = useRouter()
   const { id } = use(params)
   const { companyId, userId } = useUser()
+  const { hasFeature, hasPermission } = usePermissions()
+  void hasFeature
 
   const [quotation, setQuotation] = useState<Quotation | null>(null)
   const [items, setItems] = useState<QuotationItem[]>([])
@@ -266,15 +270,35 @@ export default function QuotationDetailsPage({
 
         <div className="flex flex-wrap items-center gap-2 pl-11 sm:pl-0">
           {quotation && quotation.status !== 'cancelled' && quotation.status !== 'completed' && (
-            <Button
-              type="button"
-              variant="outline"
-              className="border-destructive text-destructive hover:bg-destructive/10"
-              onClick={() => setCancelDialogOpen(true)}
-              disabled={updatingStatus !== null}
-            >
-              Cancelar Cotação
-            </Button>
+            !hasPermission('quotation.cancel') ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-destructive text-destructive hover:bg-destructive/10"
+                      onClick={() => setCancelDialogOpen(true)}
+                      disabled
+                      title="Sem permissão"
+                    >
+                      Cancelar Cotação
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
+              </Tooltip>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                className="border-destructive text-destructive hover:bg-destructive/10"
+                onClick={() => setCancelDialogOpen(true)}
+                disabled={updatingStatus !== null}
+              >
+                Cancelar Cotação
+              </Button>
+            )
           )}
           {quotation && quotation.status === 'draft' && (
             <>

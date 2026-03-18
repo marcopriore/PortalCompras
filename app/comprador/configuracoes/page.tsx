@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
@@ -144,6 +145,7 @@ function getAvatarColor(name: string): string {
 }
 
 export default function ConfiguracoesPage() {
+  const router = useRouter()
   const { companyId, userId, isSuperAdmin } = useUser()
   const [activeTab, setActiveTab] = React.useState<ActiveTab>("empresa")
 
@@ -551,6 +553,18 @@ export default function ConfiguracoesPage() {
         <p className="text-muted-foreground">
           Gerencie as configurações do sistema de compras
         </p>
+        {canManageCompany && (
+          <div className="mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push("/comprador/configuracoes/permissoes")}
+            >
+              <Shield className="mr-2 h-4 w-4" />
+              Perfis de Acesso
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Abas (mesmo padrão visual do detalhe do tenant) */}

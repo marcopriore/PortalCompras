@@ -25,6 +25,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 type QuotationSupplier = { supplier_name: string | null }
 type QuotationItem = {
@@ -76,6 +78,8 @@ export default function CotacoesPage() {
   const [loadingData, setLoadingData] = useState(true)
 
   const { companyId, loading: userLoading } = useUser()
+  const { hasFeature, hasPermission } = usePermissions()
+  void hasFeature
 
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -133,7 +137,11 @@ export default function CotacoesPage() {
           </DropdownMenuItem>
         )}
         {(item.status === "waiting" || item.status === "analysis") && (
-          <DropdownMenuItem asChild>
+          <DropdownMenuItem
+            asChild
+            disabled={!hasPermission("quotation.equalize")}
+            title={!hasPermission("quotation.equalize") ? "Sem permissão" : undefined}
+          >
             <Link href={`/comprador/cotacoes/${item.id}/equalizacao`}>
               <BarChart2 className="mr-2 h-4 w-4" />
               Equalizar Propostas
@@ -329,12 +337,33 @@ export default function CotacoesPage() {
             Gerencie suas solicitações de cotação
           </p>
         </div>
-        <Button asChild>
-          <Link href="/comprador/cotacoes/nova">
-            <Plus className="mr-2 h-4 w-4" />
-            Nova Cotação
-          </Link>
-        </Button>
+        {!hasPermission("quotation.create") ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button
+                  asChild
+                  disabled
+                  title="Sem permissão"
+                  onClick={(e) => e.preventDefault()}
+                >
+                  <Link href="/comprador/cotacoes/nova">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nova Cotação
+                  </Link>
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Button asChild>
+            <Link href="/comprador/cotacoes/nova">
+              <Plus className="mr-2 h-4 w-4" />
+              Nova Cotação
+            </Link>
+          </Button>
+        )}
       </div>
 
       <div className="bg-muted/40 border border-border rounded-xl p-4 mb-4">
