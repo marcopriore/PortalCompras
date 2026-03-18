@@ -387,11 +387,7 @@ export default function RelatoriosPage() {
 
       const res = await query
       const rows =
-        (res.data as {
-          quotation_id: string
-          supplier_name: string | null
-          quotations?: { created_at: string } | null
-        }[]) ?? []
+        ((res.data as unknown) as { quotation_id: string; supplier_name: string | null }[]) ?? []
 
       const map = new Map<string, Set<string>>()
       rows.forEach((r) => {
