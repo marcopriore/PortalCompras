@@ -198,46 +198,64 @@ export default function AdminLogsPage() {
       <div className="bg-muted/40 border border-border rounded-xl p-4 mb-2">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
           {/* Busca por texto */}
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar descrição ou usuário..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8"
-            />
+          <div className="flex flex-col">
+            <p className="text-xs font-medium text-muted-foreground mb-1 block">
+              Buscar
+            </p>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar descrição ou usuário..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8"
+              />
+            </div>
           </div>
 
           {/* Filtro por tenant */}
-          <select
-            value={tenantFilter}
-            onChange={(e) => setTenantFilter(e.target.value)}
-            className="border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
-          >
-            <option value="all">Todos os Tenants</option>
-            {tenants.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-col">
+            <p className="text-xs font-medium text-muted-foreground mb-1 block">
+              Tenant
+            </p>
+            <select
+              value={tenantFilter}
+              onChange={(e) => setTenantFilter(e.target.value)}
+              className="border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
+            >
+              <option value="all">Todos os Tenants</option>
+              {tenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Filtro por tipo de evento */}
-          <select
-            value={eventTypeFilter}
-            onChange={(e) => setEventTypeFilter(e.target.value)}
-            className="border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
-          >
-            <option value="all">Todos os Eventos</option>
-            {eventTypes.map((e) => (
-              <option key={e} value={e}>
-                {getEventMeta(e).label}
-              </option>
-            ))}
-          </select>
+          <div className="flex flex-col">
+            <p className="text-xs font-medium text-muted-foreground mb-1 block">
+              Tipo de Evento
+            </p>
+            <select
+              value={eventTypeFilter}
+              onChange={(e) => setEventTypeFilter(e.target.value)}
+              className="border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
+            >
+              <option value="all">Todos os Eventos</option>
+              {eventTypes.map((e) => (
+                <option key={e} value={e}>
+                  {getEventMeta(e).label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           {/* Data de */}
-          <div>
+          <div className="flex flex-col">
+            <p className="text-xs font-medium text-muted-foreground mb-1 block">
+              De
+            </p>
             <input
               type="date"
               value={dateFrom}
@@ -247,7 +265,10 @@ export default function AdminLogsPage() {
           </div>
 
           {/* Data até */}
-          <div>
+          <div className="flex flex-col">
+            <p className="text-xs font-medium text-muted-foreground mb-1 block">
+              Até
+            </p>
             <input
               type="date"
               value={dateTo}

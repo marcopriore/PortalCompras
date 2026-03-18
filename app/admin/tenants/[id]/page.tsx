@@ -394,26 +394,31 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
           <div className="bg-card border border-border rounded-xl p-6">
             <div className="flex items-center justify-between mb-4 gap-2">
               <h2 className="font-semibold text-foreground">Métricas de Uso</h2>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                {(['7d', '30d', '6m', 'custom'] as PeriodFilter[]).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setPeriod(p)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                      period === p
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {p === '7d'
-                      ? '7 dias'
-                      : p === '30d'
-                      ? '30 dias'
-                      : p === '6m'
-                      ? '6 meses'
-                      : 'Personalizado'}
-                  </button>
-                ))}
+              <div className="flex flex-col items-end">
+                <p className="text-xs font-medium text-muted-foreground mb-1 block">
+                  Período
+                </p>
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {(['7d', '30d', '6m', 'custom'] as PeriodFilter[]).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPeriod(p)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                        period === p
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {p === '7d'
+                        ? '7 dias'
+                        : p === '30d'
+                        ? '30 dias'
+                        : p === '6m'
+                        ? '6 meses'
+                        : 'Personalizado'}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

@@ -178,44 +178,59 @@ export default function FornecedoresPage() {
 
       {/* Barra de filtros */}
       <div className="bg-muted/40 border border-border rounded-xl p-4 mb-4 flex flex-wrap gap-3">
-        <div className="relative w-full md:max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por código ou nome do fornecedor..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+        <div className="flex flex-col w-full md:max-w-sm">
+          <p className="text-xs font-medium text-muted-foreground mb-1 block">
+            Buscar
+          </p>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por código ou nome do fornecedor..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
         </div>
-        <Select
-          value={categoryFilter}
-          onValueChange={(value) => setCategoryFilter(value)}
-        >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Categoria" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todas as Categorias</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat} value={cat}>
-                {cat}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={statusFilter}
-          onValueChange={(value) => setStatusFilter(value as 'all' | SupplierStatus)}
-        >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos os Status</SelectItem>
-            <SelectItem value="active">Ativo</SelectItem>
-            <SelectItem value="inactive">Inativo</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex flex-col">
+          <p className="text-xs font-medium text-muted-foreground mb-1 block">
+            Categoria
+          </p>
+          <Select
+            value={categoryFilter}
+            onValueChange={(value) => setCategoryFilter(value)}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Categoria" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as Categorias</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat} value={cat}>
+                  {cat}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col">
+          <p className="text-xs font-medium text-muted-foreground mb-1 block">
+            Status
+          </p>
+          <Select
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value as 'all' | SupplierStatus)}
+          >
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os Status</SelectItem>
+              <SelectItem value="active">Ativo</SelectItem>
+              <SelectItem value="inactive">Inativo</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Estados especiais e tabela */}

@@ -126,42 +126,56 @@ export default function ItensPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3">
-        <Input
-          placeholder="Buscar por código ou descrição..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full md:max-w-xs"
-        />
-        <Select
-          value={statusFilter}
-          onValueChange={(value) => setStatusFilter(value as 'all' | 'active' | 'inactive')}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos os status</SelectItem>
-            <SelectItem value="active">Ativo</SelectItem>
-            <SelectItem value="inactive">Inativo</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={groupFilter}
-          onValueChange={(value) => setGroupFilter(value)}
-        >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Grupo de mercadoria" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Todos os grupos</SelectItem>
-            {commodityGroups.map((group) => (
-              <SelectItem key={group} value={group}>
-                {group}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-3">
+        <div className="flex flex-col w-full md:max-w-xs">
+          <p className="text-xs font-medium text-muted-foreground mb-1 block">
+            Buscar
+          </p>
+          <Input
+            placeholder="Buscar por código ou descrição..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full md:max-w-xs"
+          />
+        </div>
+        <div className="flex flex-col">
+          <p className="text-xs font-medium text-muted-foreground mb-1 block">
+            Status
+          </p>
+          <Select
+            value={statusFilter}
+            onValueChange={(value) =>
+              setStatusFilter(value as 'all' | 'active' | 'inactive')
+            }
+          >
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os status</SelectItem>
+              <SelectItem value="active">Ativo</SelectItem>
+              <SelectItem value="inactive">Inativo</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col">
+          <p className="text-xs font-medium text-muted-foreground mb-1 block">
+            Grupo de mercadoria
+          </p>
+          <Select value={groupFilter} onValueChange={(value) => setGroupFilter(value)}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Grupo de mercadoria" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os grupos</SelectItem>
+              {commodityGroups.map((group) => (
+                <SelectItem key={group} value={group}>
+                  {group}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {userLoading || loading ? (

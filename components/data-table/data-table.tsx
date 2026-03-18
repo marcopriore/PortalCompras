@@ -44,6 +44,7 @@ interface DataTableProps<T> {
   onRowClick?: (item: T) => void
   actions?: (item: T) => React.ReactNode
   pageSize?: number
+  toolbarRight?: React.ReactNode
 }
 
 export function DataTable<T extends { id: string | number }>({
@@ -56,6 +57,7 @@ export function DataTable<T extends { id: string | number }>({
   onRowClick,
   actions,
   pageSize = 10,
+  toolbarRight,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<string>("all")
@@ -123,8 +125,11 @@ export function DataTable<T extends { id: string | number }>({
             </Select>
           )}
         </div>
-        <div className="text-sm text-muted-foreground">
-          {filteredData.length} resultado(s)
+        <div className="flex items-center gap-2">
+          <div className="text-sm text-muted-foreground">
+            {filteredData.length} resultado(s)
+          </div>
+          {toolbarRight}
         </div>
       </div>
 
