@@ -13,13 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import {
   Table,
   TableBody,
@@ -142,11 +136,11 @@ export default function AprovacoesPage() {
 
   const [activeTab, setActiveTab] = React.useState("requisitions")
 
-  const [reqStatus, setReqStatus] = React.useState<"all" | ApprovalStatus>("all")
+  const [reqStatus, setReqStatus] = React.useState<string[]>([])
   const [reqSearch, setReqSearch] = React.useState("")
   const [reqPage, setReqPage] = React.useState(1)
 
-  const [orderStatus, setOrderStatus] = React.useState<"all" | ApprovalStatus>("all")
+  const [orderStatus, setOrderStatus] = React.useState<string[]>([])
   const [orderSearch, setOrderSearch] = React.useState("")
   const [orderPage, setOrderPage] = React.useState(1)
 
@@ -255,7 +249,7 @@ export default function AprovacoesPage() {
   const filteredRequisitions = React.useMemo(() => {
     const q = reqSearch.trim().toLowerCase()
     return requisitionRows.filter((row) => {
-      const matchStatus = reqStatus === "all" || row.request.status === reqStatus
+      const matchStatus = reqStatus.length === 0 || reqStatus.includes(row.request.status)
       const r = row.requisition
       const matchSearch =
         !q ||
@@ -268,7 +262,7 @@ export default function AprovacoesPage() {
   const filteredOrders = React.useMemo(() => {
     const q = orderSearch.trim().toLowerCase()
     return orderRows.filter((row) => {
-      const matchStatus = orderStatus === "all" || row.request.status === orderStatus
+      const matchStatus = orderStatus.length === 0 || orderStatus.includes(row.request.status)
       const o = row.order
       const matchSearch =
         !q ||
@@ -295,8 +289,8 @@ export default function AprovacoesPage() {
   const orderFrom = filteredOrders.length === 0 ? 0 : (orderPage - 1) * PAGE_SIZE + 1
   const orderTo = Math.min(orderPage * PAGE_SIZE, filteredOrders.length)
 
-  const hasReqFilters = reqStatus !== "all" || reqSearch.trim() !== ""
-  const hasOrderFilters = orderStatus !== "all" || orderSearch.trim() !== ""
+  const hasReqFilters = reqStatus.length > 0 || reqSearch.trim() !== ""
+  const hasOrderFilters = orderStatus.length > 0 || orderSearch.trim() !== ""
 
   const handleApprove = async (
     flow: "requisition" | "order",
@@ -338,7 +332,6 @@ export default function AprovacoesPage() {
       const isAllApproved = total > 0 && total === approved
 
       if (isAllApproved) {
-        console.log("[UPDATE REQ] entityId:", entityId, "isAllApproved:", isAllApproved)
         const table = flow === "requisition" ? "requisitions" : "purchase_orders"
         const { data: updatedRows, error: updateErr } = await supabase
           .from(table)
@@ -349,7 +342,6 @@ export default function AprovacoesPage() {
           })
           .eq("id", entityId)
           .select("id")
-        console.log("[UPDATE REQ] resultado:", JSON.stringify(updatedRows), JSON.stringify(updateErr))
         if (updateErr) {
           toast.error("Erro ao atualizar status. Tente novamente.")
           return
@@ -516,17 +508,17 @@ export default function AprovacoesPage() {
               <div className="flex flex-wrap gap-3 items-end">
                 <div className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Status</p>
-                  <Select value={reqStatus} onValueChange={(v) => setReqStatus(v as typeof reqStatus)}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      <SelectItem value="pending">Pendente</SelectItem>
-                      <SelectItem value="approved">Aprovado</SelectItem>
-                      <SelectItem value="rejected">Reprovado</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <MultiSelectFilter
+                    label="Status"
+                    options={[
+                      { value: "pending", label: "Pendente" },
+                      { value: "approved", label: "Aprovado" },
+                      { value: "rejected", label: "Reprovado" },
+                    ]}
+                    selected={reqStatus}
+                    onChange={setReqStatus}
+                    width="w-40"
+                  />
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Buscar</p>
@@ -549,7 +541,7 @@ export default function AprovacoesPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        setReqStatus("all")
+                        setReqStatus([])
                         setReqSearch("")
                         setReqPage(1)
                       }}
@@ -705,20 +697,17 @@ export default function AprovacoesPage() {
               <div className="flex flex-wrap gap-3 items-end">
                 <div className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Status</p>
-                  <Select
-                    value={orderStatus}
-                    onValueChange={(v) => setOrderStatus(v as typeof orderStatus)}
-                  >
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos</SelectItem>
-                      <SelectItem value="pending">Pendente</SelectItem>
-                      <SelectItem value="approved">Aprovado</SelectItem>
-                      <SelectItem value="rejected">Reprovado</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <MultiSelectFilter
+                    label="Status"
+                    options={[
+                      { value: "pending", label: "Pendente" },
+                      { value: "approved", label: "Aprovado" },
+                      { value: "rejected", label: "Reprovado" },
+                    ]}
+                    selected={orderStatus}
+                    onChange={setOrderStatus}
+                    width="w-40"
+                  />
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Buscar</p>
@@ -741,7 +730,7 @@ export default function AprovacoesPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        setOrderStatus("all")
+                        setOrderStatus([])
                         setOrderSearch("")
                         setOrderPage(1)
                       }}
@@ -897,17 +886,17 @@ export default function AprovacoesPage() {
                 <div className="flex flex-wrap gap-3 items-end">
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">Status</p>
-                    <Select value={reqStatus} onValueChange={(v) => setReqStatus(v as typeof reqStatus)}>
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        <SelectItem value="pending">Pendente</SelectItem>
-                        <SelectItem value="approved">Aprovado</SelectItem>
-                        <SelectItem value="rejected">Reprovado</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <MultiSelectFilter
+                      label="Status"
+                      options={[
+                        { value: "pending", label: "Pendente" },
+                        { value: "approved", label: "Aprovado" },
+                        { value: "rejected", label: "Reprovado" },
+                      ]}
+                      selected={reqStatus}
+                      onChange={setReqStatus}
+                      width="w-40"
+                    />
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">Buscar</p>
@@ -930,7 +919,7 @@ export default function AprovacoesPage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          setReqStatus("all")
+                          setReqStatus([])
                           setReqSearch("")
                           setReqPage(1)
                         }}
@@ -1086,20 +1075,17 @@ export default function AprovacoesPage() {
                 <div className="flex flex-wrap gap-3 items-end">
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">Status</p>
-                    <Select
-                      value={orderStatus}
-                      onValueChange={(v) => setOrderStatus(v as typeof orderStatus)}
-                    >
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        <SelectItem value="pending">Pendente</SelectItem>
-                        <SelectItem value="approved">Aprovado</SelectItem>
-                        <SelectItem value="rejected">Reprovado</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <MultiSelectFilter
+                      label="Status"
+                      options={[
+                        { value: "pending", label: "Pendente" },
+                        { value: "approved", label: "Aprovado" },
+                        { value: "rejected", label: "Reprovado" },
+                      ]}
+                      selected={orderStatus}
+                      onChange={setOrderStatus}
+                      width="w-40"
+                    />
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">Buscar</p>
@@ -1122,7 +1108,7 @@ export default function AprovacoesPage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          setOrderStatus("all")
+                          setOrderStatus([])
                           setOrderSearch("")
                           setOrderPage(1)
                         }}

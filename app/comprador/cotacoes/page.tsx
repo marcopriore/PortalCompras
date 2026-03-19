@@ -12,6 +12,7 @@ import {
   Package,
   Download,
 } from "lucide-react"
+import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -54,14 +55,6 @@ const statusConfig = {
   cancelled: { label: "Cancelada", variant: "destructive" as const },
 }
 
-const filterOptions = [
-  { label: "Rascunho", value: "draft" },
-  { label: "Aguardando Resposta", value: "waiting" },
-  { label: "Em Análise", value: "analysis" },
-  { label: "Concluída", value: "completed" },
-  { label: "Cancelada", value: "cancelled" },
-]
-
 function getStatusLabel(
   status: Quotation["status"],
 ): "Rascunho" | "Pendente" | "Em Análise" | "Concluída" | "Cancelada" {
@@ -81,7 +74,7 @@ export default function CotacoesPage() {
   void hasFeature
 
   const [search, setSearch] = useState("")
-  const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [supplierFilter, setSupplierFilter] = useState<string>("")
@@ -173,7 +166,7 @@ export default function CotacoesPage() {
 
   const hasActiveFilters =
     !!search ||
-    statusFilter !== "all" ||
+    statusFilter.length > 0 ||
     !!dateFrom ||
     !!dateTo ||
     !!supplierFilter ||
@@ -187,7 +180,7 @@ export default function CotacoesPage() {
         q.code.toLowerCase().includes(query) ||
         q.description.toLowerCase().includes(query)
 
-      const matchStatus = statusFilter === "all" || q.status === statusFilter
+      const matchStatus = statusFilter.length === 0 || statusFilter.includes(q.status)
 
       const matchDateFrom = !dateFrom || new Date(q.created_at) >= new Date(dateFrom)
       const matchDateTo =
@@ -222,7 +215,7 @@ export default function CotacoesPage() {
 
   const handleClearFilters = () => {
     setSearch("")
-    setStatusFilter("all")
+    setStatusFilter([])
     setDateFrom("")
     setDateTo("")
     setSupplierFilter("")
@@ -376,22 +369,23 @@ export default function CotacoesPage() {
             </div>
           </div>
 
-          <div className="flex flex-col w-[160px]">
+          <div className="flex flex-col">
             <p className="text-xs font-medium text-muted-foreground mb-1 block">
               Status
             </p>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground w-[160px]"
-            >
-              <option value="all">Todos os Status</option>
-              <option value="draft">Rascunho</option>
-              <option value="waiting">Pendente</option>
-              <option value="analysis">Em Análise</option>
-              <option value="completed">Concluída</option>
-              <option value="cancelled">Cancelada</option>
-            </select>
+            <MultiSelectFilter
+              label="Status"
+              options={[
+                { value: "draft", label: "Rascunho" },
+                { value: "waiting", label: "Aguardando" },
+                { value: "analysis", label: "Em Análise" },
+                { value: "completed", label: "Concluída" },
+                { value: "cancelled", label: "Cancelada" },
+              ]}
+              selected={statusFilter}
+              onChange={setStatusFilter}
+              width="w-44"
+            />
           </div>
 
           <div className="flex flex-col w-[140px]">

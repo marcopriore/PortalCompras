@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "@/components/ui/use-toast"
+import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import {
   Select,
   SelectContent,
@@ -133,7 +134,7 @@ function getMonthsBack(periodo: string): number {
 
 export default function RelatoriosPage() {
   const [periodo, setPeriodo] = useState("6m")
-  const [categoria, setCategoria] = useState("todas")
+  const [categoria, setCategoria] = useState<string[]>([])
 
   const { companyId } = useUser()
   const [quotations, setQuotations] = useState<Quotation[]>([])
@@ -463,19 +464,18 @@ export default function RelatoriosPage() {
               <SelectItem value="12m">Último ano</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={categoria} onValueChange={setCategoria}>
-            <SelectTrigger className="w-full sm:w-40">
-              <Filter className="mr-2 h-4 w-4" />
-              <SelectValue placeholder="Categoria" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todas">Todas</SelectItem>
-              <SelectItem value="tecnologia">Tecnologia</SelectItem>
-              <SelectItem value="industrial">Industrial</SelectItem>
-              <SelectItem value="escritorio">Escritório</SelectItem>
-              <SelectItem value="seguranca">Segurança</SelectItem>
-            </SelectContent>
-          </Select>
+          <MultiSelectFilter
+            label="Categoria"
+            options={[
+              { value: "tecnologia", label: "Tecnologia" },
+              { value: "industrial", label: "Industrial" },
+              { value: "escritorio", label: "Escritório" },
+              { value: "seguranca", label: "Segurança" },
+            ]}
+            selected={categoria}
+            onChange={setCategoria}
+            width="w-40"
+          />
         </div>
       </div>
 

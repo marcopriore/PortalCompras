@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import {
   Table,
   TableBody,
@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { ClipboardList, Clock, CheckCircle2, ChevronLeft, ChevronRight, FileText, Search, Filter, Eye, Plus } from "lucide-react"
+import { ClipboardList, Clock, CheckCircle2, ChevronLeft, ChevronRight, FileText, Search, Eye, Plus } from "lucide-react"
 
 type Priority = "normal" | "urgent" | "critical"
 type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
@@ -86,8 +86,8 @@ export default function RequisicoesPage() {
   const [loading, setLoading] = React.useState(true)
 
   const [search, setSearch] = React.useState("")
-  const [status, setStatus] = React.useState<"all" | RequisitionStatus>("all")
-  const [priority, setPriority] = React.useState<"all" | Priority>("all")
+  const [status, setStatus] = React.useState<string[]>([])
+  const [priority, setPriority] = React.useState<string[]>([])
   const [dateFrom, setDateFrom] = React.useState<string>("")
   const [dateTo, setDateTo] = React.useState<string>("")
   const [page, setPage] = React.useState(1)
@@ -116,7 +116,7 @@ export default function RequisicoesPage() {
   }, [companyId])
 
   const hasActiveFilters =
-    !!search.trim() || status !== "all" || priority !== "all" || !!dateFrom || !!dateTo
+    !!search.trim() || status.length > 0 || priority.length > 0 || !!dateFrom || !!dateTo
 
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -128,8 +128,8 @@ export default function RequisicoesPage() {
       const matchSearch =
         !q || r.title.toLowerCase().includes(q) || r.code.toLowerCase().includes(q)
 
-      const matchStatus = status === "all" || r.status === status
-      const matchPriority = priority === "all" || r.priority === priority
+      const matchStatus = status.length === 0 || status.includes(r.status)
+      const matchPriority = priority.length === 0 || priority.includes(r.priority)
 
       const createdTs = new Date(r.created_at).getTime()
       const matchFrom = fromTs == null || createdTs >= fromTs
@@ -193,38 +193,36 @@ export default function RequisicoesPage() {
               </div>
             </div>
 
-            <div className="flex flex-1 flex-col min-w-[180px]">
+            <div className="flex flex-col">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Status</p>
-              <Select value={status} onValueChange={(v) => setStatus(v as any)}>
-                <SelectTrigger className="w-full">
-                  <Filter className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  <SelectItem value="pending">Aguardando Aprovação</SelectItem>
-                  <SelectItem value="approved">Aprovado</SelectItem>
-                  <SelectItem value="rejected">Rejeitado</SelectItem>
-                  <SelectItem value="in_quotation">Em Cotação</SelectItem>
-                  <SelectItem value="completed">Concluído</SelectItem>
-                </SelectContent>
-              </Select>
+              <MultiSelectFilter
+                label="Status"
+                options={[
+                  { value: "pending", label: "Aguardando Aprovação" },
+                  { value: "approved", label: "Aprovado" },
+                  { value: "rejected", label: "Rejeitado" },
+                  { value: "in_quotation", label: "Em Cotação" },
+                  { value: "completed", label: "Concluído" },
+                ]}
+                selected={status}
+                onChange={setStatus}
+                width="w-44"
+              />
             </div>
 
-            <div className="flex flex-1 flex-col min-w-[160px]">
+            <div className="flex flex-col">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Prioridade</p>
-              <Select value={priority} onValueChange={(v) => setPriority(v as any)}>
-                <SelectTrigger className="w-full">
-                  <Filter className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <SelectValue placeholder="Prioridade" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="normal">Normal</SelectItem>
-                  <SelectItem value="urgent">Urgente</SelectItem>
-                  <SelectItem value="critical">Crítica</SelectItem>
-                </SelectContent>
-              </Select>
+              <MultiSelectFilter
+                label="Prioridade"
+                options={[
+                  { value: "normal", label: "Normal" },
+                  { value: "urgent", label: "Urgente" },
+                  { value: "critical", label: "Crítica" },
+                ]}
+                selected={priority}
+                onChange={setPriority}
+                width="w-40"
+              />
             </div>
 
             <div className="flex flex-col w-40 shrink-0">
@@ -245,8 +243,8 @@ export default function RequisicoesPage() {
                 size="sm"
                 onClick={() => {
                   setSearch("")
-                  setStatus("all")
-                  setPriority("all")
+                  setStatus([])
+                  setPriority([])
                   setDateFrom("")
                   setDateTo("")
                   setPage(1)

@@ -6,13 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import MultiSelectFilter from '@/components/ui/multi-select-filter'
 import {
   Dialog,
   DialogContent,
@@ -78,8 +72,8 @@ export default function FornecedoresPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState<'all' | string>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | SupplierStatus>('all')
+  const [categoryFilter, setCategoryFilter] = useState<string[]>([])
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
 
   useEffect(() => {
@@ -129,8 +123,8 @@ export default function FornecedoresPage() {
         s.code.toLowerCase().includes(search.toLowerCase()) ||
         s.name.toLowerCase().includes(search.toLowerCase())
 
-      const matchCategory = categoryFilter === 'all' || s.category === categoryFilter
-      const matchStatus = statusFilter === 'all' || s.status === statusFilter
+      const matchCategory = categoryFilter.length === 0 || (s.category != null && categoryFilter.includes(s.category))
+      const matchStatus = statusFilter.length === 0 || statusFilter.includes(s.status)
 
       return matchSearch && matchCategory && matchStatus
     })
@@ -196,40 +190,28 @@ export default function FornecedoresPage() {
           <p className="text-xs font-medium text-muted-foreground mb-1 block">
             Categoria
           </p>
-          <Select
-            value={categoryFilter}
-            onValueChange={(value) => setCategoryFilter(value)}
-          >
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Categoria" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as Categorias</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat} value={cat}>
-                  {cat}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <MultiSelectFilter
+            label="Categoria"
+            options={categories.map((c) => ({ value: c, label: c }))}
+            selected={categoryFilter}
+            onChange={setCategoryFilter}
+            width="w-44"
+          />
         </div>
         <div className="flex flex-col">
           <p className="text-xs font-medium text-muted-foreground mb-1 block">
             Status
           </p>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value as 'all' | SupplierStatus)}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os Status</SelectItem>
-              <SelectItem value="active">Ativo</SelectItem>
-              <SelectItem value="inactive">Inativo</SelectItem>
-            </SelectContent>
-          </Select>
+          <MultiSelectFilter
+            label="Status"
+            options={[
+              { value: "active", label: "Ativo" },
+              { value: "inactive", label: "Inativo" },
+            ]}
+            selected={statusFilter}
+            onChange={setStatusFilter}
+            width="w-40"
+          />
         </div>
       </div>
 

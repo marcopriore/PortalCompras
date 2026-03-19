@@ -7,13 +7,7 @@ import { useUser } from '@/lib/hooks/useUser'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import MultiSelectFilter from '@/components/ui/multi-select-filter'
 
 type Item = {
   id: string
@@ -35,8 +29,8 @@ export default function ItensPage() {
   const [loading, setLoading] = useState(true)
 
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
-  const [groupFilter, setGroupFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string[]>([])
+  const [groupFilter, setGroupFilter] = useState<string[]>([])
 
   const totalItems = items.length
   const activeItems = useMemo(
@@ -56,10 +50,10 @@ export default function ItensPage() {
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
-      if (statusFilter !== 'all' && item.status !== statusFilter) {
+      if (statusFilter.length > 0 && !statusFilter.includes(item.status)) {
         return false
       }
-      if (groupFilter !== 'all' && item.commodity_group !== groupFilter) {
+      if (groupFilter.length > 0 && (item.commodity_group == null || !groupFilter.includes(item.commodity_group))) {
         return false
       }
       if (!search.trim()) return true
@@ -142,39 +136,28 @@ export default function ItensPage() {
           <p className="text-xs font-medium text-muted-foreground mb-1 block">
             Status
           </p>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) =>
-              setStatusFilter(value as 'all' | 'active' | 'inactive')
-            }
-          >
-            <SelectTrigger className="w-[160px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os status</SelectItem>
-              <SelectItem value="active">Ativo</SelectItem>
-              <SelectItem value="inactive">Inativo</SelectItem>
-            </SelectContent>
-          </Select>
+          <MultiSelectFilter
+            label="Status"
+            options={[
+              { value: "active", label: "Ativo" },
+              { value: "inactive", label: "Inativo" },
+            ]}
+            selected={statusFilter}
+            onChange={setStatusFilter}
+            width="w-40"
+          />
         </div>
         <div className="flex flex-col">
           <p className="text-xs font-medium text-muted-foreground mb-1 block">
             Grupo de mercadoria
           </p>
-          <Select value={groupFilter} onValueChange={(value) => setGroupFilter(value)}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Grupo de mercadoria" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os grupos</SelectItem>
-              {commodityGroups.map((group) => (
-                <SelectItem key={group} value={group}>
-                  {group}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <MultiSelectFilter
+            label="Grupo"
+            options={commodityGroups.map((g) => ({ value: g, label: g }))}
+            selected={groupFilter}
+            onChange={setGroupFilter}
+            width="w-44"
+          />
         </div>
       </div>
 

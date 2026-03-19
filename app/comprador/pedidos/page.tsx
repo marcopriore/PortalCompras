@@ -10,13 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import {
   Table,
   TableBody,
@@ -31,7 +25,6 @@ import {
   Send,
   CheckCircle2,
   Search,
-  Filter,
   Eye,
 } from "lucide-react"
 
@@ -55,7 +48,7 @@ type PurchaseOrder = {
 
 type Filters = {
   search: string
-  status: "all" | PurchaseOrderStatus
+  status: string[]
   dateFrom: string
   dateTo: string
 }
@@ -98,7 +91,7 @@ export default function PedidosPage() {
   const [loading, setLoading] = React.useState(true)
   const [filters, setFilters] = React.useState<Filters>({
     search: "",
-    status: "all",
+    status: [],
     dateFrom: "",
     dateTo: "",
   })
@@ -133,14 +126,10 @@ export default function PedidosPage() {
       setFilters((prev) => ({ ...prev, [field]: e.target.value }))
     }
 
-  const handleStatusChange = (value: string) => {
-    setFilters((prev) => ({ ...prev, status: value as Filters["status"] }))
-  }
-
   const clearFilters = () => {
     setFilters({
       search: "",
-      status: "all",
+      status: [],
       dateFrom: "",
       dateTo: "",
     })
@@ -155,7 +144,7 @@ export default function PedidosPage() {
         order.supplier_name.toLowerCase().includes(search)
 
       const matchesStatus =
-        filters.status === "all" || order.status === filters.status
+        filters.status.length === 0 || filters.status.includes(order.status)
 
       let matchesDate = true
       if (filters.dateFrom) {
@@ -181,7 +170,7 @@ export default function PedidosPage() {
 
   const hasActiveFilters =
     filters.search.trim() ||
-    filters.status !== "all" ||
+    filters.status.length > 0 ||
     filters.dateFrom ||
     filters.dateTo
 
@@ -262,19 +251,18 @@ export default function PedidosPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
-              <Select value={filters.status} onValueChange={handleStatusChange}>
-                <SelectTrigger id="status">
-                  <Filter className="mr-2 h-4 w-4" />
-                  <SelectValue placeholder="Todos os Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os Status</SelectItem>
-                  <SelectItem value="processing">Em Processamento</SelectItem>
-                  <SelectItem value="sent">Enviado ao ERP</SelectItem>
-                  <SelectItem value="error">Erro no ERP</SelectItem>
-                  <SelectItem value="completed">Concluído</SelectItem>
-                </SelectContent>
-              </Select>
+              <MultiSelectFilter
+                label="Status"
+                options={[
+                  { value: "processing", label: "Processando" },
+                  { value: "sent", label: "Enviado" },
+                  { value: "error", label: "Erro" },
+                  { value: "completed", label: "Concluído" },
+                ]}
+                selected={filters.status}
+                onChange={(values) => setFilters((prev) => ({ ...prev, status: values }))}
+                width="w-44"
+              />
             </div>
             <div className="space-y-2 md:col-span-1">
               <div className="flex gap-2">
