@@ -166,9 +166,9 @@ export function RequisitionForm({ onSuccess }: RequisitionFormProps) {
 
               <FieldGroup>
                 <Field>
-                  <FieldLabel>Descrição</FieldLabel>
+                  <FieldLabel>Descrição Curta</FieldLabel>
                   <Input
-                    placeholder="Descrição do item"
+                    placeholder="Descrição curta do item"
                     value={item.descricao}
                     onChange={(e) => updateItem(item.id, "descricao", e.target.value)}
                     required

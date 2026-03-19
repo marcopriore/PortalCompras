@@ -108,7 +108,7 @@ export default function CotacaoDetalhesPage({ params }: { params: Promise<{ id: 
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12">#</TableHead>
-                    <TableHead>Descrição</TableHead>
+                    <TableHead>Descrição Curta</TableHead>
                     <TableHead className="text-center">Qtd</TableHead>
                     <TableHead>Un</TableHead>
                     <TableHead>Especificação</TableHead>

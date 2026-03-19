@@ -411,7 +411,7 @@ export default function QuotationDetailsPage({
                   <thead className="border-b border-border text-xs text-muted-foreground">
                     <tr>
                       <th className="px-2 py-2 text-left">Código</th>
-                      <th className="px-2 py-2 text-left">Descrição</th>
+                      <th className="px-2 py-2 text-left">Descrição Curta</th>
                       <th className="px-2 py-2 text-left">Unidade</th>
                       <th className="px-2 py-2 text-left">Quantidade</th>
                       <th className="px-2 py-2 text-left">Especificação</th>

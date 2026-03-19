@@ -491,7 +491,7 @@ function NovaCotacaoContent() {
               <thead className="border-b border-border text-xs text-muted-foreground">
                 <tr>
                   <th className="px-2 py-2 text-left">Código</th>
-                  <th className="px-2 py-2 text-left">Descrição</th>
+                  <th className="px-2 py-2 text-left">Descrição Curta</th>
                   <th className="px-2 py-2 text-left">UN</th>
                   <th className="px-2 py-2 text-left">Qtd</th>
                   <th className="px-2 py-2 text-left">Especificação</th>

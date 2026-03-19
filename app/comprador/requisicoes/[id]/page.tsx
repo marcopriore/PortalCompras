@@ -6,15 +6,11 @@ import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 
 import { createClient } from "@/lib/supabase/client"
-import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
-import { logAudit } from "@/lib/audit"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -96,20 +92,14 @@ export default function RequisicaoDetailPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
-  const { companyId, userId } = useUser()
-  const { hasPermission, hasFeature } = usePermissions()
+  const { hasFeature } = usePermissions()
   const { id } = React.use(params)
 
   const [requisition, setRequisition] = React.useState<Requisition | null>(null)
   const [items, setItems] = React.useState<RequisitionItem[]>([])
   const [loading, setLoading] = React.useState(true)
 
-  const [approveOpen, setApproveOpen] = React.useState(false)
-  const [rejectOpen, setRejectOpen] = React.useState(false)
   const [quotationOpen, setQuotationOpen] = React.useState(false)
-
-  const [rejectReason, setRejectReason] = React.useState("")
-  const [actionSubmitting, setActionSubmitting] = React.useState(false)
   const [linkedQuotation, setLinkedQuotation] = React.useState<{ id: string; code: string } | null>(null)
 
   React.useEffect(() => {
@@ -160,100 +150,6 @@ export default function RequisicaoDetailPage({
   const statusMeta = requisition ? getStatusMeta(requisition.status) : null
 
   const originLabel = requisition?.origin === "manual" ? "Manual" : "Integração ERP"
-
-  const fetchFullName = async () => {
-    if (!userId) return ""
-    const supabase = createClient()
-    const { data } = await supabase.from("profiles").select("full_name").eq("id", userId).single()
-    return ((data as any)?.full_name ?? "") as string
-  }
-
-  const handleApprove = async () => {
-    if (!requisition || !userId || !companyId) return
-    setActionSubmitting(true)
-    try {
-      const fullName = await fetchFullName()
-      const supabase = createClient()
-
-      await supabase
-        .from("requisitions")
-        .update({
-          status: "approved",
-          approver_id: userId,
-          approver_name: fullName,
-          approved_at: new Date().toISOString(),
-        })
-        .eq("id", requisition.id)
-
-      await logAudit({
-        eventType: "quotation.updated",
-        description: `Requisição ${requisition.code} aprovada`,
-        companyId,
-        userId,
-        entity: "requisitions",
-        entityId: requisition.id,
-      })
-
-      setRequisition((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: "approved",
-              approver_name: fullName,
-              approved_at: new Date().toISOString(),
-            }
-          : prev,
-      )
-      setApproveOpen(false)
-    } finally {
-      setActionSubmitting(false)
-    }
-  }
-
-  const handleReject = async () => {
-    if (!requisition || !userId || !companyId) return
-    if (!rejectReason.trim()) return
-
-    setActionSubmitting(true)
-    try {
-      const fullName = await fetchFullName()
-      const supabase = createClient()
-
-      await supabase
-        .from("requisitions")
-        .update({
-          status: "rejected",
-          rejection_reason: rejectReason.trim(),
-          approver_id: userId,
-          approver_name: fullName,
-        })
-        .eq("id", requisition.id)
-
-      await logAudit({
-        eventType: "quotation.updated",
-        description: `Requisição ${requisition.code} rejeitada`,
-        companyId,
-        userId,
-        entity: "requisitions",
-        entityId: requisition.id,
-      })
-
-      setRequisition((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: "rejected",
-              rejection_reason: rejectReason.trim(),
-              approver_name: fullName,
-            }
-          : prev,
-      )
-      setRejectOpen(false)
-      setRejectReason("")
-    } finally {
-      setActionSubmitting(false)
-    }
-  }
 
   const handleGerarCotacao = () => {
     if (!requisition) return
@@ -388,87 +284,12 @@ export default function RequisicaoDetailPage({
       </Card>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {requisition.status === "pending" && hasPermission("requisition.approve") && (
-          <>
-            <Button
-              type="button"
-              variant="default"
-              className="bg-success/10 text-success hover:bg-success/10"
-              onClick={() => setApproveOpen(true)}
-              disabled={actionSubmitting}
-            >
-              Aprovar
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="border-destructive text-destructive hover:bg-destructive/10"
-              onClick={() => setRejectOpen(true)}
-              disabled={actionSubmitting}
-            >
-              Rejeitar
-            </Button>
-          </>
-        )}
-
         {requisition.status === "approved" && (
-          <Button type="button" onClick={() => setQuotationOpen(true)} disabled={actionSubmitting}>
+          <Button type="button" onClick={() => setQuotationOpen(true)}>
             Gerar Cotação
           </Button>
         )}
       </div>
-
-      <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Aprovar Requisição</DialogTitle>
-            <DialogDescription>
-              Confirmar a aprovação da requisição {requisition.code}?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setApproveOpen(false)} disabled={actionSubmitting}>
-              Cancelar
-            </Button>
-            <Button onClick={handleApprove} disabled={actionSubmitting}>
-              {actionSubmitting ? "Aprovando..." : "Confirmar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rejeitar Requisição</DialogTitle>
-            <DialogDescription>
-              Informe o motivo da rejeição (obrigatório).
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-2">
-            <Label htmlFor="rejectReason">Motivo</Label>
-            <Textarea
-              id="rejectReason"
-              rows={4}
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectOpen(false)} disabled={actionSubmitting}>
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleReject}
-              disabled={actionSubmitting || !rejectReason.trim()}
-            >
-              {actionSubmitting ? "Rejeitando..." : "Confirmar Rejeição"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={quotationOpen} onOpenChange={setQuotationOpen}>
         <DialogContent>
@@ -479,11 +300,11 @@ export default function RequisicaoDetailPage({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setQuotationOpen(false)} disabled={actionSubmitting}>
+            <Button variant="outline" onClick={() => setQuotationOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleGerarCotacao} disabled={actionSubmitting}>
-              {actionSubmitting ? "Gerando..." : "Confirmar"}
+            <Button onClick={handleGerarCotacao}>
+              Confirmar
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -504,7 +325,7 @@ export default function RequisicaoDetailPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Código</TableHead>
-                  <TableHead>Descrição</TableHead>
+                  <TableHead>Descrição Curta</TableHead>
                   <TableHead className="text-right">Qtd</TableHead>
                   <TableHead>Unidade</TableHead>
                   <TableHead>Grupo</TableHead>

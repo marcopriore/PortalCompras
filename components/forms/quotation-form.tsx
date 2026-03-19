@@ -211,9 +211,9 @@ export function QuotationForm({ onSuccess }: QuotationFormProps) {
 
               <FieldGroup>
                 <Field>
-                  <FieldLabel>Descrição do Item</FieldLabel>
+                  <FieldLabel>Descrição Curta</FieldLabel>
                   <Input
-                    placeholder="Descrição do item solicitado"
+                    placeholder="Descrição curta do item solicitado"
                     value={item.descricao}
                     onChange={(e) => updateItem(item.id, "descricao", e.target.value)}
                     required

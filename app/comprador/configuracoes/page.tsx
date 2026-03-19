@@ -4,7 +4,9 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
+import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -33,14 +35,46 @@ import {
 import {
   Bell,
   Building2,
+  ClipboardList,
+  Pencil,
   Plus,
   Save,
   Shield,
+  ShieldOff,
+  ShoppingCart,
   Trash2,
   Upload,
   User,
   Workflow,
 } from "lucide-react"
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 
 type CompanyForm = {
   name: string
@@ -74,18 +108,36 @@ type SecurityPasswordForm = {
   confirmNewPassword: string
 }
 
-type ApprovalLevel = {
+type ApprovalRule = {
   id: string
-  level_order: number
-  min_value: number
+  flow: "requisition" | "order"
+  cost_center: string | null
+  category: string | null
+  min_value: number | null
   max_value: number | null
-  approver_role: string
+  approver_id: string | null
+  approver_name: string | null
 }
 
-type NewLevelForm = {
+type ApproverProfile = {
+  id: string
+  full_name: string | null
+  role: string | null
+}
+
+type ApprovalRuleForm = {
+  costCenter: string
+  useFallback: boolean
+  approverId: string
+}
+
+type ApprovalOrderForm = {
+  category: string
+  useAllCategories: boolean
   minValue: string
   maxValue: string
-  approverRole: string
+  useNoMax: boolean
+  approverId: string
 }
 
 type ActiveTab = "empresa" | "perfil" | "notificacoes" | "aprovacoes" | "seguranca"
@@ -189,13 +241,32 @@ export default function ConfiguracoesPage() {
   const [securitySuccess, setSecuritySuccess] = React.useState<string | null>(null)
   const [securityError, setSecurityError] = React.useState<string | null>(null)
 
-  const [approvalLevels, setApprovalLevels] = React.useState<ApprovalLevel[]>([])
-  const [addLevelOpen, setAddLevelOpen] = React.useState(false)
-  const [newLevel, setNewLevel] = React.useState<NewLevelForm>({
+  const { hasFeature } = usePermissions()
+
+  const [approvalRequisitionEnabled, setApprovalRequisitionEnabled] = React.useState(false)
+  const [approvalOrderEnabled, setApprovalOrderEnabled] = React.useState(false)
+  const [approvalRules, setApprovalRules] = React.useState<ApprovalRule[]>([])
+  const [approvalOrderRules, setApprovalOrderRules] = React.useState<ApprovalRule[]>([])
+  const [approvers, setApprovers] = React.useState<ApproverProfile[]>([])
+  const [tenantCategories, setTenantCategories] = React.useState<string[]>([])
+  const [ruleModalOpen, setRuleModalOpen] = React.useState(false)
+  const [editingRuleId, setEditingRuleId] = React.useState<string | null>(null)
+  const [ruleForm, setRuleForm] = React.useState<ApprovalRuleForm>({
+    costCenter: "",
+    useFallback: false,
+    approverId: "",
+  })
+  const [orderModalOpen, setOrderModalOpen] = React.useState(false)
+  const [editingOrderId, setEditingOrderId] = React.useState<string | null>(null)
+  const [orderForm, setOrderForm] = React.useState<ApprovalOrderForm>({
+    category: "",
+    useAllCategories: false,
     minValue: "",
     maxValue: "",
-    approverRole: "",
+    useNoMax: false,
+    approverId: "",
   })
+  const [deleteRuleId, setDeleteRuleId] = React.useState<string | null>(null)
   const [approvalsSaving, setApprovalsSaving] = React.useState(false)
 
   const [saving, setSaving] = React.useState({
@@ -293,19 +364,68 @@ export default function ConfiguracoesPage() {
 
   React.useEffect(() => {
     const loadApprovals = async () => {
-      if (!companyId || !canManageApprovals) return
+      if (!companyId || !canManageApprovals || activeTab !== "aprovacoes") return
+      const supabase = createClient()
+      const [tfRes, levelsRes] = await Promise.all([
+        supabase
+          .from("tenant_features")
+          .select("feature_key, enabled")
+          .eq("company_id", companyId)
+          .in("feature_key", ["approval_requisition", "approval_order"]),
+        supabase
+          .from("approval_levels")
+          .select("id, flow, cost_center, category, min_value, max_value, approver_id, approver_name")
+          .eq("company_id", companyId),
+      ])
+      const tfData = (tfRes.data ?? []) as { feature_key: string; enabled: boolean }[]
+      tfData.forEach((row) => {
+        if (row.feature_key === "approval_requisition") setApprovalRequisitionEnabled(Boolean(row.enabled))
+        if (row.feature_key === "approval_order") setApprovalOrderEnabled(Boolean(row.enabled))
+      })
+      const levels = ((levelsRes.data ?? []) as ApprovalRule[]).map((r) => ({
+        ...r,
+        flow: (r.flow ?? "requisition") as "requisition" | "order",
+      }))
+      setApprovalRules(levels.filter((l) => l.flow === "requisition"))
+      setApprovalOrderRules(levels.filter((l) => l.flow === "order"))
+    }
+    loadApprovals()
+  }, [activeTab, companyId, canManageApprovals])
+
+  React.useEffect(() => {
+    const loadApprovers = async () => {
+      if (!companyId || activeTab !== "aprovacoes") return
       const supabase = createClient()
       const { data } = await supabase
-        .from("approval_levels")
-        .select("*")
+        .from("profiles")
+        .select("id, full_name, role")
         .eq("company_id", companyId)
-        .order("level_order")
-      setApprovalLevels(((data as unknown) as ApprovalLevel[]) ?? [])
+        .in("role", ["approver", "manager", "admin"])
+      setApprovers(((data as unknown) as ApproverProfile[]) ?? [])
     }
-    if (activeTab === "aprovacoes") {
-      loadApprovals()
+    loadApprovers()
+  }, [companyId, activeTab])
+
+  React.useEffect(() => {
+    const loadTenantCategories = async () => {
+      if (!companyId || activeTab !== "aprovacoes") return
+      const supabase = createClient()
+      const [quotRes, suppRes] = await Promise.all([
+        supabase.from("quotations").select("category").eq("company_id", companyId),
+        supabase.from("suppliers").select("category").eq("company_id", companyId),
+      ])
+      const set = new Set<string>()
+      const addCategory = (v: unknown) => {
+        if (typeof v === "string" && v.trim()) set.add(v.trim())
+      }
+      ;(quotRes.data ?? []).forEach((r: { category?: unknown }) => addCategory(r.category))
+      ;(suppRes.data ?? []).forEach((r: { category?: unknown }) => addCategory(r.category))
+      const fallback = ["MRO", "Matéria-Prima", "Serviços", "TI", "Outros"]
+      const list = set.size > 0 ? Array.from(set).sort() : fallback
+      setTenantCategories(list)
     }
-  }, [activeTab, companyId, canManageApprovals])
+    loadTenantCategories()
+  }, [companyId, activeTab])
 
   const handleSaveCompany = async () => {
     if (!companyId) return
@@ -427,61 +547,315 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  const handleDeleteApproval = async (levelId: string) => {
+  const handleToggleApprovalFeature = async (
+    key: "approval_requisition" | "approval_order",
+    enabled: boolean
+  ) => {
     if (!companyId) return
+    const supabase = createClient()
+    try {
+      await supabase
+        .from("tenant_features")
+        .upsert(
+          { company_id: companyId, feature_key: key, enabled },
+          { onConflict: "company_id,feature_key" }
+        )
+      if (key === "approval_requisition") setApprovalRequisitionEnabled(enabled)
+      else setApprovalOrderEnabled(enabled)
+      toast.success(enabled ? "Módulo habilitado." : "Módulo desabilitado.")
+    } catch {
+      toast.error("Falha ao atualizar.")
+    }
+  }
+
+  const handleOpenNewRule = () => {
+    setEditingRuleId(null)
+    setRuleForm({ costCenter: "", useFallback: false, approverId: "" })
+    setRuleModalOpen(true)
+  }
+
+  const handleOpenEditRule = (rule: ApprovalRule) => {
+    setEditingRuleId(rule.id)
+    setRuleForm({
+      costCenter: rule.cost_center === "*" ? "" : (rule.cost_center ?? ""),
+      useFallback: rule.cost_center === "*",
+      approverId: rule.approver_id ?? "",
+    })
+    setRuleModalOpen(true)
+  }
+
+  const handleSaveRule = async () => {
+    if (!companyId) return
+    const costCenterValue = ruleForm.useFallback ? "*" : ruleForm.costCenter.trim()
+    if (!costCenterValue) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: "Informe o Centro de Custo ou marque a opção de fallback." },
+      }))
+      return
+    }
+    if (!ruleForm.approverId) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: "Selecione um aprovador." },
+      }))
+      return
+    }
+    const approver = approvers.find((a) => a.id === ruleForm.approverId)
+    const approverName = approver?.full_name ?? null
+
+    const existing = approvalRules.find(
+      (r) => r.cost_center === costCenterValue && r.id !== editingRuleId
+    )
+    if (existing) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: "Já existe uma regra para este Centro de Custo." },
+      }))
+      return
+    }
+
     setApprovalsSaving(true)
     setMessages((m) => ({ ...m, approvals: { success: null, error: null } }))
     const supabase = createClient()
     try {
-      await supabase.from("approval_levels").delete().eq("id", levelId)
-      setApprovalLevels((prev) => prev.filter((l) => l.id !== levelId))
-      setMessages((m) => ({ ...m, approvals: { success: "Nível removido.", error: null } }))
-    } catch (e: any) {
-      setMessages((m) => ({ ...m, approvals: { success: null, error: e?.message ?? "Falha ao remover." } }))
+      const payload = {
+        flow: "requisition" as const,
+        cost_center: costCenterValue,
+        category: "*" as const,
+        min_value: null as number | null,
+        max_value: null as number | null,
+        approver_id: ruleForm.approverId,
+        approver_name: approverName,
+      }
+      if (editingRuleId) {
+        const { data: updateData, error: updateErr } = await supabase
+          .from("approval_levels")
+          .update(payload)
+          .eq("id", editingRuleId)
+          .select("id")
+        if (updateErr || !updateData?.length) {
+          setMessages((m) => ({
+            ...m,
+            approvals: {
+              success: null,
+              error: "Erro ao salvar regra. Verifique suas permissões.",
+            },
+          }))
+          return
+        }
+        setApprovalRules((prev) =>
+          prev.map((r) =>
+            r.id === editingRuleId ? { ...r, ...payload } : r
+          )
+        )
+        setMessages((m) => ({ ...m, approvals: { success: "Regra atualizada.", error: null } }))
+      } else {
+        const insertPayload = {
+          company_id: companyId,
+          flow: payload.flow,
+          cost_center: payload.cost_center,
+          category: payload.category,
+          min_value: payload.min_value,
+          max_value: payload.max_value,
+          approver_id: payload.approver_id,
+          approver_name: payload.approver_name,
+          level_order: approvalRules.length + 1,
+        }
+        const { data: insertData, error: insertErr } = await supabase
+          .from("approval_levels")
+          .insert(insertPayload)
+          .select("id, flow, cost_center, category, min_value, max_value, approver_id, approver_name")
+        if (insertErr || !insertData?.length) {
+          setMessages((m) => ({
+            ...m,
+            approvals: {
+              success: null,
+              error: "Erro ao salvar regra. Verifique suas permissões.",
+            },
+          }))
+          return
+        }
+        setApprovalRules((prev) => [
+          ...prev,
+          ...(insertData as unknown as ApprovalRule[]),
+        ])
+        setMessages((m) => ({ ...m, approvals: { success: "Regra criada.", error: null } }))
+      }
+      setRuleModalOpen(false)
+    } catch (e: unknown) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: (e as { message?: string })?.message ?? "Falha ao salvar." },
+      }))
     } finally {
       setApprovalsSaving(false)
     }
   }
 
-  const handleAddApproval = async () => {
+  const handleOpenNewOrder = () => {
+    setEditingOrderId(null)
+    setOrderForm({
+      category: "",
+      useAllCategories: false,
+      minValue: "",
+      maxValue: "",
+      useNoMax: false,
+      approverId: "",
+    })
+    setOrderModalOpen(true)
+  }
+
+  const handleOpenEditOrder = (rule: ApprovalRule) => {
+    setEditingOrderId(rule.id)
+    setOrderForm({
+      category: rule.category === "*" ? "" : (rule.category ?? ""),
+      useAllCategories: rule.category === "*",
+      minValue: rule.min_value != null ? String(rule.min_value) : "",
+      maxValue: rule.max_value != null ? String(rule.max_value) : "",
+      useNoMax: rule.max_value == null,
+      approverId: rule.approver_id ?? "",
+    })
+    setOrderModalOpen(true)
+  }
+
+  const handleSaveOrder = async () => {
     if (!companyId) return
-    setApprovalsSaving(true)
-    setMessages((m) => ({ ...m, approvals: { success: null, error: null } }))
-
-    const minValueNum = Number(newLevel.minValue)
-    const maxValueNum = newLevel.maxValue.trim() ? Number(newLevel.maxValue) : null
-    const levelOrder = (approvalLevels.reduce((max, l) => Math.max(max, l.level_order), 0) ?? 0) + 1
-
-    if (!Number.isFinite(minValueNum)) {
-      setMessages((m) => ({ ...m, approvals: { success: null, error: "Informe um valor mínimo válido." } }))
-      setApprovalsSaving(false)
+    const categoryValue = orderForm.useAllCategories ? "*" : orderForm.category.trim()
+    if (!categoryValue) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: "Informe a Categoria ou marque a opção Todas." },
+      }))
       return
     }
+    const minVal = Number(orderForm.minValue)
+    if (!Number.isFinite(minVal) || minVal < 0) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: "Informe um valor mínimo válido." },
+      }))
+      return
+    }
+    const maxVal = orderForm.useNoMax ? null : (orderForm.maxValue.trim() ? Number(orderForm.maxValue) : null)
+    if (maxVal != null && !Number.isFinite(maxVal)) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: "Informe um valor máximo válido." },
+      }))
+      return
+    }
+    if (maxVal != null && minVal >= maxVal) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: "O valor mínimo deve ser menor que o máximo." },
+      }))
+      return
+    }
+    if (!orderForm.approverId) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: "Selecione um aprovador." },
+      }))
+      return
+    }
+    const approver = approvers.find((a) => a.id === orderForm.approverId)
+    const approverName = approver?.full_name ?? null
 
+    setApprovalsSaving(true)
+    setMessages((m) => ({ ...m, approvals: { success: null, error: null } }))
     const supabase = createClient()
     try {
-      await supabase.from("approval_levels").insert({
-        company_id: companyId,
-        level_order: levelOrder,
-        min_value: minValueNum,
-        max_value: maxValueNum,
-        approver_role: newLevel.approverRole.trim(),
-      })
-
-      const { data } = await supabase
-        .from("approval_levels")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("level_order")
-      setApprovalLevels(((data as unknown) as ApprovalLevel[]) ?? [])
-
-      setAddLevelOpen(false)
-      setNewLevel({ minValue: "", maxValue: "", approverRole: "" })
-      setMessages((m) => ({ ...m, approvals: { success: "Nível adicionado.", error: null } }))
-    } catch (e: any) {
-      setMessages((m) => ({ ...m, approvals: { success: null, error: e?.message ?? "Falha ao adicionar." } }))
+      const payload = {
+        flow: "order" as const,
+        cost_center: "*" as const,
+        category: categoryValue,
+        min_value: minVal,
+        max_value: maxVal,
+        approver_id: orderForm.approverId,
+        approver_name: approverName,
+      }
+      if (editingOrderId) {
+        const { data: updateData, error: updateErr } = await supabase
+          .from("approval_levels")
+          .update(payload)
+          .eq("id", editingOrderId)
+          .select("id")
+        if (updateErr || !updateData?.length) {
+          setMessages((m) => ({
+            ...m,
+            approvals: {
+              success: null,
+              error: "Erro ao salvar regra. Verifique suas permissões.",
+            },
+          }))
+          return
+        }
+        setApprovalOrderRules((prev) =>
+          prev.map((r) => (r.id === editingOrderId ? { ...r, ...payload } : r))
+        )
+        setMessages((m) => ({ ...m, approvals: { success: "Alçada atualizada.", error: null } }))
+      } else {
+        const insertPayload = {
+          company_id: companyId,
+          flow: payload.flow,
+          cost_center: payload.cost_center,
+          category: payload.category,
+          min_value: payload.min_value,
+          max_value: payload.max_value,
+          approver_id: payload.approver_id,
+          approver_name: payload.approver_name,
+          level_order: approvalOrderRules.length + 1,
+        }
+        const { data: insertData, error: insertErr } = await supabase
+          .from("approval_levels")
+          .insert(insertPayload)
+          .select("id, flow, cost_center, category, min_value, max_value, approver_id, approver_name")
+        if (insertErr || !insertData?.length) {
+          setMessages((m) => ({
+            ...m,
+            approvals: {
+              success: null,
+              error: "Erro ao salvar regra. Verifique suas permissões.",
+            },
+          }))
+          return
+        }
+        setApprovalOrderRules((prev) => [
+          ...prev,
+          ...(insertData as unknown as ApprovalRule[]),
+        ])
+        setMessages((m) => ({ ...m, approvals: { success: "Alçada criada.", error: null } }))
+      }
+      setOrderModalOpen(false)
+    } catch (e: unknown) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: (e as { message?: string })?.message ?? "Falha ao salvar." },
+      }))
     } finally {
       setApprovalsSaving(false)
+    }
+  }
+
+  const handleConfirmDeleteRule = async () => {
+    if (!deleteRuleId) return
+    setApprovalsSaving(true)
+    setMessages((m) => ({ ...m, approvals: { success: null, error: null } }))
+    const supabase = createClient()
+    try {
+      await supabase.from("approval_levels").delete().eq("id", deleteRuleId)
+      setApprovalRules((prev) => prev.filter((r) => r.id !== deleteRuleId))
+      setApprovalOrderRules((prev) => prev.filter((r) => r.id !== deleteRuleId))
+      setMessages((m) => ({ ...m, approvals: { success: "Regra removida.", error: null } }))
+    } catch (e: unknown) {
+      setMessages((m) => ({
+        ...m,
+        approvals: { success: null, error: (e as { message?: string })?.message ?? "Falha ao remover." },
+      }))
+    } finally {
+      setApprovalsSaving(false)
+      setDeleteRuleId(null)
     }
   }
 
@@ -528,14 +902,22 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  const formatMoneyBR = (value: number) => {
-    return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)
+  const getRoleLabel = (role: string | null) => {
+    const map: Record<string, string> = {
+      admin: "Administrador",
+      manager: "Gestor",
+      approver: "Aprovador",
+    }
+    return role ? (map[role] ?? role) : ""
   }
 
-  const approvalRangeLabel = (level: ApprovalLevel) => {
-    if (level.max_value == null) return `Acima de ${formatMoneyBR(level.min_value)}`
-    if (level.min_value === 0) return `Até ${formatMoneyBR(level.max_value)}`
-    return `${formatMoneyBR(level.min_value)} - ${formatMoneyBR(level.max_value)}`
+  const formatMoneyBR = (value: number) =>
+    new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)
+
+  const formatOrderRange = (rule: ApprovalRule) => {
+    const min = rule.min_value ?? 0
+    if (rule.max_value == null) return `Acima de ${formatMoneyBR(min)}`
+    return `${formatMoneyBR(min)} — ${formatMoneyBR(rule.max_value)}`
   }
 
   if (loading) {
@@ -995,172 +1377,449 @@ export default function ConfiguracoesPage() {
             </div>
           ) : (
             <>
+              <div className="grid grid-cols-2 gap-4">
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex gap-3">
+                        <ClipboardList className="h-8 w-8 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className="font-medium">Aprovação de Requisições</p>
+                          <p className="text-sm text-muted-foreground">
+                            Requisições criadas entrarão em fila de aprovação antes de prosseguir.
+                          </p>
+                        </div>
+                      </div>
+                      {hasFeature("approval_requisition") ? (
+                        <Switch
+                          checked={approvalRequisitionEnabled}
+                          onCheckedChange={(v) => handleToggleApprovalFeature("approval_requisition", v)}
+                        />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Switch checked={false} disabled />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Módulo não liberado para este tenant</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex gap-3">
+                        <ShoppingCart className="h-8 w-8 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className="font-medium">Aprovação de Pedidos</p>
+                          <p className="text-sm text-muted-foreground">
+                            Pedidos gerados precisarão de aprovação conforme alçadas configuradas.
+                          </p>
+                        </div>
+                      </div>
+                      {hasFeature("approval_order") ? (
+                        <Switch
+                          checked={approvalOrderEnabled}
+                          onCheckedChange={(v) => handleToggleApprovalFeature("approval_order", v)}
+                        />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Switch checked={false} disabled />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Módulo não liberado para este tenant</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {approvalRequisitionEnabled && (
               <Card>
-                <CardHeader>
-                  <CardTitle>Níveis de Aprovação</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Configure as alçadas de aprovação por valor de compra
-                  </p>
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <CardTitle>Regras de Aprovação de Requisição</CardTitle>
+                  <Button onClick={handleOpenNewRule} disabled={approvalsSaving}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nova Regra
+                  </Button>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex flex-col gap-4">
-                    {approvalLevels.length === 0 ? (
-                      <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
-                        Nenhum nível configurado.
-                      </div>
-                    ) : (
-                      approvalLevels.map((nivel) => (
-                        <div
-                          key={nivel.id}
-                          className="flex items-center justify-between rounded-lg border p-4"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-medium">
-                              {nivel.level_order}
-                            </div>
-                            <div>
-                              <p className="font-medium">{approvalRangeLabel(nivel)}</p>
-                              <p className="text-sm text-muted-foreground">
-                                Aprovador: {nivel.approver_role}
-                              </p>
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDeleteApproval(nivel.id)}
-                            disabled={approvalsSaving}
-                          >
-                            <Trash2 className="h-4 w-4 text-muted-foreground" />
-                          </Button>
-                        </div>
-                      ))
-                    )}
-
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {
-                        setNewLevel({ minValue: "", maxValue: "", approverRole: "" })
-                        setAddLevelOpen(true)
-                      }}
-                      disabled={approvalsSaving}
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Adicionar Nível
-                    </Button>
-                  </div>
+                  {approvalRules.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
+                      <ShieldOff className="h-12 w-12 text-muted-foreground mb-4" />
+                      <p className="text-sm text-muted-foreground">
+                        Nenhuma regra configurada. Requisições serão aprovadas automaticamente.
+                      </p>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Centro de Custo</TableHead>
+                          <TableHead>Aprovador</TableHead>
+                          <TableHead className="w-24 text-right">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {approvalRules.map((rule) => (
+                          <TableRow key={rule.id}>
+                            <TableCell>
+                              {rule.cost_center === "*" ? (
+                                <Badge variant="secondary">Todos (fallback)</Badge>
+                              ) : (
+                                rule.cost_center ?? "—"
+                              )}
+                            </TableCell>
+                            <TableCell>{rule.approver_name ?? "—"}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleOpenEditRule(rule)}
+                                  disabled={approvalsSaving}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setDeleteRuleId(rule.id)}
+                                  disabled={approvalsSaving}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </CardContent>
               </Card>
+              )}
 
+              {approvalOrderEnabled && (
               <Card>
-                <CardHeader>
-                  <CardTitle>Fluxo de Aprovação</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    Configurações gerais do processo de aprovação
-                  </p>
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <CardTitle>Regras de Aprovação de Pedido</CardTitle>
+                  <Button onClick={handleOpenNewOrder} disabled={approvalsSaving}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nova Alçada
+                  </Button>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <Label>Aprovação em Paralelo</Label>
-                        <Badge variant="outline">Em breve</Badge>
-                      </div>
-                      <span className="text-sm text-muted-foreground">
-                        Permite que múltiplos aprovadores atuem simultaneamente
-                      </span>
+                <CardContent>
+                  {approvalOrderRules.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
+                      <ShieldOff className="h-12 w-12 text-muted-foreground mb-4" />
+                      <p className="text-sm text-muted-foreground">
+                        Nenhuma alçada configurada.
+                      </p>
                     </div>
-                    <Switch checked disabled />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <Label>Delegação Automática</Label>
-                        <Badge variant="outline">Em breve</Badge>
-                      </div>
-                      <span className="text-sm text-muted-foreground">
-                        Redireciona aprovações para substituto em ausência
-                      </span>
-                    </div>
-                    <Switch checked disabled />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <Label>Lembrete de Aprovação Pendente</Label>
-                        <Badge variant="outline">Em breve</Badge>
-                      </div>
-                      <span className="text-sm text-muted-foreground">
-                        Envia lembretes após 24h de pendência
-                      </span>
-                    </div>
-                    <Switch checked disabled />
-                  </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Categoria</TableHead>
+                          <TableHead>Faixa de Valor</TableHead>
+                          <TableHead>Aprovador</TableHead>
+                          <TableHead className="w-24 text-right">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {approvalOrderRules.map((rule) => (
+                          <TableRow key={rule.id}>
+                            <TableCell>
+                              {rule.category === "*" ? (
+                                <Badge variant="secondary">Todas</Badge>
+                              ) : (
+                                rule.category ?? "—"
+                              )}
+                            </TableCell>
+                            <TableCell>{formatOrderRange(rule)}</TableCell>
+                            <TableCell>{rule.approver_name ?? "—"}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleOpenEditOrder(rule)}
+                                  disabled={approvalsSaving}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setDeleteRuleId(rule.id)}
+                                  disabled={approvalsSaving}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </CardContent>
               </Card>
+              )}
 
-              {/* Dialog Adicionar Nível */}
-              <Dialog open={addLevelOpen} onOpenChange={setAddLevelOpen}>
-                <DialogContent className="sm:max-w-[520px]">
+              <Dialog open={ruleModalOpen} onOpenChange={setRuleModalOpen}>
+                <DialogContent className="sm:max-w-[480px]">
                   <DialogHeader>
-                    <DialogTitle>Adicionar Nível de Aprovação</DialogTitle>
+                    <DialogTitle>{editingRuleId ? "Editar Regra" : "Nova Regra"}</DialogTitle>
                     <DialogDescription>
-                      Defina faixa de valores e o responsável pela aprovação
+                      Configure o Centro de Custo e o aprovador responsável
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="space-y-4 mt-2">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="minValue">Valor mínimo</Label>
-                        <Input
-                          id="minValue"
-                          type="number"
-                          inputMode="numeric"
-                          value={newLevel.minValue}
-                          onChange={(e) =>
-                            setNewLevel((f) => ({ ...f, minValue: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="maxValue">
-                          Valor máximo <span className="text-xs text-muted-foreground">(opcional)</span>
-                        </Label>
-                        <Input
-                          id="maxValue"
-                          type="number"
-                          inputMode="numeric"
-                          value={newLevel.maxValue}
-                          onChange={(e) =>
-                            setNewLevel((f) => ({ ...f, maxValue: e.target.value }))
-                          }
-                        />
-                      </div>
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="useFallback"
+                        checked={ruleForm.useFallback}
+                        onChange={(e) =>
+                          setRuleForm((f) => ({
+                            ...f,
+                            useFallback: e.target.checked,
+                            costCenter: e.target.checked ? "" : f.costCenter,
+                          }))
+                        }
+                        className="h-4 w-4 rounded border-border"
+                      />
+                      <Label htmlFor="useFallback" className="cursor-pointer">
+                        Fallback para todos os CCs
+                      </Label>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="approverRole">Aprovador</Label>
+                      <Label htmlFor="costCenter">Centro de Custo</Label>
                       <Input
-                        id="approverRole"
-                        value={newLevel.approverRole}
+                        id="costCenter"
+                        value={ruleForm.costCenter}
                         onChange={(e) =>
-                          setNewLevel((f) => ({ ...f, approverRole: e.target.value }))
+                          setRuleForm((f) => ({ ...f, costCenter: e.target.value }))
                         }
+                        placeholder="Ex: CC-001"
+                        disabled={ruleForm.useFallback}
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Aprovador</Label>
+                      <Select
+                        value={ruleForm.approverId || undefined}
+                        onValueChange={(v) =>
+                          setRuleForm((f) => ({ ...f, approverId: v }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o aprovador" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {approvers.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              <span className="flex items-center gap-2">
+                                {a.full_name ?? "Sem nome"}
+                                {a.role && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {getRoleLabel(a.role)}
+                                  </Badge>
+                                )}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                   <DialogFooter className="mt-4">
-                    <Button variant="outline" onClick={() => setAddLevelOpen(false)} disabled={approvalsSaving}>
+                    <Button
+                      variant="outline"
+                      onClick={() => setRuleModalOpen(false)}
+                      disabled={approvalsSaving}
+                    >
                       Cancelar
                     </Button>
-                    <Button onClick={handleAddApproval} disabled={approvalsSaving}>
+                    <Button onClick={handleSaveRule} disabled={approvalsSaving}>
                       {approvalsSaving ? "Salvando..." : "Salvar"}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+
+              <Dialog open={orderModalOpen} onOpenChange={setOrderModalOpen}>
+                <DialogContent className="sm:max-w-[480px]">
+                  <DialogHeader>
+                    <DialogTitle>{editingOrderId ? "Editar Alçada" : "Nova Alçada"}</DialogTitle>
+                    <DialogDescription>
+                      Configure categoria, faixa de valor e aprovador
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="useAllCategories"
+                        checked={orderForm.useAllCategories}
+                        onChange={(e) =>
+                          setOrderForm((f) => ({
+                            ...f,
+                            useAllCategories: e.target.checked,
+                            category: e.target.checked ? "" : f.category,
+                          }))
+                        }
+                        className="h-4 w-4 rounded border-border"
+                      />
+                      <Label htmlFor="useAllCategories" className="cursor-pointer">
+                        Todas as categorias
+                      </Label>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="orderCategory">Categoria</Label>
+                      <Select
+                        value={orderForm.category || undefined}
+                        onValueChange={(v) =>
+                          setOrderForm((f) => ({ ...f, category: v }))
+                        }
+                        disabled={orderForm.useAllCategories}
+                      >
+                        <SelectTrigger id="orderCategory">
+                          <SelectValue placeholder="Ex: Suprimentos" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tenantCategories.map((c) => (
+                            <SelectItem key={c} value={c}>
+                              {c}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 items-end">
+                      <div className="space-y-2">
+                        <Label htmlFor="orderMinValue">Valor Mínimo</Label>
+                        <Input
+                          id="orderMinValue"
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          value={orderForm.minValue}
+                          onChange={(e) =>
+                            setOrderForm((f) => ({ ...f, minValue: e.target.value }))
+                          }
+                          placeholder="0"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2 min-h-[1.25rem]">
+                          <Label htmlFor="orderMaxValue">Valor Máximo</Label>
+                          <label
+                            htmlFor="useNoMax"
+                            className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer shrink-0"
+                          >
+                            <input
+                              type="checkbox"
+                              id="useNoMax"
+                              checked={orderForm.useNoMax}
+                              onChange={(e) =>
+                                setOrderForm((f) => ({
+                                  ...f,
+                                  useNoMax: e.target.checked,
+                                  maxValue: e.target.checked ? "" : f.maxValue,
+                                }))
+                              }
+                              className="h-3.5 w-3.5 rounded border-border"
+                            />
+                            Sem limite superior
+                          </label>
+                        </div>
+                        <Input
+                          id="orderMaxValue"
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          value={orderForm.maxValue}
+                          onChange={(e) =>
+                            setOrderForm((f) => ({ ...f, maxValue: e.target.value }))
+                          }
+                          placeholder="Opcional"
+                          disabled={orderForm.useNoMax}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Aprovador</Label>
+                      <Select
+                        value={orderForm.approverId || undefined}
+                        onValueChange={(v) =>
+                          setOrderForm((f) => ({ ...f, approverId: v }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o aprovador" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {approvers.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              <span className="flex items-center gap-2">
+                                {a.full_name ?? "Sem nome"}
+                                {a.role && (
+                                  <Badge variant="outline" className="text-xs">
+                                    {getRoleLabel(a.role)}
+                                  </Badge>
+                                )}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <DialogFooter className="mt-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => setOrderModalOpen(false)}
+                      disabled={approvalsSaving}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button onClick={handleSaveOrder} disabled={approvalsSaving}>
+                      {approvalsSaving ? "Salvando..." : "Salvar"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              <AlertDialog open={!!deleteRuleId} onOpenChange={(open) => !open && setDeleteRuleId(null)}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Excluir regra</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Tem certeza que deseja excluir esta regra de aprovação? Esta ação não pode ser
+                      desfeita.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={approvalsSaving}>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleConfirmDeleteRule}
+                      disabled={approvalsSaving}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {approvalsSaving ? "Excluindo..." : "Excluir"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
               {messages.approvals.error && (
                 <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">

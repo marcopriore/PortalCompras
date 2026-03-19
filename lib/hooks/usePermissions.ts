@@ -13,6 +13,8 @@ export type FeatureKey =
   | "users"
   | "logs"
   | "settings"
+  | "approval_requisition"
+  | "approval_order"
 
 export type PermissionKey =
   | "quotation.create"
@@ -44,6 +46,8 @@ const ALL_FEATURES: FeatureKey[] = [
   "users",
   "logs",
   "settings",
+  "approval_requisition",
+  "approval_order",
 ]
 
 const ALL_PERMISSIONS: PermissionKey[] = [

@@ -469,7 +469,7 @@ export default function NovoPedidoPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Código</TableHead>
-                  <TableHead>Descrição</TableHead>
+                  <TableHead>Descrição Curta</TableHead>
                   <TableHead className="text-right">Qtd</TableHead>
                   <TableHead className="text-center">Unidade</TableHead>
                   <TableHead className="text-right">Preço Unit.</TableHead>

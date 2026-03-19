@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { createClient } from "@/lib/supabase/client"
 import {
   LayoutDashboard,
   FileText,
@@ -18,6 +19,7 @@ import {
   ClipboardList,
   BarChart3,
   Building2,
+  ShieldCheck,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ValoreLogo } from "@/components/ui/valore-logo"
@@ -37,6 +39,7 @@ interface NavItem {
 const buyerNavItems: NavItem[] = [
   { title: "Dashboard", href: "/comprador", icon: LayoutDashboard },
   { title: "Requisições", href: "/comprador/requisicoes", icon: ClipboardList },
+  { title: "Aprovações", href: "/comprador/aprovacoes", icon: ShieldCheck },
   { title: "Pedidos", href: "/comprador/pedidos", icon: ShoppingCart },
   { title: "Cotações", href: "/comprador/cotacoes", icon: FileText },
   { title: "Itens", href: "/comprador/itens", icon: Package },
@@ -61,12 +64,38 @@ interface SidebarProps {
 
 export function Sidebar({ type }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
+  const [pendingApprovals, setPendingApprovals] = useState<number | null>(null)
   const pathname = usePathname()
   const navItems = type === "comprador" ? buyerNavItems : supplierNavItems
-  const { userId } = useUser()
+  const { userId, companyId } = useUser()
   const { hasPermission } = usePermissions()
-  void userId
   void hasPermission
+
+  useEffect(() => {
+    if (type !== "comprador" || !companyId || !userId) return
+    const supabase = createClient()
+    const run = async () => {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userId)
+        .single()
+      const role = (profile as { role?: string } | null)?.role ?? null
+      const isAdmin = role === "admin"
+
+      let query = supabase
+        .from("approval_requests")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", companyId)
+        .eq("status", "pending")
+      if (!isAdmin) {
+        query = query.eq("approver_id", userId)
+      }
+      const { count } = await query
+      setPendingApprovals(count ?? 0)
+    }
+    run()
+  }, [type, companyId, userId])
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -94,6 +123,12 @@ export function Sidebar({ type }: SidebarProps) {
             const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
             const NavIcon = item.icon
 
+            const showApprovalsBadge =
+              item.href === "/comprador/aprovacoes" &&
+              type === "comprador" &&
+              pendingApprovals != null &&
+              pendingApprovals > 0
+
             if (collapsed) {
               return (
                 <Tooltip key={item.href}>
@@ -101,13 +136,18 @@ export function Sidebar({ type }: SidebarProps) {
                     <Link
                       href={item.href}
                       className={cn(
-                        "flex h-10 w-10 items-center justify-center rounded-lg mx-auto transition-colors",
+                        "flex h-10 w-10 items-center justify-center rounded-lg mx-auto transition-colors relative",
                         isActive
                           ? "bg-sidebar-accent text-sidebar-accent-foreground"
                           : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                       )}
                     >
                       <NavIcon className="h-5 w-5" />
+                      {showApprovalsBadge && (
+                        <span className="absolute -top-0.5 -right-0.5 bg-yellow-400 text-yellow-900 text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
+                          {pendingApprovals}
+                        </span>
+                      )}
                     </Link>
                   </TooltipTrigger>
                   <TooltipContent side="right">
@@ -130,6 +170,11 @@ export function Sidebar({ type }: SidebarProps) {
               >
                 <NavIcon className="h-5 w-5 shrink-0" />
                 <span className="text-sm font-medium">{item.title}</span>
+                {showApprovalsBadge && (
+                  <span className="ml-auto bg-yellow-400 text-yellow-900 text-xs font-bold rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
+                    {pendingApprovals}
+                  </span>
+                )}
               </Link>
             )
           })}

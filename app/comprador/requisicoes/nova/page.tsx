@@ -215,6 +215,8 @@ export default function NovaRequisicaoPage() {
         .single()
 
       const requesterName = (profileRes as { full_name?: string } | null)?.full_name ?? ""
+      const costCenterTrimmed = (form.costCenter ?? "").trim()
+      const costCenterForInsert = costCenterTrimmed || null
 
       const { data: requisitionRes, error: requisitionErr } = await supabase
         .from("requisitions")
@@ -226,7 +228,7 @@ export default function NovaRequisicaoPage() {
           requester_name: requesterName,
           title: form.title.trim(),
           description: form.description.trim() || null,
-          cost_center: form.costCenter.trim() || null,
+          cost_center: costCenterForInsert,
           needed_by: form.neededBy ? new Date(`${form.neededBy}T00:00:00`).toISOString() : null,
           priority: form.priority,
         })
@@ -271,7 +273,81 @@ export default function NovaRequisicaoPage() {
         entityId: requisitionId,
       }).catch(() => {})
 
-      router.push("/comprador/requisicoes")
+      try {
+        const costCenterForRpc = costCenterTrimmed || ""
+
+        const { data: tfRow } = await supabase
+          .from("tenant_features")
+          .select("enabled")
+          .eq("company_id", companyId)
+          .eq("feature_key", "approval_requisition")
+          .maybeSingle()
+
+        const enabled = (tfRow as { enabled?: boolean } | null)?.enabled ?? false
+
+        if (!enabled) {
+          await supabase
+            .from("requisitions")
+            .update({
+              status: "approved",
+              approved_at: new Date().toISOString(),
+              approver_name: "Aprovação automática (fluxo desabilitado)",
+            })
+            .eq("id", requisitionId)
+          router.push("/comprador/requisicoes")
+          return
+        }
+
+        const { data: approverData } = await supabase.rpc(
+          "get_approver_for_requisition",
+          {
+            p_company_id: companyId,
+            p_cost_center: costCenterForRpc,
+          },
+        )
+
+        const firstRow = Array.isArray(approverData) ? approverData[0] : approverData
+        const approverId = (firstRow as { approver_id?: string | null } | null)?.approver_id ?? null
+        const approverName = (firstRow as { approver_name?: string | null } | null)?.approver_name ?? null
+
+        if (!approverId) {
+          await supabase
+            .from("requisitions")
+            .update({
+              status: "approved",
+              approved_at: new Date().toISOString(),
+              approver_name: "Aprovação automática (sem regra configurada para este CC)",
+            })
+            .eq("id", requisitionId)
+          router.push("/comprador/requisicoes")
+          return
+        }
+
+        await supabase
+          .from("requisitions")
+          .update({
+            approver_id: approverId,
+            approver_name: approverName,
+            status: "pending",
+          })
+          .eq("id", requisitionId)
+
+        await supabase.from("approval_requests").insert({
+          company_id: companyId,
+          flow: "requisition",
+          entity_id: requisitionId,
+          approver_id: approverId,
+          approver_name: approverName,
+          status: "pending",
+        })
+
+        router.push("/comprador/requisicoes")
+      } catch (approvalErr) {
+        toast.error(
+          "Requisição criada, mas houve erro ao configurar aprovação. Contate o administrador."
+        )
+        router.push("/comprador/requisicoes")
+      }
     } finally {
       setLoading(false)
     }

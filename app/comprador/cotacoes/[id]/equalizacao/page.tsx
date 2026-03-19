@@ -423,7 +423,7 @@ export default function EqualizacaoPage({
 
       const headerRow = ws.addRow([
         "Código",
-        "Descrição",
+        "Descrição Curta",
         "Qtd",
         "Unidade",
         "Preço Unit.",
@@ -773,7 +773,7 @@ export default function EqualizacaoPage({
                                 <TableHeader>
                                   <TableRow>
                                     <TableHead className="min-w-[110px]">Código</TableHead>
-                                    <TableHead className="min-w-[280px]">Descrição</TableHead>
+                                    <TableHead className="min-w-[280px]">Descrição Curta</TableHead>
                                     <TableHead className="text-right">Qtd</TableHead>
                                     <TableHead className="text-center">Unidade</TableHead>
                                     <TableHead className="text-right">Preço Unit.</TableHead>
@@ -871,7 +871,7 @@ export default function EqualizacaoPage({
           <TableHeader>
             <TableRow>
               <TableHead>Código</TableHead>
-              <TableHead>Descrição</TableHead>
+              <TableHead>Descrição Curta</TableHead>
               <TableHead>Qtd</TableHead>
               <TableHead>Fornecedor Sugerido</TableHead>
               <TableHead>Preço Unit.</TableHead>

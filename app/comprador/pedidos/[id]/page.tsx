@@ -221,7 +221,7 @@ export default function PurchaseOrderDetailPage({
       const headerRow = ws.getRow(rowIndex)
       const headers = [
         "Código",
-        "Descrição",
+        "Descrição Curta",
         "Qtd",
         "Unidade",
         "Preço Unit.",
@@ -230,14 +230,14 @@ export default function PurchaseOrderDetailPage({
       ]
       ws.columns = [
         { header: "Código", key: "codigo", width: 15 },
-        { header: "Descrição", key: "descricao", width: 40 },
+        { header: "Descrição Curta", key: "descricao", width: 40 },
         { header: "Qtd", key: "qtd", width: 8 },
         { header: "Unidade", key: "unidade", width: 10 },
         { header: "Preço Unit.", key: "unit", width: 15 },
         { header: "Impostos", key: "impostos", width: 12 },
         { header: "Total Item", key: "total", width: 15 },
       ]
-      headerRow.values = ["Código", "Descrição", "Qtd", "Unidade", "Preço Unit.", "Impostos", "Total Item"]
+      headerRow.values = ["Código", "Descrição Curta", "Qtd", "Unidade", "Preço Unit.", "Impostos", "Total Item"]
       headerRow.height = 18
       headerRow.eachCell((cell: any) => {
         cell.fill = headerFill
@@ -498,7 +498,7 @@ export default function PurchaseOrderDetailPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Código</TableHead>
-                  <TableHead>Descrição</TableHead>
+                  <TableHead>Descrição Curta</TableHead>
                   <TableHead className="text-right">Qtd</TableHead>
                   <TableHead className="text-center">Unidade</TableHead>
                   <TableHead className="text-right">Preço Unit.</TableHead>
