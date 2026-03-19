@@ -19,7 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { Shield, Save } from "lucide-react"
+import { Shield, ShieldCheck, Save } from "lucide-react"
 
 const PERMISSIONS = [
   { key: "quotation.create", label: "Criar Cotação", group: "Cotações" },
@@ -29,8 +29,9 @@ const PERMISSIONS = [
   { key: "order.create", label: "Criar Pedido", group: "Pedidos" },
   { key: "order.edit", label: "Editar Pedido", group: "Pedidos" },
   { key: "requisition.create", label: "Criar Requisição", group: "Requisições" },
-  { key: "requisition.approve", label: "Aprovar Requisição", group: "Requisições" },
   { key: "view_only", label: "Somente Visualização", group: "Geral" },
+  { key: "approval.requisition", label: "Aprovar Requisições", group: "Aprovações" },
+  { key: "approval.order", label: "Aprovar Pedidos de Compra", group: "Aprovações" },
 ] as const
 
 type PermissionKey = (typeof PERMISSIONS)[number]["key"]
@@ -300,7 +301,8 @@ export default function PermissionsPage({
                   <React.Fragment key={groupName}>
                     <TableRow>
                       <TableCell colSpan={1 + ROLES.length}>
-                        <div className="bg-muted/50 font-semibold text-xs uppercase text-muted-foreground rounded-md px-2 py-1">
+                        <div className="bg-muted/50 font-semibold text-xs uppercase text-muted-foreground rounded-md px-2 py-1 flex items-center gap-1.5">
+                          {groupName === "Aprovações" && <ShieldCheck className="h-3.5 w-3.5 shrink-0" />}
                           {groupName}
                         </div>
                       </TableCell>

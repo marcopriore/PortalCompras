@@ -26,6 +26,8 @@ export type PermissionKey =
   | "requisition.create"
   | "requisition.approve"
   | "view_only"
+  | "approval.requisition"
+  | "approval.order"
 
 export type UsePermissionsReturn = {
   loading: boolean
@@ -60,6 +62,8 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "requisition.create",
   "requisition.approve",
   "view_only",
+  "approval.requisition",
+  "approval.order",
 ]
 
 export function usePermissions(): UsePermissionsReturn {

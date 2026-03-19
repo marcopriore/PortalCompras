@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -66,10 +66,21 @@ export function Sidebar({ type }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [pendingApprovals, setPendingApprovals] = useState<number | null>(null)
   const pathname = usePathname()
-  const navItems = type === "comprador" ? buyerNavItems : supplierNavItems
   const { userId, companyId } = useUser()
-  const { hasPermission } = usePermissions()
-  void hasPermission
+  const { hasPermission, loading: permissionsLoading } = usePermissions()
+
+  const canShowApprovals =
+    type !== "comprador" ||
+    permissionsLoading ||
+    hasPermission("approval.requisition") ||
+    hasPermission("approval.order")
+
+  const navItems = React.useMemo(() => {
+    const base = type === "comprador" ? buyerNavItems : supplierNavItems
+    if (type !== "comprador") return base
+    if (canShowApprovals) return base
+    return base.filter((item) => item.href !== "/comprador/aprovacoes")
+  }, [type, canShowApprovals])
 
   useEffect(() => {
     if (type !== "comprador" || !companyId || !userId) return

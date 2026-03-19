@@ -5,6 +5,7 @@ import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -39,6 +40,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 import {
   ShieldCheck,
+  ShieldOff,
   Check,
   X,
   Search,
@@ -128,6 +130,7 @@ function getPriorityMeta(priority: Priority): { label: string; className: string
 
 export default function AprovacoesPage() {
   const { companyId, userId } = useUser()
+  const { hasPermission, loading: permissionsLoading } = usePermissions()
   const [userRole, setUserRole] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
 
@@ -401,7 +404,43 @@ export default function AprovacoesPage() {
     )
   }
 
+  if (permissionsLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    )
+  }
+
+  const hasReqPermission = hasPermission("approval.requisition")
+  const hasOrderPermission = hasPermission("approval.order")
+
+  if (!hasReqPermission && !hasOrderPermission) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-3">
+          <ShieldCheck className="h-8 w-8 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Aprovações</h1>
+            <p className="text-muted-foreground">
+              Gerencie as aprovações pendentes de requisições e pedidos de compra.
+            </p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <ShieldOff className="h-12 w-12 text-muted-foreground mb-4" />
+            <p className="text-lg font-medium text-foreground">
+              Você não tem permissão para acessar esta tela.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   const showEmptyState = pendingTotal === 0 && !loading
+  const showTabs = hasReqPermission && hasOrderPermission
 
   return (
     <div className="space-y-6">
@@ -434,7 +473,7 @@ export default function AprovacoesPage() {
             </p>
           </CardContent>
         </Card>
-      ) : (
+      ) : showTabs ? (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
             <TabsTrigger value="requisitions">
@@ -803,6 +842,367 @@ export default function AprovacoesPage() {
             </Card>
           </TabsContent>
         </Tabs>
+      ) : (
+        <>
+          {hasReqPermission && (
+            <div className="space-y-4">
+              <div className="bg-muted/40 border border-border rounded-xl p-4 space-y-4">
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Status</p>
+                    <Select value={reqStatus} onValueChange={(v) => setReqStatus(v as typeof reqStatus)}>
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="pending">Pendente</SelectItem>
+                        <SelectItem value="approved">Aprovado</SelectItem>
+                        <SelectItem value="rejected">Reprovado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Buscar</p>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar por código ou solicitante..."
+                        value={reqSearch}
+                        onChange={(e) => setReqSearch(e.target.value)}
+                        className="w-64 pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 ml-auto">
+                    <span className="text-sm text-muted-foreground">
+                      {filteredRequisitions.length} resultado(s)
+                    </span>
+                    {hasReqFilters && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setReqStatus("all")
+                          setReqSearch("")
+                          setReqPage(1)
+                        }}
+                      >
+                        Limpar filtros
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <Card>
+                <CardContent className="p-0">
+                  {loading ? (
+                    <div className="py-12 text-center text-sm text-muted-foreground">
+                      Carregando...
+                    </div>
+                  ) : filteredRequisitions.length === 0 ? (
+                    <div className="py-12 text-center text-sm text-muted-foreground">
+                      Nenhuma requisição encontrada.
+                    </div>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Código</TableHead>
+                            <TableHead>Título</TableHead>
+                            <TableHead>Solicitante</TableHead>
+                            <TableHead>Centro de Custo</TableHead>
+                            <TableHead>Prioridade</TableHead>
+                            <TableHead>Data</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Ações</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {reqPaginated.map((row) => {
+                            const s = getApprovalStatusMeta(row.request.status)
+                            const r = row.requisition
+                            const p = getPriorityMeta((r?.priority as Priority) ?? "normal")
+                            return (
+                              <TableRow key={row.request.id}>
+                                <TableCell className="font-mono text-sm">
+                                  {r?.code ?? "—"}
+                                </TableCell>
+                                <TableCell>{r?.title ?? "—"}</TableCell>
+                                <TableCell>{r?.requester_name ?? "—"}</TableCell>
+                                <TableCell>{r?.cost_center ?? "—"}</TableCell>
+                                <TableCell>
+                                  <Badge variant="secondary" className={p.className}>
+                                    {p.label}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {formatDateBR(row.request.created_at)}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={s.className}>
+                                    {s.label}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {row.request.status === "pending" && (
+                                    <div className="flex justify-end gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="default"
+                                        className="bg-green-600 hover:bg-green-700"
+                                        onClick={() =>
+                                          handleApprove(
+                                            "requisition",
+                                            row.request.id,
+                                            row.request.entity_id,
+                                          )
+                                        }
+                                        disabled={actionLoading === row.request.id}
+                                      >
+                                        <Check className="h-4 w-4 mr-1" />
+                                        Aprovar
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() =>
+                                          openRejectDialog(
+                                            "requisition",
+                                            row.request.id,
+                                            row.request.entity_id,
+                                          )
+                                        }
+                                        disabled={actionLoading === row.request.id}
+                                      >
+                                        <X className="h-4 w-4 mr-1" />
+                                        Reprovar
+                                      </Button>
+                                    </div>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                      <div className="flex flex-col gap-3 px-4 py-4 border-t border-border sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm text-muted-foreground">
+                          Exibindo {reqFrom}–{reqTo} de {filteredRequisitions.length} resultado(s)
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setReqPage((p) => Math.max(1, p - 1))}
+                            disabled={reqPage <= 1}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                            Anterior
+                          </Button>
+                          <span className="text-sm text-muted-foreground px-2">
+                            Página {reqPage} de {reqTotalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setReqPage((p) => Math.min(reqTotalPages, p + 1))
+                            }
+                            disabled={reqPage >= reqTotalPages}
+                          >
+                            Próximo
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+          {hasOrderPermission && (
+            <div className="space-y-4">
+              <div className="bg-muted/40 border border-border rounded-xl p-4 space-y-4">
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Status</p>
+                    <Select
+                      value={orderStatus}
+                      onValueChange={(v) => setOrderStatus(v as typeof orderStatus)}
+                    >
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="pending">Pendente</SelectItem>
+                        <SelectItem value="approved">Aprovado</SelectItem>
+                        <SelectItem value="rejected">Reprovado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Buscar</p>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar por código ou fornecedor..."
+                        value={orderSearch}
+                        onChange={(e) => setOrderSearch(e.target.value)}
+                        className="w-64 pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 ml-auto">
+                    <span className="text-sm text-muted-foreground">
+                      {filteredOrders.length} resultado(s)
+                    </span>
+                    {hasOrderFilters && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setOrderStatus("all")
+                          setOrderSearch("")
+                          setOrderPage(1)
+                        }}
+                      >
+                        Limpar filtros
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <Card>
+                <CardContent className="p-0">
+                  {loading ? (
+                    <div className="py-12 text-center text-sm text-muted-foreground">
+                      Carregando...
+                    </div>
+                  ) : filteredOrders.length === 0 ? (
+                    <div className="py-12 text-center text-sm text-muted-foreground">
+                      Nenhum pedido encontrado.
+                    </div>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Código</TableHead>
+                            <TableHead>Fornecedor</TableHead>
+                            <TableHead>Valor Total</TableHead>
+                            <TableHead>Data</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Ações</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {orderPaginated.map((row) => {
+                            const s = getApprovalStatusMeta(row.request.status)
+                            const o = row.order
+                            return (
+                              <TableRow key={row.request.id}>
+                                <TableCell className="font-mono text-sm">
+                                  {o?.code ?? "—"}
+                                </TableCell>
+                                <TableCell>{o?.supplier_name ?? "—"}</TableCell>
+                                <TableCell>
+                                  {o?.total_price != null
+                                    ? money.format(o.total_price)
+                                    : "—"}
+                                </TableCell>
+                                <TableCell>
+                                  {formatDateBR(row.request.created_at)}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={s.className}>
+                                    {s.label}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {row.request.status === "pending" && (
+                                    <div className="flex justify-end gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="default"
+                                        className="bg-green-600 hover:bg-green-700"
+                                        onClick={() =>
+                                          handleApprove(
+                                            "order",
+                                            row.request.id,
+                                            row.request.entity_id,
+                                          )
+                                        }
+                                        disabled={actionLoading === row.request.id}
+                                      >
+                                        <Check className="h-4 w-4 mr-1" />
+                                        Aprovar
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() =>
+                                          openRejectDialog(
+                                            "order",
+                                            row.request.id,
+                                            row.request.entity_id,
+                                          )
+                                        }
+                                        disabled={actionLoading === row.request.id}
+                                      >
+                                        <X className="h-4 w-4 mr-1" />
+                                        Reprovar
+                                      </Button>
+                                    </div>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                      <div className="flex flex-col gap-3 px-4 py-4 border-t border-border sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm text-muted-foreground">
+                          Exibindo {orderFrom}–{orderTo} de {filteredOrders.length} resultado(s)
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setOrderPage((p) => Math.max(1, p - 1))
+                            }
+                            disabled={orderPage <= 1}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                            Anterior
+                          </Button>
+                          <span className="text-sm text-muted-foreground px-2">
+                            Página {orderPage} de {orderTotalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setOrderPage((p) => Math.min(orderTotalPages, p + 1))
+                            }
+                            disabled={orderPage >= orderTotalPages}
+                          >
+                            Próximo
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </>
       )}
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
