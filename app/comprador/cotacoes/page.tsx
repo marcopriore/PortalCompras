@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
   Plus,
@@ -11,6 +11,7 @@ import {
   Building2,
   Package,
   Download,
+  X,
 } from "lucide-react"
 import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import { Button } from "@/components/ui/button"
@@ -74,7 +75,10 @@ export default function CotacoesPage() {
   void hasFeature
 
   const [search, setSearch] = useState("")
-  const [statusFilter, setStatusFilter] = useState<string[]>([])
+  const searchRef = React.useRef<HTMLDivElement>(null)
+  const supplierFilterRef = React.useRef<HTMLDivElement>(null)
+  const materialFilterRef = React.useRef<HTMLDivElement>(null)
+  const [statusFilter, setStatusFilter] = useState<string[]>(['draft', 'waiting', 'analysis'])
   const [dateFrom, setDateFrom] = useState<string>("")
   const [dateTo, setDateTo] = useState<string>("")
   const [supplierFilter, setSupplierFilter] = useState<string>("")
@@ -215,7 +219,7 @@ export default function CotacoesPage() {
 
   const handleClearFilters = () => {
     setSearch("")
-    setStatusFilter([])
+    setStatusFilter(['draft', 'waiting', 'analysis'])
     setDateFrom("")
     setDateTo("")
     setSupplierFilter("")
@@ -358,14 +362,27 @@ export default function CotacoesPage() {
             <p className="text-xs font-medium text-muted-foreground mb-1 block">
               Buscar
             </p>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <div ref={searchRef} className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Buscar por título ou código..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-8"
+                className="pl-9 pr-8"
               />
+              {search.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("")
+                    ;(searchRef.current?.querySelector("input") as HTMLInputElement)?.focus()
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
+                  aria-label="Limpar busca"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -416,14 +433,27 @@ export default function CotacoesPage() {
             <p className="text-xs font-medium text-muted-foreground mb-1 block">
               Fornecedor
             </p>
-            <div className="relative">
-              <Building2 className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <div ref={supplierFilterRef} className="relative">
+              <Building2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Filtrar por fornecedor..."
                 value={supplierFilter}
                 onChange={(e) => setSupplierFilter(e.target.value)}
-                className="pl-8"
+                className="pl-9 pr-8"
               />
+              {supplierFilter.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupplierFilter("")
+                    ;(supplierFilterRef.current?.querySelector("input") as HTMLInputElement)?.focus()
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
+                  aria-label="Limpar busca"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -431,14 +461,27 @@ export default function CotacoesPage() {
             <p className="text-xs font-medium text-muted-foreground mb-1 block">
               Material / Item
             </p>
-            <div className="relative">
-              <Package className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <div ref={materialFilterRef} className="relative">
+              <Package className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Filtrar por código ou item..."
                 value={materialFilter}
                 onChange={(e) => setMaterialFilter(e.target.value)}
-                className="pl-8"
+                className="pl-9 pr-8"
               />
+              {materialFilter.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMaterialFilter("")
+                    ;(materialFilterRef.current?.querySelector("input") as HTMLInputElement)?.focus()
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
+                  aria-label="Limpar busca"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </div>
 

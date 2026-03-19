@@ -44,6 +44,44 @@ import {
   ChevronRight,
 } from "lucide-react"
 
+function SearchWithClear({
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+  className?: string
+}) {
+  const ref = React.useRef<HTMLDivElement>(null)
+  return (
+    <div ref={ref} className="relative">
+      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={className}
+      />
+      {value.length > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            onChange("")
+            ;(ref.current?.querySelector("input") as HTMLInputElement)?.focus()
+          }}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
+          aria-label="Limpar busca"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+  )
+}
+
 type ApprovalStatus = "pending" | "approved" | "rejected"
 type Priority = "normal" | "urgent" | "critical"
 
@@ -135,11 +173,11 @@ export default function AprovacoesPage() {
 
   const [activeTab, setActiveTab] = React.useState("requisitions")
 
-  const [reqStatus, setReqStatus] = React.useState<string[]>([])
+  const [reqStatus, setReqStatus] = React.useState<string[]>(['pending'])
   const [reqSearch, setReqSearch] = React.useState("")
   const [reqPage, setReqPage] = React.useState(1)
 
-  const [orderStatus, setOrderStatus] = React.useState<string[]>([])
+  const [orderStatus, setOrderStatus] = React.useState<string[]>(['pending'])
   const [orderSearch, setOrderSearch] = React.useState("")
   const [orderPage, setOrderPage] = React.useState(1)
 
@@ -513,15 +551,12 @@ export default function AprovacoesPage() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Buscar</p>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      placeholder="Buscar por código ou solicitante..."
-                      value={reqSearch}
-                      onChange={(e) => setReqSearch(e.target.value)}
-                      className="w-64 pl-9"
-                    />
-                  </div>
+                  <SearchWithClear
+                    value={reqSearch}
+                    onChange={setReqSearch}
+                    placeholder="Buscar por código ou solicitante..."
+                    className="w-64 pl-9 pr-8"
+                  />
                 </div>
                 <div className="flex items-center gap-3 ml-auto">
                   <span className="text-sm text-muted-foreground">
@@ -532,7 +567,7 @@ export default function AprovacoesPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        setReqStatus([])
+                        setReqStatus(['pending'])
                         setReqSearch("")
                         setReqPage(1)
                       }}
@@ -702,15 +737,12 @@ export default function AprovacoesPage() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Buscar</p>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      placeholder="Buscar por código ou fornecedor..."
-                      value={orderSearch}
-                      onChange={(e) => setOrderSearch(e.target.value)}
-                      className="w-64 pl-9"
-                    />
-                  </div>
+                  <SearchWithClear
+                    value={orderSearch}
+                    onChange={setOrderSearch}
+                    placeholder="Buscar por código ou fornecedor..."
+                    className="w-64 pl-9 pr-8"
+                  />
                 </div>
                 <div className="flex items-center gap-3 ml-auto">
                   <span className="text-sm text-muted-foreground">
@@ -721,7 +753,7 @@ export default function AprovacoesPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        setOrderStatus([])
+                        setOrderStatus(['pending'])
                         setOrderSearch("")
                         setOrderPage(1)
                       }}
@@ -891,15 +923,12 @@ export default function AprovacoesPage() {
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">Buscar</p>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar por código ou solicitante..."
-                        value={reqSearch}
-                        onChange={(e) => setReqSearch(e.target.value)}
-                        className="w-64 pl-9"
-                      />
-                    </div>
+                    <SearchWithClear
+                      value={reqSearch}
+                      onChange={setReqSearch}
+                      placeholder="Buscar por código ou solicitante..."
+                      className="w-64 pl-9 pr-8"
+                    />
                   </div>
                   <div className="flex items-center gap-3 ml-auto">
                     <span className="text-sm text-muted-foreground">
@@ -910,7 +939,7 @@ export default function AprovacoesPage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          setReqStatus([])
+                          setReqStatus(['pending'])
                           setReqSearch("")
                           setReqPage(1)
                         }}
@@ -1080,15 +1109,12 @@ export default function AprovacoesPage() {
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-muted-foreground">Buscar</p>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar por código ou fornecedor..."
-                        value={orderSearch}
-                        onChange={(e) => setOrderSearch(e.target.value)}
-                        className="w-64 pl-9"
-                      />
-                    </div>
+                    <SearchWithClear
+                      value={orderSearch}
+                      onChange={setOrderSearch}
+                      placeholder="Buscar por código ou fornecedor..."
+                      className="w-64 pl-9 pr-8"
+                    />
                   </div>
                   <div className="flex items-center gap-3 ml-auto">
                     <span className="text-sm text-muted-foreground">
@@ -1099,7 +1125,7 @@ export default function AprovacoesPage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          setOrderStatus([])
+                          setOrderStatus(['pending'])
                           setOrderSearch("")
                           setOrderPage(1)
                         }}

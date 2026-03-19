@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   Search,
   Eye,
+  X,
 } from "lucide-react"
 
 type PurchaseOrderStatus = "processing" | "sent" | "error" | "completed"
@@ -91,10 +92,11 @@ export default function PedidosPage() {
   const [loading, setLoading] = React.useState(true)
   const [filters, setFilters] = React.useState<Filters>({
     search: "",
-    status: [],
+    status: ['processing', 'sent', 'error'],
     dateFrom: "",
     dateTo: "",
   })
+  const searchInputRef = React.useRef<HTMLDivElement>(null)
 
   React.useEffect(() => {
     if (!companyId) return
@@ -129,7 +131,7 @@ export default function PedidosPage() {
   const clearFilters = () => {
     setFilters({
       search: "",
-      status: [],
+      status: ['processing', 'sent', 'error'],
       dateFrom: "",
       dateTo: "",
     })
@@ -238,15 +240,28 @@ export default function PedidosPage() {
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="search">Buscar</Label>
-              <div className="relative">
+              <div ref={searchInputRef} className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   id="search"
                   placeholder="Buscar por nº do pedido ou fornecedor"
                   value={filters.search}
                   onChange={handleFilterChange("search")}
-                  className="pl-9"
+                  className="pl-9 pr-8"
                 />
+                {filters.search.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilters((prev) => ({ ...prev, search: "" }))
+                      ;(searchInputRef.current?.querySelector("input") as HTMLInputElement)?.focus()
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
+                    aria-label="Limpar busca"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
             <div className="space-y-2">

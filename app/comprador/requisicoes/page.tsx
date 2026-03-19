@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { ClipboardList, Clock, CheckCircle2, ChevronLeft, ChevronRight, FileText, Search, Eye, Plus } from "lucide-react"
+import { ClipboardList, Clock, CheckCircle2, ChevronLeft, ChevronRight, FileText, Search, Eye, Plus, X } from "lucide-react"
 
 type Priority = "normal" | "urgent" | "critical"
 type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
@@ -86,7 +86,8 @@ export default function RequisicoesPage() {
   const [loading, setLoading] = React.useState(true)
 
   const [search, setSearch] = React.useState("")
-  const [status, setStatus] = React.useState<string[]>([])
+  const searchInputRef = React.useRef<HTMLDivElement>(null)
+  const [status, setStatus] = React.useState<string[]>(['pending', 'approved', 'rejected', 'in_quotation'])
   const [priority, setPriority] = React.useState<string[]>([])
   const [dateFrom, setDateFrom] = React.useState<string>("")
   const [dateTo, setDateTo] = React.useState<string>("")
@@ -182,14 +183,27 @@ export default function RequisicoesPage() {
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-1 flex-col min-w-[200px]">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Buscar</p>
-              <div className="relative">
+              <div ref={searchInputRef} className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Buscar por título ou código..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9 w-full"
+                  className="pl-9 pr-8 w-full"
                 />
+                {search.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch("")
+                      ;(searchInputRef.current?.querySelector("input") as HTMLInputElement)?.focus()
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
+                    aria-label="Limpar busca"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             </div>
 
@@ -243,7 +257,7 @@ export default function RequisicoesPage() {
                 size="sm"
                 onClick={() => {
                   setSearch("")
-                  setStatus([])
+                  setStatus(['pending', 'approved', 'rejected', 'in_quotation'])
                   setPriority([])
                   setDateFrom("")
                   setDateTo("")

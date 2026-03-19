@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Building2, CheckCircle2, Mail, Phone, Search, SearchX } from 'lucide-react'
+import { Building2, CheckCircle2, Mail, Phone, Search, SearchX, X } from 'lucide-react'
 
 type SupplierStatus = 'active' | 'inactive'
 
@@ -72,6 +72,7 @@ export default function FornecedoresPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const searchInputRef = useRef<HTMLDivElement>(null)
   const [categoryFilter, setCategoryFilter] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
@@ -176,14 +177,27 @@ export default function FornecedoresPage() {
           <p className="text-xs font-medium text-muted-foreground mb-1 block">
             Buscar
           </p>
-          <div className="relative">
+          <div ref={searchInputRef} className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Buscar por código ou nome do fornecedor..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+              className="pl-9 pr-8"
             />
+            {search.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('')
+                  ;(searchInputRef.current?.querySelector('input') as HTMLInputElement)?.focus()
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
+                aria-label="Limpar busca"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
         <div className="flex flex-col">

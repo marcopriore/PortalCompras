@@ -33,6 +33,7 @@ import {
   UserCheck,
   Search,
   Plus,
+  X,
   Pencil,
   Copy,
   Check,
@@ -212,6 +213,7 @@ export default function TenantUsersPage() {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const searchInputRef = React.useRef<HTMLDivElement>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null)
@@ -836,14 +838,27 @@ export default function TenantUsersPage() {
       </div>
 
       {/* Barra de busca */}
-      <div className="bg-muted/40 border border-border rounded-xl p-3 flex items-center gap-2 max-w-md">
-        <Search className="h-4 w-4 text-muted-foreground" />
+      <div ref={searchInputRef} className="relative bg-muted/40 border border-border rounded-xl p-3 max-w-md">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Buscar por nome..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent"
+          className="pl-9 pr-8 border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent"
         />
+        {search.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearch('')
+              ;(searchInputRef.current?.querySelector('input') as HTMLInputElement)?.focus()
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
+            aria-label="Limpar busca"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Tabela */}
