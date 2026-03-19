@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Eye,
   Scissors,
   Trophy,
 } from "lucide-react"
@@ -123,6 +124,8 @@ export default function EqualizacaoPage({
   const [loading, setLoading] = React.useState(true)
   const [expandedProposal, setExpandedProposal] = React.useState<string | null>(null)
   const [selecting, setSelecting] = React.useState<string | null>(null)
+
+  const isReadOnly = quotation?.status === "completed"
 
   React.useEffect(() => {
     if (!id) return
@@ -497,7 +500,11 @@ export default function EqualizacaoPage({
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push(`/comprador/cotacoes/${id}`)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push(`/comprador/cotacoes/${id}`)}
+          >
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1">
@@ -516,6 +523,15 @@ export default function EqualizacaoPage({
 
   return (
     <div className="space-y-6">
+      {isReadOnly && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-3">
+          <Eye className="h-5 w-5 text-blue-600 shrink-0" />
+          <p className="text-sm text-blue-800">
+            Esta cotação está concluída. Visualização somente leitura do histórico de propostas.
+          </p>
+        </div>
+      )}
+
       <div className="flex items-center gap-4">
         <Button
           variant="ghost"
@@ -530,7 +546,11 @@ export default function EqualizacaoPage({
             {quotation ? `${quotation.code} — ${quotation.description}` : `Cotação ${id}`}
           </p>
         </div>
-        <Button variant="outline" onClick={handleExportExcel} disabled={!quotation}>
+        <Button
+          variant="outline"
+          onClick={handleExportExcel}
+          disabled={!quotation}
+        >
           <Download className="mr-2 h-4 w-4" />
           Exportar
         </Button>
@@ -717,7 +737,23 @@ export default function EqualizacaoPage({
                       </Button>
                     </TableCell>
                     <TableCell className="text-right">
-                      {!hasPermission("quotation.equalize") ? (
+                      {isReadOnly ? (
+                        <Button
+                          size="sm"
+                          variant={buttonVariant as any}
+                          disabled
+                          className={cn(isSelected && "text-green-600 border-green-200")}
+                        >
+                          {isSelected ? (
+                            <>
+                              <Check className="mr-2 h-4 w-4" />
+                              Selecionado
+                            </>
+                          ) : (
+                            "Selecionar"
+                          )}
+                        </Button>
+                      ) : !hasPermission("quotation.equalize") ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <span>
@@ -903,26 +939,28 @@ export default function EqualizacaoPage({
         </Table>
       </div>
 
-      <div className="flex justify-end gap-2">
-        {proposalSelecionada && (
-          !hasPermission("order.create") ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button disabled title="Sem permissão">
-                    Finalizar Cotação
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
-            </Tooltip>
-          ) : (
-            <Button onClick={() => router.push(`/comprador/cotacoes/${id}/novo-pedido`)}>
-              Finalizar Cotação
-            </Button>
-          )
-        )}
-      </div>
+      {!isReadOnly && (
+        <div className="flex justify-end gap-2">
+          {proposalSelecionada && (
+            !hasPermission("order.create") ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button disabled title="Sem permissão">
+                      Finalizar Cotação
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
+              </Tooltip>
+            ) : (
+              <Button onClick={() => router.push(`/comprador/cotacoes/${id}/novo-pedido`)}>
+                Finalizar Cotação
+              </Button>
+            )
+          )}
+        </div>
+      )}
     </div>
   )
 }

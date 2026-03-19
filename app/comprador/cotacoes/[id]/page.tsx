@@ -1,7 +1,7 @@
 'use client'
 
 import { use, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
@@ -21,6 +21,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
+  BarChart2,
   Building2,
   ChevronLeft,
   FileText,
@@ -114,7 +115,10 @@ export default function QuotationDetailsPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { id } = use(params)
+  const from = searchParams.get('from')
+  const requisicaoId = searchParams.get('requisicaoId')
   const { companyId, userId } = useUser()
   const { hasFeature, hasPermission } = usePermissions()
   void hasFeature
@@ -253,7 +257,13 @@ export default function QuotationDetailsPage({
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => router.push('/comprador/cotacoes')}
+            onClick={() =>
+              router.push(
+                from === 'requisicao' && requisicaoId
+                  ? `/comprador/requisicoes/${requisicaoId}`
+                  : '/comprador/cotacoes',
+              )
+            }
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
@@ -301,6 +311,17 @@ export default function QuotationDetailsPage({
                 Cancelar Cotação
               </Button>
             )
+          )}
+          {quotation &&
+            (quotation.status === 'waiting' || quotation.status === 'analysis') && (
+            <Button
+              type="button"
+              variant="default"
+              onClick={() => router.push(`/comprador/cotacoes/${quotation.id}/equalizacao`)}
+            >
+              <BarChart2 className="mr-2 h-4 w-4" />
+              Equalizar Propostas
+            </Button>
           )}
           {quotation && (quotation.status === 'draft' || quotation.status === 'rejected') && (
             <>

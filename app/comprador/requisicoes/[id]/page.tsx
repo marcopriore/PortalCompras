@@ -215,7 +215,11 @@ export default function RequisicaoDetailPage({
         <div className="flex items-center gap-2">
           {linkedQuotation && hasFeature("quotations") && (
             <button
-              onClick={() => router.push(`/comprador/cotacoes/${linkedQuotation.id}`)}
+              onClick={() =>
+                router.push(
+                  `/comprador/cotacoes/${linkedQuotation.id}?from=requisicao&requisicaoId=${id}`,
+                )
+              }
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors cursor-pointer border border-blue-200"
             >
               <FileText className="w-3 h-3" />
