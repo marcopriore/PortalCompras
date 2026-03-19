@@ -28,7 +28,7 @@ import {
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 
-type QuotationStatus = 'draft' | 'waiting' | 'analysis' | 'completed' | 'cancelled'
+type QuotationStatus = 'draft' | 'waiting' | 'analysis' | 'completed' | 'cancelled' | 'rejected'
 
 interface Quotation {
   id: string
@@ -65,6 +65,7 @@ const statusConfig: Record<
   analysis: { label: 'Em Análise', variant: 'secondary' },
   completed: { label: 'Concluída', variant: 'success' },
   cancelled: { label: 'Cancelada', variant: 'destructive' },
+  rejected: { label: 'Rejeitada', variant: 'destructive' },
 }
 
 type SectionKey = 'general' | 'items' | 'suppliers'
@@ -209,6 +210,7 @@ export default function QuotationDetailsPage({
 
       if (newStatus === 'waiting') {
         toast.success('Cotação enviada com sucesso!')
+        router.push('/comprador/cotacoes')
       } else if (newStatus === 'cancelled') {
         toast.success('Cotação cancelada.')
         await logAudit({
@@ -300,7 +302,7 @@ export default function QuotationDetailsPage({
               </Button>
             )
           )}
-          {quotation && quotation.status === 'draft' && (
+          {quotation && (quotation.status === 'draft' || quotation.status === 'rejected') && (
             <>
               <Button
                 type="button"
