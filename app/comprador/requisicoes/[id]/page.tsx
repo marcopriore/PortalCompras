@@ -83,26 +83,6 @@ function getStatusMeta(status: RequisitionStatus): { label: string; className: s
   }
 }
 
-function getPriorityMeta(priority: Priority): { label: string; className: string } {
-  switch (priority) {
-    case "normal":
-      return { label: "Normal", className: "bg-gray-100 text-gray-700" }
-    case "urgent":
-      return { label: "Urgente", className: "bg-orange-100 text-orange-800" }
-    case "critical":
-      return { label: "Crítica", className: "bg-red-100 text-red-800" }
-  }
-}
-
-const formatCurrency = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format
-
-function formatDateTimeBR(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  return format(d, "dd/MM/yyyy HH:mm", { locale: ptBR })
-}
-
 function formatDateBR(iso: string | null | undefined): string {
   if (!iso) return "—"
   const d = new Date(iso)
@@ -177,14 +157,9 @@ export default function RequisicaoDetailPage({
     }
   }, [id])
 
-  const priorityMeta = requisition ? getPriorityMeta(requisition.priority) : null
   const statusMeta = requisition ? getStatusMeta(requisition.status) : null
 
-  const totalEstimated = React.useMemo(() => {
-    return items.reduce((sum, it) => sum + (it.estimated_price ?? 0) * it.quantity, 0)
-  }, [items])
-
-  const originLabel = requisition?.origin === "manual" ? "Manual" : "ERP"
+  const originLabel = requisition?.origin === "manual" ? "Manual" : "Integração ERP"
 
   const fetchFullName = async () => {
     if (!userId) return ""
@@ -335,13 +310,10 @@ export default function RequisicaoDetailPage({
 
           <div className="flex flex-col">
             <h1 className="text-2xl font-bold tracking-tight">{requisition.code}</h1>
-            <p className="text-muted-foreground">{requisition.title}</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {priorityMeta && <Badge className={priorityMeta.className}>{priorityMeta.label}</Badge>}
-          {statusMeta && <Badge className={statusMeta.className}>{statusMeta.label}</Badge>}
           {linkedQuotation && hasFeature("quotations") && (
             <button
               onClick={() => router.push(`/comprador/cotacoes/${linkedQuotation.id}`)}
@@ -363,61 +335,57 @@ export default function RequisicaoDetailPage({
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Informações</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
+      <Card>
+        <CardHeader>
+          <CardTitle>Informações Gerais</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-4">
             <div>
-              <Label>Solicitante</Label>
-              <p className="font-medium">{requisition.requester_name ?? "—"}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Solicitante</p>
+              <p className="text-sm text-foreground font-medium">{requisition.requester_name ?? "—"}</p>
             </div>
             <div>
-              <Label>Centro de Custo</Label>
-              <p className="font-medium">{requisition.cost_center ?? "—"}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Centro de Custo</p>
+              <p className="text-sm text-foreground font-medium">{requisition.cost_center ?? "—"}</p>
             </div>
             <div>
-              <Label>Data de Necessidade</Label>
-              <p className="font-medium">{formatDateBR(requisition.needed_by)}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Data de Criação</p>
+              <p className="text-sm text-foreground font-medium">{formatDateBR(requisition.created_at)}</p>
             </div>
             <div>
-              <Label>Origem</Label>
-              <p className="font-medium">{originLabel}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Data de Necessidade</p>
+              <p className="text-sm text-foreground font-medium">{formatDateBR(requisition.needed_by)}</p>
             </div>
             <div>
-              <Label>Criado em</Label>
-              <p className="font-medium">{formatDateTimeBR(requisition.created_at)}</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Aprovação</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div>
-              <Label>Status</Label>
-              <div className="mt-1">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</p>
+              <div className="mt-0.5">
                 {statusMeta && <Badge className={statusMeta.className}>{statusMeta.label}</Badge>}
               </div>
             </div>
             <div>
-              <Label>Aprovador</Label>
-              <p className="font-medium">{requisition.approver_name ?? "Aguardando aprovação"}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Origem</p>
+              <p className="text-sm text-foreground font-medium">{originLabel}</p>
+            </div>
+            {requisition.origin === "erp" && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Código ERP</p>
+                <p className="text-sm text-foreground font-medium">{requisition.erp_code ?? "—"}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Aprovador</p>
+              <p className="text-sm text-foreground font-medium">{requisition.approver_name ?? "—"}</p>
             </div>
             <div>
-              <Label>Data de Aprovação</Label>
-              <p className="font-medium">{requisition.approved_at ? formatDateTimeBR(requisition.approved_at) : "—"}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Data de Aprovação</p>
+              <p className="text-sm text-foreground font-medium">
+                {requisition.approved_at ? formatDateBR(requisition.approved_at) : "—"}
+              </p>
             </div>
-            <div>
-              <Label>Código ERP</Label>
-              <p className="font-medium">{requisition.erp_code ?? "—"}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         {requisition.status === "pending" && hasPermission("requisition.approve") && (
@@ -539,7 +507,6 @@ export default function RequisicaoDetailPage({
                   <TableHead>Descrição</TableHead>
                   <TableHead className="text-right">Qtd</TableHead>
                   <TableHead>Unidade</TableHead>
-                  <TableHead className="text-right">Preço Estimado</TableHead>
                   <TableHead>Grupo</TableHead>
                   <TableHead>Observações</TableHead>
                 </TableRow>
@@ -551,23 +518,10 @@ export default function RequisicaoDetailPage({
                     <TableCell className="font-medium">{it.material_description}</TableCell>
                     <TableCell className="text-right">{it.quantity}</TableCell>
                     <TableCell>{it.unit_of_measure ?? "—"}</TableCell>
-                    <TableCell className="text-right">
-                      {it.estimated_price == null ? "—" : formatCurrency(it.estimated_price)}
-                    </TableCell>
                     <TableCell>{it.commodity_group ?? "—"}</TableCell>
                     <TableCell>{it.observations ?? "—"}</TableCell>
                   </TableRow>
                 ))}
-
-                <TableRow>
-                  <TableCell colSpan={4} className="text-right font-bold">
-                    Total Estimado
-                  </TableCell>
-                  <TableCell className="text-right font-bold">
-                    {formatCurrency(totalEstimated)}
-                  </TableCell>
-                  <TableCell colSpan={2} />
-                </TableRow>
               </TableBody>
             </Table>
           </div>

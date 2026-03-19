@@ -24,7 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { ClipboardList, Clock, CheckCircle2, FileText, Search, Filter, Eye, Plus } from "lucide-react"
+import { ClipboardList, Clock, CheckCircle2, ChevronLeft, ChevronRight, FileText, Search, Filter, Eye, Plus } from "lucide-react"
 
 type Priority = "normal" | "urgent" | "critical"
 type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
@@ -90,6 +90,11 @@ export default function RequisicoesPage() {
   const [priority, setPriority] = React.useState<"all" | Priority>("all")
   const [dateFrom, setDateFrom] = React.useState<string>("")
   const [dateTo, setDateTo] = React.useState<string>("")
+  const [page, setPage] = React.useState(1)
+
+  React.useEffect(() => {
+    setPage(1)
+  }, [search, status, priority, dateFrom, dateTo])
 
   React.useEffect(() => {
     if (!companyId) return
@@ -134,6 +139,15 @@ export default function RequisicoesPage() {
     })
   }, [requisitions, search, status, priority, dateFrom, dateTo])
 
+  const PAGE_SIZE = 20
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginated = React.useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
+  )
+  const from = filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+  const to = Math.min(page * PAGE_SIZE, filtered.length)
+
   const metrics = React.useMemo(() => {
     return {
       total: requisitions.length,
@@ -165,8 +179,8 @@ export default function RequisicoesPage() {
 
       <Card className="bg-muted/40 border border-border rounded-xl p-4">
         <CardContent className="p-0">
-          <div className="flex flex-wrap gap-4">
-            <div className="flex flex-col min-w-[220px]">
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="flex flex-1 flex-col min-w-[200px]">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Buscar</p>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -174,16 +188,16 @@ export default function RequisicoesPage() {
                   placeholder="Buscar por título ou código..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className="pl-9"
+                  className="pl-9 w-full"
                 />
               </div>
             </div>
 
-            <div className="flex flex-col w-[220px]">
+            <div className="flex flex-1 flex-col min-w-[180px]">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Status</p>
               <Select value={status} onValueChange={(v) => setStatus(v as any)}>
-                <SelectTrigger>
-                  <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+                <SelectTrigger className="w-full">
+                  <Filter className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -197,11 +211,11 @@ export default function RequisicoesPage() {
               </Select>
             </div>
 
-            <div className="flex flex-col w-[220px]">
+            <div className="flex flex-1 flex-col min-w-[160px]">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Prioridade</p>
               <Select value={priority} onValueChange={(v) => setPriority(v as any)}>
-                <SelectTrigger>
-                  <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
+                <SelectTrigger className="w-full">
+                  <Filter className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
                   <SelectValue placeholder="Prioridade" />
                 </SelectTrigger>
                 <SelectContent>
@@ -213,13 +227,13 @@ export default function RequisicoesPage() {
               </Select>
             </div>
 
-            <div className="flex flex-col w-[220px]">
+            <div className="flex flex-col w-40 shrink-0">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Data De</p>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full" />
             </div>
-            <div className="flex flex-col w-[220px]">
+            <div className="flex flex-col w-40 shrink-0">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Data Até</p>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full" />
             </div>
           </div>
 
@@ -235,6 +249,7 @@ export default function RequisicoesPage() {
                   setPriority("all")
                   setDateFrom("")
                   setDateTo("")
+                  setPage(1)
                 }}
               >
                 Limpar filtros
@@ -321,7 +336,7 @@ export default function RequisicoesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((r) => {
+                  {paginated.map((r) => {
                     const s = getStatusMeta(r.status)
                     const p = getPriorityMeta(r.priority)
                     const itemsCount = r.requisition_items?.length ?? 0
@@ -358,6 +373,37 @@ export default function RequisicoesPage() {
                   })}
                 </TableBody>
               </Table>
+            </div>
+          )}
+
+          {!loading && filtered.length > 0 && (
+            <div className="flex flex-col gap-3 pt-4 border-t border-border mt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-muted-foreground">
+                Exibindo {from}–{to} de {filtered.length} resultado(s)
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Anterior
+                </Button>
+                <span className="text-sm text-muted-foreground px-2">
+                  Página {page} de {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >
+                  Próximo
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
