@@ -66,12 +66,12 @@ export function Sidebar({ type }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [pendingApprovals, setPendingApprovals] = useState<number | null>(null)
   const pathname = usePathname()
-  const { userId, companyId, role, isSuperAdmin, loading: userLoading } = useUser()
+  const { userId, companyId, hasRole, isSuperAdmin, loading: userLoading } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
 
   const isLoading = userLoading || permissionsLoading
 
-  const canShowAdminLinks = role === "admin" || isSuperAdmin === true
+  const canShowAdminLinks = hasRole("admin") || isSuperAdmin === true
 
   const navItems = React.useMemo(() => {
     const base = type === "comprador" ? buyerNavItems : supplierNavItems
@@ -97,16 +97,9 @@ export function Sidebar({ type }: SidebarProps) {
   useEffect(() => {
     if (type !== "comprador" || !companyId || !userId) return
     const supabase = createClient()
+    const isAdmin = hasRole("admin")
 
     const fetchPendingCount = async () => {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", userId)
-        .single()
-      const role = (profile as { role?: string } | null)?.role ?? null
-      const isAdmin = role === "admin"
-
       let query = supabase
         .from("approval_requests")
         .select("*", { count: "exact", head: true })
@@ -122,7 +115,7 @@ export function Sidebar({ type }: SidebarProps) {
     fetchPendingCount()
     window.addEventListener("approval-updated", fetchPendingCount)
     return () => window.removeEventListener("approval-updated", fetchPendingCount)
-  }, [type, companyId, userId])
+  }, [type, companyId, userId, hasRole])
 
   return (
     <TooltipProvider delayDuration={0}>

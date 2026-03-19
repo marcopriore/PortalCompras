@@ -81,7 +81,7 @@ const ALL_PERMISSIONS: PermissionKey[] = [
 ]
 
 export function usePermissions(): UsePermissionsReturn {
-  const { userId, companyId, isSuperAdmin, loading: userLoading } = useUser()
+  const { userId, companyId, roles, isSuperAdmin, loading: userLoading } = useUser()
 
   const [loading, setLoading] = React.useState(true)
   const [features, setFeatures] = React.useState<Record<FeatureKey, boolean>>(
@@ -114,42 +114,47 @@ export function usePermissions(): UsePermissionsReturn {
 
       if (!companyId || !userId) return
 
+      if (roles.length === 0) {
+        const nextPermissions = {} as Record<PermissionKey, boolean>
+        ALL_PERMISSIONS.forEach((k) => {
+          nextPermissions[k] = false
+        })
+        const nextFeatures = {} as Record<FeatureKey, boolean>
+        ALL_FEATURES.forEach((k) => {
+          nextFeatures[k] = false
+        })
+        if (!alive) return
+        setFeatures(nextFeatures)
+        setPermissions(nextPermissions)
+        setLoading(false)
+        return
+      }
+
       setLoading(true)
       const supabase = createClient()
 
       try {
-        const [tenantFeaturesRes, userProfileRes] = await Promise.all([
+        const [tenantFeaturesRes, rolePermissionsRes] = await Promise.all([
           supabase
             .from("tenant_features")
             .select("feature_key, enabled")
             .eq("company_id", companyId),
           supabase
-            .from("profiles")
-            .select("role")
-            .eq("id", userId)
-            .single(),
+            .from("role_permissions")
+            .select("permission_key, enabled")
+            .eq("company_id", companyId)
+            .in("role", roles),
         ])
-
-        const userRole = (userProfileRes.data as any)?.role as string | null
 
         const tenantFeaturesData = (tenantFeaturesRes.data ?? []) as {
           feature_key: FeatureKey
           enabled: boolean
         }[]
 
-        let rolePermissionsData: { permission_key: PermissionKey; enabled: boolean }[] = []
-        if (userRole) {
-          const rolePermissionsRes = await supabase
-            .from("role_permissions")
-            .select("permission_key, enabled")
-            .eq("company_id", companyId)
-            .eq("role", userRole)
-
-          rolePermissionsData = ((rolePermissionsRes.data ?? []) as any) as {
-            permission_key: PermissionKey
-            enabled: boolean
-          }[]
-        }
+        const rolePermissionsData = ((rolePermissionsRes.data ?? []) as {
+          permission_key: PermissionKey
+          enabled: boolean
+        }[])
 
         const nextFeatures = {} as Record<FeatureKey, boolean>
         ALL_FEATURES.forEach((k) => {
@@ -164,7 +169,9 @@ export function usePermissions(): UsePermissionsReturn {
           nextPermissions[k] = false
         })
         rolePermissionsData.forEach((row) => {
-          if (row.permission_key) nextPermissions[row.permission_key] = Boolean(row.enabled)
+          if (row.permission_key && row.enabled) {
+            nextPermissions[row.permission_key] = true
+          }
         })
 
         if (!alive) return
@@ -177,13 +184,12 @@ export function usePermissions(): UsePermissionsReturn {
       }
     }
 
-    // aguardar userLoading para evitar fetch sem userId/companyId ainda carregados
     if (!userLoading) load()
 
     return () => {
       alive = false
     }
-  }, [companyId, userId, isSuperAdmin, userLoading])
+  }, [companyId, userId, roles, isSuperAdmin, userLoading])
 
   const hasFeature = React.useCallback(
     (feature: FeatureKey) => Boolean(features[feature]),

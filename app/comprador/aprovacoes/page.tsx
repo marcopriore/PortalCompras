@@ -126,9 +126,8 @@ function getPriorityMeta(priority: Priority): { label: string; className: string
 
 export default function AprovacoesPage() {
   const router = useRouter()
-  const { companyId, userId } = useUser()
+  const { companyId, userId, hasRole } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
-  const [userRole, setUserRole] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
 
   const [requisitionRows, setRequisitionRows] = React.useState<ApprovalRequisitionRow[]>([])
@@ -158,15 +157,7 @@ export default function AprovacoesPage() {
   const loadData = React.useCallback(async () => {
     if (!companyId || !userId) return
     const supabase = createClient()
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", userId)
-      .single()
-    const role = (profile as { role?: string } | null)?.role ?? null
-    setUserRole(role)
-    const isAdmin = role === "admin"
+    const isAdmin = hasRole("admin")
 
     let reqQuery = supabase
       .from("approval_requests")
@@ -228,7 +219,7 @@ export default function AprovacoesPage() {
       })),
     )
     setLoading(false)
-  }, [companyId, userId])
+  }, [companyId, userId, hasRole])
 
   React.useEffect(() => {
     if (!companyId || !userId) return

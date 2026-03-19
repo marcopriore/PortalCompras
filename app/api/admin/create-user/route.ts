@@ -3,11 +3,21 @@ import { NextResponse } from 'next/server'
 
 export async function POST(request: Request) {
   try {
-    const { email, password, fullName, role, companyId } = await request.json()
+    const { email, password, fullName, role, roles, companyId } =
+      await request.json()
 
-    if (!email || !password || !fullName || !role || !companyId) {
+    const rolesArray = Array.isArray(roles) ? roles : role ? [role] : []
+    const primaryRole = rolesArray[0] ?? role ?? ''
+
+    if (!email || !password || !fullName || !companyId) {
       return NextResponse.json(
         { error: 'Campos obrigatórios ausentes' },
+        { status: 400 },
+      )
+    }
+    if (rolesArray.length === 0) {
+      return NextResponse.json(
+        { error: 'Selecione pelo menos um perfil' },
         { status: 400 },
       )
     }
@@ -41,7 +51,8 @@ export async function POST(request: Request) {
       .update({
         company_id: companyId,
         full_name: fullName,
-        role,
+        role: primaryRole,
+        roles: rolesArray,
         status: 'active',
         is_superadmin: false,
       })

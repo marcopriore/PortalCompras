@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
@@ -47,7 +46,9 @@ const ROLES = [
   { value: "admin", label: "Administrador" },
   { value: "buyer", label: "Comprador" },
   { value: "manager", label: "Gestor de Compras" },
-  { value: "approver", label: "Aprovador" },
+  { value: "approver_requisition", label: "Aprov. Requisição" },
+  { value: "approver_order", label: "Aprov. Pedido" },
+  { value: "requester", label: "Requisitante" },
 ] as const
 
 type RoleValue = (typeof ROLES)[number]["value"]
@@ -65,15 +66,9 @@ const createInitialPermissionsState = (): PermissionRowState => {
   return state
 }
 
-export default function PermissionsPage({
-  params,
-}: {
-  params?: Promise<{ id: string }>
-}) {
-  const router = useRouter()
-  const { userId, companyId, isSuperAdmin, loading: userLoading } = useUser()
+export default function PermissionsPage() {
+  const { userId, companyId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
 
-  const [profileRole, setProfileRole] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
 
@@ -83,34 +78,8 @@ export default function PermissionsPage({
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null)
 
   React.useEffect(() => {
-    let alive = true
-
-    const run = async () => {
-      if (userLoading) return
-      if (!companyId || !userId) return
-
-      if (!isSuperAdmin) {
-        const supabase = createClient()
-        const { data: profileRes } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", userId)
-          .maybeSingle()
-
-        if (!alive) return
-        setProfileRole((profileRes as any)?.role ?? null)
-      } else {
-        setProfileRole("admin")
-      }
-
-      setLoading(false)
-    }
-
-    run()
-    return () => {
-      alive = false
-    }
-  }, [userLoading, companyId, userId, isSuperAdmin])
+    if (!userLoading) setLoading(false)
+  }, [userLoading])
 
   React.useEffect(() => {
     let alive = true
@@ -127,8 +96,38 @@ export default function PermissionsPage({
 
       if (!alive) return
 
+      const rows = (data ?? []) as { role: string; permission_key: string; enabled: boolean }[]
+      const rolesWithData = new Set(rows.map((r) => r.role))
+      const newRoles = ["approver_requisition", "approver_order", "requester"] as const
+
+      for (const role of newRoles) {
+        if (!rolesWithData.has(role)) {
+          for (const p of PERMISSIONS) {
+            await supabase
+              .from("role_permissions")
+              .upsert(
+                {
+                  company_id: companyId,
+                  role,
+                  permission_key: p.key,
+                  enabled: false,
+                },
+                { onConflict: "company_id,role,permission_key" },
+              )
+          }
+          if (!alive) return
+        }
+      }
+
+      const { data: dataAfter } = await supabase
+        .from("role_permissions")
+        .select("*")
+        .eq("company_id", companyId)
+
+      if (!alive) return
+
       const next = createInitialPermissionsState()
-      ;((data ?? []) as any[]).forEach((row) => {
+      ;((dataAfter ?? []) as any[]).forEach((row) => {
         const role = row.role as RoleValue
         const permissionKey = row.permission_key as PermissionKey
         const enabled = Boolean(row.enabled)
@@ -141,14 +140,9 @@ export default function PermissionsPage({
         }
       })
 
-      // Regra de negócio: admin sempre possui todas as permissões
       PERMISSIONS.forEach((p) => {
         next.admin[p.key] = true
       })
-
-      if (profileRole !== null && profileRole !== "admin" && !isSuperAdmin) {
-        // manter admin fixo; demais permissões carregadas
-      }
 
       setPermissionsState(next)
     }
@@ -157,12 +151,12 @@ export default function PermissionsPage({
     return () => {
       alive = false
     }
-  }, [companyId, userLoading, loading, profileRole, isSuperAdmin])
+  }, [companyId, userLoading, loading, isSuperAdmin])
 
   const canManage = React.useMemo(() => {
     if (isSuperAdmin) return true
-    return profileRole === "admin"
-  }, [isSuperAdmin, profileRole])
+    return hasRole("admin")
+  }, [isSuperAdmin, hasRole])
 
   const groups = React.useMemo(() => {
     const map = new Map<string, typeof PERMISSIONS>()

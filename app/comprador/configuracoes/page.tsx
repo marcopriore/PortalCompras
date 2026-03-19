@@ -123,6 +123,7 @@ type ApproverProfile = {
   id: string
   full_name: string | null
   role: string | null
+  roles?: string[] | null
 }
 
 type ApprovalRuleForm = {
@@ -198,11 +199,10 @@ function getAvatarColor(name: string): string {
 
 export default function ConfiguracoesPage() {
   const router = useRouter()
-  const { companyId, userId, isSuperAdmin } = useUser()
+  const { companyId, userId, isSuperAdmin, hasRole } = useUser()
   const [activeTab, setActiveTab] = React.useState<ActiveTab>("empresa")
 
-  const [companyRole, setCompanyRole] = React.useState<string | null>(null)
-  const canManageCompany = Boolean(isSuperAdmin || companyRole === "admin")
+  const canManageCompany = Boolean(isSuperAdmin || hasRole("admin"))
   const canManageApprovals = canManageCompany
 
   const [authEmail, setAuthEmail] = React.useState<string | null>(null)
@@ -247,7 +247,8 @@ export default function ConfiguracoesPage() {
   const [approvalOrderEnabled, setApprovalOrderEnabled] = React.useState(false)
   const [approvalRules, setApprovalRules] = React.useState<ApprovalRule[]>([])
   const [approvalOrderRules, setApprovalOrderRules] = React.useState<ApprovalRule[]>([])
-  const [approvers, setApprovers] = React.useState<ApproverProfile[]>([])
+  const [approversRequisition, setApproversRequisition] = React.useState<ApproverProfile[]>([])
+  const [approversOrder, setApproversOrder] = React.useState<ApproverProfile[]>([])
   const [tenantCategories, setTenantCategories] = React.useState<string[]>([])
   const [ruleModalOpen, setRuleModalOpen] = React.useState(false)
   const [editingRuleId, setEditingRuleId] = React.useState<string | null>(null)
@@ -312,7 +313,6 @@ export default function ConfiguracoesPage() {
 
         if (profileRes.data) {
           const p = profileRes.data as any
-          setCompanyRole((p as any).role ?? null)
           setProfileForm({
             full_name: p.full_name ?? "",
             job_title: p.job_title ?? "",
@@ -396,12 +396,20 @@ export default function ConfiguracoesPage() {
     const loadApprovers = async () => {
       if (!companyId || activeTab !== "aprovacoes") return
       const supabase = createClient()
-      const { data } = await supabase
-        .from("profiles")
-        .select("id, full_name, role")
-        .eq("company_id", companyId)
-        .in("role", ["approver", "manager", "admin"])
-      setApprovers(((data as unknown) as ApproverProfile[]) ?? [])
+      const [reqRes, orderRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, full_name, role, roles")
+          .eq("company_id", companyId)
+          .overlaps("roles", ["approver_requisition", "admin", "manager"]),
+        supabase
+          .from("profiles")
+          .select("id, full_name, role, roles")
+          .eq("company_id", companyId)
+          .overlaps("roles", ["approver_order", "admin", "manager"]),
+      ])
+      setApproversRequisition(((reqRes.data as unknown) as ApproverProfile[]) ?? [])
+      setApproversOrder(((orderRes.data as unknown) as ApproverProfile[]) ?? [])
     }
     loadApprovers()
   }, [companyId, activeTab])
@@ -601,7 +609,7 @@ export default function ConfiguracoesPage() {
       }))
       return
     }
-    const approver = approvers.find((a) => a.id === ruleForm.approverId)
+    const approver = approversRequisition.find((a) => a.id === ruleForm.approverId)
     const approverName = approver?.full_name ?? null
 
     const existing = approvalRules.find(
@@ -759,7 +767,7 @@ export default function ConfiguracoesPage() {
       }))
       return
     }
-    const approver = approvers.find((a) => a.id === orderForm.approverId)
+    const approver = approversOrder.find((a) => a.id === orderForm.approverId)
     const approverName = approver?.full_name ?? null
 
     setApprovalsSaving(true)
@@ -902,11 +910,16 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  const getRoleLabel = (role: string | null) => {
+  const getRoleLabel = (role: string | null, roles?: string[] | null) => {
     const map: Record<string, string> = {
       admin: "Administrador",
       manager: "Gestor",
-      approver: "Aprovador",
+      approver_requisition: "Aprov. Requisição",
+      approver_order: "Aprov. Pedido",
+      requester: "Requisitante",
+    }
+    if (roles && roles.length > 0) {
+      return roles.map((r) => map[r] ?? r).join(", ")
     }
     return role ? (map[role] ?? role) : ""
   }
@@ -1625,13 +1638,13 @@ export default function ConfiguracoesPage() {
                           <SelectValue placeholder="Selecione o aprovador" />
                         </SelectTrigger>
                         <SelectContent>
-                          {approvers.map((a) => (
+                          {approversRequisition.map((a) => (
                             <SelectItem key={a.id} value={a.id}>
                               <span className="flex items-center gap-2">
                                 {a.full_name ?? "Sem nome"}
-                                {a.role && (
+                                {(a.roles?.length ?? a.role) && (
                                   <Badge variant="outline" className="text-xs">
-                                    {getRoleLabel(a.role)}
+                                    {getRoleLabel(a.role, a.roles)}
                                   </Badge>
                                 )}
                               </span>
@@ -1768,13 +1781,13 @@ export default function ConfiguracoesPage() {
                           <SelectValue placeholder="Selecione o aprovador" />
                         </SelectTrigger>
                         <SelectContent>
-                          {approvers.map((a) => (
+                          {approversOrder.map((a) => (
                             <SelectItem key={a.id} value={a.id}>
                               <span className="flex items-center gap-2">
                                 {a.full_name ?? "Sem nome"}
-                                {a.role && (
+                                {(a.roles?.length ?? a.role) && (
                                   <Badge variant="outline" className="text-xs">
-                                    {getRoleLabel(a.role)}
+                                    {getRoleLabel(a.role, a.roles)}
                                   </Badge>
                                 )}
                               </span>

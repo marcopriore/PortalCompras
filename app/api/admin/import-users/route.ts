@@ -4,7 +4,8 @@ import { NextResponse } from 'next/server'
 type ImportUserPayload = {
   email: string
   fullName: string
-  role: string
+  role?: string
+  roles?: string[]
   status: string
   companyId: string
 }
@@ -49,15 +50,25 @@ export async function POST(request: Request) {
 
     // Processar sequencialmente para facilitar rollback por usuário
     for (const user of users) {
-      const { email, fullName, role, status, companyId } = user
+      const { email, fullName, role, roles, status, companyId } = user
+      const rolesArray = Array.isArray(roles) ? roles : role ? [role] : []
 
-      if (!email || !fullName || !role || !status || !companyId) {
+      if (!email || !fullName || !status || !companyId) {
         errors.push({
           email: email || '',
           reason: 'Campos obrigatórios ausentes',
         })
         continue
       }
+      if (rolesArray.length === 0) {
+        errors.push({
+          email: email || '',
+          reason: 'Selecione pelo menos um perfil',
+        })
+        continue
+      }
+
+      const primaryRole = rolesArray[0]
 
       try {
         const password = generatePassword()
@@ -86,7 +97,8 @@ export async function POST(request: Request) {
           .update({
             company_id: companyId,
             full_name: fullName,
-            role,
+            role: primaryRole,
+            roles: rolesArray,
             status,
             is_superadmin: false,
           })

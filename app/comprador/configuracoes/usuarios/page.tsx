@@ -1,6 +1,8 @@
 'use client'
 
+import * as React from 'react'
 import { useEffect, useState } from 'react'
+import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
 import { logAudit } from '@/lib/audit'
@@ -37,12 +39,25 @@ import {
   RefreshCw,
   Upload,
   Download,
+  ChevronDown,
 } from 'lucide-react'
+
+const ROLES = [
+  { value: 'admin', label: 'Administrador' },
+  { value: 'buyer', label: 'Comprador' },
+  { value: 'manager', label: 'Gestor de Compras' },
+  { value: 'approver_requisition', label: 'Aprovador de Requisições' },
+  { value: 'approver_order', label: 'Aprovador de Pedidos' },
+  { value: 'requester', label: 'Requisitante' },
+] as const
+
+type RoleValue = (typeof ROLES)[number]['value']
 
 type Profile = {
   id: string
   full_name: string
   role: string
+  roles?: string[] | null
   status: string
   created_at: string
 }
@@ -50,16 +65,9 @@ type Profile = {
 type UserForm = {
   fullName: string
   email: string
-  role: string
+  roles: string[]
   status: string
 }
-
-const ROLES = [
-  { value: 'admin', label: 'Administrador do Tenant' },
-  { value: 'buyer', label: 'Comprador' },
-  { value: 'manager', label: 'Gestor de Compras' },
-  { value: 'approver', label: 'Aprovador' },
-]
 
 function generatePassword(): string {
   const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
@@ -102,8 +110,104 @@ function getRoleLabel(role: string): string {
   return ROLES.find((r) => r.value === role)?.label ?? role
 }
 
+function RolesMultiSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string[]
+  onChange: (v: string[]) => void
+  disabled?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const containerRef = React.useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const fn = (e: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', fn)
+    return () => document.removeEventListener('mousedown', fn)
+  }, [])
+
+  const toggle = (v: string) => {
+    if (value.includes(v)) {
+      if (value.length <= 1) return
+      onChange(value.filter((r) => r !== v))
+    } else {
+      onChange([...value, v])
+    }
+  }
+
+  const triggerText =
+    value.length === 0
+      ? 'Selecione pelo menos um perfil'
+      : value.length === 1
+        ? getRoleLabel(value[0])
+        : `${value.length} perfis selecionados`
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          'flex w-full items-center justify-between gap-2 border rounded-md px-3 py-2 text-sm bg-background',
+          'border-border text-foreground',
+          value.length === 0 && 'text-muted-foreground',
+          disabled && 'opacity-50 cursor-not-allowed',
+        )}
+      >
+        <span className="truncate text-left">{triggerText}</span>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
+            open && 'rotate-180',
+          )}
+        />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 bg-card border border-border rounded-xl shadow-lg min-w-[200px] py-1 max-h-56 overflow-auto">
+          {ROLES.map((r) => {
+            const isSelected = value.includes(r.value)
+            return (
+              <div
+                key={r.value}
+                role="option"
+                onClick={() => toggle(r.value)}
+                className={cn(
+                  'flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/60',
+                  isSelected && 'bg-primary/5',
+                )}
+              >
+                <span
+                  className={cn(
+                    'flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border',
+                    isSelected && 'bg-primary',
+                  )}
+                >
+                  {isSelected ? (
+                    <Check className="h-3 w-3 text-primary-foreground" />
+                  ) : null}
+                </span>
+                <span>{r.label}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function TenantUsersPage() {
-  const { userId, companyId, isSuperAdmin } = useUser()
+  const { userId, companyId, isSuperAdmin, hasRole } = useUser()
 
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
@@ -117,11 +221,11 @@ export default function TenantUsersPage() {
   const [form, setForm] = useState<UserForm>({
     fullName: '',
     email: '',
-    role: 'buyer',
+    roles: ['buyer'],
     status: 'active',
   })
-  const [editForm, setEditForm] = useState<{ role: string; status: string }>({
-    role: 'buyer',
+  const [editForm, setEditForm] = useState<{ roles: string[]; status: string }>({
+    roles: ['buyer'],
     status: 'active',
   })
   const [importOpen, setImportOpen] = useState(false)
@@ -132,7 +236,7 @@ export default function TenantUsersPage() {
     {
       fullName: string
       email: string
-      role: string
+      roles: string[]
       status: string
       valid: boolean
       error?: string
@@ -153,7 +257,7 @@ export default function TenantUsersPage() {
       const supabase = createClient()
       const { data } = await supabase
         .from('profiles')
-        .select('id, full_name, role, status, created_at')
+        .select('id, full_name, role, roles, status, created_at')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false })
       if (data) setProfiles(data as Profile[])
@@ -163,11 +267,7 @@ export default function TenantUsersPage() {
   }, [companyId])
 
   const currentIsAdmin =
-    isSuperAdmin ||
-    (userId &&
-      profiles.some(
-        (p) => p.id === userId && (p.role === 'admin' || p.role === 'manager'),
-      ))
+    isSuperAdmin || hasRole('admin') || hasRole('manager')
 
   const filtered = profiles.filter((p) =>
     !search
@@ -183,7 +283,8 @@ export default function TenantUsersPage() {
   }
 
   const handleCreate = async () => {
-    if (!form.fullName || !form.email || !form.role || !companyId) return
+    if (!form.fullName || !form.email || !companyId) return
+    if (form.roles.length === 0) return
     if (!generatedPassword) {
       setGeneratedPassword(generatePassword())
     }
@@ -199,7 +300,8 @@ export default function TenantUsersPage() {
           email: form.email,
           password: passwordToUse,
           fullName: form.fullName,
-          role: form.role,
+          roles: form.roles,
+          role: form.roles[0],
           companyId,
         }),
       })
@@ -212,20 +314,18 @@ export default function TenantUsersPage() {
 
       await logAudit({
         eventType: 'user.created',
-        description: `Usuário "${form.fullName}" criado com perfil ${getRoleLabel(
-          form.role,
-        )}`,
+        description: `Usuário "${form.fullName}" criado`,
         companyId,
         userId,
         entity: 'profiles',
         entityId: data.userId,
-        metadata: { email: form.email, role: form.role },
+        metadata: { email: form.email, roles: form.roles },
       })
 
       const supabase = createClient()
       const { data: updated } = await supabase
         .from('profiles')
-        .select('id, full_name, role, status, created_at')
+        .select('id, full_name, role, roles, status, created_at')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false })
       if (updated) setProfiles(updated as Profile[])
@@ -234,7 +334,7 @@ export default function TenantUsersPage() {
       setForm({
         fullName: '',
         email: '',
-        role: 'buyer',
+        roles: ['buyer'],
         status: 'active',
       })
       setGeneratedPassword('')
@@ -244,15 +344,19 @@ export default function TenantUsersPage() {
   }
 
   const handleEdit = async () => {
-    if (!selectedProfile || !companyId) return
+    if (!selectedProfile || !companyId || editForm.roles.length === 0) return
     setSubmitting(true)
     try {
       const supabase = createClient()
       const { data, error } = await supabase
         .from('profiles')
-        .update({ role: editForm.role, status: editForm.status })
+        .update({
+          role: editForm.roles[0],
+          roles: editForm.roles,
+          status: editForm.status,
+        })
         .eq('id', selectedProfile.id)
-        .select('id, role, status')
+        .select('id, role, roles, status')
 
       if (error) {
         // eslint-disable-next-line no-console
@@ -269,7 +373,7 @@ export default function TenantUsersPage() {
           userId,
           entity: 'profiles',
           entityId: selectedProfile.id,
-          metadata: { role: editForm.role, status: editForm.status },
+          metadata: { roles: editForm.roles, status: editForm.status },
         })
 
         setProfiles((prev) =>
@@ -277,7 +381,8 @@ export default function TenantUsersPage() {
             p.id === selectedProfile.id
               ? {
                   ...p,
-                  role: updated.role ?? editForm.role,
+                  role: updated.role ?? editForm.roles[0],
+                  roles: updated.roles ?? editForm.roles,
                   status: updated.status ?? editForm.status,
                 }
               : p,
@@ -327,7 +432,7 @@ export default function TenantUsersPage() {
     exampleRow.values = [
       'João da Silva',
       'joao@empresa.com.br',
-      'Comprador',
+      'buyer,approver_requisition',
       'Ativo',
     ]
     exampleRow.height = 18
@@ -414,7 +519,7 @@ export default function TenantUsersPage() {
       ['E-mail', 'E-mail válido. Obrigatório.'],
       [
         'Perfil',
-        'Administrador do Tenant, Comprador, Gestor de Compras, Aprovador',
+        'Múltiplos perfis separados por vírgula: admin, buyer, manager, approver_requisition, approver_order, requester',
       ],
       ['Status', 'Ativo, Inativo'],
     ]
@@ -474,13 +579,36 @@ export default function TenantUsersPage() {
     URL.revokeObjectURL(url)
   }
 
-  const mapProfileRole = (value: string): string | null => {
-    const trimmed = value.trim().toLowerCase()
-    if (trimmed === 'administrador do tenant') return 'admin'
+  const VALID_ROLE_KEYS = new Set(ROLES.map((r) => r.value))
+
+  const mapLabelToRole = (trimmed: string): RoleValue | null => {
+    if (trimmed === 'administrador') return 'admin'
     if (trimmed === 'comprador') return 'buyer'
     if (trimmed === 'gestor de compras') return 'manager'
-    if (trimmed === 'aprovador') return 'approver'
+    if (trimmed === 'aprovador de requisições' || trimmed === 'aprov. requisição')
+      return 'approver_requisition'
+    if (trimmed === 'aprovador de pedidos' || trimmed === 'aprov. pedido')
+      return 'approver_order'
+    if (trimmed === 'requisitante') return 'requester'
+    if ((VALID_ROLE_KEYS as Set<string>).has(trimmed)) return trimmed as RoleValue
     return null
+  }
+
+  const parseRolesFromCell = (value: string): RoleValue[] | null => {
+    const parts = value
+      .split(/[,;]/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+    const mapped: RoleValue[] = []
+    for (const p of parts) {
+      const role = mapLabelToRole(p)
+      if (role && VALID_ROLE_KEYS.has(role)) {
+        if (!mapped.includes(role)) mapped.push(role)
+      } else {
+        return null
+      }
+    }
+    return mapped.length > 0 ? mapped : null
   }
 
   const mapStatus = (value: string): string | null => {
@@ -521,7 +649,7 @@ export default function TenantUsersPage() {
     const parsed: {
       fullName: string
       email: string
-      role: string
+      roles: string[]
       status: string
       valid: boolean
       error?: string
@@ -549,24 +677,24 @@ export default function TenantUsersPage() {
         valid = false
         error = 'E-mail inválido'
       } else {
-        const mappedRole = mapProfileRole(perfil)
+        const mappedRoles = parseRolesFromCell(perfil)
         const mappedStatus = mapStatus(status)
-        if (!mappedRole) {
+        if (!mappedRoles || mappedRoles.length === 0) {
           valid = false
-          error = 'Perfil inválido'
+          error = 'Perfil inválido (use vírgula para múltiplos)'
         } else if (!mappedStatus) {
           valid = false
           error = 'Status inválido'
         }
       }
 
-      const mappedRole = mapProfileRole(perfil) ?? 'buyer'
+      const mappedRoles = parseRolesFromCell(perfil) ?? ['buyer']
       const mappedStatus = mapStatus(status) ?? 'active'
 
       parsed.push({
         fullName,
         email,
-        role: mappedRole,
+        roles: mappedRoles,
         status: mappedStatus,
         valid,
         error,
@@ -591,7 +719,8 @@ export default function TenantUsersPage() {
         users: validRows.map((r) => ({
           email: r.email,
           fullName: r.fullName,
-          role: r.role,
+          roles: r.roles,
+          role: r.roles[0],
           status: r.status,
           companyId,
         })),
@@ -625,7 +754,7 @@ export default function TenantUsersPage() {
       const supabase = createClient()
       const { data: updated } = await supabase
         .from('profiles')
-        .select('id, full_name, role, status, created_at')
+        .select('id, full_name, role, roles, status, created_at')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false })
       if (updated) setProfiles(updated as Profile[])
@@ -761,8 +890,20 @@ export default function TenantUsersPage() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="px-3 py-2 align-top text-sm text-foreground">
-                    {getRoleLabel(profile.role)}
+                  <TableCell className="px-3 py-2 align-top">
+                    <div className="flex flex-wrap gap-1">
+                      {(profile.roles ?? (profile.role ? [profile.role] : [])).map(
+                        (r) => (
+                          <Badge
+                            key={r}
+                            variant="secondary"
+                            className="text-xs font-normal"
+                          >
+                            {getRoleLabel(r)}
+                          </Badge>
+                        ),
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top">
                     {profile.status === 'active' ? (
@@ -788,7 +929,8 @@ export default function TenantUsersPage() {
                         onClick={() => {
                           setSelectedProfile(profile)
                           setEditForm({
-                            role: profile.role,
+                            roles:
+                              profile.roles ?? (profile.role ? [profile.role] : ['buyer']),
                             status: profile.status,
                           })
                           setEditOpen(true)
@@ -838,20 +980,15 @@ export default function TenantUsersPage() {
               />
             </div>
             <div>
-              <Label>Perfil *</Label>
-              <select
-                value={form.role}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, role: e.target.value }))
-                }
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
-              >
-                {ROLES.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
+              <Label>Perfis *</Label>
+              <RolesMultiSelect
+                value={form.roles}
+                onChange={(v) => setForm((f) => ({ ...f, roles: v }))}
+                disabled={submitting}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Selecione pelo menos um perfil
+              </p>
             </div>
             <div>
               <Label>Senha Gerada</Label>
@@ -908,7 +1045,11 @@ export default function TenantUsersPage() {
               type="button"
               onClick={handleCreate}
               disabled={
-                submitting || !form.fullName || !form.email || !companyId
+                submitting ||
+                !form.fullName ||
+                !form.email ||
+                form.roles.length === 0 ||
+                !companyId
               }
             >
               {submitting ? 'Criando...' : 'Criar Usuário'}
@@ -928,20 +1069,12 @@ export default function TenantUsersPage() {
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>
-              <Label>Perfil</Label>
-              <select
-                value={editForm.role}
-                onChange={(e) =>
-                  setEditForm((f) => ({ ...f, role: e.target.value }))
-                }
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
-              >
-                {ROLES.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
+              <Label>Perfis *</Label>
+              <RolesMultiSelect
+                value={editForm.roles}
+                onChange={(v) => setEditForm((f) => ({ ...f, roles: v }))}
+                disabled={submitting}
+              />
             </div>
             <div>
               <Label>Status</Label>
@@ -968,7 +1101,9 @@ export default function TenantUsersPage() {
             <Button
               type="button"
               onClick={handleEdit}
-              disabled={submitting || !selectedProfile}
+              disabled={
+                submitting || !selectedProfile || editForm.roles.length === 0
+              }
             >
               {submitting ? 'Salvando...' : 'Salvar'}
             </Button>
@@ -1051,7 +1186,17 @@ export default function TenantUsersPage() {
                           {row.email}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {getRoleLabel(row.role)}
+                          <div className="flex flex-wrap gap-1">
+                            {row.roles.map((r) => (
+                              <Badge
+                                key={r}
+                                variant="secondary"
+                                className="text-xs font-normal"
+                              >
+                                {getRoleLabel(r)}
+                              </Badge>
+                            ))}
+                          </div>
                         </TableCell>
                         <TableCell className="text-sm">
                           {row.status === 'active' ? 'Ativo' : 'Inativo'}

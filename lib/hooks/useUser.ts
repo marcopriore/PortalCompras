@@ -1,12 +1,19 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+
+type ProfileRow = {
+  company_id?: string | null
+  is_superadmin?: boolean
+  role?: string | null
+  roles?: string[] | null
+}
 
 export function useUser() {
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
-  const [role, setRole] = useState<string | null>(null)
+  const [roles, setRoles] = useState<string[]>([])
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -24,14 +31,21 @@ export function useUser() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('company_id, is_superadmin, role')
+        .select('company_id, is_superadmin, role, roles')
         .eq('id', user.id)
         .single()
-      const superFlag = Boolean((profile as any)?.is_superadmin)
+      const p = profile as ProfileRow | null
+      const superFlag = Boolean(p?.is_superadmin)
       setIsSuperAdmin(superFlag)
+      const rolesArray = Array.isArray(p?.roles)
+        ? p.roles
+        : p?.role
+          ? [p.role]
+          : []
+      setRoles(rolesArray)
       // Se superadmin, verificar cookie de tenant selecionado
-      let effectiveCompanyId: string | null = profile?.company_id ?? null
-      if (profile?.is_superadmin && typeof document !== 'undefined') {
+      let effectiveCompanyId: string | null = p?.company_id ?? null
+      if (p?.is_superadmin && typeof document !== 'undefined') {
         const cookieValue = document.cookie
           .split('; ')
           .find((row) => row.startsWith('selected_company_id='))
@@ -69,6 +83,17 @@ export function useUser() {
     }
   }, [])
 
-  return { userId, companyId, role, isSuperAdmin, loading }
+  const role = roles[0] ?? ''
+  const hasRole = useCallback((r: string) => roles.includes(r), [roles])
+
+  return {
+    userId,
+    companyId,
+    role,
+    roles,
+    hasRole,
+    isSuperAdmin,
+    loading,
+  }
 }
 
