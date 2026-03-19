@@ -85,7 +85,8 @@ export function Sidebar({ type }: SidebarProps) {
   useEffect(() => {
     if (type !== "comprador" || !companyId || !userId) return
     const supabase = createClient()
-    const run = async () => {
+
+    const fetchPendingCount = async () => {
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
@@ -105,7 +106,10 @@ export function Sidebar({ type }: SidebarProps) {
       const { count } = await query
       setPendingApprovals(count ?? 0)
     }
-    run()
+
+    fetchPendingCount()
+    window.addEventListener("approval-updated", fetchPendingCount)
+    return () => window.removeEventListener("approval-updated", fetchPendingCount)
   }, [type, companyId, userId])
 
   return (

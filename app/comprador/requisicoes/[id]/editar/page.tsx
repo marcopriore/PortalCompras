@@ -35,7 +35,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-import { Trash2, Plus, ChevronLeft, Paperclip, PackageSearch, X } from "lucide-react"
+import { Trash2, Plus, ChevronLeft, Paperclip, PackageSearch, X, Send, AlertTriangle } from "lucide-react"
 
 type Priority = "normal" | "urgent" | "critical"
 
@@ -71,6 +71,16 @@ type AttachedFile = {
   file: File
 }
 
+type RequisitionItemRow = {
+  id: string
+  material_code: string | null
+  material_description: string
+  quantity: number
+  unit_of_measure: string | null
+  commodity_group: string | null
+  observations: string | null
+}
+
 const ACCEPTED_FILE_TYPES = ".pdf,.xlsx,.xls,.png,.jpg,.jpeg"
 const DEBOUNCE_MS = 400
 
@@ -89,13 +99,28 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue
 }
 
-export default function NovaRequisicaoPage() {
+function formatDateForInput(iso: string | null | undefined): string {
+  if (!iso) return ""
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ""
+  return d.toISOString().slice(0, 10)
+}
+
+export default function EditarRequisicaoPage({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
   const router = useRouter()
+  const { id } = React.use(params)
   const { companyId, userId } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
 
-  const [loading, setLoading] = React.useState(false)
+  const [loading, setLoading] = React.useState(true)
+  const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [rejectionReason, setRejectionReason] = React.useState<string | null>(null)
+  const [requisitionCode, setRequisitionCode] = React.useState<string>("")
 
   const [form, setForm] = React.useState<RequisitionDraftForm>({
     title: "",
@@ -117,6 +142,102 @@ export default function NovaRequisicaoPage() {
   const canCreate = hasPermission("requisition.create")
 
   React.useEffect(() => {
+    if (!companyId || !id) return
+    const supabase = createClient()
+    let alive = true
+
+    const run = async () => {
+      setLoading(true)
+      const [rRes, iRes] = await Promise.all([
+        supabase.from("requisitions").select("*").eq("id", id).single(),
+        supabase
+          .from("requisition_items")
+          .select("*")
+          .eq("requisition_id", id)
+          .order("created_at"),
+      ])
+
+      if (!alive) return
+
+      const reqData = rRes.data as {
+        id: string
+        code: string
+        title: string
+        description: string | null
+        cost_center: string | null
+        needed_by: string | null
+        priority: Priority
+        status: string
+        rejection_reason: string | null
+        origin: string | null
+      } | null
+
+      if (!reqData) {
+        router.push(`/comprador/requisicoes/${id}`)
+        return
+      }
+
+      if (reqData.status !== "rejected") {
+        router.push(`/comprador/requisicoes/${id}`)
+        return
+      }
+
+      setRequisitionCode(reqData.code)
+      setRejectionReason(reqData.rejection_reason ?? null)
+      setForm({
+        title: reqData.title ?? "",
+        description: reqData.description ?? "",
+        costCenter: reqData.cost_center ?? "",
+        neededBy: formatDateForInput(reqData.needed_by),
+        priority: (reqData.priority as Priority) ?? "normal",
+      })
+
+      const reqItems = (iRes.data ?? []) as RequisitionItemRow[]
+      let itemsData: CatalogItem[] = []
+      if (reqItems.length > 0 && companyId) {
+        const materialCodes = [...new Set(reqItems.map((r) => r.material_code).filter((c): c is string => Boolean(c)))]
+        if (materialCodes.length > 0) {
+          const { data } = await supabase
+            .from("items")
+            .select("id, code, short_description, unit_of_measure, commodity_group")
+            .eq("company_id", companyId)
+            .in("code", materialCodes)
+          itemsData = (data ?? []) as CatalogItem[]
+        }
+
+        const itemMap = new Map<string, CatalogItem>()
+        itemsData.forEach((item) => {
+          itemMap.set(item.code, item)
+        })
+
+        const lineItems: RequisitionLineItem[] = reqItems.map((ri) => {
+          const catalogItem = ri.material_code ? itemMap.get(ri.material_code) : null
+          return {
+            id: ri.id,
+            itemId: catalogItem?.id ?? `legacy-${ri.id}`,
+            materialCode: ri.material_code ?? "",
+            materialDescription: ri.material_description ?? "",
+            unitOfMeasure: catalogItem?.unit_of_measure ?? ri.unit_of_measure ?? "",
+            commodityGroup: catalogItem?.commodity_group ?? ri.commodity_group ?? "",
+            quantity: ri.quantity ?? 1,
+            observations: ri.observations ?? "",
+          }
+        })
+        setItems(lineItems)
+      } else {
+        setItems([])
+      }
+
+      setLoading(false)
+    }
+
+    run()
+    return () => {
+      alive = false
+    }
+  }, [companyId, id, router])
+
+  React.useEffect(() => {
     if (!companyId || debouncedSearch.length < 2) {
       setSearchResults([])
       return
@@ -126,7 +247,7 @@ export default function NovaRequisicaoPage() {
       const supabase = createClient()
       const term = `%${debouncedSearch.replace(/"/g, '\\"')}%`
       const quoted = `"${term}"`
-      const { data, error } = await supabase
+      const { data, error: searchErr } = await supabase
         .from("items")
         .select("id, code, short_description, unit_of_measure, commodity_group")
         .eq("company_id", companyId)
@@ -134,7 +255,7 @@ export default function NovaRequisicaoPage() {
         .limit(20)
 
       setSearchLoading(false)
-      if (error) {
+      if (searchErr) {
         setSearchResults([])
         return
       }
@@ -188,7 +309,7 @@ export default function NovaRequisicaoPage() {
 
   const handleSubmit = async () => {
     setError(null)
-    if (!companyId || !userId) return
+    if (!companyId || !userId || !id) return
 
     if (!form.title.trim()) {
       setError("Título é obrigatório.")
@@ -196,17 +317,13 @@ export default function NovaRequisicaoPage() {
     }
 
     if (items.length === 0) {
-      toast.error("Adicione ao menos um item antes de criar a requisição.")
+      toast.error("Adicione ao menos um item antes de salvar.")
       return
     }
 
-    if (attachments.length > 0) {
-      console.log("Anexos (upload futuro):", attachments.map((a) => a.file.name))
-    }
-    // TODO: upload para Supabase Storage
-
     const supabase = createClient()
-    setLoading(true)
+    setSaving(true)
+
     try {
       const { data: profileRes } = await supabase
         .from("profiles")
@@ -217,34 +334,41 @@ export default function NovaRequisicaoPage() {
       const requesterName = (profileRes as { full_name?: string } | null)?.full_name ?? ""
       const costCenterTrimmed = (form.costCenter ?? "").trim()
       const costCenterForInsert = costCenterTrimmed || null
+      const costCenterForRpc = costCenterTrimmed || ""
 
-      const { data: requisitionRes, error: requisitionErr } = await supabase
+      const { error: updateErr } = await supabase
         .from("requisitions")
-        .insert({
-          company_id: companyId,
-          status: "pending",
-          origin: "manual",
-          requester_id: userId,
-          requester_name: requesterName,
+        .update({
           title: form.title.trim(),
           description: form.description.trim() || null,
           cost_center: costCenterForInsert,
-          needed_by: form.neededBy ? new Date(`${form.neededBy}T00:00:00`).toISOString() : null,
           priority: form.priority,
+          needed_by: form.neededBy ? new Date(`${form.neededBy}T00:00:00`).toISOString() : null,
+          rejection_reason: null,
+          approver_id: null,
+          approver_name: null,
+          approved_at: null,
+          status: "pending",
         })
-        .select("id, code")
-        .single()
+        .eq("id", id)
 
-      if (requisitionErr || !requisitionRes) {
-        setError("Não foi possível criar a requisição.")
+      if (updateErr) {
+        toast.error("Erro ao atualizar a requisição.")
         return
       }
 
-      const requisitionId = (requisitionRes as { id: string }).id
-      const requisitionCode = (requisitionRes as { code: string }).code
+      const { error: deleteItemsErr } = await supabase
+        .from("requisition_items")
+        .delete()
+        .eq("requisition_id", id)
+
+      if (deleteItemsErr) {
+        toast.error("Erro ao remover itens antigos.")
+        return
+      }
 
       const payloadItems = items.map((it) => ({
-        requisition_id: requisitionId,
+        requisition_id: id,
         company_id: companyId,
         material_code: (it.materialCode ?? "").trim() || null,
         material_description: it.materialDescription.trim(),
@@ -254,115 +378,134 @@ export default function NovaRequisicaoPage() {
         observations: (it.observations ?? "").trim() || null,
       }))
 
-      const { error: itemsErr } = await supabase
+      const { error: insertItemsErr } = await supabase
         .from("requisition_items")
         .insert(payloadItems)
 
-      if (itemsErr) {
-        setError("Não foi possível salvar os itens da requisição.")
+      if (insertItemsErr) {
+        toast.error("Erro ao salvar os itens da requisição.")
         return
       }
 
-      logAudit({
-        eventType: "quotation.created",
-        description: `Requisição ${requisitionCode} criada`,
-        companyId,
-        userId,
-        userName: requesterName,
-        entity: "requisitions",
-        entityId: requisitionId,
-      }).catch(() => {})
+      await supabase
+        .from("approval_requests")
+        .delete()
+        .eq("entity_id", id)
+        .eq("flow", "requisition")
 
-      try {
-        const costCenterForRpc = costCenterTrimmed || ""
+      const { data: tfRow } = await supabase
+        .from("tenant_features")
+        .select("enabled")
+        .eq("company_id", companyId)
+        .eq("feature_key", "approval_requisition")
+        .maybeSingle()
 
-        const { data: tfRow } = await supabase
-          .from("tenant_features")
-          .select("enabled")
-          .eq("company_id", companyId)
-          .eq("feature_key", "approval_requisition")
-          .maybeSingle()
+      const enabled = (tfRow as { enabled?: boolean } | null)?.enabled ?? false
 
-        const enabled = (tfRow as { enabled?: boolean } | null)?.enabled ?? false
-
-        if (!enabled) {
-          await supabase
-            .from("requisitions")
-            .update({
-              status: "approved",
-              approved_at: new Date().toISOString(),
-              approver_name: "Aprovação automática (fluxo desabilitado)",
-            })
-            .eq("id", requisitionId)
-          router.push("/comprador/requisicoes")
-          return
-        }
-
-        const { data: approverData } = await supabase.rpc(
-          "get_approver_for_requisition",
-          {
-            p_company_id: companyId,
-            p_cost_center: costCenterForRpc,
-          },
-        )
-
-        const firstRow = Array.isArray(approverData) ? approverData[0] : approverData
-        const approverId = (firstRow as { approver_id?: string | null } | null)?.approver_id ?? null
-        const approverName = (firstRow as { approver_name?: string | null } | null)?.approver_name ?? null
-
-        if (!approverId) {
-          await supabase
-            .from("requisitions")
-            .update({
-              status: "approved",
-              approved_at: new Date().toISOString(),
-              approver_name: "Aprovação automática (sem regra configurada para este CC)",
-            })
-            .eq("id", requisitionId)
-          router.push("/comprador/requisicoes")
-          return
-        }
-
+      if (!enabled) {
         await supabase
           .from("requisitions")
           .update({
-            approver_id: approverId,
-            approver_name: approverName,
-            status: "pending",
+            status: "approved",
+            approved_at: new Date().toISOString(),
+            approver_name: "Aprovação automática (fluxo desabilitado)",
           })
-          .eq("id", requisitionId)
+          .eq("id", id)
+        await logAudit({
+          eventType: "quotation.updated",
+          description: `Requisição ${requisitionCode} resubmetida e aprovada automaticamente`,
+          companyId,
+          userId,
+          userName: requesterName,
+          entity: "requisitions",
+          entityId: id,
+        }).catch(() => {})
+        router.push("/comprador/requisicoes")
+        return
+      }
 
-        await supabase.from("approval_requests").insert({
-          company_id: companyId,
-          flow: "requisition",
-          entity_id: requisitionId,
+      const { data: approverData } = await supabase.rpc("get_approver_for_requisition", {
+        p_company_id: companyId,
+        p_cost_center: costCenterForRpc,
+      })
+
+      const firstRow = Array.isArray(approverData) ? approverData[0] : approverData
+      const approverId = (firstRow as { approver_id?: string | null } | null)?.approver_id ?? null
+      const approverName = (firstRow as { approver_name?: string | null } | null)?.approver_name ?? null
+
+      if (!approverId) {
+        await supabase
+          .from("requisitions")
+          .update({
+            status: "approved",
+            approved_at: new Date().toISOString(),
+            approver_name: "Aprovação automática (sem regra configurada para este CC)",
+          })
+          .eq("id", id)
+        await logAudit({
+          eventType: "quotation.updated",
+          description: `Requisição ${requisitionCode} resubmetida e aprovada automaticamente`,
+          companyId,
+          userId,
+          userName: requesterName,
+          entity: "requisitions",
+          entityId: id,
+        }).catch(() => {})
+        router.push("/comprador/requisicoes")
+        return
+      }
+
+      await supabase
+        .from("requisitions")
+        .update({
           approver_id: approverId,
           approver_name: approverName,
           status: "pending",
         })
+        .eq("id", id)
 
-        router.push("/comprador/requisicoes")
-      } catch (approvalErr) {
-        toast.error(
-          "Requisição criada, mas houve erro ao configurar aprovação. Contate o administrador."
-        )
-        router.push("/comprador/requisicoes")
-      }
+      await supabase.from("approval_requests").insert({
+        company_id: companyId,
+        flow: "requisition",
+        entity_id: id,
+        approver_id: approverId,
+        approver_name: approverName,
+        status: "pending",
+      })
+
+      await logAudit({
+        eventType: "quotation.updated",
+        description: `Requisição ${requisitionCode} resubmetida para aprovação`,
+        companyId,
+        userId,
+        userName: requesterName,
+        entity: "requisitions",
+        entityId: id,
+      }).catch(() => {})
+
+      toast.success("Requisição resubmetida com sucesso.")
+      router.push("/comprador/requisicoes")
+    } catch (err) {
+      toast.error("Erro ao salvar. Tente novamente.")
     } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
-  if (permissionsLoading) {
+  const handleCancel = () => {
+    router.push(`/comprador/requisicoes/${id}`)
+  }
+
+  if (permissionsLoading || loading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/comprador/requisicoes")}>
+          <Button variant="ghost" size="icon" onClick={() => router.push(`/comprador/requisicoes/${id}`)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">Nova Requisição</h1>
-            <p className="text-muted-foreground">Criação manual</p>
+            <h1 className="text-2xl font-bold tracking-tight">Editar Requisição</h1>
+            <p className="text-muted-foreground">Carregando...</p>
           </div>
         </div>
         <div className="flex items-center justify-center py-12">
@@ -376,16 +519,16 @@ export default function NovaRequisicaoPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/comprador/requisicoes")}>
+          <Button variant="ghost" size="icon" onClick={() => router.push(`/comprador/requisicoes/${id}`)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1">
-            <h1 className="text-2xl font-bold tracking-tight">Nova Requisição</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Editar Requisição</h1>
             <p className="text-muted-foreground">—</p>
           </div>
         </div>
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-          Sem permissão para criar requisições.
+          Sem permissão para editar requisições.
         </div>
       </div>
     )
@@ -396,23 +539,39 @@ export default function NovaRequisicaoPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => router.push("/comprador/requisicoes")}>
+            <Button variant="ghost" size="icon" onClick={handleCancel}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">Nova Requisição</h1>
-              <p className="text-muted-foreground">Criação manual</p>
+              <h1 className="text-2xl font-bold tracking-tight">Editar Requisição {requisitionCode}</h1>
+              <p className="text-muted-foreground">Edite e resubmeta para aprovação</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => router.push("/comprador/requisicoes")}>
+            <Button type="button" variant="outline" onClick={handleCancel}>
               Cancelar
             </Button>
-            <Button type="button" onClick={handleSubmit} disabled={loading}>
-              {loading ? "Salvando..." : "Criar Requisição"}
+            <Button type="button" onClick={handleSubmit} disabled={saving}>
+              <Send className="h-4 w-4 mr-2" />
+              {saving ? "Salvando..." : "Salvar e Resubmeter"}
             </Button>
           </div>
         </div>
+
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex gap-3 items-start">
+          <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-yellow-800">
+              Esta requisição foi rejeitada. Edite e resubmeta para aprovação.
+            </p>
+            {rejectionReason && (
+              <p className="text-sm text-yellow-700">
+                Motivo da rejeição: {rejectionReason}
+              </p>
+            )}
+          </div>
+        </div>
+
         {error && (
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
             {error}
@@ -422,7 +581,7 @@ export default function NovaRequisicaoPage() {
         <Card>
           <CardHeader>
             <CardTitle>Dados Gerais</CardTitle>
-            <p className="text-sm text-muted-foreground">Criação manual de requisição de compra.</p>
+            <p className="text-sm text-muted-foreground">Edite os dados da requisição de compra.</p>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-x-6 gap-y-6 grid-rows-[auto_1fr]">

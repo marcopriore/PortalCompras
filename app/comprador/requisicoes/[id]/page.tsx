@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 
@@ -28,7 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { AlertCircle, ChevronLeft, FileText } from "lucide-react"
+import { AlertCircle, ChevronLeft, FileText, Pencil } from "lucide-react"
 
 type Priority = "normal" | "urgent" | "critical"
 type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
@@ -92,8 +92,11 @@ export default function RequisicaoDetailPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { hasFeature } = usePermissions()
   const { id } = React.use(params)
+
+  const backHref = searchParams.get("from") === "aprovacoes" ? "/comprador/aprovacoes" : "/comprador/requisicoes"
 
   const [requisition, setRequisition] = React.useState<Requisition | null>(null)
   const [items, setItems] = React.useState<RequisitionItem[]>([])
@@ -160,7 +163,7 @@ export default function RequisicaoDetailPage({
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/comprador/requisicoes")}>
+          <Button variant="ghost" size="icon" onClick={() => router.push(backHref)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1">
@@ -176,7 +179,7 @@ export default function RequisicaoDetailPage({
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/comprador/requisicoes")}>
+          <Button variant="ghost" size="icon" onClick={() => router.push(backHref)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1">
@@ -199,7 +202,7 @@ export default function RequisicaoDetailPage({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => router.push("/comprador/requisicoes")}
+            onClick={() => router.push(backHref)}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -218,6 +221,21 @@ export default function RequisicaoDetailPage({
               <FileText className="w-3 h-3" />
               {linkedQuotation.code}
             </button>
+          )}
+          {requisition.status === "rejected" && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.push(`/comprador/requisicoes/${id}/editar`)}
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Editar e Resubmeter
+            </Button>
+          )}
+          {requisition.status === "approved" && (
+            <Button type="button" onClick={() => setQuotationOpen(true)}>
+              Gerar Cotação
+            </Button>
           )}
         </div>
       </div>
@@ -282,14 +300,6 @@ export default function RequisicaoDetailPage({
           </div>
         </CardContent>
       </Card>
-
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {requisition.status === "approved" && (
-          <Button type="button" onClick={() => setQuotationOpen(true)}>
-            Gerar Cotação
-          </Button>
-        )}
-      </div>
 
       <Dialog open={quotationOpen} onOpenChange={setQuotationOpen}>
         <DialogContent>

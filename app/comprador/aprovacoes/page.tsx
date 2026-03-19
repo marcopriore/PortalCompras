@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
@@ -43,6 +44,7 @@ import {
   ShieldOff,
   Check,
   X,
+  Eye,
   Search,
   ChevronLeft,
   ChevronRight,
@@ -129,6 +131,7 @@ function getPriorityMeta(priority: Priority): { label: string; className: string
 }
 
 export default function AprovacoesPage() {
+  const router = useRouter()
   const { companyId, userId } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
   const [userRole, setUserRole] = React.useState<string | null>(null)
@@ -320,13 +323,24 @@ export default function AprovacoesPage() {
         })
         .eq("id", requestId)
 
-      const { data: allApproved } = await supabase.rpc("check_all_approved", {
-        entity_id: entityId,
-      })
+      const { data: approvalRows, error: fetchErr } = await supabase
+        .from("approval_requests")
+        .select("status")
+        .eq("entity_id", entityId)
+        .eq("flow", flow)
+      if (fetchErr) {
+        toast.error("Erro ao verificar aprovações. Tente novamente.")
+        return
+      }
+      const rows = (approvalRows ?? []) as { status: string }[]
+      const total = rows.filter((r) => r.status !== "rejected").length
+      const approved = rows.filter((r) => r.status === "approved").length
+      const isAllApproved = total > 0 && total === approved
 
-      if (allApproved) {
+      if (isAllApproved) {
+        console.log("[UPDATE REQ] entityId:", entityId, "isAllApproved:", isAllApproved)
         const table = flow === "requisition" ? "requisitions" : "purchase_orders"
-        await supabase
+        const { data: updatedRows, error: updateErr } = await supabase
           .from(table)
           .update({
             status: "approved",
@@ -334,6 +348,16 @@ export default function AprovacoesPage() {
             approver_name: approverName,
           })
           .eq("id", entityId)
+          .select("id")
+        console.log("[UPDATE REQ] resultado:", JSON.stringify(updatedRows), JSON.stringify(updateErr))
+        if (updateErr) {
+          toast.error("Erro ao atualizar status. Tente novamente.")
+          return
+        }
+        if (!updatedRows || updatedRows.length === 0) {
+          toast.error("Não foi possível atualizar o status (possível bloqueio de permissão).")
+          return
+        }
       }
 
       toast.success(
@@ -342,6 +366,7 @@ export default function AprovacoesPage() {
           : "Pedido aprovado com sucesso.",
       )
       await loadData()
+      window.dispatchEvent(new Event("approval-updated"))
     } catch (e) {
       toast.error("Erro ao aprovar. Tente novamente.")
     } finally {
@@ -389,6 +414,7 @@ export default function AprovacoesPage() {
       setRejectTarget(null)
       setRejectReason("")
       await loadData()
+      window.dispatchEvent(new Event("approval-updated"))
     } catch (e) {
       toast.error("Erro ao reprovar. Tente novamente.")
     } finally {
@@ -439,7 +465,8 @@ export default function AprovacoesPage() {
     )
   }
 
-  const showEmptyState = pendingTotal === 0 && !loading
+  const totalRegistros = requisitionRows.length + orderRows.length
+  const showEmptyState = totalRegistros === 0 && !loading
   const showTabs = hasReqPermission && hasOrderPermission
 
   return (
@@ -586,41 +613,51 @@ export default function AprovacoesPage() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
-                                {row.request.status === "pending" && (
-                                  <div className="flex justify-end gap-2">
-                                    <Button
-                                      size="sm"
-                                      variant="default"
-                                      className="bg-green-600 hover:bg-green-700"
-                                      onClick={() =>
-                                        handleApprove(
-                                          "requisition",
-                                          row.request.id,
-                                          row.request.entity_id,
-                                        )
-                                      }
-                                      disabled={actionLoading === row.request.id}
-                                    >
-                                      <Check className="h-4 w-4 mr-1" />
-                                      Aprovar
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={() =>
-                                        openRejectDialog(
-                                          "requisition",
-                                          row.request.id,
-                                          row.request.entity_id,
-                                        )
-                                      }
-                                      disabled={actionLoading === row.request.id}
-                                    >
-                                      <X className="h-4 w-4 mr-1" />
-                                      Reprovar
-                                    </Button>
-                                  </div>
-                                )}
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => router.push(`/comprador/requisicoes/${row.request.entity_id}?from=aprovacoes`)}
+                                    title="Ver detalhes"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  {row.request.status === "pending" && (
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        variant="default"
+                                        className="bg-green-600 hover:bg-green-700"
+                                        onClick={() =>
+                                          handleApprove(
+                                            "requisition",
+                                            row.request.id,
+                                            row.request.entity_id,
+                                          )
+                                        }
+                                        disabled={actionLoading === row.request.id}
+                                      >
+                                        <Check className="h-4 w-4 mr-1" />
+                                        Aprovar
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() =>
+                                          openRejectDialog(
+                                            "requisition",
+                                            row.request.id,
+                                            row.request.entity_id,
+                                          )
+                                        }
+                                        disabled={actionLoading === row.request.id}
+                                      >
+                                        <X className="h-4 w-4 mr-1" />
+                                        Reprovar
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
                               </TableCell>
                             </TableRow>
                           )
@@ -763,41 +800,51 @@ export default function AprovacoesPage() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
-                                {row.request.status === "pending" && (
-                                  <div className="flex justify-end gap-2">
-                                    <Button
-                                      size="sm"
-                                      variant="default"
-                                      className="bg-green-600 hover:bg-green-700"
-                                      onClick={() =>
-                                        handleApprove(
-                                          "order",
-                                          row.request.id,
-                                          row.request.entity_id,
-                                        )
-                                      }
-                                      disabled={actionLoading === row.request.id}
-                                    >
-                                      <Check className="h-4 w-4 mr-1" />
-                                      Aprovar
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="destructive"
-                                      onClick={() =>
-                                        openRejectDialog(
-                                          "order",
-                                          row.request.id,
-                                          row.request.entity_id,
-                                        )
-                                      }
-                                      disabled={actionLoading === row.request.id}
-                                    >
-                                      <X className="h-4 w-4 mr-1" />
-                                      Reprovar
-                                    </Button>
-                                  </div>
-                                )}
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => router.push(`/comprador/pedidos/${row.request.entity_id}`)}
+                                    title="Ver detalhes"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  {row.request.status === "pending" && (
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        variant="default"
+                                        className="bg-green-600 hover:bg-green-700"
+                                        onClick={() =>
+                                          handleApprove(
+                                            "order",
+                                            row.request.id,
+                                            row.request.entity_id,
+                                          )
+                                        }
+                                        disabled={actionLoading === row.request.id}
+                                      >
+                                        <Check className="h-4 w-4 mr-1" />
+                                        Aprovar
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() =>
+                                          openRejectDialog(
+                                            "order",
+                                            row.request.id,
+                                            row.request.entity_id,
+                                          )
+                                        }
+                                        disabled={actionLoading === row.request.id}
+                                      >
+                                        <X className="h-4 w-4 mr-1" />
+                                        Reprovar
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
                               </TableCell>
                             </TableRow>
                           )
@@ -946,41 +993,51 @@ export default function AprovacoesPage() {
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  {row.request.status === "pending" && (
-                                    <div className="flex justify-end gap-2">
-                                      <Button
-                                        size="sm"
-                                        variant="default"
-                                        className="bg-green-600 hover:bg-green-700"
-                                        onClick={() =>
-                                          handleApprove(
-                                            "requisition",
-                                            row.request.id,
-                                            row.request.entity_id,
-                                          )
-                                        }
-                                        disabled={actionLoading === row.request.id}
-                                      >
-                                        <Check className="h-4 w-4 mr-1" />
-                                        Aprovar
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="destructive"
-                                        onClick={() =>
-                                          openRejectDialog(
-                                            "requisition",
-                                            row.request.id,
-                                            row.request.entity_id,
-                                          )
-                                        }
-                                        disabled={actionLoading === row.request.id}
-                                      >
-                                        <X className="h-4 w-4 mr-1" />
-                                        Reprovar
-                                      </Button>
-                                    </div>
-                                  )}
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => router.push(`/comprador/requisicoes/${row.request.entity_id}?from=aprovacoes`)}
+                                      title="Ver detalhes"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                    {row.request.status === "pending" && (
+                                      <>
+                                        <Button
+                                          size="sm"
+                                          variant="default"
+                                          className="bg-green-600 hover:bg-green-700"
+                                          onClick={() =>
+                                            handleApprove(
+                                              "requisition",
+                                              row.request.id,
+                                              row.request.entity_id,
+                                            )
+                                          }
+                                          disabled={actionLoading === row.request.id}
+                                        >
+                                          <Check className="h-4 w-4 mr-1" />
+                                          Aprovar
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="destructive"
+                                          onClick={() =>
+                                            openRejectDialog(
+                                              "requisition",
+                                              row.request.id,
+                                              row.request.entity_id,
+                                            )
+                                          }
+                                          disabled={actionLoading === row.request.id}
+                                        >
+                                          <X className="h-4 w-4 mr-1" />
+                                          Reprovar
+                                        </Button>
+                                      </>
+                                    )}
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             )
@@ -1123,41 +1180,51 @@ export default function AprovacoesPage() {
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  {row.request.status === "pending" && (
-                                    <div className="flex justify-end gap-2">
-                                      <Button
-                                        size="sm"
-                                        variant="default"
-                                        className="bg-green-600 hover:bg-green-700"
-                                        onClick={() =>
-                                          handleApprove(
-                                            "order",
-                                            row.request.id,
-                                            row.request.entity_id,
-                                          )
-                                        }
-                                        disabled={actionLoading === row.request.id}
-                                      >
-                                        <Check className="h-4 w-4 mr-1" />
-                                        Aprovar
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="destructive"
-                                        onClick={() =>
-                                          openRejectDialog(
-                                            "order",
-                                            row.request.id,
-                                            row.request.entity_id,
-                                          )
-                                        }
-                                        disabled={actionLoading === row.request.id}
-                                      >
-                                        <X className="h-4 w-4 mr-1" />
-                                        Reprovar
-                                      </Button>
-                                    </div>
-                                  )}
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => router.push(`/comprador/pedidos/${row.request.entity_id}`)}
+                                      title="Ver detalhes"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                    </Button>
+                                    {row.request.status === "pending" && (
+                                      <>
+                                        <Button
+                                          size="sm"
+                                          variant="default"
+                                          className="bg-green-600 hover:bg-green-700"
+                                          onClick={() =>
+                                            handleApprove(
+                                              "order",
+                                              row.request.id,
+                                              row.request.entity_id,
+                                            )
+                                          }
+                                          disabled={actionLoading === row.request.id}
+                                        >
+                                          <Check className="h-4 w-4 mr-1" />
+                                          Aprovar
+                                        </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="destructive"
+                                          onClick={() =>
+                                            openRejectDialog(
+                                              "order",
+                                              row.request.id,
+                                              row.request.entity_id,
+                                            )
+                                          }
+                                          disabled={actionLoading === row.request.id}
+                                        >
+                                          <X className="h-4 w-4 mr-1" />
+                                          Reprovar
+                                        </Button>
+                                      </>
+                                    )}
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             )
