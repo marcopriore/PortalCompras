@@ -17,6 +17,13 @@ export type FeatureKey =
   | "approval_order"
 
 export type PermissionKey =
+  | "nav.dashboard"
+  | "nav.requisitions"
+  | "nav.quotations"
+  | "nav.orders"
+  | "nav.items"
+  | "nav.suppliers"
+  | "nav.reports"
   | "quotation.create"
   | "quotation.cancel"
   | "quotation.equalize"
@@ -53,6 +60,13 @@ const ALL_FEATURES: FeatureKey[] = [
 ]
 
 const ALL_PERMISSIONS: PermissionKey[] = [
+  "nav.dashboard",
+  "nav.requisitions",
+  "nav.quotations",
+  "nav.orders",
+  "nav.items",
+  "nav.suppliers",
+  "nav.reports",
   "quotation.create",
   "quotation.cancel",
   "quotation.equalize",

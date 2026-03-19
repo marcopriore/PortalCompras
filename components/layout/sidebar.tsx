@@ -39,9 +39,9 @@ interface NavItem {
 const buyerNavItems: NavItem[] = [
   { title: "Dashboard", href: "/comprador", icon: LayoutDashboard },
   { title: "Requisições", href: "/comprador/requisicoes", icon: ClipboardList },
-  { title: "Aprovações", href: "/comprador/aprovacoes", icon: ShieldCheck },
-  { title: "Pedidos", href: "/comprador/pedidos", icon: ShoppingCart },
   { title: "Cotações", href: "/comprador/cotacoes", icon: FileText },
+  { title: "Pedidos", href: "/comprador/pedidos", icon: ShoppingCart },
+  { title: "Aprovações", href: "/comprador/aprovacoes", icon: ShieldCheck },
   { title: "Itens", href: "/comprador/itens", icon: Package },
   { title: "Fornecedores", href: "/comprador/fornecedores", icon: Building2 },
   { title: "Relatórios", href: "/comprador/relatorios", icon: BarChart3 },
@@ -66,21 +66,33 @@ export function Sidebar({ type }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [pendingApprovals, setPendingApprovals] = useState<number | null>(null)
   const pathname = usePathname()
-  const { userId, companyId } = useUser()
+  const { userId, companyId, role, isSuperAdmin, loading: userLoading } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
 
-  const canShowApprovals =
-    type !== "comprador" ||
-    permissionsLoading ||
-    hasPermission("approval.requisition") ||
-    hasPermission("approval.order")
+  const isLoading = userLoading || permissionsLoading
+
+  const canShowAdminLinks = role === "admin" || isSuperAdmin === true
 
   const navItems = React.useMemo(() => {
     const base = type === "comprador" ? buyerNavItems : supplierNavItems
     if (type !== "comprador") return base
-    if (canShowApprovals) return base
-    return base.filter((item) => item.href !== "/comprador/aprovacoes")
-  }, [type, canShowApprovals])
+
+    return base.filter((item) => {
+      const href = item.href
+      if (href === "/comprador") return hasPermission("nav.dashboard") || isSuperAdmin
+      if (href === "/comprador/requisicoes") return hasPermission("nav.requisitions") || isSuperAdmin
+      if (href === "/comprador/cotacoes") return hasPermission("nav.quotations") || isSuperAdmin
+      if (href === "/comprador/pedidos") return hasPermission("nav.orders") || isSuperAdmin
+      if (href === "/comprador/aprovacoes")
+        return hasPermission("approval.requisition") || hasPermission("approval.order")
+      if (href === "/comprador/itens") return hasPermission("nav.items") || isSuperAdmin
+      if (href === "/comprador/fornecedores") return hasPermission("nav.suppliers") || isSuperAdmin
+      if (href === "/comprador/relatorios") return hasPermission("nav.reports") || isSuperAdmin
+      if (href === "/comprador/configuracoes") return canShowAdminLinks
+      if (href === "/comprador/configuracoes/usuarios") return canShowAdminLinks
+      return true
+    })
+  }, [type, hasPermission, canShowAdminLinks, isSuperAdmin])
 
   useEffect(() => {
     if (type !== "comprador" || !companyId || !userId) return
@@ -134,7 +146,17 @@ export function Sidebar({ type }: SidebarProps) {
         </div>
 
         <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
-          {navItems.map((item) => {
+          {isLoading ? (
+            <>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-8 bg-white/10 rounded-md animate-pulse mx-3 mb-1"
+                />
+              ))}
+            </>
+          ) : (
+          navItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
             const NavIcon = item.icon
 
@@ -192,7 +214,7 @@ export function Sidebar({ type }: SidebarProps) {
                 )}
               </Link>
             )
-          })}
+          }))}
         </nav>
 
         <div className="p-2 border-t border-sidebar-border">

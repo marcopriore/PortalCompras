@@ -19,9 +19,16 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { Shield, ShieldCheck, Save } from "lucide-react"
+import { Shield, ShieldCheck, Save, LayoutDashboard } from "lucide-react"
 
 const PERMISSIONS = [
+  { key: "nav.dashboard", label: "Dashboard", group: "Navegação" },
+  { key: "nav.requisitions", label: "Requisições", group: "Navegação" },
+  { key: "nav.quotations", label: "Cotações", group: "Navegação" },
+  { key: "nav.orders", label: "Pedidos", group: "Navegação" },
+  { key: "nav.items", label: "Itens", group: "Navegação" },
+  { key: "nav.suppliers", label: "Fornecedores", group: "Navegação" },
+  { key: "nav.reports", label: "Relatórios", group: "Navegação" },
   { key: "quotation.create", label: "Criar Cotação", group: "Cotações" },
   { key: "quotation.edit", label: "Editar Cotação", group: "Cotações" },
   { key: "quotation.cancel", label: "Cancelar Cotação", group: "Cotações" },
@@ -302,6 +309,7 @@ export default function PermissionsPage({
                     <TableRow>
                       <TableCell colSpan={1 + ROLES.length}>
                         <div className="bg-muted/50 font-semibold text-xs uppercase text-muted-foreground rounded-md px-2 py-1 flex items-center gap-1.5">
+                          {groupName === "Navegação" && <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />}
                           {groupName === "Aprovações" && <ShieldCheck className="h-3.5 w-3.5 shrink-0" />}
                           {groupName}
                         </div>

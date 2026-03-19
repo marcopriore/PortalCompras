@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 export function useUser() {
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [role, setRole] = useState<string | null>(null)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -23,7 +24,7 @@ export function useUser() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('company_id, is_superadmin')
+        .select('company_id, is_superadmin, role')
         .eq('id', user.id)
         .single()
       const superFlag = Boolean((profile as any)?.is_superadmin)
@@ -68,6 +69,6 @@ export function useUser() {
     }
   }, [])
 
-  return { userId, companyId, isSuperAdmin, loading }
+  return { userId, companyId, role, isSuperAdmin, loading }
 }
 
