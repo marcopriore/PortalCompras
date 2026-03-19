@@ -139,6 +139,9 @@ export default function EqualizacaoPage({
   const [columnsOpen, setColumnsOpen] = React.useState(false)
   const [splitExpanded, setSplitExpanded] = React.useState(false)
   const columnsRef = React.useRef<HTMLDivElement>(null)
+  const leftTableRef = React.useRef<HTMLTableElement>(null)
+  const rightTableRef = React.useRef<HTMLTableElement>(null)
+  const [leftTheadSpacerHeight, setLeftTheadSpacerHeight] = React.useState(0)
 
   const isReadOnly = quotation?.status === "completed"
 
@@ -153,6 +156,23 @@ export default function EqualizacaoPage({
     document.addEventListener("mousedown", handleMouseDown)
     return () => document.removeEventListener("mousedown", handleMouseDown)
   }, [])
+
+  const syncTheadSpacer = React.useCallback(() => {
+    const rightTable = rightTableRef.current
+    if (!rightTable) return
+    const rightHeaderRows = rightTable.querySelectorAll("thead tr")
+    const firstRowHeight = (rightHeaderRows[0] as HTMLTableRowElement)?.offsetHeight ?? 0
+    setLeftTheadSpacerHeight(firstRowHeight)
+  }, [])
+
+  React.useEffect(() => {
+    syncTheadSpacer()
+    const rightTable = rightTableRef.current
+    if (!rightTable) return
+    const ro = new ResizeObserver(() => syncTheadSpacer())
+    ro.observe(rightTable)
+    return () => ro.disconnect()
+  }, [syncTheadSpacer, quotationItems, proposals, columnVisibility])
 
   React.useEffect(() => {
     if (!id) return
@@ -817,159 +837,236 @@ export default function EqualizacaoPage({
             const supplierColWidth =
               toggleableKeys.filter((k) => columnVisibility[k]).reduce((s, k) => s + colWidths[k], 0) +
               colWidths.selecao
-            const FIXED_WIDTH = 466
-            const minTableWidth = FIXED_WIDTH + proposals.length * supplierColWidth
+            const FIXED_WIDTH = 406
+            const minSupplierTableWidth = proposals.length * supplierColWidth
 
             return (
-              <div className="overflow-x-auto">
-                <table
-                  className="w-full caption-bottom text-sm"
-                  style={{ minWidth: minTableWidth }}
-                >
-                  <TableHeader className="bg-white dark:bg-[#09090b]">
-                    <TableRow>
-                      <TableHead
-                        colSpan={4}
-                        rowSpan={1}
-                        scope="col"
-                        className="sticky left-0 z-50 min-w-[466px] w-[466px] align-top bg-white dark:bg-[#09090b] border-b border-r border-border px-3 py-2 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.4)]"
+              <>
+                {/* Área de ações: fora das tabelas */}
+                <div className="flex flex-row gap-4 items-start p-3 mb-2 border border-border rounded-lg bg-muted/30">
+                  <div className="flex flex-col gap-2 flex-1 min-w-0">
+                    <div className="flex flex-row gap-2 items-center flex-nowrap">
+                    {!isReadOnly && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleApplyBestPrice}
                       >
-                        <div className="flex flex-col gap-2">
-                          <div className="flex flex-row gap-2 items-center flex-nowrap">
-                            {!isReadOnly && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleApplyBestPrice}
-                              >
-                                <Zap className="mr-2 h-4 w-4 shrink-0" />
-                                Melhor Preço
-                              </Button>
-                            )}
-                            <div ref={columnsRef} className="relative shrink-0">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setColumnsOpen((o) => !o)}
-                              >
-                                <Columns className="mr-2 h-4 w-4 shrink-0" />
-                                Colunas
-                              </Button>
-                              {columnsOpen && (
-                                <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-zinc-900 border border-border rounded-xl shadow-lg min-w-[180px] py-2">
-                                  {(
-                                    [
-                                      { key: "prazo", label: "Prazo (dias)" },
-                                      { key: "preco_unit", label: "Preço Unit." },
-                                      { key: "imposto", label: "Imposto %" },
-                                      { key: "total_item", label: "Total Item" },
-                                      { key: "cond_pgto", label: "Cond. Pgto" },
-                                    ] as const
-                                  ).map(({ key, label }) => (
-                                    <button
-                                      key={key}
-                                      type="button"
-                                      onClick={() =>
-                                        setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }))
-                                      }
-                                      className={cn(
-                                        "flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted/60 text-left",
-                                        columnVisibility[key] && "bg-primary/5",
-                                      )}
-                                    >
-                                      <span
-                                        className={cn(
-                                          "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border",
-                                          columnVisibility[key] && "bg-primary",
-                                        )}
-                                      >
-                                        {columnVisibility[key] ? <Check className="h-3 w-3 text-primary-foreground" /> : null}
-                                      </span>
-                                      {label}
-                                    </button>
-                                  ))}
-                                </div>
+                        <Zap className="mr-2 h-4 w-4 shrink-0" />
+                        Melhor Preço
+                      </Button>
+                    )}
+                    <div ref={columnsRef} className="relative shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setColumnsOpen((o) => !o)}
+                      >
+                        <Columns className="mr-2 h-4 w-4 shrink-0" />
+                        Colunas
+                      </Button>
+                      {columnsOpen && (
+                        <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-zinc-900 border border-border rounded-xl shadow-lg min-w-[180px] py-2">
+                          {(
+                            [
+                              { key: "prazo", label: "Prazo (dias)" },
+                              { key: "preco_unit", label: "Preço Unit." },
+                              { key: "imposto", label: "Imposto %" },
+                              { key: "total_item", label: "Total Item" },
+                              { key: "cond_pgto", label: "Cond. Pgto" },
+                            ] as const
+                          ).map(({ key, label }) => (
+                            <button
+                              key={key}
+                              type="button"
+                              onClick={() =>
+                                setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }))
+                              }
+                              className={cn(
+                                "flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted/60 text-left",
+                                columnVisibility[key] && "bg-primary/5",
                               )}
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={handleExportExcel}
-                              disabled={!quotation}
-                              className="shrink-0"
                             >
-                              <Download className="mr-2 h-4 w-4 shrink-0" />
-                              Exportar
-                            </Button>
-                            {hasSelection && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={handleClearAllSelections}
-                                className="shrink-0"
+                              <span
+                                className={cn(
+                                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border",
+                                  columnVisibility[key] && "bg-primary",
+                                )}
                               >
-                                <XCircle className="mr-2 h-4 w-4 shrink-0" />
-                                Desmarcar Tudo
-                              </Button>
-                            )}
-                          </div>
-                          {hasSelection && (
-                            <>
-                              <div className="border-t border-border pt-1.5 mt-0.5">
-                                <p className="text-sm font-medium">
-                                  {selectionSummary.selectedCount} de {selectionSummary.totalCount} itens selecionados
-                                </p>
-                                {selectionSummary.byProposal.map((b) => (
-                                  <p key={b.proposalId} className="text-xs text-muted-foreground">
-                                    {b.supplierName}: {b.itemCount} itens — {formatCurrency(b.total)}
-                                  </p>
-                                ))}
-                                <p className="text-sm font-semibold text-primary mt-1">
-                                  Total: {formatCurrency(selectionSummary.grandTotal)}
-                                </p>
-                              </div>
-                              <div>
-                                {!hasPermission("order.create") ? (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span>
-                                        <Button
-                                          variant="default"
-                                          size="sm"
-                                          disabled={!selectionSummary.allSelected}
-                                          title="Sem permissão"
-                                          className="w-full"
-                                        >
-                                          <ShoppingCart className="mr-2 h-4 w-4" />
-                                          Criar Pedido
-                                        </Button>
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
-                                  </Tooltip>
-                                ) : (
+                                {columnVisibility[key] ? <Check className="h-3 w-3 text-primary-foreground" /> : null}
+                              </span>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleExportExcel}
+                      disabled={!quotation}
+                      className="shrink-0"
+                    >
+                      <Download className="mr-2 h-4 w-4 shrink-0" />
+                      Exportar
+                    </Button>
+                    {hasSelection && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleClearAllSelections}
+                        className="shrink-0"
+                      >
+                        <XCircle className="mr-2 h-4 w-4 shrink-0" />
+                        Desmarcar Tudo
+                      </Button>
+                    )}
+                    </div>
+                    {hasSelection && (
+                      <div className="border-t border-border pt-1.5 mt-0.5 flex flex-row gap-4 items-start flex-wrap">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">
+                            {selectionSummary.selectedCount} de {selectionSummary.totalCount} itens selecionados
+                          </p>
+                          {selectionSummary.byProposal.map((b) => (
+                            <p key={b.proposalId} className="text-xs text-muted-foreground">
+                              {b.supplierName}: {b.itemCount} itens — {formatCurrency(b.total)}
+                            </p>
+                          ))}
+                          <p className="text-sm font-semibold text-primary mt-1">
+                            Total: {formatCurrency(selectionSummary.grandTotal)}
+                          </p>
+                        </div>
+                        <div className="flex-shrink-0">
+                          {!hasPermission("order.create") ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
                                   <Button
                                     variant="default"
                                     size="sm"
-                                    onClick={handleFinalize}
-                                    disabled={!selectionSummary.allSelected || finalizing}
-                                    className="w-full"
+                                    disabled={!selectionSummary.allSelected}
+                                    title="Sem permissão"
+                                    className="w-fit whitespace-nowrap shrink-0"
                                   >
                                     <ShoppingCart className="mr-2 h-4 w-4" />
-                                    {finalizing ? "Criando..." : "Criar Pedido"}
+                                    Criar Pedido
                                   </Button>
-                                )}
-                              </div>
-                            </>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={handleFinalize}
+                              disabled={!selectionSummary.allSelected || finalizing}
+                              className="w-fit whitespace-nowrap shrink-0"
+                            >
+                              <ShoppingCart className="mr-2 h-4 w-4" />
+                              {finalizing ? "Criando..." : "Criar Pedido"}
+                            </Button>
                           )}
                         </div>
-                      </TableHead>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-start w-full">
+                  {/* Tabela esquerda: colunas fixas */}
+                  <div
+                    className="flex-shrink-0 relative z-10 bg-white dark:bg-[#09090b] shadow-[2px_0_4px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_4px_rgba(0,0,0,0.25)]"
+                  >
+                    <table ref={leftTableRef} className="caption-bottom text-sm" style={{ width: FIXED_WIDTH }}>
+                      <TableHeader className="bg-white dark:bg-[#09090b]">
+                        <TableRow style={leftTheadSpacerHeight > 0 ? { height: leftTheadSpacerHeight } : undefined}>
+                          <TableHead colSpan={4} className="min-w-[406px] w-[406px] p-0 border-b border-r border-border" />
+                        </TableRow>
+                        <TableRow style={{ height: 44 }}>
+                          <TableHead className="min-w-[90px] w-[90px] h-11 bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
+                            Código
+                          </TableHead>
+                          <TableHead className="min-w-[220px] w-[220px] h-11 bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
+                            Descrição
+                          </TableHead>
+                          <TableHead className="min-w-[48px] w-[48px] h-11 bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                            Qtd
+                          </TableHead>
+                          <TableHead className="min-w-[48px] w-[48px] h-11 bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                            UN
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                    <TableBody>
+                    {quotationItems.map((qi, rowIdx) => (
+                      <TableRow
+                        key={qi.id}
+                        style={{ height: 44 }}
+                        className={cn(
+                          rowIdx % 2 === 1 && "bg-muted/30",
+                          itemSelections[qi.id] != null && "bg-primary/5",
+                        )}
+                      >
+                        <TableCell
+                          className={cn(
+                            "min-w-[90px] w-[90px] font-mono text-xs whitespace-nowrap overflow-hidden max-h-11",
+                            rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
+                            itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
+                          )}
+                        >
+                          {qi.material_code}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "min-w-[220px] w-[220px] whitespace-nowrap overflow-hidden max-h-11",
+                            rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
+                            itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
+                          )}
+                        >
+                          {qi.material_description}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "min-w-[48px] w-[48px] text-center whitespace-nowrap overflow-hidden max-h-11",
+                            rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
+                            itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
+                          )}
+                        >
+                          {qi.quantity}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "min-w-[48px] w-[48px] text-center whitespace-nowrap border-r border-border overflow-hidden max-h-11",
+                            rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
+                            itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
+                          )}
+                        >
+                          {qi.unit_of_measure}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </table>
+              </div>
+
+              {/* Tabela direita: fornecedores com scroll */}
+              <div className="flex-1 overflow-x-auto min-w-0">
+                <table
+                  ref={rightTableRef}
+                  className="w-full caption-bottom text-sm"
+                  style={{ minWidth: minSupplierTableWidth }}
+                >
+                  <TableHeader className="bg-white dark:bg-[#09090b]">
+                    <TableRow>
                       {proposals.map((p) => (
                         <TableHead
                           key={p.id}
                           colSpan={colsPerSupplier}
                           className={cn(
-                            "border-l relative z-10 py-4",
+                            "border-l py-4",
                             supplierWithLowestTotal?.id === p.id &&
                               "ring-2 ring-primary ring-inset bg-primary/5",
                           )}
@@ -1010,19 +1107,7 @@ export default function EqualizacaoPage({
                         </TableHead>
                       ))}
                     </TableRow>
-                    <TableRow>
-                      <TableHead className="sticky left-0 z-20 min-w-[90px] w-[90px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium">
-                        Código
-                      </TableHead>
-                      <TableHead className="sticky left-[90px] z-20 min-w-[300px] w-[300px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium">
-                        Descrição
-                      </TableHead>
-                      <TableHead className="sticky left-[390px] z-20 min-w-[38px] w-[38px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center">
-                        Qtd
-                      </TableHead>
-                      <TableHead className="sticky left-[428px] z-20 min-w-[38px] w-[38px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]">
-                        UN
-                      </TableHead>
+                    <TableRow style={{ height: 44 }}>
                       {proposals.map((p) => (
                         <React.Fragment key={p.id}>
                           {columnVisibility.prazo && (
@@ -1083,43 +1168,8 @@ export default function EqualizacaoPage({
                           rowIdx % 2 === 1 && "bg-muted/30",
                           itemSelections[qi.id] != null && "bg-primary/5",
                         )}
+                        style={{ height: 44 }}
                       >
-                        <TableCell
-                          className={cn(
-                            "sticky left-0 z-20 min-w-[90px] w-[90px] font-mono text-xs whitespace-nowrap",
-                            rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
-                            itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
-                          )}
-                        >
-                          {qi.material_code}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "sticky left-[90px] z-20 min-w-[300px] w-[300px] whitespace-nowrap",
-                            rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
-                            itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
-                          )}
-                        >
-                          {qi.material_description}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "sticky left-[390px] z-20 min-w-[38px] w-[38px] text-center whitespace-nowrap",
-                            rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
-                            itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
-                          )}
-                        >
-                          {qi.quantity}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "sticky left-[428px] z-20 min-w-[38px] w-[38px] text-center whitespace-nowrap border-r border-border shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)] dark:shadow-[2px_0_4px_-2px_rgba(0,0,0,0.3)]",
-                            rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
-                            itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
-                          )}
-                        >
-                          {qi.unit_of_measure}
-                        </TableCell>
                         {proposals.map((p) => {
                           const pi = proposalItemsByProposal.get(p.id)?.get(qi.id)
                           const quoted =
@@ -1134,7 +1184,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-prazo`}
                                   className={cn(
-                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap",
+                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
                                     !quoted && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
@@ -1148,7 +1198,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-preco`}
                                   className={cn(
-                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap",
+                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
                                     !quoted && "text-muted-foreground",
                                     quoted && isBestPrice && "bg-green-50 text-green-700 font-semibold",
                                     itemSelections[qi.id] != null && !isBestPrice && "bg-primary/5",
@@ -1161,7 +1211,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-imposto`}
                                   className={cn(
-                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap",
+                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
                                     !quoted && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
@@ -1173,7 +1223,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-total`}
                                   className={cn(
-                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap",
+                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
                                     !quoted && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
@@ -1190,7 +1240,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-cond`}
                                   className={cn(
-                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap",
+                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
                                     !quoted && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
@@ -1201,7 +1251,7 @@ export default function EqualizacaoPage({
                               <TableCell
                                 key={`${p.id}-sel`}
                                 className={cn(
-                                  "min-w-[40px] w-[40px] border-l text-center whitespace-nowrap",
+                                  "min-w-[40px] w-[40px] border-l text-center whitespace-nowrap overflow-hidden max-h-11",
                                   itemSelections[qi.id] != null && "bg-primary/5",
                                 )}
                               >
@@ -1224,6 +1274,8 @@ export default function EqualizacaoPage({
                   </TableBody>
                 </table>
               </div>
+            </div>
+            </>
             )
           })()
           )}
