@@ -239,28 +239,37 @@ export default function NovaRequisicaoPage() {
       }
 
       const requisitionId = (requisitionRes as { id: string }).id
+      const requisitionCode = (requisitionRes as { code: string }).code
 
       const payloadItems = items.map((it) => ({
         requisition_id: requisitionId,
         company_id: companyId,
-        material_code: it.materialCode.trim() || null,
+        material_code: (it.materialCode ?? "").trim() || null,
         material_description: it.materialDescription.trim(),
         quantity: Math.max(1, Number(it.quantity) || 1),
-        unit_of_measure: it.unitOfMeasure.trim() || null,
-        commodity_group: it.commodityGroup.trim() || null,
-        observations: it.observations.trim() || null,
+        unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
+        commodity_group: (it.commodityGroup ?? "").trim() || null,
+        observations: (it.observations ?? "").trim() || null,
       }))
 
-      await supabase.from("requisition_items").insert(payloadItems)
+      const { error: itemsErr } = await supabase
+        .from("requisition_items")
+        .insert(payloadItems)
 
-      await logAudit({
+      if (itemsErr) {
+        setError("Não foi possível salvar os itens da requisição.")
+        return
+      }
+
+      logAudit({
         eventType: "quotation.created",
-        description: `Requisição ${(requisitionRes as { code: string }).code} criada`,
+        description: `Requisição ${requisitionCode} criada`,
         companyId,
         userId,
+        userName: requesterName,
         entity: "requisitions",
         entityId: requisitionId,
-      })
+      }).catch(() => {})
 
       router.push("/comprador/requisicoes")
     } finally {
