@@ -6,11 +6,13 @@ import {
   ChevronLeft,
   Download,
   Check,
+  Info,
   Eye,
   Scissors,
   Trophy,
   Columns,
   Zap,
+  CheckCircle,
   ShoppingCart,
   ChevronDown,
   ChevronUp,
@@ -19,6 +21,24 @@ import {
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Table,
   TableBody,
@@ -39,8 +59,14 @@ type QuotationItem = {
   id: string
   material_code: string
   material_description: string
+  complementary_spec?: string | null
   quantity: number
   unit_of_measure: string
+}
+
+type OrderedItemInfo = {
+  orderId: string
+  orderCode: string
 }
 
 type ProposalItem = {
@@ -129,6 +155,7 @@ export default function EqualizacaoPage({
   const [loading, setLoading] = React.useState(true)
   const [itemSelections, setItemSelections] = React.useState<Record<string, string | null>>({})
   const [finalizing, setFinalizing] = React.useState(false)
+  const [finishingQuotation, setFinishingQuotation] = React.useState(false)
   const [columnVisibility, setColumnVisibility] = React.useState<Record<string, boolean>>({
     prazo: true,
     preco_unit: true,
@@ -142,6 +169,11 @@ export default function EqualizacaoPage({
   const leftTableRef = React.useRef<HTMLTableElement>(null)
   const rightTableRef = React.useRef<HTMLTableElement>(null)
   const [leftTheadSpacerHeight, setLeftTheadSpacerHeight] = React.useState(0)
+  const [orderedItems, setOrderedItems] = React.useState<Map<string, OrderedItemInfo>>(new Map())
+  const [orderSuccessDialog, setOrderSuccessDialog] = React.useState<{
+    open: boolean
+    orders: { code: string; supplierName: string }[]
+  }>({ open: false, orders: [] })
 
   const isReadOnly = quotation?.status === "completed"
 
@@ -174,66 +206,92 @@ export default function EqualizacaoPage({
     return () => ro.disconnect()
   }, [syncTheadSpacer, quotationItems, proposals, columnVisibility])
 
-  React.useEffect(() => {
-    if (!id) return
-    const supabase = createClient()
-    let alive = true
+  const fetchEqualizationData = React.useCallback(
+    async (options?: { showLoading?: boolean }) => {
+      const showLoading = options?.showLoading ?? true
+      if (!id) return
+      const supabase = createClient()
+      if (showLoading) setLoading(true)
 
-    const run = async () => {
-      setLoading(true)
-      const [qRes, itemsRes, proposalsRes] = await Promise.all([
-        supabase
-          .from("quotations")
-          .select("id, code, description, status")
-          .eq("id", id)
-          .single(),
-        supabase.from("quotation_items").select("*").eq("quotation_id", id),
-        supabase
-          .from("quotation_proposals")
-          .select("*, proposal_items(*)")
-          .eq("quotation_id", id)
-          .order("total_price", { ascending: true }),
-      ])
+      try {
+        const [qRes, itemsRes, proposalsRes] = await Promise.all([
+          supabase
+            .from("quotations")
+            .select("id, code, description, status")
+            .eq("id", id)
+            .single(),
+          supabase.from("quotation_items").select("*").eq("quotation_id", id),
+          supabase
+            .from("quotation_proposals")
+            .select("*, proposal_items(*)")
+            .eq("quotation_id", id)
+            .order("total_price", { ascending: true }),
+        ])
 
-      if (!alive) return
+        const q = (qRes.data as Quotation) ?? null
+        const items = ((itemsRes.data as unknown) as QuotationItem[]) ?? []
+        const probs = ((proposalsRes.data as unknown) as Proposal[]) ?? []
 
-      const q = (qRes.data as Quotation) ?? null
-      const items = ((itemsRes.data as unknown) as QuotationItem[]) ?? []
-      const probs = ((proposalsRes.data as unknown) as Proposal[]) ?? []
+        const quotationItemIds = items.map((i) => i.id)
+        const orderedMap = new Map<string, OrderedItemInfo>()
+        if (quotationItemIds.length > 0) {
+          const { data: poItemsData } = await supabase
+            .from("purchase_order_items")
+            .select("quotation_item_id, purchase_order_id, purchase_orders(code)")
+            .in("quotation_item_id", quotationItemIds)
 
-      setQuotation(q)
-      setQuotationItems(items)
-      setProposals(probs)
-
-      if (q?.status === "completed") {
-        const initial: Record<string, string | null> = {}
-        items.forEach((qi) => {
-          initial[qi.id] = null
-        })
-        probs.forEach((p) => {
-          p.proposal_items.forEach((pi) => {
-            if (pi.item_status === "accepted") {
-              initial[pi.quotation_item_id] = p.id
+          ;((poItemsData ?? []) as Array<{
+            quotation_item_id: string
+            purchase_order_id: string
+            purchase_orders: { code: string } | { code: string }[] | null
+          }>).forEach((row) => {
+            const orderCode = Array.isArray(row.purchase_orders)
+              ? (row.purchase_orders[0]?.code ?? "—")
+              : (row.purchase_orders?.code ?? "—")
+            if (!orderedMap.has(row.quotation_item_id)) {
+              orderedMap.set(row.quotation_item_id, {
+                orderId: row.purchase_order_id,
+                orderCode,
+              })
             }
           })
-        })
-        setItemSelections(initial)
-      } else {
-        const initial: Record<string, string | null> = {}
-        items.forEach((qi) => {
-          initial[qi.id] = null
-        })
-        setItemSelections(initial)
+        }
+
+        setQuotation(q)
+        setQuotationItems(items)
+        setProposals(probs)
+        setOrderedItems(orderedMap)
+
+        if (q?.status === "completed") {
+          const initial: Record<string, string | null> = {}
+          items.forEach((qi) => {
+            initial[qi.id] = null
+          })
+          probs.forEach((p) => {
+            p.proposal_items.forEach((pi) => {
+              if (pi.item_status === "accepted") {
+                initial[pi.quotation_item_id] = p.id
+              }
+            })
+          })
+          setItemSelections(initial)
+        } else {
+          const initial: Record<string, string | null> = {}
+          items.forEach((qi) => {
+            initial[qi.id] = null
+          })
+          setItemSelections(initial)
+        }
+      } finally {
+        if (showLoading) setLoading(false)
       }
+    },
+    [id],
+  )
 
-      setLoading(false)
-    }
-
-    run()
-    return () => {
-      alive = false
-    }
-  }, [id])
+  React.useEffect(() => {
+    void fetchEqualizationData({ showLoading: true })
+  }, [fetchEqualizationData])
 
   const quotationItemsById = React.useMemo(() => {
     return new Map(quotationItems.map((i) => [i.id, i]))
@@ -380,6 +438,7 @@ export default function EqualizacaoPage({
   }, [splitSuggestion])
 
   const handleToggleItem = (quotationItemId: string, proposalId: string) => {
+    if (orderedItems.has(quotationItemId)) return
     setItemSelections((prev) => {
       const current = prev[quotationItemId]
       if (current === proposalId) {
@@ -407,7 +466,7 @@ export default function EqualizacaoPage({
     const quoted = itemsQuotedBySupplier.get(proposalId)
     if (!quoted) return
 
-    const quotedArr = Array.from(quoted)
+    const quotedArr = Array.from(quoted).filter((qiId) => !orderedItems.has(qiId))
     const allSelected = quotedArr.every((qiId) => itemSelections[qiId] === proposalId)
 
     if (allSelected) {
@@ -432,6 +491,10 @@ export default function EqualizacaoPage({
   const handleApplyBestPrice = () => {
     const next: Record<string, string | null> = {}
     quotationItems.forEach((qi) => {
+      if (orderedItems.has(qi.id)) {
+        next[qi.id] = itemSelections[qi.id] ?? null
+        return
+      }
       next[qi.id] = bestPriceByItem[qi.id]?.proposalId ?? null
     })
     setItemSelections(next)
@@ -477,7 +540,7 @@ export default function EqualizacaoPage({
 
   const handleFinalize = async () => {
     if (!quotation || !companyId || !userId) return
-    if (!selectionSummary.allSelected) return
+    if (!hasSelection) return
     if (!hasPermission("order.create")) return
 
     setFinalizing(true)
@@ -493,38 +556,139 @@ export default function EqualizacaoPage({
         })
 
         for (const u of updates) {
-          await supabase
+          const { error: proposalItemUpdateError } = await supabase
             .from("proposal_items")
             .update({ item_status: u.item_status })
             .eq("id", u.id)
+          if (proposalItemUpdateError) throw proposalItemUpdateError
         }
 
         const hasAnyAccepted = updates.some((u) => u.item_status === "accepted")
-        await supabase
+        const { error: quotationProposalUpdateError } = await supabase
           .from("quotation_proposals")
           .update({
             status: hasAnyAccepted ? "selected" : "rejected",
             ...(hasAnyAccepted ? { selected_at: new Date().toISOString() } : {}),
           })
           .eq("id", p.id)
+        if (quotationProposalUpdateError) throw quotationProposalUpdateError
       }
 
-      await supabase.from("quotations").update({ status: "completed" }).eq("id", quotation.id)
+      const createdOrdersList: { code: string; supplierName: string }[] = []
+
+      for (const p of proposals) {
+        const linesForPo = quotationItems.filter(
+          (qi) => itemSelections[qi.id] === p.id && !orderedItems.has(qi.id),
+        )
+        if (linesForPo.length === 0) continue
+
+        const itemsPayload: {
+          quotationItemId: string
+          materialCode: string
+          materialDescription: string
+          quantity: number
+          unitOfMeasure: string
+          unitPrice: number
+          taxPercent: number | null
+        }[] = []
+
+        let totalPrice = 0
+        for (const qi of linesForPo) {
+          const pi = proposalItemsByProposal.get(p.id)?.get(qi.id)
+          if (!pi || pi.unit_price <= 0) continue
+          totalPrice += pi.unit_price * qi.quantity
+          itemsPayload.push({
+            quotationItemId: qi.id,
+            materialCode: qi.material_code,
+            materialDescription: qi.material_description,
+            quantity: qi.quantity,
+            unitOfMeasure: qi.unit_of_measure,
+            unitPrice: pi.unit_price,
+            taxPercent: pi.tax_percent,
+          })
+        }
+
+        if (itemsPayload.length === 0) continue
+
+        const { data: poData, error: purchaseOrderInsertError } = await supabase
+          .from("purchase_orders")
+          .insert({
+            company_id: companyId,
+            quotation_id: quotation.id,
+            proposal_id: p.id,
+            supplier_name: p.supplier_name,
+            supplier_cnpj: p.supplier_cnpj,
+            payment_condition: p.payment_condition,
+            delivery_days: p.delivery_days,
+            delivery_address: "A definir",
+            quotation_code: quotation.code,
+            requisition_code: null,
+            total_price: totalPrice,
+            observations: null,
+            created_by: userId,
+            status: "draft",
+          })
+          .select("id, code")
+          .single()
+
+        if (purchaseOrderInsertError) throw purchaseOrderInsertError
+        if (!poData) {
+          throw new Error("purchase_orders.insert: resposta sem dados")
+        }
+
+        const purchaseOrderId = poData.id as string
+        const orderCode = (poData.code as string) ?? "—"
+
+        const poItemsPayload = itemsPayload.map((i) => ({
+          purchase_order_id: purchaseOrderId,
+          company_id: companyId,
+          quotation_item_id: i.quotationItemId,
+          material_code: i.materialCode,
+          material_description: i.materialDescription,
+          quantity: i.quantity,
+          unit_of_measure: i.unitOfMeasure,
+          unit_price: i.unitPrice,
+          tax_percent: i.taxPercent,
+        }))
+
+        const { error: purchaseOrderItemsInsertError } = await supabase
+          .from("purchase_order_items")
+          .insert(poItemsPayload)
+        if (purchaseOrderItemsInsertError) throw purchaseOrderItemsInsertError
+
+        createdOrdersList.push({ code: orderCode, supplierName: p.supplier_name })
+      }
+
+      if (createdOrdersList.length === 0) {
+        toast.error("Nenhum pedido foi gerado. Verifique preços e itens selecionados.")
+        return
+      }
 
       await logAudit({
         eventType: "quotation.updated",
-        description: `Cotação ${quotation.code} finalizada com seleção de itens por fornecedor`,
+        description: `Pedido(s) em rascunho: ${createdOrdersList.map((o) => `${o.code} (${o.supplierName})`).join(", ")} — cotação ${quotation.code}`,
         companyId,
         userId,
         entity: "quotation",
         entityId: quotation.id,
       })
 
-      setQuotation((prev) => (prev ? { ...prev, status: "completed" } : null))
-      router.push(`/comprador/cotacoes/${id}/novo-pedido`)
+      setItemSelections({})
+      setOrderSuccessDialog({ open: true, orders: createdOrdersList })
     } catch (err) {
       console.error(err)
-      toast.error("Erro ao finalizar cotação. Tente novamente.")
+      const fallback = "Erro ao finalizar cotação. Tente novamente."
+      const message =
+        err &&
+        typeof err === "object" &&
+        "message" in err &&
+        typeof (err as { message: unknown }).message === "string" &&
+        (err as { message: string }).message.trim().length > 0
+          ? (err as { message: string }).message
+          : err instanceof Error && err.message.trim().length > 0
+            ? err.message
+            : fallback
+      toast.error(message)
     } finally {
       setFinalizing(false)
     }
@@ -682,6 +846,33 @@ export default function EqualizacaoPage({
     })
 
     await downloadExcel(workbook, filename)
+  }
+
+  const handleFinishQuotation = async () => {
+    if (!quotation || !companyId || !userId || isReadOnly) return
+
+    setFinishingQuotation(true)
+    try {
+      const supabase = createClient()
+      const { error: updateError } = await supabase
+        .from("quotations")
+        .update({ status: "completed" })
+        .eq("id", quotation.id)
+        .eq("company_id", companyId)
+
+      if (updateError) {
+        toast.error("Não foi possível finalizar a cotação.")
+        return
+      }
+
+      toast.success("Cotação finalizada com sucesso.")
+      router.push(`/comprador/cotacoes/${id}`)
+    } catch (err) {
+      console.error(err)
+      toast.error("Não foi possível finalizar a cotação.")
+    } finally {
+      setFinishingQuotation(false)
+    }
   }
 
   if (loading) {
@@ -938,7 +1129,7 @@ export default function EqualizacaoPage({
                             Total: {formatCurrency(selectionSummary.grandTotal)}
                           </p>
                         </div>
-                        <div className="flex-shrink-0">
+                        <div className="flex-shrink-0 flex items-center gap-2">
                           {!hasPermission("order.create") ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -946,7 +1137,7 @@ export default function EqualizacaoPage({
                                   <Button
                                     variant="default"
                                     size="sm"
-                                    disabled={!selectionSummary.allSelected}
+                                    disabled={!hasSelection}
                                     title="Sem permissão"
                                     className="w-fit whitespace-nowrap shrink-0"
                                   >
@@ -962,14 +1153,82 @@ export default function EqualizacaoPage({
                               variant="default"
                               size="sm"
                               onClick={handleFinalize}
-                              disabled={!selectionSummary.allSelected || finalizing}
+                              disabled={!hasSelection || finalizing}
                               className="w-fit whitespace-nowrap shrink-0"
                             >
                               <ShoppingCart className="mr-2 h-4 w-4" />
                               {finalizing ? "Criando..." : "Criar Pedido"}
                             </Button>
                           )}
+                          {!isReadOnly && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-fit whitespace-nowrap shrink-0"
+                                  disabled={finishingQuotation}
+                                >
+                                  <CheckCircle className="mr-2 h-4 w-4" />
+                                  {finishingQuotation ? "Finalizando..." : "Finalizar Cotação"}
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Finalizar cotação?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Tem certeza que deseja finalizar esta cotação? Esta ação marcará
+                                    a cotação como concluída e não poderá ser desfeita.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={handleFinishQuotation}
+                                    disabled={finishingQuotation}
+                                  >
+                                    Confirmar
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
                         </div>
+                      </div>
+                    )}
+                    {!hasSelection && !isReadOnly && (
+                      <div className="border-t border-border pt-1.5 mt-0.5">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-fit whitespace-nowrap shrink-0"
+                              disabled={finishingQuotation}
+                            >
+                              <CheckCircle className="mr-2 h-4 w-4" />
+                              {finishingQuotation ? "Finalizando..." : "Finalizar Cotação"}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Finalizar cotação?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Tem certeza que deseja finalizar esta cotação? Esta ação marcará a
+                                cotação como concluída e não poderá ser desfeita.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={handleFinishQuotation}
+                                disabled={finishingQuotation}
+                              >
+                                Confirmar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                     )}
                   </div>
@@ -990,7 +1249,7 @@ export default function EqualizacaoPage({
                             Código
                           </TableHead>
                           <TableHead className="min-w-[220px] w-[220px] h-11 bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
-                            Descrição
+                            Descrição Curta
                           </TableHead>
                           <TableHead className="min-w-[48px] w-[48px] h-11 bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
                             Qtd
@@ -1001,11 +1260,16 @@ export default function EqualizacaoPage({
                         </TableRow>
                       </TableHeader>
                     <TableBody>
-                    {quotationItems.map((qi, rowIdx) => (
+                    {quotationItems.map((qi, rowIdx) => {
+                      const orderedInfo = orderedItems.get(qi.id)
+                      const isOrdered = Boolean(orderedInfo)
+                      const descriptionTooltip = qi.complementary_spec || qi.material_description
+                      return (
                       <TableRow
                         key={qi.id}
                         style={{ height: 44 }}
                         className={cn(
+                          isOrdered && "bg-zinc-100 dark:bg-zinc-800",
                           rowIdx % 2 === 1 && "bg-muted/30",
                           itemSelections[qi.id] != null && "bg-primary/5",
                         )}
@@ -1013,24 +1277,45 @@ export default function EqualizacaoPage({
                         <TableCell
                           className={cn(
                             "min-w-[90px] w-[90px] font-mono text-xs whitespace-nowrap overflow-hidden max-h-11",
+                            isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                             rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
                           )}
                         >
                           {qi.material_code}
+                          {orderedInfo && (
+                            <button
+                              type="button"
+                              title={`Pedido: ${orderedInfo.orderCode}`}
+                              className="ml-1 inline-flex align-middle"
+                              onClick={() => router.push(`/comprador/pedidos/${orderedInfo.orderId}`)}
+                            >
+                              <ShoppingCart className="w-4 h-4 text-muted-foreground" />
+                            </button>
+                          )}
                         </TableCell>
                         <TableCell
                           className={cn(
                             "min-w-[220px] w-[220px] whitespace-nowrap overflow-hidden max-h-11",
+                            isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                             rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
                           )}
                         >
                           {qi.material_description}
+                          {descriptionTooltip ? (
+                            <span
+                              title={descriptionTooltip}
+                              className="inline-block ml-1"
+                            >
+                              <Info className="w-3 h-3 text-muted-foreground cursor-help" />
+                            </span>
+                          ) : null}
                         </TableCell>
                         <TableCell
                           className={cn(
                             "min-w-[48px] w-[48px] text-center whitespace-nowrap overflow-hidden max-h-11",
+                            isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                             rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
                           )}
@@ -1040,6 +1325,7 @@ export default function EqualizacaoPage({
                         <TableCell
                           className={cn(
                             "min-w-[48px] w-[48px] text-center whitespace-nowrap border-r border-border overflow-hidden max-h-11",
+                            isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                             rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
                           )}
@@ -1047,7 +1333,7 @@ export default function EqualizacaoPage({
                           {qi.unit_of_measure}
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )})}
                   </TableBody>
                 </table>
               </div>
@@ -1110,6 +1396,12 @@ export default function EqualizacaoPage({
                     <TableRow style={{ height: 44 }}>
                       {proposals.map((p) => (
                         <React.Fragment key={p.id}>
+                          <TableHead
+                            key={`${p.id}-sel`}
+                            className="min-w-[40px] w-[40px] border-l text-center text-xs whitespace-nowrap py-2"
+                          >
+                            ✓
+                          </TableHead>
                           {columnVisibility.prazo && (
                             <TableHead
                               key={`${p.id}-prazo`}
@@ -1150,21 +1442,19 @@ export default function EqualizacaoPage({
                               Cond. Pgto
                             </TableHead>
                           )}
-                          <TableHead
-                            key={`${p.id}-sel`}
-                            className="min-w-[40px] w-[40px] border-l text-center text-xs whitespace-nowrap py-2"
-                          >
-                            ✓
-                          </TableHead>
                         </React.Fragment>
                       ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {quotationItems.map((qi, rowIdx) => (
+                    {quotationItems.map((qi, rowIdx) => {
+                      const orderedInfo = orderedItems.get(qi.id)
+                      const isOrdered = Boolean(orderedInfo)
+                      return (
                       <TableRow
                         key={qi.id}
                         className={cn(
+                          isOrdered && "bg-zinc-100 dark:bg-zinc-800",
                           rowIdx % 2 === 1 && "bg-muted/30",
                           itemSelections[qi.id] != null && "bg-primary/5",
                         )}
@@ -1180,11 +1470,33 @@ export default function EqualizacaoPage({
 
                           return (
                             <React.Fragment key={p.id}>
+                              <TableCell
+                                key={`${p.id}-sel`}
+                                className={cn(
+                                  "min-w-[40px] w-[40px] border-l text-center whitespace-nowrap overflow-hidden max-h-11",
+                                  isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
+                                  itemSelections[qi.id] != null && "bg-primary/5",
+                                )}
+                              >
+                                {!isOrdered && (
+                                  <input
+                                    type="checkbox"
+                                    checked={itemSelections[qi.id] === p.id}
+                                    disabled={!quoted || isReadOnly}
+                                    onChange={() => handleToggleItem(qi.id, p.id)}
+                                    className={cn(
+                                      "cursor-pointer",
+                                      (!quoted || isReadOnly) && "opacity-40 cursor-not-allowed",
+                                    )}
+                                  />
+                                )}
+                              </TableCell>
                               {columnVisibility.prazo && (
                                 <TableCell
                                   key={`${p.id}-prazo`}
                                   className={cn(
                                     "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
+                                    isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !quoted && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
@@ -1199,6 +1511,7 @@ export default function EqualizacaoPage({
                                   key={`${p.id}-preco`}
                                   className={cn(
                                     "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
+                                    isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !quoted && "text-muted-foreground",
                                     quoted && isBestPrice && "bg-green-50 text-green-700 font-semibold",
                                     itemSelections[qi.id] != null && !isBestPrice && "bg-primary/5",
@@ -1212,6 +1525,7 @@ export default function EqualizacaoPage({
                                   key={`${p.id}-imposto`}
                                   className={cn(
                                     "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
+                                    isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !quoted && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
@@ -1224,6 +1538,7 @@ export default function EqualizacaoPage({
                                   key={`${p.id}-total`}
                                   className={cn(
                                     "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
+                                    isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !quoted && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
@@ -1241,6 +1556,7 @@ export default function EqualizacaoPage({
                                   key={`${p.id}-cond`}
                                   className={cn(
                                     "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
+                                    isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !quoted && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
@@ -1248,29 +1564,11 @@ export default function EqualizacaoPage({
                                   {quoted ? (p.payment_condition ?? "—") : "—"}
                                 </TableCell>
                               )}
-                              <TableCell
-                                key={`${p.id}-sel`}
-                                className={cn(
-                                  "min-w-[40px] w-[40px] border-l text-center whitespace-nowrap overflow-hidden max-h-11",
-                                  itemSelections[qi.id] != null && "bg-primary/5",
-                                )}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={itemSelections[qi.id] === p.id}
-                                  disabled={!quoted || isReadOnly}
-                                  onChange={() => handleToggleItem(qi.id, p.id)}
-                                  className={cn(
-                                    "cursor-pointer",
-                                    (!quoted || isReadOnly) && "opacity-40 cursor-not-allowed",
-                                  )}
-                                />
-                              </TableCell>
                             </React.Fragment>
                           )
                         })}
                       </TableRow>
-                    ))}
+                    )})}
                   </TableBody>
                 </table>
               </div>
@@ -1345,6 +1643,50 @@ export default function EqualizacaoPage({
         )}
       </div>
 
+      <Dialog
+        open={orderSuccessDialog.open}
+        onOpenChange={(open) => {
+          if (!open) setOrderSuccessDialog((s) => ({ ...s, open: false }))
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          className="sm:max-w-md"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogHeader className="sm:text-center">
+            <div className="flex flex-col items-center gap-3">
+              <CheckCircle className="h-12 w-12 shrink-0 text-green-600" aria-hidden />
+              <DialogTitle className="text-center">Pedido(s) criado(s) com sucesso</DialogTitle>
+            </div>
+          </DialogHeader>
+          <ul className="max-h-[40vh] space-y-2 overflow-y-auto text-sm">
+            {orderSuccessDialog.orders.map((o) => (
+              <li key={`${o.code}-${o.supplierName}`} className="border-b border-border/60 pb-2 last:border-0">
+                <span className="font-mono font-medium">{o.code}</span>
+                <span className="text-muted-foreground"> — {o.supplierName}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-sm text-muted-foreground text-center mt-2">
+            Os pedidos foram criados com status Rascunho. Acesse cada pedido para revisar os dados e
+            confirmar o envio.
+          </p>
+          <DialogFooter className="sm:justify-center">
+            <Button
+              type="button"
+              className="min-w-24"
+              onClick={() => {
+                setOrderSuccessDialog((s) => ({ ...s, open: false }))
+                void fetchEqualizationData({ showLoading: false })
+              }}
+            >
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

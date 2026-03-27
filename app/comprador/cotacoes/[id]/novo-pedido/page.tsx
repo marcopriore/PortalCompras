@@ -226,7 +226,7 @@ export default function NovoPedidoPage({
           total_price: totalPrice,
           observations: form.observations || null,
           created_by: userId,
-          status: "processing",
+          status: "draft",
         })
         .select("id, code")
         .single()
@@ -263,11 +263,6 @@ export default function NovoPedidoPage({
         entity: "quotation",
         entityId: quotation.id,
       })
-
-      await supabase
-        .from("quotations")
-        .update({ status: "completed" })
-        .eq("id", quotation.id)
 
       setErpError(null)
       router.push("/comprador/pedidos")

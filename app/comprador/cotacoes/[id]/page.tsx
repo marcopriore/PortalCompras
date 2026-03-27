@@ -313,7 +313,7 @@ export default function QuotationDetailsPage({
             )
           )}
           {quotation &&
-            (quotation.status === 'waiting' || quotation.status === 'analysis') && (
+            ['waiting', 'analysis', 'completed'].includes(quotation.status) && (
             <Button
               type="button"
               variant="default"
