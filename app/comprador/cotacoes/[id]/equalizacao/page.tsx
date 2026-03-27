@@ -67,6 +67,7 @@ type QuotationItem = {
 type OrderedItemInfo = {
   orderId: string
   orderCode: string
+  proposalId: string
 }
 
 type ProposalItem = {
@@ -237,21 +238,27 @@ export default function EqualizacaoPage({
         if (quotationItemIds.length > 0) {
           const { data: poItemsData } = await supabase
             .from("purchase_order_items")
-            .select("quotation_item_id, purchase_order_id, purchase_orders(code)")
+            .select("quotation_item_id, purchase_order_id, purchase_orders(code, proposal_id)")
             .in("quotation_item_id", quotationItemIds)
 
           ;((poItemsData ?? []) as Array<{
             quotation_item_id: string
             purchase_order_id: string
-            purchase_orders: { code: string } | { code: string }[] | null
+            purchase_orders:
+              | { code: string; proposal_id: string | null }
+              | { code: string; proposal_id: string | null }[]
+              | null
           }>).forEach((row) => {
-            const orderCode = Array.isArray(row.purchase_orders)
-              ? (row.purchase_orders[0]?.code ?? "—")
-              : (row.purchase_orders?.code ?? "—")
+            const po = Array.isArray(row.purchase_orders)
+              ? row.purchase_orders[0]
+              : row.purchase_orders
+            const orderCode = po?.code ?? "—"
+            const proposalId = po?.proposal_id ?? ""
             if (!orderedMap.has(row.quotation_item_id)) {
               orderedMap.set(row.quotation_item_id, {
                 orderId: row.purchase_order_id,
                 orderCode,
+                proposalId,
               })
             }
           })
@@ -353,10 +360,7 @@ export default function EqualizacaoPage({
       let current: { price: number; proposalId: string } | null = null
       proposals.forEach((p) => {
         const pi = p.proposal_items.find(
-          (i) =>
-            i.quotation_item_id === qi.id &&
-            i.item_status === "accepted" &&
-            i.unit_price > 0,
+          (i) => i.quotation_item_id === qi.id && i.unit_price > 0,
         )
         if (pi && (!current || pi.unit_price < current.price)) {
           current = { price: pi.unit_price, proposalId: p.id }
@@ -453,7 +457,7 @@ export default function EqualizacaoPage({
     proposals.forEach((p) => {
       const itemIds = new Set<string>()
       p.proposal_items.forEach((pi) => {
-        if (pi.item_status === "accepted" && pi.unit_price > 0) {
+        if (pi.unit_price > 0) {
           itemIds.add(pi.quotation_item_id)
         }
       })
@@ -548,30 +552,55 @@ export default function EqualizacaoPage({
     try {
       const supabase = createClient()
 
+      const acceptedProposalItemIds: string[] = []
+      const rejectedProposalItemIds: string[] = []
       for (const p of proposals) {
-        const updates: { id: string; item_status: "accepted" | "rejected" }[] = []
-        p.proposal_items.forEach((pi) => {
+        for (const pi of p.proposal_items) {
           const selected = itemSelections[pi.quotation_item_id] === p.id
-          updates.push({ id: pi.id, item_status: selected ? "accepted" : "rejected" })
-        })
-
-        for (const u of updates) {
-          const { error: proposalItemUpdateError } = await supabase
-            .from("proposal_items")
-            .update({ item_status: u.item_status })
-            .eq("id", u.id)
-          if (proposalItemUpdateError) throw proposalItemUpdateError
+          if (selected) acceptedProposalItemIds.push(pi.id)
+          else rejectedProposalItemIds.push(pi.id)
         }
+      }
 
-        const hasAnyAccepted = updates.some((u) => u.item_status === "accepted")
-        const { error: quotationProposalUpdateError } = await supabase
+      if (acceptedProposalItemIds.length > 0) {
+        const { error: proposalItemsAcceptedBatchError } = await supabase
+          .from("proposal_items")
+          .update({ item_status: "accepted" })
+          .in("id", acceptedProposalItemIds)
+        if (proposalItemsAcceptedBatchError) throw proposalItemsAcceptedBatchError
+      }
+      if (rejectedProposalItemIds.length > 0) {
+        const { error: proposalItemsRejectedBatchError } = await supabase
+          .from("proposal_items")
+          .update({ item_status: "rejected" })
+          .in("id", rejectedProposalItemIds)
+        if (proposalItemsRejectedBatchError) throw proposalItemsRejectedBatchError
+      }
+
+      const selectedQuotationProposalIds: string[] = []
+      const rejectedQuotationProposalIds: string[] = []
+      const selectedAt = new Date().toISOString()
+      for (const p of proposals) {
+        const hasAnyAccepted = p.proposal_items.some(
+          (pi) => itemSelections[pi.quotation_item_id] === p.id,
+        )
+        if (hasAnyAccepted) selectedQuotationProposalIds.push(p.id)
+        else rejectedQuotationProposalIds.push(p.id)
+      }
+
+      if (selectedQuotationProposalIds.length > 0) {
+        const { error: quotationProposalsSelectedBatchError } = await supabase
           .from("quotation_proposals")
-          .update({
-            status: hasAnyAccepted ? "selected" : "rejected",
-            ...(hasAnyAccepted ? { selected_at: new Date().toISOString() } : {}),
-          })
-          .eq("id", p.id)
-        if (quotationProposalUpdateError) throw quotationProposalUpdateError
+          .update({ status: "selected", selected_at: selectedAt })
+          .in("id", selectedQuotationProposalIds)
+        if (quotationProposalsSelectedBatchError) throw quotationProposalsSelectedBatchError
+      }
+      if (rejectedQuotationProposalIds.length > 0) {
+        const { error: quotationProposalsRejectedBatchError } = await supabase
+          .from("quotation_proposals")
+          .update({ status: "rejected" })
+          .in("id", rejectedQuotationProposalIds)
+        if (quotationProposalsRejectedBatchError) throw quotationProposalsRejectedBatchError
       }
 
       const createdOrdersList: { code: string; supplierName: string }[] = []
@@ -662,6 +691,33 @@ export default function EqualizacaoPage({
       if (createdOrdersList.length === 0) {
         toast.error("Nenhum pedido foi gerado. Verifique preços e itens selecionados.")
         return
+      }
+
+      const allQuotationItemIds = quotationItems.map((qi) => qi.id)
+      if (allQuotationItemIds.length > 0) {
+        const { data: coverageRows, error: coverageQueryError } = await supabase
+          .from("purchase_order_items")
+          .select("quotation_item_id")
+          .in("quotation_item_id", allQuotationItemIds)
+        if (coverageQueryError) throw coverageQueryError
+        const coveredIds = new Set(
+          ((coverageRows ?? []) as { quotation_item_id: string }[])
+            .map((r) => r.quotation_item_id)
+            .filter(Boolean),
+        )
+        const allItemsHavePurchaseOrder =
+          coveredIds.size === allQuotationItemIds.length &&
+          allQuotationItemIds.every((id) => coveredIds.has(id))
+        if (allItemsHavePurchaseOrder && quotation.status !== "completed") {
+          const { error: quotationCompleteError } = await supabase
+            .from("quotations")
+            .update({ status: "completed" })
+            .eq("id", quotation.id)
+            .eq("company_id", companyId)
+          if (quotationCompleteError) throw quotationCompleteError
+          setQuotation((prev) => (prev ? { ...prev, status: "completed" } : null))
+          toast.success("Todos os itens foram pedidos. Cotação marcada como concluída.")
+        }
       }
 
       await logAudit({
@@ -1283,16 +1339,6 @@ export default function EqualizacaoPage({
                           )}
                         >
                           {qi.material_code}
-                          {orderedInfo && (
-                            <button
-                              type="button"
-                              title={`Pedido: ${orderedInfo.orderCode}`}
-                              className="ml-1 inline-flex align-middle"
-                              onClick={() => router.push(`/comprador/pedidos/${orderedInfo.orderId}`)}
-                            >
-                              <ShoppingCart className="w-4 h-4 text-muted-foreground" />
-                            </button>
-                          )}
                         </TableCell>
                         <TableCell
                           className={cn(
@@ -1462,11 +1508,15 @@ export default function EqualizacaoPage({
                       >
                         {proposals.map((p) => {
                           const pi = proposalItemsByProposal.get(p.id)?.get(qi.id)
-                          const quoted =
-                            !!pi && pi.item_status === "accepted" && pi.unit_price > 0
-                          const totalItem = quoted ? (pi!.unit_price ?? 0) * qi.quantity : 0
+                          const hasQuotablePrice = !!pi && pi.unit_price > 0
+                          const totalItem = hasQuotablePrice ? (pi!.unit_price ?? 0) * qi.quantity : 0
                           const isBestPrice =
-                            !!quoted && bestPriceByItem[qi.id]?.proposalId === p.id
+                            !!hasQuotablePrice &&
+                            bestPriceByItem[qi.id]?.proposalId === p.id
+                          const showOrderIcon =
+                            isOrdered &&
+                            orderedInfo &&
+                            orderedInfo.proposalId === p.id
 
                           return (
                             <React.Fragment key={p.id}>
@@ -1478,15 +1528,27 @@ export default function EqualizacaoPage({
                                   itemSelections[qi.id] != null && "bg-primary/5",
                                 )}
                               >
-                                {!isOrdered && (
+                                {showOrderIcon ? (
+                                  <button
+                                    type="button"
+                                    title={`Pedido: ${orderedInfo!.orderCode}`}
+                                    className="inline-flex cursor-pointer items-center justify-center text-primary hover:text-primary/80"
+                                    onClick={() =>
+                                      router.push(`/comprador/pedidos/${orderedInfo!.orderId}`)
+                                    }
+                                  >
+                                    <ShoppingCart className="h-4 w-4" />
+                                  </button>
+                                ) : isOrdered ? null : (
                                   <input
                                     type="checkbox"
                                     checked={itemSelections[qi.id] === p.id}
-                                    disabled={!quoted || isReadOnly}
+                                    disabled={!hasQuotablePrice || isReadOnly}
                                     onChange={() => handleToggleItem(qi.id, p.id)}
                                     className={cn(
                                       "cursor-pointer",
-                                      (!quoted || isReadOnly) && "opacity-40 cursor-not-allowed",
+                                      (!hasQuotablePrice || isReadOnly) &&
+                                        "opacity-40 cursor-not-allowed",
                                     )}
                                   />
                                 )}
@@ -1497,11 +1559,11 @@ export default function EqualizacaoPage({
                                   className={cn(
                                     "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
-                                    !quoted && "text-muted-foreground",
+                                    !hasQuotablePrice && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
                                 >
-                                  {quoted && p.delivery_days != null
+                                  {hasQuotablePrice && p.delivery_days != null
                                     ? `${p.delivery_days}`
                                     : "—"}
                                 </TableCell>
@@ -1512,12 +1574,14 @@ export default function EqualizacaoPage({
                                   className={cn(
                                     "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
-                                    !quoted && "text-muted-foreground",
-                                    quoted && isBestPrice && "bg-green-50 text-green-700 font-semibold",
+                                    !hasQuotablePrice && "text-muted-foreground",
+                                    hasQuotablePrice &&
+                                      isBestPrice &&
+                                      "bg-green-50 text-green-700 font-semibold",
                                     itemSelections[qi.id] != null && !isBestPrice && "bg-primary/5",
                                   )}
                                 >
-                                  {quoted ? formatCurrency(pi!.unit_price) : "—"}
+                                  {hasQuotablePrice ? formatCurrency(pi!.unit_price) : "—"}
                                 </TableCell>
                               )}
                               {columnVisibility.imposto && (
@@ -1526,11 +1590,13 @@ export default function EqualizacaoPage({
                                   className={cn(
                                     "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
-                                    !quoted && "text-muted-foreground",
+                                    !hasQuotablePrice && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
                                 >
-                                  {quoted && pi!.tax_percent != null ? `${pi!.tax_percent}%` : "—"}
+                                  {hasQuotablePrice && pi!.tax_percent != null
+                                    ? `${pi!.tax_percent}%`
+                                    : "—"}
                                 </TableCell>
                               )}
                               {columnVisibility.total_item && (
@@ -1539,11 +1605,11 @@ export default function EqualizacaoPage({
                                   className={cn(
                                     "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
-                                    !quoted && "text-muted-foreground",
+                                    !hasQuotablePrice && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
                                 >
-                                  {quoted
+                                  {hasQuotablePrice
                                     ? totalItem.toLocaleString("pt-BR", {
                                         style: "currency",
                                         currency: "BRL",
@@ -1557,11 +1623,11 @@ export default function EqualizacaoPage({
                                   className={cn(
                                     "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
-                                    !quoted && "text-muted-foreground",
+                                    !hasQuotablePrice && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
                                 >
-                                  {quoted ? (p.payment_condition ?? "—") : "—"}
+                                  {hasQuotablePrice ? (p.payment_condition ?? "—") : "—"}
                                 </TableCell>
                               )}
                             </React.Fragment>

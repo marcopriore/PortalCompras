@@ -11,6 +11,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import {
   Table,
   TableBody,
   TableCell,
@@ -20,12 +31,17 @@ import {
 } from "@/components/ui/table"
 import {
   AlertCircle,
+  CheckCircle,
   CheckCircle2,
   ChevronLeft,
   Download,
+  FileEdit,
+  X,
 } from "lucide-react"
+import { toast } from "sonner"
+import type { LucideIcon } from "lucide-react"
 
-type PurchaseOrderStatus = "processing" | "sent" | "error" | "completed"
+type PurchaseOrderStatus = "draft" | "processing" | "sent" | "error" | "completed"
 
 type PurchaseOrder = {
   id: string
@@ -62,29 +78,31 @@ const money = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
 })
 
-function getStatusMeta(status: PurchaseOrderStatus): { label: string; className: string } {
-  if (status === "processing") {
-    return {
-      label: "Em Processamento",
-      className: "bg-yellow-100 text-yellow-800",
-    }
-  }
-  if (status === "sent") {
-    return {
-      label: "Enviado ao ERP",
-      className: "bg-blue-100 text-blue-800",
-    }
-  }
-  if (status === "error") {
-    return {
-      label: "Erro no ERP",
-      className: "bg-red-100 text-red-800",
-    }
-  }
-  return {
+const statusConfig: Record<
+  PurchaseOrderStatus,
+  { label: string; className: string; Icon?: LucideIcon }
+> = {
+  draft: {
+    label: "Rascunho",
+    className: "bg-zinc-100 text-zinc-700 border border-zinc-200",
+    Icon: FileEdit,
+  },
+  processing: {
+    label: "Em Processamento",
+    className: "bg-yellow-100 text-yellow-800",
+  },
+  sent: {
+    label: "Enviado ao ERP",
+    className: "bg-blue-100 text-blue-800",
+  },
+  error: {
+    label: "Erro no ERP",
+    className: "bg-red-100 text-red-800",
+  },
+  completed: {
     label: "Concluído",
     className: "bg-green-100 text-green-800",
-  }
+  },
 }
 
 function getTodayDDMMYYYY() {
@@ -123,36 +141,80 @@ export default function PurchaseOrderDetailPage({
   const [items, setItems] = React.useState<PurchaseOrderItem[]>([])
   const [loading, setLoading] = React.useState(true)
   const [exporting, setExporting] = React.useState(false)
+  const [confirmingPedido, setConfirmingPedido] = React.useState(false)
+  const [cancellingPedido, setCancellingPedido] = React.useState(false)
+
+  const fetchOrderData = React.useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!id || !companyId) return
+      const silent = options?.silent ?? false
+      if (!silent) setLoading(true)
+      try {
+        const supabase = createClient()
+        const [orderRes, itemsRes] = await Promise.all([
+          supabase.from("purchase_orders").select("*").eq("id", id).single(),
+          supabase
+            .from("purchase_order_items")
+            .select("*")
+            .eq("purchase_order_id", id)
+            .order("material_code", { ascending: true }),
+        ])
+        setOrder((orderRes.data as PurchaseOrder) ?? null)
+        setItems(((itemsRes.data as unknown) as PurchaseOrderItem[]) ?? [])
+      } finally {
+        if (!silent) setLoading(false)
+      }
+    },
+    [companyId, id],
+  )
 
   React.useEffect(() => {
-    if (!id || !companyId) return
+    void fetchOrderData()
+  }, [fetchOrderData])
 
-    const supabase = createClient()
-    let alive = true
-
-    const run = async () => {
-      setLoading(true)
-      const [orderRes, itemsRes] = await Promise.all([
-        supabase.from("purchase_orders").select("*").eq("id", id).single(),
-        supabase
-          .from("purchase_order_items")
-          .select("*")
-          .eq("purchase_order_id", id)
-          .order("material_code", { ascending: true }),
-      ])
-
-      if (!alive) return
-
-      setOrder((orderRes.data as PurchaseOrder) ?? null)
-      setItems(((itemsRes.data as unknown) as PurchaseOrderItem[]) ?? [])
-      setLoading(false)
+  const handleConfirmOrder = async () => {
+    if (!order || !companyId) return
+    setConfirmingPedido(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({ status: "processing" })
+        .eq("id", order.id)
+        .eq("company_id", companyId)
+      if (error) throw error
+      toast.success("Pedido confirmado e enviado para processamento.")
+      await fetchOrderData({ silent: true })
+    } catch (e) {
+      console.error(e)
+      toast.error("Não foi possível confirmar o pedido.")
+    } finally {
+      setConfirmingPedido(false)
     }
+  }
 
-    run()
-    return () => {
-      alive = false
+  const handleCancelOrder = async () => {
+    if (!order || !companyId) return
+    setCancellingPedido(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({
+          status: "error",
+          erp_error_message: "Pedido cancelado pelo comprador",
+        })
+        .eq("id", order.id)
+        .eq("company_id", companyId)
+      if (error) throw error
+      await fetchOrderData({ silent: true })
+    } catch (e) {
+      console.error(e)
+      toast.error("Não foi possível cancelar o pedido.")
+    } finally {
+      setCancellingPedido(false)
     }
-  }, [companyId, id])
+  }
 
   const handleExport = async () => {
     if (!order) return
@@ -338,14 +400,21 @@ export default function PurchaseOrderDetailPage({
     ? format(new Date(order.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })
     : "—"
 
-  const statusMeta = getStatusMeta(order.status)
+  const statusDisplay = statusConfig[order.status]
 
-  const steps = [
+  const steps: {
+    key: string
+    label: string
+    date?: string
+    completed: boolean
+    Icon?: LucideIcon
+  }[] = [
     {
-      key: "created",
-      label: "Pedido Criado",
+      key: "draft",
+      label: "Rascunho criado",
       date: createdAtLabel,
-      completed: true,
+      completed: order.status !== "draft",
+      Icon: FileEdit,
     },
     {
       key: "sent",
@@ -379,12 +448,60 @@ export default function PurchaseOrderDetailPage({
           <h1 className="text-2xl font-bold tracking-tight">{order.code}</h1>
           <p className="text-muted-foreground">Criado em {createdAtLabel}</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <span
-            className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusMeta.className}`}
+            className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusDisplay.className}`}
           >
-            {statusMeta.label}
+            {statusDisplay.Icon ? (
+              <statusDisplay.Icon className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            ) : null}
+            {statusDisplay.label}
           </span>
+          {order.status === "draft" && (
+            <>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleConfirmOrder}
+                disabled={confirmingPedido || cancellingPedido}
+              >
+                <CheckCircle className="mr-2 h-4 w-4" />
+                {confirmingPedido ? "Confirmando..." : "Confirmar Pedido"}
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    disabled={confirmingPedido || cancellingPedido}
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Cancelar Pedido
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Cancelar pedido?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      O pedido será marcado como cancelado. Esta ação pode ser revisada no histórico do
+                      pedido.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={cancellingPedido}>Voltar</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      disabled={cancellingPedido}
+                      onClick={() => void handleCancelOrder()}
+                    >
+                      {cancellingPedido ? "Cancelando..." : "Confirmar cancelamento"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
+          )}
           <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
             <Download className="mr-2 h-4 w-4" />
             {exporting ? "Exportando..." : "Exportar"}
@@ -566,7 +683,14 @@ export default function PurchaseOrderDetailPage({
                           : "bg-muted border-muted-foreground/20 text-muted-foreground"
                     }`}
                   >
-                    <span className="sr-only">{step.label}</span>
+                    {step.Icon ? (
+                      <>
+                        <step.Icon className="h-3 w-3 shrink-0" aria-hidden />
+                        <span className="sr-only">{step.label}</span>
+                      </>
+                    ) : (
+                      <span className="sr-only">{step.label}</span>
+                    )}
                   </span>
                   <div className="flex flex-col">
                     <span className="text-sm font-medium text-foreground">

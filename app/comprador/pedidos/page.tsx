@@ -29,7 +29,7 @@ import {
   X,
 } from "lucide-react"
 
-type PurchaseOrderStatus = "processing" | "sent" | "error" | "completed"
+type PurchaseOrderStatus = "draft" | "processing" | "sent" | "error" | "completed"
 
 type PurchaseOrder = {
   id: string
@@ -60,6 +60,12 @@ const money = new Intl.NumberFormat("pt-BR", {
 })
 
 function getStatusMeta(status: PurchaseOrderStatus): { label: string; className: string } {
+  if (status === "draft") {
+    return {
+      label: "Rascunho",
+      className: "bg-zinc-100 text-zinc-700 border border-zinc-200",
+    }
+  }
   if (status === "processing") {
     return {
       label: "Em Processamento",
@@ -92,7 +98,7 @@ export default function PedidosPage() {
   const [loading, setLoading] = React.useState(true)
   const [filters, setFilters] = React.useState<Filters>({
     search: "",
-    status: ['processing', 'sent', 'error'],
+    status: ["draft", "processing", "sent", "error"],
     dateFrom: "",
     dateTo: "",
   })
@@ -131,7 +137,7 @@ export default function PedidosPage() {
   const clearFilters = () => {
     setFilters({
       search: "",
-      status: ['processing', 'sent', 'error'],
+      status: ["draft", "processing", "sent", "error"],
       dateFrom: "",
       dateTo: "",
     })
@@ -269,6 +275,7 @@ export default function PedidosPage() {
               <MultiSelectFilter
                 label="Status"
                 options={[
+                  { value: "draft", label: "Rascunho" },
                   { value: "processing", label: "Processando" },
                   { value: "sent", label: "Enviado" },
                   { value: "error", label: "Erro" },
