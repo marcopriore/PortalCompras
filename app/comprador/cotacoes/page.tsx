@@ -12,6 +12,9 @@ import {
   Package,
   Download,
   X,
+  FileText,
+  Clock,
+  CheckCircle,
 } from "lucide-react"
 import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import { Button } from "@/components/ui/button"
@@ -217,6 +220,15 @@ export default function CotacoesPage() {
     })
   }, [quotations, search, statusFilter, dateFrom, dateTo, supplierFilter, materialFilter])
 
+  const metrics = useMemo(() => {
+    return {
+      total: quotations.length,
+      waiting: quotations.filter((q) => q.status === "waiting").length,
+      analysis: quotations.filter((q) => q.status === "analysis").length,
+      completed: quotations.filter((q) => q.status === "completed").length,
+    }
+  }, [quotations])
+
   const handleClearFilters = () => {
     setSearch("")
     setStatusFilter(['draft', 'waiting', 'analysis'])
@@ -356,7 +368,50 @@ export default function CotacoesPage() {
         )}
       </div>
 
-      <div className="bg-muted/40 border border-border rounded-xl p-4 mb-4">
+      <div
+        className="grid w-full grid-cols-4 gap-4 mb-6"
+        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+      >
+        <div className="min-w-0 bg-white border border-blue-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-blue-600 font-medium">Total de Cotações</p>
+            <p className="text-3xl font-bold text-blue-700 mt-1">{metrics.total}</p>
+          </div>
+          <div className="bg-blue-100 p-3 rounded-full">
+            <FileText className="w-6 h-6 text-blue-600" />
+          </div>
+        </div>
+        <div className="min-w-0 bg-white border border-yellow-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-yellow-600 font-medium">Aguardando Resposta</p>
+            <p className="text-3xl font-bold text-yellow-700 mt-1">{metrics.waiting}</p>
+          </div>
+          <div className="bg-yellow-100 p-3 rounded-full">
+            <Clock className="w-6 h-6 text-yellow-600" />
+          </div>
+        </div>
+        <div className="min-w-0 bg-white border border-purple-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-purple-600 font-medium">Em Análise</p>
+            <p className="text-3xl font-bold text-purple-700 mt-1">{metrics.analysis}</p>
+          </div>
+          <div className="bg-purple-100 p-3 rounded-full">
+            <BarChart2 className="w-6 h-6 text-purple-600" />
+          </div>
+        </div>
+        <div className="min-w-0 bg-white border border-green-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-green-600 font-medium">Concluídas</p>
+            <p className="text-3xl font-bold text-green-700 mt-1">{metrics.completed}</p>
+          </div>
+          <div className="bg-green-100 p-3 rounded-full">
+            <CheckCircle className="w-6 h-6 text-green-600" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-muted/40 border border-border rounded-xl p-4 mb-6">
+        <p className="text-sm font-medium text-muted-foreground mb-3">Filtros</p>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex flex-col flex-1 min-w-[200px] max-w-[360px]">
             <p className="text-xs font-medium text-muted-foreground mb-1 block">

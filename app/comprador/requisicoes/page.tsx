@@ -12,7 +12,6 @@ import { usePermissions } from "@/lib/hooks/usePermissions"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import {
@@ -24,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { ClipboardList, Clock, CheckCircle2, ChevronLeft, ChevronRight, FileText, Search, Eye, Plus, X } from "lucide-react"
+import { ClipboardList, Clock, CheckCircle, ChevronLeft, ChevronRight, FileText, Search, Eye, Plus, X } from "lucide-react"
 
 type Priority = "normal" | "urgent" | "critical"
 type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
@@ -178,8 +177,51 @@ export default function RequisicoesPage() {
         </Button>
       </div>
 
-      <Card className="bg-muted/40 border border-border rounded-xl p-4">
-        <CardContent className="p-0">
+      <div
+        className="grid w-full grid-cols-4 gap-4 mb-6"
+        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+      >
+        <div className="min-w-0 bg-white border border-blue-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-blue-600 font-medium">Total de Requisições</p>
+            <p className="text-3xl font-bold text-blue-700 mt-1">{metrics.total}</p>
+          </div>
+          <div className="bg-blue-100 p-3 rounded-full">
+            <ClipboardList className="w-6 h-6 text-blue-600" />
+          </div>
+        </div>
+        <div className="bg-white border border-yellow-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-yellow-600 font-medium">Aguardando Aprovação</p>
+            <p className="text-3xl font-bold text-yellow-700 mt-1">{metrics.pending}</p>
+          </div>
+          <div className="bg-yellow-100 p-3 rounded-full">
+            <Clock className="w-6 h-6 text-yellow-600" />
+          </div>
+        </div>
+        <div className="min-w-0 bg-white border border-green-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-green-600 font-medium">Aprovadas</p>
+            <p className="text-3xl font-bold text-green-700 mt-1">{metrics.approved}</p>
+          </div>
+          <div className="bg-green-100 p-3 rounded-full">
+            <CheckCircle className="w-6 h-6 text-green-600" />
+          </div>
+        </div>
+        <div className="min-w-0 bg-white border border-purple-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-purple-600 font-medium">Em Cotação</p>
+            <p className="text-3xl font-bold text-purple-700 mt-1">{metrics.inQuotation}</p>
+          </div>
+          <div className="bg-purple-100 p-3 rounded-full">
+            <FileText className="w-6 h-6 text-purple-600" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-muted/40 border border-border rounded-xl p-4 mb-6">
+        <p className="text-sm font-medium text-muted-foreground mb-3">Filtros</p>
+        <div>
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-1 flex-col min-w-[200px]">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Buscar</p>
@@ -268,46 +310,7 @@ export default function RequisicoesPage() {
               </Button>
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total de Requisições</CardTitle>
-            <ClipboardList className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics.total}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Aguardando Aprovação</CardTitle>
-            <Clock className="h-4 w-4 text-warning" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-warning">{metrics.pending}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Aprovadas</CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">{metrics.approved}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Em Cotação</CardTitle>
-            <FileText className="h-4 w-4 text-indigo-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-indigo-500">{metrics.inQuotation}</div>
-          </CardContent>
-        </Card>
+        </div>
       </div>
 
       <Card>

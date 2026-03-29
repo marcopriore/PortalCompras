@@ -23,7 +23,7 @@ import {
   ShoppingCart,
   Clock,
   Send,
-  CheckCircle2,
+  CheckCircle,
   Search,
   Eye,
   X,
@@ -183,7 +183,7 @@ export default function PedidosPage() {
     filters.dateTo
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Pedidos de Compra</h1>
         <p className="text-muted-foreground">
@@ -191,58 +191,51 @@ export default function PedidosPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total de Pedidos
-            </CardTitle>
-            <ShoppingCart className="h-4 w-4 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics.total}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Em Processamento
-            </CardTitle>
-            <Clock className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics.processing}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Enviados ao ERP
-            </CardTitle>
-            <Send className="h-4 w-4 text-indigo-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics.sent}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Concluídos
-            </CardTitle>
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{metrics.completed}</div>
-          </CardContent>
-        </Card>
+      <div
+        className="grid w-full grid-cols-4 gap-4 mb-6"
+        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+      >
+        <div className="min-w-0 bg-white border border-blue-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-blue-600 font-medium">Total de Pedidos</p>
+            <p className="text-3xl font-bold text-blue-700 mt-1">{metrics.total}</p>
+          </div>
+          <div className="bg-blue-100 p-3 rounded-full">
+            <ShoppingCart className="w-6 h-6 text-blue-600" />
+          </div>
+        </div>
+        <div className="min-w-0 bg-white border border-yellow-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-yellow-600 font-medium">Em Processamento</p>
+            <p className="text-3xl font-bold text-yellow-700 mt-1">{metrics.processing}</p>
+          </div>
+          <div className="bg-yellow-100 p-3 rounded-full">
+            <Clock className="w-6 h-6 text-yellow-600" />
+          </div>
+        </div>
+        <div className="min-w-0 bg-white border border-purple-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-purple-600 font-medium">Enviados ao ERP</p>
+            <p className="text-3xl font-bold text-purple-700 mt-1">{metrics.sent}</p>
+          </div>
+          <div className="bg-purple-100 p-3 rounded-full">
+            <Send className="w-6 h-6 text-purple-600" />
+          </div>
+        </div>
+        <div className="min-w-0 bg-white border border-green-100 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-green-600 font-medium">Concluídos</p>
+            <p className="text-3xl font-bold text-green-700 mt-1">{metrics.completed}</p>
+          </div>
+          <div className="bg-green-100 p-3 rounded-full">
+            <CheckCircle className="w-6 h-6 text-green-600" />
+          </div>
+        </div>
       </div>
 
-      <Card className="bg-muted/40 border border-border rounded-xl">
-        <CardHeader>
-          <CardTitle className="text-base">Filtros</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="bg-muted/40 border border-border rounded-xl p-4 mb-6">
+        <p className="text-sm font-medium text-muted-foreground mb-3">Filtros</p>
+        <div>
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="search">Buscar</Label>
@@ -316,8 +309,8 @@ export default function PedidosPage() {
               </Button>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
