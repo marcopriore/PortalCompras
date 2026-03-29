@@ -201,6 +201,20 @@ function formatDateBR(iso: string | null): string {
   return d.toLocaleDateString("pt-BR")
 }
 
+/** Rótulo de status no export Excel (item_status + preço cotado). */
+function excelExportItemStatusLabel(
+  pi: ProposalItem | undefined,
+  hasOrderElsewhere: boolean,
+): string {
+  if (hasOrderElsewhere) return "Pedido em outro fornecedor"
+  if (!pi) return "—"
+  const up = pi.unit_price
+  if (pi.item_status === "accepted" && up > 0) return "Aceito"
+  if (pi.item_status === "rejected" && up === 0) return "Recusado"
+  if (pi.item_status === "rejected" && up > 0) return "Respondido"
+  return "—"
+}
+
 function getQuotationStatusLabel(status: string): string {
   const labels: Record<string, string> = {
     draft: "Rascunho",
@@ -1265,6 +1279,7 @@ export default function EqualizacaoPage({
     const usedNames = new Map<string, number>()
 
     const dadosWs = workbook.addWorksheet(sanitizeSheetName("Dados da Cotação"))
+    dadosWs.views = [{ showGridLines: false }]
     dadosWs.columns = [{ width: 30 }, { width: 40 }]
     const dadosHeaderRow = dadosWs.addRow(["Campo", "Valor"])
     dadosHeaderRow.height = 18
@@ -1319,6 +1334,7 @@ export default function EqualizacaoPage({
       const sheetName = count === 1 ? base : sanitizeSheetName(`${base} ${count}`)
 
       const ws = workbook.addWorksheet(sheetName)
+      ws.views = [{ showGridLines: false }]
 
       ws.columns = [
         { width: 15 }, // A
@@ -1431,19 +1447,9 @@ export default function EqualizacaoPage({
         const totalItem = hasPrice ? pi!.unit_price * qi.quantity : null
         if (acceptedForSum && totalItem != null) acceptedSum += totalItem
 
-        let statusLabel: string
-        if (hasOrderElsewhere) {
-          statusLabel = "Pedido em outro fornecedor"
-        } else if (!pi) {
-          statusLabel = "Recusado"
-        } else if (pi.item_status === "accepted" && hasPrice) {
-          statusLabel = "Aceito"
-        } else {
-          statusLabel = "Recusado"
-        }
-
-        const rejected =
-          !orderIsForThisSupplier && !hasOrderElsewhere && !acceptedForSum
+        const statusLabel = excelExportItemStatusLabel(pi, hasOrderElsewhere)
+        const usePinkRejectRow =
+          !orderIsForThisSupplier && !hasOrderElsewhere && statusLabel === "Recusado"
 
         const row = ws.addRow([
           qi.material_code,
@@ -1473,7 +1479,7 @@ export default function EqualizacaoPage({
           row.eachCell({ includeEmpty: true }, (cell: any) => {
             cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8F5E9" } }
           })
-        } else if (rejected) {
+        } else if (usePinkRejectRow) {
           row.eachCell({ includeEmpty: true }, (cell: any) => {
             cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF0F0" } }
             cell.font = { color: { argb: "FF6B7280" } }
