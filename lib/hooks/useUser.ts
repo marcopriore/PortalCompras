@@ -8,11 +8,17 @@ type ProfileRow = {
   is_superadmin?: boolean
   role?: string | null
   roles?: string[] | null
+  profile_type?: string | null
+  full_name?: string | null
+  companies?: { name: string } | { name: string }[] | null
 }
 
 export function useUser() {
   const [userId, setUserId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
+  const [companyName, setCompanyName] = useState<string | null>(null)
+  const [profileType, setProfileType] = useState<'buyer' | 'supplier' | null>(null)
+  const [fullName, setFullName] = useState<string | null>(null)
   const [roles, setRoles] = useState<string[]>([])
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -23,6 +29,13 @@ export function useUser() {
     supabase.auth.getUser().then(async ({ data }) => {
       const user = data.user
       if (!user) {
+        setUserId(null)
+        setCompanyId(null)
+        setCompanyName(null)
+        setProfileType(null)
+        setFullName(null)
+        setRoles([])
+        setIsSuperAdmin(false)
         setLoading(false)
         return
       }
@@ -31,10 +44,24 @@ export function useUser() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('company_id, is_superadmin, role, roles')
+        .select(
+          'company_id, is_superadmin, role, roles, profile_type, full_name, companies(name)',
+        )
         .eq('id', user.id)
         .single()
       const p = profile as ProfileRow | null
+      const rawType = p?.profile_type ?? 'buyer'
+      const pt = rawType === 'supplier' ? 'supplier' : 'buyer'
+      setProfileType(pt)
+      setFullName(p?.full_name ?? null)
+      const co = p?.companies
+      let embeddedName: string | null = null
+      if (Array.isArray(co) && co[0]?.name) {
+        embeddedName = String(co[0].name)
+      } else if (co && typeof co === 'object' && 'name' in co) {
+        embeddedName = String((co as { name: string }).name)
+      }
+      setCompanyName(embeddedName)
       const superFlag = Boolean(p?.is_superadmin)
       setIsSuperAdmin(superFlag)
       const rolesArray = Array.isArray(p?.roles)
@@ -89,6 +116,9 @@ export function useUser() {
   return {
     userId,
     companyId,
+    companyName,
+    profileType,
+    fullName,
     role,
     roles,
     hasRole,

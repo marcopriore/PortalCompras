@@ -1,0 +1,44 @@
+# Cursor Rules — Valore Portal de Compras
+
+## Comportamento geral
+- Trabalhe sempre um passo de cada vez
+- Aguarde confirmação antes de avançar para o próximo arquivo
+- Liste explicitamente o que será removido E o que será mantido
+- Nunca remova funcionalidade existente sem instrução explícita
+
+## TypeScript e Next.js 16
+- Sempre usar React.use(params) para desembrulhar parâmetros de rota
+- Nunca acessar params.id diretamente em componentes de página
+- Sempre tipar explicitamente — nunca usar `any`
+- Importar createClient de @/lib/supabase/client no frontend
+- Importar createServerClient de @/lib/supabase/server em Server Components
+
+## Supabase
+- Nunca fazer loop com queries individuais — sempre batch com .in()
+- Sempre incluir company_id em todas as queries de tabelas de negócio
+- proposal_items sempre requerem round_id — nunca inserir sem ele
+- RLS está ativo — queries sem company_id correto retornarão vazio silenciosamente
+
+## Componentes e UI
+- Sempre usar tokens do design system: bg-background, bg-card, text-foreground, etc.
+- Nunca hardcodar cores hex (exceto sidebar #1a1a2e e badges coloridos)
+- Filtros de lista sempre usam MultiSelectFilter de components/ui/multi-select-filter.tsx
+- Cards de métrica seguem o padrão definido no CLAUDE.md
+- Larguras de filtros sempre fixas (w-40, w-48) — nunca flex-grow
+
+## Qualidade obrigatória
+- Sempre remover imports de componentes removidos
+- Sempre verificar balanceamento de tags JSX após edições grandes
+- Sempre rodar npx tsc --noEmit antes de declarar tarefa concluída
+- Nunca deixar console.log em código de produção
+
+## Segurança
+- Nunca expor service_role key no frontend
+- Sempre validar dados do usuário antes de inserir no banco
+- RLS é a camada de segurança principal — confiar nela, não replicar no frontend
+
+## Commits
+- Prefixo feat: para novas funcionalidades
+- Prefixo fix: para correções
+- Prefixo refactor: para refatorações sem mudança de comportamento
+- Tags semânticas: vX.X.X após cada entrega validada
