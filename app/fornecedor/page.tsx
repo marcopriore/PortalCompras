@@ -12,11 +12,21 @@ import {
   Send,
   XCircle,
   FileSpreadsheet,
+  X,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 type OpenQuotationRow = {
   id: string
@@ -112,6 +122,70 @@ type OpenQuotationItem = {
   responseDeadline: string | null
   activeRoundId: string | null
   hasSubmittedThisRound: boolean
+  proposalStatus: string | null
+}
+
+const statusBadgeBase =
+  "inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full"
+
+function getProposalStatusBadge(
+  proposalStatus: string | null | undefined,
+  quotationStatus: string,
+): { label: string; className: string; showTrophy: boolean; filterKey: string } {
+  if (proposalStatus === "selected") {
+    return {
+      label: "Vencedor",
+      className: `${statusBadgeBase} bg-yellow-100 text-yellow-800 border border-yellow-200`,
+      showTrophy: true,
+      filterKey: "selected",
+    }
+  }
+  if (proposalStatus === "submitted") {
+    return {
+      label: "Proposta Enviada",
+      className: `${statusBadgeBase} bg-blue-100 text-blue-800`,
+      showTrophy: false,
+      filterKey: "submitted",
+    }
+  }
+  if (proposalStatus === "invited") {
+    return {
+      label: "Aguardando Resposta",
+      className: `${statusBadgeBase} bg-amber-100 text-amber-800`,
+      showTrophy: false,
+      filterKey: "invited",
+    }
+  }
+  if (proposalStatus === "rejected") {
+    return {
+      label: "Encerrada",
+      className: `${statusBadgeBase} bg-slate-100 text-slate-600`,
+      showTrophy: false,
+      filterKey: "rejected",
+    }
+  }
+  if (quotationStatus === "completed") {
+    return {
+      label: "Encerrada",
+      className: `${statusBadgeBase} bg-slate-100 text-slate-600`,
+      showTrophy: false,
+      filterKey: "completed",
+    }
+  }
+  if (quotationStatus === "cancelled") {
+    return {
+      label: "Cancelada",
+      className: `${statusBadgeBase} bg-red-50 text-red-600`,
+      showTrophy: false,
+      filterKey: "cancelled",
+    }
+  }
+  return {
+    label: "Aguardando Resposta",
+    className: `${statusBadgeBase} bg-amber-100 text-amber-800`,
+    showTrophy: false,
+    filterKey: "invited",
+  }
 }
 
 export default function FornecedorDashboardPage() {
@@ -126,8 +200,52 @@ export default function FornecedorDashboardPage() {
   const [mClosed, setMClosed] = React.useState(0)
 
   const [openQuotations, setOpenQuotations] = React.useState<OpenQuotationItem[]>([])
-  const [allOpenCount, setAllOpenCount] = React.useState(0)
   const [activity, setActivity] = React.useState<ActivityRow[]>([])
+
+  const [filterSearch, setFilterSearch] = React.useState("")
+  const [filterStatus, setFilterStatus] = React.useState<string>("all")
+  const [filterPeriod, setFilterPeriod] = React.useState<string>("all")
+
+  const filteredQuotations = React.useMemo(() => {
+    let rows = openQuotations
+    const term = filterSearch.trim().toLowerCase()
+    if (term) {
+      rows = rows.filter(
+        (r) =>
+          r.code.toLowerCase().includes(term) ||
+          r.description.toLowerCase().includes(term),
+      )
+    }
+    if (filterStatus !== "all") {
+      rows = rows.filter((r) => {
+        const { filterKey } = getProposalStatusBadge(r.proposalStatus, r.status)
+        if (filterStatus === "rejected") {
+          return filterKey === "rejected" || filterKey === "completed"
+        }
+        return filterKey === filterStatus
+      })
+    }
+    if (filterPeriod !== "all") {
+      const days = filterPeriod === "30" ? 30 : 90
+      const cutoff = new Date()
+      cutoff.setHours(0, 0, 0, 0)
+      cutoff.setDate(cutoff.getDate() - days)
+      rows = rows.filter((r) => {
+        const d = new Date(r.createdAt)
+        return !Number.isNaN(d.getTime()) && d >= cutoff
+      })
+    }
+    return rows
+  }, [openQuotations, filterSearch, filterStatus, filterPeriod])
+
+  const filtersActive =
+    filterSearch.trim() !== "" || filterStatus !== "all" || filterPeriod !== "all"
+
+  const clearFilters = () => {
+    setFilterSearch("")
+    setFilterStatus("all")
+    setFilterPeriod("all")
+  }
 
   React.useEffect(() => {
     if (userLoading) return
@@ -140,8 +258,10 @@ export default function FornecedorDashboardPage() {
       setMWinners(0)
       setMClosed(0)
       setOpenQuotations([])
-      setAllOpenCount(0)
       setActivity([])
+      setFilterSearch("")
+      setFilterStatus("all")
+      setFilterPeriod("all")
       return
     }
 
@@ -273,7 +393,6 @@ export default function FornecedorDashboardPage() {
         if (quotationIds.length === 0) {
           if (!cancelled) {
             setOpenQuotations([])
-            setAllOpenCount(0)
           }
         } else {
           const openQuotationsRes = await supabase
@@ -315,19 +434,14 @@ export default function FornecedorDashboardPage() {
           if (roundsRes.error) throw roundsRes.error
 
           const activeRounds = (roundsRes.data ?? []) as RoundRow[]
-          const activeRoundIds = activeRounds.map((r) => r.id)
 
-          let submittedInActiveRounds: ProposalRow[] = []
-          if (activeRoundIds.length > 0) {
-            const subRes = await supabase
-              .from("quotation_proposals")
-              .select("quotation_id, round_id, status")
-              .eq("supplier_id", supplierId)
-              .eq("status", "submitted")
-              .in("round_id", activeRoundIds)
-            if (subRes.error) throw subRes.error
-            submittedInActiveRounds = (subRes.data ?? []) as ProposalRow[]
-          }
+          const myProposalsRes = await supabase
+            .from("quotation_proposals")
+            .select("quotation_id, round_id, status")
+            .eq("supplier_id", supplierId)
+            .in("quotation_id", quotationIds)
+          if (myProposalsRes.error) throw myProposalsRes.error
+          const myProposalsRows = (myProposalsRes.data ?? []) as ProposalRow[]
 
           const roundsForOpen = activeRounds.filter((r) =>
             openQIds.includes(r.quotation_id),
@@ -343,14 +457,14 @@ export default function FornecedorDashboardPage() {
             const companies = coRaw
               ? { name: coRaw.name, cnpj: coRaw.cnpj }
               : null
-            const submittedHere = ar
-              ? submittedInActiveRounds.some(
+            const myProp = ar
+              ? myProposalsRows.find(
                   (p) =>
-                    p.quotation_id === q.id &&
-                    p.round_id === ar.id &&
-                    p.status === "submitted",
+                    p.quotation_id === q.id && p.round_id === ar.id,
                 )
-              : false
+              : undefined
+            const proposalStatus = myProp?.status ?? null
+            const hasSubmittedThisRound = proposalStatus === "submitted"
             return {
               id: q.id,
               code: q.code,
@@ -361,7 +475,8 @@ export default function FornecedorDashboardPage() {
               roundNumber: ar?.round_number ?? null,
               responseDeadline: ar?.response_deadline ?? null,
               activeRoundId: ar?.id ?? null,
-              hasSubmittedThisRound: submittedHere,
+              hasSubmittedThisRound,
+              proposalStatus,
             }
           })
 
@@ -376,8 +491,7 @@ export default function FornecedorDashboardPage() {
           })
 
           if (!cancelled) {
-            setAllOpenCount(merged.length)
-            setOpenQuotations(merged.slice(0, 5))
+            setOpenQuotations(merged)
           }
         }
       } catch (err) {
@@ -385,7 +499,6 @@ export default function FornecedorDashboardPage() {
         if (!cancelled) {
           setError(true)
           setOpenQuotations([])
-          setAllOpenCount(0)
         }
       }
 
@@ -415,18 +528,6 @@ export default function FornecedorDashboardPage() {
       cancelled = true
     }
   }, [supplierId, userLoading])
-
-  const statusBadge = (s: string) => {
-    if (s === "waiting") {
-      return (
-        <Badge className="bg-amber-100 text-amber-800 border-amber-200">Aguardando</Badge>
-      )
-    }
-    if (s === "analysis") {
-      return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Em Análise</Badge>
-    }
-    return <Badge variant="secondary">{s}</Badge>
-  }
 
   return (
     <div className="space-y-10">
@@ -520,136 +621,232 @@ export default function FornecedorDashboardPage() {
               </tbody>
             </table>
           </div>
-        ) : openQuotations.length === 0 && supplierId ? (
+        ) : !supplierId ? null : openQuotations.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-muted/20 py-16 text-center">
             <FileSpreadsheet className="h-14 w-14 text-muted-foreground" />
             <p className="text-sm font-medium text-foreground">Nenhuma cotação aberta no momento</p>
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto rounded-xl border border-border bg-white">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/40">
-                    <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Cotação
-                    </th>
-                    <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Descrição
-                    </th>
-                    <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
-                      Cliente
-                    </th>
-                    <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
-                      Recebido
-                    </th>
-                    <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
-                      Expira
-                    </th>
-                    <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
-                      Status
-                    </th>
-                    <th className="px-3 py-2.5 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
-                      Rodada
-                    </th>
-                    <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
-                      Ações
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {openQuotations.map((q) => {
-                    const urgent = isUrgentRound(q.responseDeadline)
-                    const co = q.companies
-                    return (
-                      <tr
-                        key={q.id}
-                        className="border-b border-border last:border-0 hover:bg-muted/20"
-                      >
-                        <td className="px-3 py-3 align-top">
-                          <div className="flex flex-col gap-1">
-                            <span className="font-semibold text-foreground">{q.code}</span>
-                            {urgent && (
-                              <Badge variant="destructive" className="w-fit text-xs">
-                                Urgente
-                              </Badge>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3 align-top max-w-[200px]">
-                          <p className="truncate text-foreground" title={q.description}>
-                            {q.description}
-                          </p>
-                        </td>
-                        <td className="px-3 py-3 align-top whitespace-nowrap">
-                          {co ? (
-                            <div className="flex flex-col gap-0.5">
-                              <span className="font-medium text-foreground">{co.name}</span>
-                              {co.cnpj ? (
-                                <span className="text-xs text-muted-foreground">{co.cnpj}</span>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 align-top whitespace-nowrap text-foreground">
-                          {formatCreatedAtBR(q.createdAt)}
-                        </td>
-                        <td className="px-3 py-3 align-top whitespace-nowrap">
-                          {q.responseDeadline ? (
-                            <span
-                              className={
-                                urgent ? "text-red-600 font-medium" : "text-foreground"
-                              }
-                            >
-                              {formatDateBR(q.responseDeadline)}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">Sem prazo</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3 align-top whitespace-nowrap">
-                          {statusBadge(q.status)}
-                        </td>
-                        <td className="px-3 py-3 align-top text-center text-foreground">
-                          {q.roundNumber != null ? `Rodada ${q.roundNumber}` : "—"}
-                        </td>
-                        <td className="px-3 py-3 align-top text-right">
-                          {q.hasSubmittedThisRound ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => router.push(`/fornecedor/cotacoes/${q.id}`)}
-                            >
-                              Ver Proposta
-                            </Button>
-                          ) : (
-                            <Button
-                              type="button"
-                              size="sm"
-                              onClick={() => router.push(`/fornecedor/cotacoes/${q.id}`)}
-                            >
-                              Responder
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {!loading && allOpenCount > 5 && (
-              <div>
-                <Link
-                  href="/fornecedor/cotacoes"
-                  className="text-sm font-medium text-primary hover:underline"
-                >
-                  Ver todas as cotações →
-                </Link>
+            <div className="mb-4 flex flex-wrap items-end gap-4 rounded-xl border border-border bg-muted/40 p-4">
+              <div className="min-w-[200px] flex-1">
+                <Label htmlFor="cotacoes-busca" className="mb-1.5 block text-sm font-medium">
+                  Buscar
+                </Label>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    id="cotacoes-busca"
+                    value={filterSearch}
+                    onChange={(e) => setFilterSearch(e.target.value)}
+                    placeholder="Código ou descrição"
+                    className="pl-9 pr-9"
+                    autoComplete="off"
+                  />
+                  {filterSearch ? (
+                    <button
+                      type="button"
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-1 text-muted-foreground hover:text-foreground"
+                      onClick={() => setFilterSearch("")}
+                      aria-label="Limpar busca"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
               </div>
+              <div className="w-48 shrink-0">
+                <Label htmlFor="cotacoes-status" className="mb-1.5 block text-sm font-medium">
+                  Status
+                </Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger id="cotacoes-status" className="w-full" size="sm">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os status</SelectItem>
+                    <SelectItem value="invited">Aguardando Resposta</SelectItem>
+                    <SelectItem value="submitted">Proposta Enviada</SelectItem>
+                    <SelectItem value="selected">Vencedor</SelectItem>
+                    <SelectItem value="rejected">Encerrada</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-44 shrink-0">
+                <Label htmlFor="cotacoes-periodo" className="mb-1.5 block text-sm font-medium">
+                  Período
+                </Label>
+                <Select value={filterPeriod} onValueChange={setFilterPeriod}>
+                  <SelectTrigger id="cotacoes-periodo" className="w-full" size="sm">
+                    <SelectValue placeholder="Período" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="30">Últimos 30 dias</SelectItem>
+                    <SelectItem value="90">Últimos 90 dias</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="ml-auto flex flex-wrap items-end gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {filteredQuotations.length === 1
+                    ? "1 resultado"
+                    : `${filteredQuotations.length} resultados`}
+                </p>
+                {filtersActive ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-sm"
+                    onClick={clearFilters}
+                  >
+                    Limpar filtros
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+
+            {filteredQuotations.length === 0 ? (
+              <div className="rounded-xl border border-border bg-muted/20 py-12 text-center text-sm text-muted-foreground">
+                Nenhum resultado com os filtros atuais.
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto rounded-xl border border-border bg-white">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/40">
+                        <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Cotação
+                        </th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                          Descrição
+                        </th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
+                          Cliente
+                        </th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
+                          Recebido
+                        </th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
+                          Expira
+                        </th>
+                        <th className="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
+                          Status
+                        </th>
+                        <th className="px-3 py-2.5 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
+                          Rodada
+                        </th>
+                        <th className="px-3 py-2.5 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground whitespace-nowrap">
+                          Ações
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredQuotations.slice(0, 5).map((q) => {
+                        const urgent = isUrgentRound(q.responseDeadline)
+                        const co = q.companies
+                        const statusDisplay = getProposalStatusBadge(
+                          q.proposalStatus,
+                          q.status,
+                        )
+                        return (
+                          <tr
+                            key={q.id}
+                            className="border-b border-border last:border-0 hover:bg-muted/20"
+                          >
+                            <td className="px-3 py-3 align-top">
+                              <div className="flex flex-col gap-1">
+                                <span className="font-semibold text-foreground">{q.code}</span>
+                                {urgent && (
+                                  <Badge variant="destructive" className="w-fit text-xs">
+                                    Urgente
+                                  </Badge>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 align-top max-w-[200px]">
+                              <p className="truncate text-foreground" title={q.description}>
+                                {q.description}
+                              </p>
+                            </td>
+                            <td className="px-3 py-3 align-top whitespace-nowrap">
+                              {co ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="font-medium text-foreground">{co.name}</span>
+                                  {co.cnpj ? (
+                                    <span className="text-xs text-muted-foreground">{co.cnpj}</span>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3 align-top whitespace-nowrap text-foreground">
+                              {formatCreatedAtBR(q.createdAt)}
+                            </td>
+                            <td className="px-3 py-3 align-top whitespace-nowrap">
+                              {q.responseDeadline ? (
+                                <span
+                                  className={
+                                    urgent ? "text-red-600 font-medium" : "text-foreground"
+                                  }
+                                >
+                                  {formatDateBR(q.responseDeadline)}
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">Sem prazo</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-3 align-top whitespace-nowrap">
+                              <span className={statusDisplay.className}>
+                                {statusDisplay.showTrophy ? (
+                                  <Trophy className="mr-1 inline size-3 shrink-0 align-middle" />
+                                ) : null}
+                                {statusDisplay.label}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 align-top text-center text-foreground">
+                              {q.roundNumber != null ? `Rodada ${q.roundNumber}` : "—"}
+                            </td>
+                            <td className="px-3 py-3 align-top text-right">
+                              {q.hasSubmittedThisRound ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => router.push(`/fornecedor/cotacoes/${q.id}`)}
+                                >
+                                  Ver Proposta
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() => router.push(`/fornecedor/cotacoes/${q.id}`)}
+                                >
+                                  Responder
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {!loading && filteredQuotations.length > 5 && (
+                  <div>
+                    <Link
+                      href="/fornecedor/cotacoes"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      Ver todas as cotações →
+                    </Link>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
