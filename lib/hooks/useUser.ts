@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 
 type ProfileRow = {
   company_id?: string | null
+  supplier_id?: string | null
   is_superadmin?: boolean
   role?: string | null
   roles?: string[] | null
@@ -15,6 +16,7 @@ type ProfileRow = {
 
 export function useUser() {
   const [userId, setUserId] = useState<string | null>(null)
+  const [supplierId, setSupplierId] = useState<string | null>(null)
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [companyName, setCompanyName] = useState<string | null>(null)
   const [profileType, setProfileType] = useState<'buyer' | 'supplier' | null>(null)
@@ -30,6 +32,7 @@ export function useUser() {
       const user = data.user
       if (!user) {
         setUserId(null)
+        setSupplierId(null)
         setCompanyId(null)
         setCompanyName(null)
         setProfileType(null)
@@ -45,7 +48,7 @@ export function useUser() {
       const { data: profile } = await supabase
         .from('profiles')
         .select(
-          'company_id, is_superadmin, role, roles, profile_type, full_name, companies(name)',
+          'company_id, supplier_id, is_superadmin, role, roles, profile_type, full_name, companies(name)',
         )
         .eq('id', user.id)
         .single()
@@ -53,6 +56,7 @@ export function useUser() {
       const rawType = p?.profile_type ?? 'buyer'
       const pt = rawType === 'supplier' ? 'supplier' : 'buyer'
       setProfileType(pt)
+      setSupplierId(p?.supplier_id ?? null)
       setFullName(p?.full_name ?? null)
       const co = p?.companies
       let embeddedName: string | null = null
@@ -115,6 +119,7 @@ export function useUser() {
 
   return {
     userId,
+    supplierId,
     companyId,
     companyName,
     profileType,
