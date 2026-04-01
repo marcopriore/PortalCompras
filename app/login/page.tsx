@@ -15,10 +15,12 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [accessError, setAccessError] = useState('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setAccessError('')
 
     try {
       const supabase = createClient()
@@ -26,6 +28,27 @@ export default function LoginPage() {
 
       if (error) {
         toast.error(error.message || 'Erro ao entrar. Verifique suas credenciais.')
+        return
+      }
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      const userId = user?.id
+      if (!userId) {
+        toast.error('Não foi possível validar o usuário autenticado.')
+        return
+      }
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('profile_type')
+        .eq('id', userId)
+        .single()
+      const profileType = profile?.profile_type ?? 'buyer'
+
+      if (profileType === 'supplier') {
+        await supabase.auth.signOut()
+        setAccessError('Acesso não permitido neste portal. Utilize o Portal do Fornecedor.')
         return
       }
 
@@ -58,6 +81,11 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {accessError ? (
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {accessError}
+              </p>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="email">E-mail</Label>
               <Input

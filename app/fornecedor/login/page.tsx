@@ -4,22 +4,61 @@ import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Package, Eye, EyeOff } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { createClient } from "@/lib/supabase/client"
 
 export default function LoginPage() {
   const router = useRouter()
+  const [email, setEmail] = useState("")
+  const [cnpj, setCnpj] = useState("")
   const [showPassword, setShowPassword] = useState(false)
+  const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [accessError, setAccessError] = useState("")
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    // Simulação de login
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    router.push("/fornecedor")
+    setAccessError("")
+
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        toast.error(error.message || "Erro ao entrar. Verifique suas credenciais.")
+        return
+      }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      const userId = user?.id
+      if (!userId) {
+        toast.error("Não foi possível validar o usuário autenticado.")
+        return
+      }
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("profile_type")
+        .eq("id", userId)
+        .single()
+      const profileType = profile?.profile_type ?? "buyer"
+
+      if (profileType !== "supplier") {
+        await supabase.auth.signOut()
+        setAccessError("Acesso não permitido neste portal. Utilize o Portal do Comprador.")
+        return
+      }
+
+      router.push("/fornecedor")
+    } catch {
+      toast.error("Erro inesperado ao entrar. Tente novamente.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -38,13 +77,30 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
+            {accessError ? (
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {accessError}
+              </p>
+            ) : null}
             <FieldGroup>
               <Field>
-                <FieldLabel>E-mail ou CNPJ</FieldLabel>
+                <FieldLabel>E-mail</FieldLabel>
+                <Input
+                  type="email"
+                  placeholder="seu@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </Field>
+
+              <Field>
+                <FieldLabel>CNPJ (opcional)</FieldLabel>
                 <Input
                   type="text"
-                  placeholder="seu@email.com ou 00.000.000/0001-00"
-                  required
+                  placeholder="00.000.000/0001-00"
+                  value={cnpj}
+                  onChange={(e) => setCnpj(e.target.value)}
                 />
               </Field>
 
@@ -54,6 +110,8 @@ export default function LoginPage() {
                   <Input
                     type={showPassword ? "text" : "password"}
                     placeholder="Digite sua senha"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     required
                   />
                   <Button

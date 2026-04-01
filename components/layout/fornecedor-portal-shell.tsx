@@ -2,11 +2,13 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { FileText, LayoutDashboard, LogOut } from "lucide-react"
+import { toast } from "sonner"
 import { ValoreLogo } from "@/components/ui/valore-logo"
 import { Button } from "@/components/ui/button"
 import { useUser } from "@/lib/hooks/useUser"
+import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 const SIDEBAR_BG = "#1a1a2e"
@@ -24,17 +26,30 @@ export function FornecedorPortalShell({
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { companyName, loading } = useUser()
+  const unauthorizedToastShown = React.useRef(false)
 
   const supplierLabel = companyName?.trim() || "Fornecedor"
 
+  React.useEffect(() => {
+    if (searchParams.get("error") !== "unauthorized_portal" || unauthorizedToastShown.current) return
+    unauthorizedToastShown.current = true
+    toast.error("Você não tem permissão para acessar o Portal do Comprador.")
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("error")
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname)
+  }, [pathname, router, searchParams])
+
   const handleLogout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" })
+      const supabase = createClient()
+      await supabase.auth.signOut()
     } catch {
       // ignore
     }
-    router.push("/login")
+    router.push("/fornecedor/login")
   }
 
   return (

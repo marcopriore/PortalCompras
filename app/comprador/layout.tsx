@@ -3,6 +3,7 @@ import { cookies } from "next/headers"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
 import { TenantSelector } from "@/components/layout/tenant-selector"
+import { PortalUnauthorizedToast } from "@/components/layout/portal-unauthorized-toast"
 import { createClient } from "@/lib/supabase/server"
 
 type LayoutCompany = {
@@ -84,6 +85,7 @@ export default async function CompradorLayout({
           }
         />
         <main className="flex-1 overflow-auto p-6 bg-background">
+          <PortalUnauthorizedToast message="Você não tem permissão para acessar o Portal do Fornecedor." />
           {children}
         </main>
       </div>

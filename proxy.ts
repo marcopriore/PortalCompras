@@ -39,6 +39,7 @@ export async function proxy(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
   const isAuthRoute = pathname === "/login"
+  const isFornecedorLoginRoute = pathname === "/fornecedor/login"
   const isProtectedComprador = pathname.startsWith("/comprador")
   const isProtectedFornecedor = isProtectedFornecedorPath(pathname)
   const isProtectedAdmin = pathname.startsWith("/admin")
@@ -46,12 +47,7 @@ export async function proxy(request: NextRequest) {
     isProtectedComprador || isProtectedFornecedor || isProtectedAdmin
 
   if (!user) {
-    if (!isProtectedRoute) {
-      return response
-    }
-    if (isPublicFornecedorPath(pathname)) {
-      return response
-    }
+    if (!isProtectedRoute || isAuthRoute || isPublicFornecedorPath(pathname)) return response
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/login"
     redirectUrl.searchParams.set("redirectTo", pathname)
@@ -73,12 +69,25 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
+  if (isFornecedorLoginRoute) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname =
+      profileType === "supplier" ? "/fornecedor" : "/comprador"
+    return NextResponse.redirect(redirectUrl)
+  }
+
   if (isProtectedComprador && profileType === "supplier") {
-    return NextResponse.redirect(new URL("/fornecedor", request.url))
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = "/fornecedor"
+    redirectUrl.searchParams.set("error", "unauthorized_portal")
+    return NextResponse.redirect(redirectUrl)
   }
 
   if (isProtectedFornecedor && profileType !== "supplier") {
-    return NextResponse.redirect(new URL("/comprador", request.url))
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = "/comprador"
+    redirectUrl.searchParams.set("error", "unauthorized_portal")
+    return NextResponse.redirect(redirectUrl)
   }
 
   return response
