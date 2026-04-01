@@ -90,6 +90,12 @@ function isUrgentRound(deadline: string | null): boolean {
   return end.getTime() <= limit.getTime()
 }
 
+function isExpiredRound(deadline: string | null): boolean {
+  if (!deadline) return false
+  const todayStart = new Date(new Date().toDateString())
+  return new Date(deadline) < todayStart
+}
+
 const statusBadgeBase =
   "inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full"
 
@@ -763,6 +769,7 @@ export default function FornecedorCotacoesPage() {
                     <tbody>
                       {paginatedQuotations.map((q) => {
                         const urgent = isUrgentRound(q.responseDeadline)
+                        const expired = isExpiredRound(q.responseDeadline)
                         const statusDisplay = getProposalStatusBadge(
                           q.proposalStatus,
                           q.status,
@@ -778,7 +785,11 @@ export default function FornecedorCotacoesPage() {
                                 <span className="font-semibold text-foreground">
                                   {q.code}
                                 </span>
-                                {urgent ? (
+                                {expired ? (
+                                  <Badge className="w-fit text-xs bg-red-100 text-red-700 border border-red-200">
+                                    Expirado
+                                  </Badge>
+                                ) : urgent ? (
                                   <Badge variant="destructive" className="w-fit text-xs">
                                     Urgente
                                   </Badge>

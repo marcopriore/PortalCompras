@@ -54,6 +54,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
+  if (!isAuthRoute && !isPublicFornecedorPath(pathname)) {
+    try {
+      await supabase.rpc("close_expired_rounds")
+    } catch {
+      // falha silenciosa — não bloquear o usuário
+    }
+  }
+
   const { data } = await supabase
     .from("profiles")
     .select("profile_type")

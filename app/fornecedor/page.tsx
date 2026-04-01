@@ -86,6 +86,12 @@ function isUrgentRound(deadline: string | null): boolean {
   return end.getTime() <= limit.getTime()
 }
 
+function isExpiredRound(deadline: string | null): boolean {
+  if (!deadline) return false
+  const todayStart = new Date(new Date().toDateString())
+  return new Date(deadline) < todayStart
+}
+
 function relativeListDay(iso: string): string {
   const t = new Date(iso)
   const today = new Date()
@@ -746,6 +752,7 @@ export default function FornecedorDashboardPage() {
                     <tbody>
                       {filteredQuotations.slice(0, 5).map((q) => {
                         const urgent = isUrgentRound(q.responseDeadline)
+                        const expired = isExpiredRound(q.responseDeadline)
                         const co = q.companies
                         const statusDisplay = getProposalStatusBadge(
                           q.proposalStatus,
@@ -759,11 +766,15 @@ export default function FornecedorDashboardPage() {
                             <td className="px-3 py-3 align-top">
                               <div className="flex flex-col gap-1">
                                 <span className="font-semibold text-foreground">{q.code}</span>
-                                {urgent && (
+                                {expired ? (
+                                  <Badge className="w-fit text-xs bg-red-100 text-red-700 border border-red-200">
+                                    Expirado
+                                  </Badge>
+                                ) : urgent ? (
                                   <Badge variant="destructive" className="w-fit text-xs">
                                     Urgente
                                   </Badge>
-                                )}
+                                ) : null}
                               </div>
                             </td>
                             <td className="px-3 py-3 align-top max-w-[200px]">

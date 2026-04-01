@@ -1550,36 +1550,50 @@ export default function EqualizacaoPage({
 
   const roundSelectControl =
     rounds.length > 0 ? (
-      <Select
-        value={
-          selectedRoundId != null && rounds.some((r) => r.id === selectedRoundId)
-            ? selectedRoundId
-            : (rounds[rounds.length - 1]?.id ?? "")
-        }
-        onValueChange={setSelectedRoundId}
-      >
-        <SelectTrigger
-          className={cn(
-            "w-48 shrink-0",
-            selectedRound?.status === "active"
-              ? "border-primary bg-primary/5 text-primary"
-              : "border-border bg-background text-muted-foreground",
-          )}
-          aria-label="Rodadas de negociação"
+      <>
+        <Select
+          value={
+            selectedRoundId != null && rounds.some((r) => r.id === selectedRoundId)
+              ? selectedRoundId
+              : (rounds[rounds.length - 1]?.id ?? "")
+          }
+          onValueChange={setSelectedRoundId}
         >
-          {loading && proposals.length > 0 ? (
-            <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-          ) : null}
-          <SelectValue placeholder="Rodada" />
-        </SelectTrigger>
-        <SelectContent>
-          {rounds.map((r) => (
-            <SelectItem key={r.id} value={r.id}>
-              Rodada {r.round_number} — {r.status === "active" ? "Ativa" : "Fechada"}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+          <SelectTrigger
+            className={cn(
+              "w-48 shrink-0",
+              selectedRound?.status === "active"
+                ? "border-primary bg-primary/5 text-primary"
+                : "border-border bg-background text-muted-foreground",
+            )}
+            aria-label="Rodadas de negociação"
+          >
+            {loading && proposals.length > 0 ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+            ) : null}
+            <SelectValue placeholder="Rodada" />
+          </SelectTrigger>
+          <SelectContent>
+            {rounds.map((r) => (
+              <SelectItem key={r.id} value={r.id}>
+                Rodada {r.round_number} — {r.status === "active" ? "Ativa" : "Fechada"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {selectedRound?.status === "closed" && selectedRound?.closed_at ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge className="bg-slate-100 text-slate-700 border border-slate-200">
+                Encerrada
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              Encerrada em {formatDateBR(selectedRound.closed_at)}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+      </>
     ) : null
 
   if (loading && proposals.length === 0) {

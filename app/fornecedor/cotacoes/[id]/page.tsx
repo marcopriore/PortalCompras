@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowLeft, CheckCircle, Info, Lock } from "lucide-react"
+import { ArrowLeft, CheckCircle, Clock, Info, Lock } from "lucide-react"
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
@@ -557,8 +557,13 @@ export default function FornecedorCotacaoPropostaPage({
   const activeRoundProposal =
     viewingActiveRound && activeRound?.id ? proposalsByRoundId[activeRound.id] ?? null : null
 
+  const isExpired = selectedRound?.response_deadline
+    ? new Date(selectedRound.response_deadline) < new Date(new Date().toDateString())
+    : false
+
   const isReadonlyForm = Boolean(
     selectedRound?.status === "closed" ||
+      isExpired ||
       (activeRoundProposal?.status === "submitted"),
   )
 
@@ -986,6 +991,16 @@ export default function FornecedorCotacaoPropostaPage({
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-center gap-2 text-sm text-slate-600">
           <Lock className="w-4 h-4 flex-shrink-0" />
           <span>Esta rodada foi encerrada pelo comprador.</span>
+        </div>
+      ) : null}
+
+      {isExpired && selectedRound?.status === "active" ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-2 text-sm text-amber-700">
+          <Clock className="w-4 h-4 flex-shrink-0 text-amber-500" />
+          <span>
+            O prazo desta rodada expirou em {formatDeadlineBR(selectedRound.response_deadline)}.
+            Aguarde nova rodada do comprador.
+          </span>
         </div>
       ) : null}
 
