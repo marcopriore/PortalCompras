@@ -70,6 +70,7 @@ type QuotationItemRow = {
   company_id?: string | null
   material_code: string
   material_description: string
+  long_description?: string | null
   unit_of_measure: string | null
   quantity: number | string
   complementary_spec: string | null
@@ -397,7 +398,7 @@ export default function FornecedorCotacaoPropostaPage({
         supabase
           .from("quotation_items")
           .select(
-            "id, quotation_id, company_id, material_code, material_description, unit_of_measure, quantity, complementary_spec",
+            "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec",
           )
           .eq("quotation_id", quotationId)
           .order("material_description", { ascending: true }),
@@ -1205,6 +1206,7 @@ export default function FornecedorCotacaoPropostaPage({
                 ? ((row.unit_price - row.previous_unit_price) / row.previous_unit_price) * 100
                 : 0
               const rowNumber = (itemPage - 1) * ITEMS_PER_PAGE + index + 1
+              const tooltipText = qi.long_description ?? ""
               return (
                 <tr key={qi.id} className="border-b border-border align-top">
                   <td className="px-2 py-3 text-center text-sm text-muted-foreground">
@@ -1225,14 +1227,11 @@ export default function FornecedorCotacaoPropostaPage({
                   <td className="px-2 py-3">
                     <span className="flex items-center gap-1">
                       <span>{qi.material_description}</span>
-                      {qi.complementary_spec && (
-                        <Info
-                          className="w-3.5 h-3.5 text-muted-foreground cursor-help flex-shrink-0"
-                          {...({
-                            title: qi.complementary_spec,
-                          } as unknown as React.ComponentProps<typeof Info>)}
-                        />
-                      )}
+                      {tooltipText ? (
+                        <span title={tooltipText}>
+                          <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help flex-shrink-0 inline ml-1" />
+                        </span>
+                      ) : null}
                     </span>
                   </td>
                   <td className="px-2 py-3 text-muted-foreground whitespace-nowrap">

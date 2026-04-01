@@ -5,15 +5,25 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import MultiSelectFilter from '@/components/ui/multi-select-filter'
-import { Search, X } from 'lucide-react'
+import { Info, Search, X } from 'lucide-react'
 
 type Item = {
   id: string
   code: string
   short_description: string
+  long_description: string | null
   status: 'active' | 'inactive'
   unit_of_measure: string | null
   ncm: string | null
@@ -33,6 +43,11 @@ export default function ItensPage() {
   const searchInputRef = useRef<HTMLDivElement>(null)
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [groupFilter, setGroupFilter] = useState<string[]>([])
+
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingItem, setEditingItem] = useState<Item | null>(null)
+  const [formLongDescription, setFormLongDescription] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const totalItems = items.length
   const activeItems = useMemo(
@@ -60,9 +75,11 @@ export default function ItensPage() {
       }
       if (!search.trim()) return true
       const q = search.toLowerCase()
+      const long = (item.long_description ?? '').toLowerCase()
       return (
         item.code.toLowerCase().includes(q) ||
-        item.short_description.toLowerCase().includes(q)
+        item.short_description.toLowerCase().includes(q) ||
+        long.includes(q)
       )
     })
   }, [items, statusFilter, groupFilter, search])
@@ -77,7 +94,7 @@ export default function ItensPage() {
         const { data, error } = await supabase
           .from('items')
           .select(
-            'id, code, short_description, status, unit_of_measure, ncm, commodity_group, created_at',
+            'id, code, short_description, long_description, status, unit_of_measure, ncm, commodity_group, created_at',
           )
           .eq('company_id', companyId)
           .order('created_at', { ascending: false })
@@ -96,6 +113,43 @@ export default function ItensPage() {
 
     fetchItems()
   }, [companyId])
+
+  const openEdit = (item: Item) => {
+    setEditingItem(item)
+    setFormLongDescription(item.long_description ?? '')
+    setEditOpen(true)
+  }
+
+  const handleSaveLongDescription = async () => {
+    if (!companyId || !editingItem) return
+    setSaving(true)
+    try {
+      const supabase = createClient()
+      const trimmed = formLongDescription.trim()
+      const { error } = await supabase
+        .from('items')
+        .update({ long_description: trimmed || null })
+        .eq('id', editingItem.id)
+        .eq('company_id', companyId)
+
+      if (error) {
+        console.error(error)
+        toast.error('Não foi possível salvar a descrição detalhada.')
+        return
+      }
+
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === editingItem.id ? { ...i, long_description: trimmed || null } : i,
+        ),
+      )
+      toast.success('Descrição detalhada salva.')
+      setEditOpen(false)
+      setEditingItem(null)
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -203,7 +257,16 @@ export default function ItensPage() {
               {filteredItems.map((item) => (
                 <tr key={item.id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 align-top font-medium">{item.code}</td>
-                  <td className="px-3 py-2 align-top">{item.short_description}</td>
+                  <td className="px-3 py-2 align-top">
+                    <span className="inline-flex items-start gap-1">
+                      <span>{item.short_description}</span>
+                      {item.long_description ? (
+                        <span title={item.long_description} className="inline-flex shrink-0 mt-0.5">
+                          <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+                        </span>
+                      ) : null}
+                    </span>
+                  </td>
                   <td className="px-3 py-2 align-top">
                     <Badge variant={item.status === 'active' ? 'default' : 'outline'}>
                       {item.status === 'active' ? 'Ativo' : 'Inativo'}
@@ -216,7 +279,11 @@ export default function ItensPage() {
                   <td className="px-3 py-2 align-top">
                     {item.commodity_group ?? '-'}
                   </td>
-                  <td className="px-3 py-2 align-top text-right" />
+                  <td className="px-3 py-2 align-top text-right">
+                    <Button type="button" variant="outline" size="sm" onClick={() => openEdit(item)}>
+                      Detalhes
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -224,7 +291,48 @@ export default function ItensPage() {
         </div>
       )}
 
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open)
+          if (!open) setEditingItem(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Item {editingItem?.code ?? ''}</DialogTitle>
+          </DialogHeader>
+          {editingItem ? (
+            <div className="space-y-4">
+              <div className="grid gap-1">
+                <Label className="text-muted-foreground">Descrição curta</Label>
+                <p className="text-sm text-foreground">{editingItem.short_description}</p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="long_description">Descrição detalhada</Label>
+                <Textarea
+                  id="long_description"
+                  placeholder="Descrição completa do item sem abreviações..."
+                  value={formLongDescription}
+                  onChange={(e) => setFormLongDescription(e.target.value)}
+                  rows={3}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Descrição completa para uso interno e exibição ao fornecedor.
+                </p>
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={() => void handleSaveLongDescription()} disabled={saving}>
+              {saving ? 'Salvando…' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
-

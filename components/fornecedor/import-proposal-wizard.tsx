@@ -26,6 +26,7 @@ export type QuotationItem = {
   id: string
   material_code: string
   material_description: string
+  long_description?: string | null
   unit_of_measure: string | null
   quantity: number | string
 }
@@ -273,7 +274,27 @@ export function ImportProposalWizard({
         }
 
         setLocked(2, qi.material_code, "left")
-        setLocked(3, qi.material_description, "left")
+
+        const descCell = row.getCell(3)
+        const shortDesc = qi.material_description
+        const longDesc = qi.long_description?.trim()
+        if (longDesc) {
+          descCell.value = `${shortDesc}\n${longDesc}`
+          descCell.alignment = {
+            wrapText: true,
+            vertical: "top",
+            horizontal: "left",
+          }
+          row.height = Math.max(row.height ?? 18, 36)
+        } else {
+          descCell.value = shortDesc
+          descCell.alignment = { horizontal: "left", vertical: "middle" }
+        }
+        descCell.protection = { locked: true }
+        descCell.fill =
+          rowFill ??
+          ({ type: "pattern", pattern: "solid", fgColor: { argb: GRAY_LOCKED } } as ExcelJS.Fill)
+
         setLocked(4, qi.unit_of_measure ?? "", "center")
         setLocked(5, toNum(qi.quantity), "right")
 

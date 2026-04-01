@@ -43,6 +43,7 @@ type CatalogItem = {
   id: string
   code: string
   short_description: string
+  long_description: string | null
   unit_of_measure: string | null
   commodity_group: string | null
 }
@@ -199,7 +200,7 @@ export default function EditarRequisicaoPage({
         if (materialCodes.length > 0) {
           const { data } = await supabase
             .from("items")
-            .select("id, code, short_description, unit_of_measure, commodity_group")
+            .select("id, code, short_description, long_description, unit_of_measure, commodity_group")
             .eq("company_id", companyId)
             .in("code", materialCodes)
           itemsData = (data ?? []) as CatalogItem[]
@@ -249,7 +250,7 @@ export default function EditarRequisicaoPage({
       const quoted = `"${term}"`
       const { data, error: searchErr } = await supabase
         .from("items")
-        .select("id, code, short_description, unit_of_measure, commodity_group")
+        .select("id, code, short_description, long_description, unit_of_measure, commodity_group")
         .eq("company_id", companyId)
         .or(`code.ilike.${quoted},short_description.ilike.${quoted}`)
         .limit(20)

@@ -72,6 +72,7 @@ type QuotationItem = {
   id: string
   material_code: string
   material_description: string
+  long_description?: string | null
   complementary_spec?: string | null
   quantity: number
   unit_of_measure: string
@@ -466,7 +467,9 @@ export default function EqualizacaoPage({
             .single(),
           supabase
             .from("quotation_items")
-            .select("*")
+            .select(
+              "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec, created_at",
+            )
             .eq("quotation_id", id)
             .order("material_description", { ascending: true }),
           supabase
@@ -2128,7 +2131,6 @@ export default function EqualizacaoPage({
                     {quotationItems.map((qi, rowIdx) => {
                       const orderedInfo = orderedItems.get(qi.id)
                       const isOrdered = Boolean(orderedInfo)
-                      const descriptionTooltip = qi.complementary_spec || qi.material_description
                       return (
                       <TableRow
                         key={qi.id}
@@ -2163,12 +2165,9 @@ export default function EqualizacaoPage({
                           )}
                         >
                           {qi.material_description}
-                          {descriptionTooltip ? (
-                            <span
-                              title={descriptionTooltip}
-                              className="inline-block ml-1"
-                            >
-                              <Info className="w-3 h-3 text-muted-foreground cursor-help" />
+                          {qi.long_description ? (
+                            <span title={qi.long_description} className="inline-block ml-1">
+                              <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help flex-shrink-0 inline ml-1" />
                             </span>
                           ) : null}
                         </TableCell>

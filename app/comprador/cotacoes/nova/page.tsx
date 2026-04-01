@@ -28,7 +28,12 @@ import {
   ClipboardList,
 } from 'lucide-react'
 
-type QuotationItem = { code: string; description: string; unit_of_measure: string }
+type QuotationItem = {
+  code: string
+  description: string
+  unit_of_measure: string
+  long_description?: string | null
+}
 type SelectedItem = QuotationItem & { quantity: number; spec: string }
 type Supplier = { id: string; name: string; cnpj: string; category: string }
 
@@ -139,6 +144,7 @@ function NovaCotacaoContent() {
           itemsRes.data.map((ri: any) => ({
             code: ri.material_code ?? '',
             description: ri.material_description ?? '',
+            long_description: ri.long_description ?? null,
             quantity: ri.quantity ?? 1,
             unit_of_measure: ri.unit_of_measure ?? '',
             spec: ri.observations ?? '',
@@ -223,6 +229,7 @@ function NovaCotacaoContent() {
             company_id: companyId!,
             material_code: item.code,
             material_description: item.description,
+            long_description: item.long_description ?? null,
             unit_of_measure: item.unit_of_measure,
             quantity: item.quantity,
             complementary_spec: item.spec || null,

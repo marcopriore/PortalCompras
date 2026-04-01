@@ -46,6 +46,7 @@ interface QuotationItem {
   id: string
   material_code: string
   material_description: string
+  long_description?: string | null
   unit_of_measure: string | null
   quantity: number
   complementary_spec: string | null
@@ -171,7 +172,7 @@ export default function QuotationDetailsPage({
           supabase
             .from('quotation_items')
             .select(
-              'id, material_code, material_description, unit_of_measure, quantity, complementary_spec',
+              'id, material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec',
             )
             .eq('quotation_id', id),
           supabase
