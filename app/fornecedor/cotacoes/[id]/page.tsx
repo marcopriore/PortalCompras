@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowLeft, CheckCircle, Clock, Info, Lock } from "lucide-react"
+import { AlertCircle, ArrowLeft, CheckCircle, Clock, Info, Lock } from "lucide-react"
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
@@ -92,6 +92,12 @@ type QuotationProposalRow = {
   observations: string | null
   proposal_items?: ProposalItemRow[] | null
   updated_at?: string | null
+}
+
+type PaymentOptionRow = {
+  id: string
+  code: string
+  description: string
 }
 
 type ItemFormRow = {
@@ -292,6 +298,7 @@ export default function FornecedorCotacaoPropostaPage({
   } | null>(null)
 
   const [paymentCondition, setPaymentCondition] = React.useState("")
+  const [paymentOptions, setPaymentOptions] = React.useState<PaymentOptionRow[]>([])
   const [validityDate, setValidityDate] = React.useState("")
   const [observations, setObservations] = React.useState("")
 
@@ -330,6 +337,7 @@ export default function FornecedorCotacaoPropostaPage({
       setSelectedRoundId(null)
       setProposalsByRoundId({})
       setSupplierInfo(null)
+      setPaymentOptions([])
       return
     }
 
@@ -373,11 +381,27 @@ export default function FornecedorCotacaoPropostaPage({
           .single()
         if (error) throw error
         qRow = data as QuotationDetail
+
+        const { data: pcData, error: pcError } = await supabase
+          .from("payment_conditions")
+          .select("id, code, description")
+          .eq("company_id", qRow.company_id)
+          .eq("active", true)
+          .order("code", { ascending: true })
+        if (!cancelled) {
+          if (pcError) {
+            console.error(pcError)
+            setPaymentOptions([])
+          } else {
+            setPaymentOptions((pcData ?? []) as PaymentOptionRow[])
+          }
+        }
       } catch (e) {
         console.error(e)
         if (!cancelled) {
           setLoadError("Não foi possível carregar a cotação.")
           setQuotation(null)
+          setPaymentOptions([])
           setLoading(false)
         }
         return
@@ -607,6 +631,12 @@ export default function FornecedorCotacaoPropostaPage({
     observations,
     roundProposalForView,
   ])
+
+  const paymentSelectValue = React.useMemo(() => {
+    const v = generalDisplay.paymentCondition?.trim() ?? ""
+    if (!v) return undefined
+    return paymentOptions.some((o) => o.code === v) ? v : undefined
+  }, [generalDisplay.paymentCondition, paymentOptions])
 
   const itemRowsForDisplay = React.useMemo(() => {
     if (canEditActiveForm) {
@@ -1021,14 +1051,48 @@ export default function FornecedorCotacaoPropostaPage({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="payment">Condição de Pagamento</Label>
-            <Input
-              id="payment"
-              value={generalDisplay.paymentCondition}
-              disabled={generalDisplay.disabled}
-              className={cn(generalDisplay.disabled && readOnlyFieldClass)}
-              onChange={(e) => setPaymentCondition(e.target.value)}
-              placeholder='Ex.: "30d", À vista, 30/60/90d'
-            />
+            {paymentOptions.length > 0 ? (
+              <>
+                <Select
+                  value={paymentSelectValue}
+                  onValueChange={setPaymentCondition}
+                  disabled={generalDisplay.disabled}
+                >
+                  <SelectTrigger
+                    id="payment"
+                    className={cn(generalDisplay.disabled && readOnlyFieldClass)}
+                  >
+                    <SelectValue placeholder="Selecione a condição de pagamento" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {paymentOptions.map((opt) => (
+                      <SelectItem key={opt.id} value={opt.code}>
+                        {opt.code} — {opt.description}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {paymentSelectValue == null && generalDisplay.paymentCondition?.trim() ? (
+                  <p className="text-xs text-muted-foreground">
+                    Valor salvo (fora da lista): {generalDisplay.paymentCondition}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <div
+                className={cn(
+                  "flex h-10 items-center gap-2 rounded-md border border-input bg-muted/40 px-3",
+                  generalDisplay.disabled && readOnlyFieldClass,
+                )}
+              >
+                <AlertCircle className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  {generalDisplay.paymentCondition?.trim()
+                    ? generalDisplay.paymentCondition
+                    : "Nenhuma condição de pagamento cadastrada pelo comprador."}
+                </span>
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="validity">Validade da Proposta</Label>

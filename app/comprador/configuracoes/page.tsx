@@ -7,6 +7,7 @@ import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
 import { toast } from "sonner"
+import * as XLSX from "xlsx"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -36,6 +37,7 @@ import {
   Bell,
   Building2,
   ClipboardList,
+  Download,
   Pencil,
   Plus,
   Save,
@@ -44,6 +46,7 @@ import {
   ShoppingCart,
   Trash2,
   Upload,
+  Settings2,
   User,
   Workflow,
 } from "lucide-react"
@@ -141,7 +144,22 @@ type ApprovalOrderForm = {
   approverId: string
 }
 
-type ActiveTab = "empresa" | "perfil" | "notificacoes" | "aprovacoes" | "seguranca"
+type ActiveTab =
+  | "empresa"
+  | "perfil"
+  | "notificacoes"
+  | "aprovacoes"
+  | "seguranca"
+  | "campos"
+
+type PaymentCondition = {
+  id: string
+  company_id: string
+  code: string
+  description: string
+  active: boolean
+  created_at: string
+}
 
 function maskCNPJ(value: string): string {
   return value
@@ -290,6 +308,26 @@ export default function ConfiguracoesPage() {
 
   const [loading, setLoading] = React.useState(true)
 
+  const [paymentConditions, setPaymentConditions] = React.useState<PaymentCondition[]>([])
+  const [loadingConditions, setLoadingConditions] = React.useState(false)
+  const [conditionDialog, setConditionDialog] = React.useState<{
+    open: boolean
+    mode: "create" | "edit"
+    item: PaymentCondition | null
+  }>({ open: false, mode: "create", item: null })
+  const [conditionForm, setConditionForm] = React.useState({
+    code: "",
+    description: "",
+    active: true,
+  })
+  const [savingCondition, setSavingCondition] = React.useState(false)
+  const [deleteConditionDialog, setDeleteConditionDialog] = React.useState<{
+    open: boolean
+    item: PaymentCondition | null
+  }>({ open: false, item: null })
+  const [deletingCondition, setDeletingCondition] = React.useState(false)
+  const importInputRef = React.useRef<HTMLInputElement>(null)
+
   React.useEffect(() => {
     const run = async () => {
       if (!companyId || !userId) return
@@ -434,6 +472,217 @@ export default function ConfiguracoesPage() {
     }
     loadTenantCategories()
   }, [companyId, activeTab])
+
+  React.useEffect(() => {
+    if (activeTab !== "campos" || !companyId || !canManageCompany) return
+    let cancelled = false
+    const supabase = createClient()
+    setLoadingConditions(true)
+    void supabase
+      .from("payment_conditions")
+      .select("*")
+      .eq("company_id", companyId)
+      .order("code", { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          console.error(error)
+          toast.error("Não foi possível carregar as condições de pagamento.")
+          setPaymentConditions([])
+        } else {
+          setPaymentConditions((data ?? []) as PaymentCondition[])
+        }
+        setLoadingConditions(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, companyId, canManageCompany])
+
+  const handleSaveCondition = async () => {
+    if (!conditionForm.code.trim() || !conditionForm.description.trim()) {
+      toast.error("Preencha código e descrição.")
+      return
+    }
+    if (!companyId) return
+    const supabase = createClient()
+    const code = conditionForm.code.trim().toUpperCase()
+    const description = conditionForm.description.trim()
+    setSavingCondition(true)
+    try {
+      if (conditionDialog.mode === "create") {
+        const { data, error } = await supabase
+          .from("payment_conditions")
+          .insert({
+            company_id: companyId,
+            code,
+            description,
+            active: conditionForm.active,
+          })
+          .select()
+          .single()
+        if (error) {
+          toast.error("Erro ao salvar: " + error.message)
+          return
+        }
+        setPaymentConditions((prev) =>
+          [...prev, data as PaymentCondition].sort((a, b) => a.code.localeCompare(b.code)),
+        )
+      } else if (conditionDialog.item) {
+        const { error } = await supabase
+          .from("payment_conditions")
+          .update({
+            code,
+            description,
+            active: conditionForm.active,
+          })
+          .eq("id", conditionDialog.item.id)
+        if (error) {
+          toast.error("Erro ao salvar: " + error.message)
+          return
+        }
+        setPaymentConditions((prev) =>
+          prev
+            .map((pc) =>
+              pc.id === conditionDialog.item!.id
+                ? { ...pc, code, description, active: conditionForm.active }
+                : pc,
+            )
+            .sort((a, b) => a.code.localeCompare(b.code)),
+        )
+      }
+      setConditionDialog((d) => ({ ...d, open: false }))
+    } finally {
+      setSavingCondition(false)
+    }
+  }
+
+  const handleConfirmDeleteCondition = async () => {
+    const item = deleteConditionDialog.item
+    if (!item) return
+    setDeletingCondition(true)
+    const supabase = createClient()
+    try {
+      const { error } = await supabase.from("payment_conditions").delete().eq("id", item.id)
+      if (error) {
+        toast.error("Erro ao excluir: " + error.message)
+        return
+      }
+      setPaymentConditions((prev) => prev.filter((pc) => pc.id !== item.id))
+      setDeleteConditionDialog({ open: false, item: null })
+      toast.success("Condição removida.")
+    } finally {
+      setDeletingCondition(false)
+    }
+  }
+
+  const handleDownloadTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["codigo", "descricao", "ativo", "excluir"],
+      ["30D", "30 dias", "sim", "não"],
+    ])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Condições")
+    XLSX.writeFile(wb, "modelo_condicoes_pagamento.xlsx")
+  }
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ""
+    if (!companyId) {
+      toast.error("Empresa não identificada.")
+      return
+    }
+
+    const normalizeHeader = (v: unknown) =>
+      String(v)
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim()
+
+    const getCol = (row: Record<string, unknown>, keys: string[]) => {
+      const found = Object.keys(row).find((k) => keys.includes(normalizeHeader(k)))
+      return found ? String(row[found] ?? "").trim() : ""
+    }
+
+    const isTruthy = (v: string) =>
+      ["sim", "true", "1", "s", "yes"].includes(v.toLowerCase())
+
+    let created = 0
+    let deleted = 0
+    let errors = 0
+
+    try {
+      const buffer = await file.arrayBuffer()
+      const wb = XLSX.read(buffer, { type: "array" })
+      const ws = wb.Sheets[wb.SheetNames[0] ?? ""]
+      if (!ws) {
+        toast.error("Planilha inválida.")
+        return
+      }
+      const dataRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" })
+
+      if (dataRows.length === 0) {
+        toast.error("Arquivo vazio ou sem dados.")
+        return
+      }
+
+      const supabase = createClient()
+
+      for (const row of dataRows) {
+        const code = getCol(row, ["codigo", "code"]).toUpperCase()
+        const description = getCol(row, ["descricao", "description"])
+        const activeStr = getCol(row, ["ativo", "active"])
+        const deleteStr = getCol(row, ["excluir", "delete"])
+        const active = activeStr === "" ? true : isTruthy(activeStr)
+        const shouldDelete = isTruthy(deleteStr)
+
+        if (!code) {
+          errors++
+          continue
+        }
+
+        if (shouldDelete) {
+          const { error } = await supabase
+            .from("payment_conditions")
+            .delete()
+            .eq("company_id", companyId)
+            .eq("code", code)
+          if (error) errors++
+          else deleted++
+        } else {
+          if (!description) {
+            errors++
+            continue
+          }
+          const { error } = await supabase
+            .from("payment_conditions")
+            .upsert(
+              { company_id: companyId, code, description, active },
+              { onConflict: "company_id,code" },
+            )
+          if (error) errors++
+          else created++
+        }
+      }
+
+      const { data } = await supabase
+        .from("payment_conditions")
+        .select("*")
+        .eq("company_id", companyId)
+        .order("code", { ascending: true })
+      setPaymentConditions((data ?? []) as PaymentCondition[])
+
+      const msg = `Importação concluída: ${created} criados/atualizados, ${deleted} excluídos, ${errors} erros.`
+      if (errors === 0) toast.success(msg)
+      else toast.warning(msg)
+    } catch (err) {
+      console.error(err)
+      toast.error("Não foi possível ler o arquivo.")
+    }
+  }
 
   const handleSaveCompany = async () => {
     if (!companyId) return
@@ -971,6 +1220,7 @@ export default function ConfiguracoesPage() {
             ["notificacoes", "Notificações", Bell],
             ["aprovacoes", "Aprovações", Workflow],
             ["seguranca", "Segurança", Shield],
+            ["campos", "Configuração de Campos", Settings2],
           ] as const
         ).map(([key, label, Icon]) => (
           <button
@@ -1982,6 +2232,210 @@ export default function ConfiguracoesPage() {
           </Card>
         </div>
       )}
+
+      {activeTab === "campos" && (
+        <div className="grid gap-6">
+          {!canManageCompany ? (
+            <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+              Apenas administradores podem gerenciar a configuração de campos.
+            </div>
+          ) : (
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Condições de Pagamento</CardTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Defina as condições disponíveis para os fornecedores selecionarem.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setConditionForm({ code: "", description: "", active: true })
+                        setConditionDialog({ open: true, mode: "create", item: null })
+                      }}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      Nova Condição
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => importInputRef.current?.click()}
+                    >
+                      <Upload className="mr-2 h-4 w-4" />
+                      Importar Excel
+                    </Button>
+                    <input
+                      ref={importInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      className="hidden"
+                      onChange={(ev) => void handleImportExcel(ev)}
+                    />
+                    <Button type="button" variant="ghost" size="sm" onClick={handleDownloadTemplate}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Modelo
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingConditions ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-10 animate-pulse rounded bg-muted" />
+                    ))}
+                  </div>
+                ) : paymentConditions.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    Nenhuma condição cadastrada. Clique em &quot;Nova Condição&quot; para começar.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Código</TableHead>
+                        <TableHead>Descrição</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paymentConditions.map((pc) => (
+                        <TableRow key={pc.id}>
+                          <TableCell className="font-mono font-medium">{pc.code}</TableCell>
+                          <TableCell>{pc.description}</TableCell>
+                          <TableCell>
+                            <Badge variant={pc.active ? "default" : "secondary"}>
+                              {pc.active ? "Ativo" : "Inativo"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setConditionForm({
+                                    code: pc.code,
+                                    description: pc.description,
+                                    active: pc.active,
+                                  })
+                                  setConditionDialog({ open: true, mode: "edit", item: pc })
+                                }}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => setDeleteConditionDialog({ open: true, item: pc })}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      <Dialog
+        open={conditionDialog.open}
+        onOpenChange={(open) => setConditionDialog((d) => ({ ...d, open }))}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {conditionDialog.mode === "create"
+                ? "Nova Condição de Pagamento"
+                : "Editar Condição"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>
+                Código <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                placeholder="Ex: 30D, AVISTA, 30-60-90"
+                value={conditionForm.code}
+                onChange={(e) =>
+                  setConditionForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                Código para integração com ERP (sem espaços, uppercase)
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <Label>
+                Descrição <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                placeholder="Ex: 30 dias, À vista, 30/60/90 dias"
+                value={conditionForm.description}
+                onChange={(e) =>
+                  setConditionForm((f) => ({ ...f, description: e.target.value }))
+                }
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={conditionForm.active}
+                onCheckedChange={(v) => setConditionForm((f) => ({ ...f, active: v }))}
+              />
+              <Label>Ativo</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConditionDialog((d) => ({ ...d, open: false }))}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={() => void handleSaveCondition()} disabled={savingCondition}>
+              {savingCondition ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={deleteConditionDialog.open}
+        onOpenChange={(open) => !open && setDeleteConditionDialog({ open: false, item: null })}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir condição de pagamento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir esta condição? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingCondition}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => void handleConfirmDeleteCondition()}
+              disabled={deletingCondition}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingCondition ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
