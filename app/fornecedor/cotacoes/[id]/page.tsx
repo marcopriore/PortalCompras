@@ -424,9 +424,11 @@ export default function FornecedorCotacaoPropostaPage({
       try {
         const { data, error } = await supabase
           .from("quotation_items")
-          .select("*")
+          .select(
+            "id, quotation_id, company_id, material_code, material_description, unit_of_measure, quantity, complementary_spec",
+          )
           .eq("quotation_id", quotationId)
-          .order("material_code", { ascending: true })
+          .order("material_description", { ascending: true })
         if (error) throw error
         itemsLocal = (data ?? []) as QuotationItemRow[]
       } catch (e) {
@@ -1169,6 +1171,7 @@ export default function FornecedorCotacaoPropostaPage({
         <table className="w-full min-w-[1080px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <th className="w-10 px-2 py-2 text-center">#</th>
               {canEditActiveForm ? (
                 <th className="w-10 px-3 py-3">
                   <input
@@ -1193,7 +1196,7 @@ export default function FornecedorCotacaoPropostaPage({
             </tr>
           </thead>
           <tbody>
-            {paginatedQuotationItems.map((qi) => {
+            {paginatedQuotationItems.map((qi, index) => {
               const row = itemRowsForDisplay.rows.find((r) => r.quotation_item_id === qi.id)
               if (!row) return null
               const rowUi = itemRowStatusUi(row)
@@ -1206,15 +1209,18 @@ export default function FornecedorCotacaoPropostaPage({
                 !canEditActiveForm || row.item_status === "rejected"
               const showArButtons =
                 canEditActiveForm && rowUi.showAcceptRejectButtons
-              const spec = qi.complementary_spec?.trim()
               const hasPreviousPrice = row.previous_unit_price > 0
               const changedVsPrevious =
                 hasPreviousPrice && row.unit_price !== row.previous_unit_price
               const variationPct = hasPreviousPrice
                 ? ((row.unit_price - row.previous_unit_price) / row.previous_unit_price) * 100
                 : 0
+              const rowNumber = (itemPage - 1) * ITEMS_PER_PAGE + index + 1
               return (
                 <tr key={qi.id} className="border-b border-border align-top">
+                  <td className="px-2 py-3 text-center text-sm text-muted-foreground">
+                    {rowNumber}
+                  </td>
                   {canEditActiveForm ? (
                     <td className="px-3 py-3">
                       <input
@@ -1228,13 +1234,16 @@ export default function FornecedorCotacaoPropostaPage({
                   ) : null}
                   <td className="px-2 py-3 font-medium text-foreground">{qi.material_code}</td>
                   <td className="px-2 py-3">
-                    <span className="inline-flex items-center gap-1 text-foreground">
-                      {qi.material_description}
-                      {spec ? (
-                        <span title={spec} className="inline-block">
-                          <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
-                        </span>
-                      ) : null}
+                    <span className="flex items-center gap-1">
+                      <span>{qi.material_description}</span>
+                      {qi.complementary_spec && (
+                        <Info
+                          className="w-3.5 h-3.5 text-muted-foreground cursor-help flex-shrink-0"
+                          {...({
+                            title: qi.complementary_spec,
+                          } as unknown as React.ComponentProps<typeof Info>)}
+                        />
+                      )}
                     </span>
                   </td>
                   <td className="px-2 py-3 text-muted-foreground whitespace-nowrap">

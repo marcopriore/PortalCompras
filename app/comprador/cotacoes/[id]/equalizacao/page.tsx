@@ -433,7 +433,11 @@ export default function EqualizacaoPage({
             )
             .eq("id", id)
             .single(),
-          supabase.from("quotation_items").select("*").eq("quotation_id", id),
+          supabase
+            .from("quotation_items")
+            .select("*")
+            .eq("quotation_id", id)
+            .order("material_description", { ascending: true }),
         ])
 
         const q = (qRes.data as Quotation) ?? null
