@@ -2,7 +2,15 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertCircle, ArrowLeft, CheckCircle, Clock, Info, Lock } from "lucide-react"
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle,
+  Clock,
+  Info,
+  Lock,
+  Upload,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
@@ -32,6 +40,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { ImportProposalWizard } from "@/components/fornecedor/import-proposal-wizard"
 
 type CompanyEmbed = { name: string; cnpj?: string | null }
 
@@ -300,6 +309,7 @@ export default function FornecedorCotacaoPropostaPage({
     () => new Set(),
   )
   const [globalDiscount, setGlobalDiscount] = React.useState("")
+  const [importWizardOpen, setImportWizardOpen] = React.useState(false)
 
   const refreshProposalForRound = React.useCallback(
     (roundId: string, row: QuotationProposalRow) => {
@@ -1122,6 +1132,15 @@ export default function FornecedorCotacaoPropostaPage({
                   >
                     Aplicar
                   </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setImportWizardOpen(true)}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Importar Respostas
+                  </Button>
                   {selectedItemIds.size > 0 ? (
                     <span className="text-xs text-muted-foreground">
                       {selectedItemIds.size} item(s) selecionado(s)
@@ -1478,6 +1497,31 @@ export default function FornecedorCotacaoPropostaPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {quotation && activeRound ? (
+        <ImportProposalWizard
+          open={importWizardOpen}
+          onClose={() => setImportWizardOpen(false)}
+          quotation={{
+            id: quotation.id,
+            code: quotation.code,
+            company_id: quotation.company_id,
+          }}
+          activeRound={{
+            id: activeRound.id,
+            round_number: activeRound.round_number,
+          }}
+          quotationItems={quotationItems}
+          currentItemRows={itemRows}
+          paymentOptions={paymentOptions}
+          currentPaymentCondition={paymentCondition}
+          onImportComplete={(rows, paymentCode) => {
+            setItemRows(rows)
+            setPaymentCondition(paymentCode)
+            toast.success("Proposta importada com sucesso. Revise e envie.")
+          }}
+        />
+      ) : null}
     </div>
   )
 }
