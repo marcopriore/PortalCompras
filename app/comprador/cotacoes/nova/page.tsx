@@ -237,12 +237,13 @@ function NovaCotacaoContent() {
 
       if (selectedSuppliers.length > 0) {
         const { error: suppliersError } = await supabase.from('quotation_suppliers').insert(
-          selectedSuppliers.map((s) => ({
+          selectedSuppliers.map((s, index) => ({
             quotation_id: quotationId,
             company_id: companyId!,
-            supplier_id: userId!,
+            supplier_id: s.id,
             supplier_name: s.name,
             supplier_cnpj: s.cnpj,
+            position: index + 1,
           })),
         )
 

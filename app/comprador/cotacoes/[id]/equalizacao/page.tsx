@@ -188,6 +188,16 @@ type Quotation = {
   created_at?: string | null
 }
 
+/** Convites na cotação — ordem das colunas na equalização segue o array retornado pelo banco. */
+type QuotationSupplier = {
+  supplier_id: string
+  position: number | null
+  suppliers?:
+    | { name: string; cnpj: string | null }
+    | { name: string; cnpj: string | null }[]
+    | null
+}
+
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -262,6 +272,27 @@ function getTomorrowInputMin(): string {
   const mo = String(t.getMonth() + 1).padStart(2, "0")
   const da = String(t.getDate()).padStart(2, "0")
   return `${y}-${mo}-${da}`
+}
+
+/** Ordena propostas da rodada na mesma ordem das colunas (quotation_suppliers já ordenado no load). */
+function orderProposalsByQuotationSupplierColumnOrder(
+  roundProposals: Proposal[],
+  quotationSuppliersOrdered: QuotationSupplier[],
+): Proposal[] {
+  const supplierColumnIndex = new Map<string, number>()
+  quotationSuppliersOrdered.forEach((row, index) => {
+    supplierColumnIndex.set(row.supplier_id, index)
+  })
+  return [...roundProposals].sort((a, b) => {
+    const ia =
+      a.supplier_id != null ? supplierColumnIndex.get(a.supplier_id) : undefined
+    const ib =
+      b.supplier_id != null ? supplierColumnIndex.get(b.supplier_id) : undefined
+    const va = ia === undefined ? Number.MAX_SAFE_INTEGER : ia
+    const vb = ib === undefined ? Number.MAX_SAFE_INTEGER : ib
+    if (va !== vb) return va - vb
+    return a.supplier_name.localeCompare(b.supplier_name, "pt-BR")
+  })
 }
 
 function getTodayDDMMYYYY() {
@@ -425,7 +456,7 @@ export default function EqualizacaoPage({
           resolvedRoundId ? (roundsList.find((r) => r.id === resolvedRoundId) ?? null) : null,
         )
 
-        const [qRes, itemsRes] = await Promise.all([
+        const [qRes, itemsRes, qsRes, allProposalsRawRes] = await Promise.all([
           supabase
             .from("quotations")
             .select(
@@ -438,17 +469,27 @@ export default function EqualizacaoPage({
             .select("*")
             .eq("quotation_id", id)
             .order("material_description", { ascending: true }),
+          supabase
+            .from("quotation_suppliers")
+            .select("*, suppliers(name, cnpj)")
+            .eq("quotation_id", id)
+            .order("position", { ascending: true, nullsFirst: false }),
+          supabase
+            .from("quotation_proposals")
+            .select("*, proposal_items(*)")
+            .eq("quotation_id", id),
         ])
+
+        if (qRes.error) throw qRes.error
+        if (itemsRes.error) throw itemsRes.error
+        if (qsRes.error) throw qsRes.error
+        if (allProposalsRawRes.error) throw allProposalsRawRes.error
 
         const q = (qRes.data as Quotation) ?? null
         const items = ((itemsRes.data as unknown) as QuotationItem[]) ?? []
+        const quotationSuppliersOrdered = (qsRes.data ?? []) as QuotationSupplier[]
 
-        const { data: allProposalsRaw, error: allProposalsError } = await supabase
-          .from("quotation_proposals")
-          .select("*, proposal_items(*)")
-          .eq("quotation_id", id)
-
-        if (allProposalsError) throw allProposalsError
+        const allProposalsRaw = allProposalsRawRes.data
 
         const allCatalog = ((allProposalsRaw ?? []) as unknown as Proposal[]).map((p) => ({
           ...p,
@@ -461,9 +502,11 @@ export default function EqualizacaoPage({
 
         let probs: Proposal[] = []
         if (resolvedRoundId) {
-          probs = allCatalog
-            .filter((p) => p.round_id === resolvedRoundId)
-            .sort((a, b) => (a.total_price ?? Infinity) - (b.total_price ?? Infinity))
+          const roundProposals = allCatalog.filter((p) => p.round_id === resolvedRoundId)
+          probs = orderProposalsByQuotationSupplierColumnOrder(
+            roundProposals,
+            quotationSuppliersOrdered,
+          )
         }
 
         const quotationItemIds = items.map((i) => i.id)

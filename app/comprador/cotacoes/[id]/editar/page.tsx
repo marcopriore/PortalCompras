@@ -163,8 +163,9 @@ export default function EditarCotacaoPage({
             .eq("quotation_id", id),
           supabase
             .from("quotation_suppliers")
-            .select("supplier_id, supplier_name, supplier_cnpj")
-            .eq("quotation_id", id),
+            .select("supplier_id, supplier_name, supplier_cnpj, position")
+            .eq("quotation_id", id)
+            .order("position", { ascending: true, nullsFirst: false }),
         ])
 
         if (itemsData && itemsData.length > 0) {
@@ -191,6 +192,7 @@ export default function EditarCotacaoPage({
               supplier_id: string
               supplier_name: string
               supplier_cnpj: string | null
+              position: number | null
             }>).map((s) => ({
               id: s.supplier_id,
               name: s.supplier_name,
@@ -325,12 +327,13 @@ export default function EditarCotacaoPage({
         const { error: suppliersError } = await supabase
           .from("quotation_suppliers")
           .insert(
-            selectedSuppliers.map((s) => ({
+            selectedSuppliers.map((s, index) => ({
               quotation_id: id,
               company_id: companyId!,
               supplier_id: s.id,
               supplier_name: s.name,
               supplier_cnpj: s.cnpj || null,
+              position: index + 1,
             })),
           )
 
