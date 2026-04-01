@@ -73,7 +73,6 @@ type QuotationItemRow = {
   long_description?: string | null
   unit_of_measure: string | null
   quantity: number | string
-  complementary_spec: string | null
 }
 
 type ProposalItemRow = {
@@ -398,7 +397,7 @@ export default function FornecedorCotacaoPropostaPage({
         supabase
           .from("quotation_items")
           .select(
-            "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec",
+            "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity",
           )
           .eq("quotation_id", quotationId)
           .order("material_description", { ascending: true }),

@@ -73,7 +73,6 @@ type QuotationItem = {
   material_code: string
   material_description: string
   long_description?: string | null
-  complementary_spec?: string | null
   quantity: number
   unit_of_measure: string
 }
@@ -468,7 +467,7 @@ export default function EqualizacaoPage({
           supabase
             .from("quotation_items")
             .select(
-              "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec, created_at",
+              "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, created_at",
             )
             .eq("quotation_id", id)
             .order("material_description", { ascending: true }),

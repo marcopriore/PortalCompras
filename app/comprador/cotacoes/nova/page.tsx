@@ -13,7 +13,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
@@ -34,7 +33,7 @@ type QuotationItem = {
   unit_of_measure: string
   long_description?: string | null
 }
-type SelectedItem = QuotationItem & { quantity: number; spec: string }
+type SelectedItem = QuotationItem & { quantity: number }
 type Supplier = { id: string; name: string; cnpj: string; category: string }
 
 const MOCK_ITEMS: QuotationItem[] = [
@@ -147,7 +146,6 @@ function NovaCotacaoContent() {
             long_description: ri.long_description ?? null,
             quantity: ri.quantity ?? 1,
             unit_of_measure: ri.unit_of_measure ?? '',
-            spec: ri.observations ?? '',
           })),
         )
       }
@@ -171,19 +169,18 @@ function NovaCotacaoContent() {
   const toggle = (key: string) => setOpen(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))
 
   const addItem = (item: QuotationItem) => {
-    setSelectedItems(prev => prev.some(i => i.code === item.code) ? prev : [...prev, { ...item, quantity: 1, spec: '' }])
+    setSelectedItems(prev => prev.some(i => i.code === item.code) ? prev : [...prev, { ...item, quantity: 1 }])
     setItemSearch('')
   }
 
-  const updateItem = (code: string, field: 'quantity' | 'spec', value: string) => {
-    setSelectedItems(prev => prev.map(i => {
-      if (i.code !== code) return i
-      if (field === 'quantity') {
+  const updateItemQuantity = (code: string, value: string) => {
+    setSelectedItems(prev =>
+      prev.map((i) => {
+        if (i.code !== code) return i
         const n = Number(value)
         return { ...i, quantity: Number.isFinite(n) && n > 0 ? n : 1 }
-      }
-      return { ...i, spec: value.slice(0, 2000) }
-    }))
+      }),
+    )
   }
 
   const addSupplier = (s: Supplier) => {
@@ -232,7 +229,7 @@ function NovaCotacaoContent() {
             long_description: item.long_description ?? null,
             unit_of_measure: item.unit_of_measure,
             quantity: item.quantity,
-            complementary_spec: item.spec || null,
+            complementary_spec: null,
           })),
         )
 
@@ -489,7 +486,6 @@ function NovaCotacaoContent() {
                   <th className="px-2 py-2 text-left">Descrição Curta</th>
                   <th className="px-2 py-2 text-left">UN</th>
                   <th className="px-2 py-2 text-left">Qtd</th>
-                  <th className="px-2 py-2 text-left">Especificação</th>
                   <th className="px-2 py-2 text-right">Ação</th>
                 </tr>
               </thead>
@@ -500,11 +496,7 @@ function NovaCotacaoContent() {
                     <td className="px-2 py-2 align-top">{item.description}</td>
                     <td className="px-2 py-2 align-top">{item.unit_of_measure}</td>
                     <td className="px-2 py-2 align-top">
-                      <Input type="number" min={1} value={item.quantity} onChange={e => updateItem(item.code, 'quantity', e.target.value)} className="w-20" />
-                    </td>
-                    <td className="px-2 py-2 align-top">
-                      <Textarea value={item.spec} onChange={e => updateItem(item.code, 'spec', e.target.value)} rows={2} className="min-w-[180px]" />
-                      <p className="mt-1 text-xs text-muted-foreground">{item.spec.length}/2000</p>
+                      <Input type="number" min={1} value={item.quantity} onChange={e => updateItemQuantity(item.code, e.target.value)} className="w-20" />
                     </td>
                     <td className="px-2 py-2 align-top text-right">
                       <Button type="button" variant="ghost" size="icon" onClick={() => setSelectedItems(p => p.filter(i => i.code !== item.code))}>

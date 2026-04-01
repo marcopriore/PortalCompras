@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
@@ -35,7 +34,11 @@ type QuotationItem = {
   unit_of_measure: string
   long_description?: string | null
 }
-type SelectedItem = QuotationItem & { quantity: number; spec: string }
+type SelectedItem = QuotationItem & {
+  quantity: number
+  /** Preservado do banco na edição; não exibido na UI */
+  complementary_spec: string | null
+}
 type Supplier = { id: string; name: string; cnpj: string; category: string }
 
 const MOCK_ITEMS: QuotationItem[] = [
@@ -188,7 +191,7 @@ export default function EditarCotacaoPage({
               long_description: ri.long_description ?? null,
               unit_of_measure: ri.unit_of_measure ?? "",
               quantity: ri.quantity ?? 1,
-              spec: ri.complementary_spec ?? "",
+              complementary_spec: ri.complementary_spec ?? null,
             })),
           )
         }
@@ -244,23 +247,20 @@ export default function EditarCotacaoPage({
     setSelectedItems((prev) =>
       prev.some((i) => i.code === item.code)
         ? prev
-        : [...prev, { ...item, quantity: 1, spec: "" }],
+        : [...prev, { ...item, quantity: 1, complementary_spec: null }],
     )
     setItemSearch("")
   }
 
-  const updateItem = (code: string, field: "quantity" | "spec", value: string) => {
+  const updateItemQuantity = (code: string, value: string) => {
     setSelectedItems((prev) =>
       prev.map((i) => {
         if (i.code !== code) return i
-        if (field === "quantity") {
-          const n = Number(value)
-          return {
-            ...i,
-            quantity: Number.isFinite(n) && n > 0 ? n : 1,
-          }
+        const n = Number(value)
+        return {
+          ...i,
+          quantity: Number.isFinite(n) && n > 0 ? n : 1,
         }
-        return { ...i, spec: value.slice(0, 2000) }
       }),
     )
   }
@@ -316,7 +316,7 @@ export default function EditarCotacaoPage({
               long_description: item.long_description ?? null,
               unit_of_measure: item.unit_of_measure,
               quantity: item.quantity,
-              complementary_spec: item.spec || null,
+              complementary_spec: item.complementary_spec,
             })),
           )
 
@@ -573,7 +573,6 @@ export default function EditarCotacaoPage({
                   <th className="px-2 py-2 text-left">Descrição Curta</th>
                   <th className="px-2 py-2 text-left">UN</th>
                   <th className="px-2 py-2 text-left">Qtd</th>
-                  <th className="px-2 py-2 text-left">Especificação</th>
                   <th className="px-2 py-2 text-right">Ação</th>
                 </tr>
               </thead>
@@ -596,23 +595,10 @@ export default function EditarCotacaoPage({
                         min={1}
                         value={item.quantity}
                         onChange={(e) =>
-                          updateItem(item.code, "quantity", e.target.value)
+                          updateItemQuantity(item.code, e.target.value)
                         }
                         className="w-20"
                       />
-                    </td>
-                    <td className="px-2 py-2 align-top">
-                      <Textarea
-                        value={item.spec}
-                        onChange={(e) =>
-                          updateItem(item.code, "spec", e.target.value)
-                        }
-                        rows={2}
-                        className="min-w-[180px]"
-                      />
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {item.spec.length}/2000
-                      </p>
                     </td>
                     <td className="px-2 py-2 align-top text-right">
                       <Button

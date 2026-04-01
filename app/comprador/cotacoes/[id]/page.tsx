@@ -49,7 +49,6 @@ interface QuotationItem {
   long_description?: string | null
   unit_of_measure: string | null
   quantity: number
-  complementary_spec: string | null
 }
 
 interface QuotationSupplier {
@@ -172,7 +171,7 @@ export default function QuotationDetailsPage({
           supabase
             .from('quotation_items')
             .select(
-              'id, material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec',
+              'id, material_code, material_description, long_description, unit_of_measure, quantity',
             )
             .eq('quotation_id', id),
           supabase
@@ -438,7 +437,6 @@ export default function QuotationDetailsPage({
                       <th className="px-2 py-2 text-left">Descrição Curta</th>
                       <th className="px-2 py-2 text-left">Unidade</th>
                       <th className="px-2 py-2 text-left">Quantidade</th>
-                      <th className="px-2 py-2 text-left">Especificação</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -454,9 +452,6 @@ export default function QuotationDetailsPage({
                           {item.unit_of_measure ?? '-'}
                         </td>
                         <td className="px-2 py-2 align-top">{item.quantity}</td>
-                        <td className="px-2 py-2 align-top">
-                          {item.complementary_spec || '-'}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
