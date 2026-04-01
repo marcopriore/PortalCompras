@@ -102,7 +102,6 @@ function NovaCotacaoContent() {
   const [deadline, setDeadline] = useState<Date | undefined>()
   const [deadlineOpen, setDeadlineOpen] = useState(false)
   const [category, setCategory] = useState<string | undefined>()
-  const [payment, setPayment] = useState<string | undefined>()
   const [file, setFile] = useState<File | null>(null)
   const [itemSearch, setItemSearch] = useState('')
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
@@ -197,7 +196,6 @@ function NovaCotacaoContent() {
           description,
           status,
           category: category ?? null,
-          payment_condition: payment ?? null,
           response_deadline: deadline ? deadline.toISOString().split('T')[0] : null,
         })
         .select('id, code, status')
@@ -434,17 +432,6 @@ function NovaCotacaoContent() {
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label>Condição de Pagamento</Label>
-              <Select value={payment} onValueChange={setPayment}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>
-                  {[['avista','À Vista'],['15d','15 dias'],['30d','30 dias'],['45d','45 dias'],['60d','60 dias']].map(([v,l]) => (
-                    <SelectItem key={v} value={v}>{l}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Anexo</Label>
               <Input type="file" accept=".pdf,image/*" onChange={e => setFile((e.target as HTMLInputElement).files?.[0] ?? null)} />

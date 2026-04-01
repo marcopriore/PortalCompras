@@ -107,7 +107,6 @@ export default function EditarCotacaoPage({
   const [deadline, setDeadline] = React.useState<Date | undefined>()
   const [deadlineOpen, setDeadlineOpen] = React.useState(false)
   const [category, setCategory] = React.useState<string | undefined>()
-  const [payment, setPayment] = React.useState<string | undefined>()
   const [itemSearch, setItemSearch] = React.useState("")
   const [selectedItems, setSelectedItems] = React.useState<SelectedItem[]>([])
   const [supplierSearch, setSupplierSearch] = React.useState("")
@@ -131,7 +130,7 @@ export default function EditarCotacaoPage({
 
         const { data: quotationData, error: quotationError } = await supabase
           .from("quotations")
-          .select("id, code, description, status, category, payment_condition, response_deadline")
+          .select("id, code, description, status, category, response_deadline")
           .eq("id", id)
           .eq("company_id", companyId)
           .single()
@@ -151,7 +150,6 @@ export default function EditarCotacaoPage({
         setQuotationCode(quotationData.code as string)
         setDescription((quotationData.description as string) ?? "")
         setCategory((quotationData.category as string) ?? undefined)
-        setPayment((quotationData.payment_condition as string) ?? undefined)
         if (quotationData.response_deadline) {
           setDeadline(new Date(quotationData.response_deadline as string))
         }
@@ -288,7 +286,6 @@ export default function EditarCotacaoPage({
         .update({
           description: description.trim(),
           category: category ?? null,
-          payment_condition: payment ?? null,
           response_deadline: deadline
             ? deadline.toISOString().split("T")[0]
             : null,
@@ -504,29 +501,6 @@ export default function EditarCotacaoPage({
                       </SelectItem>
                     ),
                   )}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label>Condição de Pagamento</Label>
-              <Select value={payment} onValueChange={setPayment}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  {[
-                    ["avista", "À Vista"],
-                    ["15d", "15 dias"],
-                    ["30d", "30 dias"],
-                    ["45d", "45 dias"],
-                    ["60d", "60 dias"],
-                  ].map(([v, l]) => (
-                    <SelectItem key={v} value={v}>
-                      {l}
-                    </SelectItem>
-                  ))}
                 </SelectContent>
               </Select>
             </div>

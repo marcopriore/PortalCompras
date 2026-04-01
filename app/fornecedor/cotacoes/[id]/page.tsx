@@ -73,6 +73,7 @@ type ProposalItemRow = {
   company_id?: string | null
   unit_price: number | string | null
   tax_percent: number | string | null
+  delivery_days?: number | null
   item_status: string
   observations?: string | null
 }
@@ -97,6 +98,7 @@ type ItemFormRow = {
   quotation_item_id: string
   proposal_item_id: string | null
   previous_unit_price: number
+  delivery_days: number | null
   unit_price: number
   tax_percent: number
   item_status: "accepted" | "rejected" | "not_answered"
@@ -237,6 +239,7 @@ function buildItemFormRows(
         quotation_item_id: qi.id,
         proposal_item_id: null,
         previous_unit_price: prevUnit,
+        delivery_days: prevItem?.delivery_days ?? null,
         unit_price: prevUnit,
         tax_percent: toNum(prevItem?.tax_percent),
         item_status: prevStatus,
@@ -260,6 +263,7 @@ function buildItemFormRows(
       quotation_item_id: qi.id,
       proposal_item_id: pi?.id ?? null,
       previous_unit_price: previousUnit,
+      delivery_days: pi?.delivery_days ?? null,
       unit_price: unitPrice,
       tax_percent: taxPercent,
       item_status: status,
@@ -304,7 +308,6 @@ export default function FornecedorCotacaoPropostaPage({
     cnpj: string | null
   } | null>(null)
 
-  const [deliveryDays, setDeliveryDays] = React.useState<number>(1)
   const [paymentCondition, setPaymentCondition] = React.useState("")
   const [validityDate, setValidityDate] = React.useState("")
   const [observations, setObservations] = React.useState("")
@@ -508,7 +511,6 @@ export default function FornecedorCotacaoPropostaPage({
         setProposalId(activeProposal.id)
         setProposalStatus(activeProposal.status ?? "invited")
         setProposalUpdatedAt(activeProposal.updated_at ?? null)
-        setDeliveryDays(Math.max(1, activeProposal.delivery_days ?? 1))
         setPaymentCondition(activeProposal.payment_condition ?? "")
         setValidityDate(activeProposal.validity_date ? String(activeProposal.validity_date) : "")
         setObservations(activeProposal.observations ?? "")
@@ -524,7 +526,6 @@ export default function FornecedorCotacaoPropostaPage({
         setProposalId(null)
         setProposalStatus("invited")
         setProposalUpdatedAt(null)
-        setDeliveryDays(Math.max(1, previousProposal.delivery_days ?? 1))
         setPaymentCondition(previousProposal.payment_condition ?? "")
         setValidityDate(
           previousProposal.validity_date ? String(previousProposal.validity_date) : "",
@@ -538,7 +539,6 @@ export default function FornecedorCotacaoPropostaPage({
         setProposalId(null)
         setProposalStatus("invited")
         setProposalUpdatedAt(null)
-        setDeliveryDays(1)
         setPaymentCondition("")
         setValidityDate("")
         setObservations("")
@@ -613,7 +613,6 @@ export default function FornecedorCotacaoPropostaPage({
     const fromActiveTab = viewingActiveRound
     if (fromActiveTab) {
       return {
-        deliveryDays,
         paymentCondition,
         validityDate,
         observations,
@@ -622,7 +621,6 @@ export default function FornecedorCotacaoPropostaPage({
     }
     const rp = roundProposalForView
     return {
-      deliveryDays: Math.max(1, rp?.delivery_days ?? 1),
       paymentCondition: rp?.payment_condition ?? "",
       validityDate: rp?.validity_date ? String(rp.validity_date) : "",
       observations: rp?.observations ?? "",
@@ -631,7 +629,6 @@ export default function FornecedorCotacaoPropostaPage({
   }, [
     viewingActiveRound,
     canEditActiveForm,
-    deliveryDays,
     paymentCondition,
     validityDate,
     observations,
@@ -761,6 +758,10 @@ export default function FornecedorCotacaoPropostaPage({
       toast.error("Dados incompletos para salvar.")
       return false
     }
+    if (!paymentCondition.trim()) {
+      toast.error("Preencha a Condição de Pagamento antes de enviar.")
+      return false
+    }
     if (submitAfter && !validateForSubmit()) return false
 
     const supabase = createClient()
@@ -791,7 +792,6 @@ export default function FornecedorCotacaoPropostaPage({
       supplier_cnpj: supplierInfo?.cnpj ?? null,
       round_id: activeRound.id,
       company_id: buyerCompanyId,
-      delivery_days: deliveryDays,
       payment_condition: paymentCondition.trim() || null,
       validity_date: validityDate || null,
       observations: observations.trim() || null,
@@ -827,6 +827,7 @@ export default function FornecedorCotacaoPropostaPage({
           company_id: buyerCompanyId,
           unit_price: row.item_status === "accepted" ? row.unit_price : 0,
           tax_percent: row.item_status === "accepted" ? row.tax_percent : 0,
+          delivery_days: row.delivery_days ?? null,
           item_status: row.item_status === "not_answered" ? "accepted" : row.item_status,
           observations: row.observations.trim() || null,
         }))
@@ -1057,20 +1058,6 @@ export default function FornecedorCotacaoPropostaPage({
         <h2 className="text-lg font-semibold text-foreground">Informações gerais</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="delivery-days">Prazo de Entrega (dias)</Label>
-            <Input
-              id="delivery-days"
-              type="number"
-              min={1}
-              value={generalDisplay.deliveryDays}
-              disabled={generalDisplay.disabled}
-              className={cn(generalDisplay.disabled && readOnlyFieldClass)}
-              onChange={(e) =>
-                setDeliveryDays(Math.max(1, Number(e.target.value) || 1))
-              }
-            />
-          </div>
-          <div className="space-y-2">
             <Label htmlFor="payment">Condição de Pagamento</Label>
             <Input
               id="payment"
@@ -1187,6 +1174,7 @@ export default function FornecedorCotacaoPropostaPage({
               <th className="px-2 py-2">Descrição</th>
               <th className="px-2 py-2 whitespace-nowrap">UN</th>
               <th className="px-2 py-2 whitespace-nowrap text-right">Qtd</th>
+              <th className="px-2 py-2 whitespace-nowrap w-24">PRAZO (dias)</th>
               <th className="px-2 py-2 whitespace-nowrap">PREÇO ANT.</th>
               <th className="px-2 py-2 whitespace-nowrap">Preço unit.</th>
               <th className="px-2 py-2 whitespace-nowrap">Imposto %</th>
@@ -1250,6 +1238,24 @@ export default function FornecedorCotacaoPropostaPage({
                     {qi.unit_of_measure ?? "—"}
                   </td>
                   <td className="px-2 py-3 text-right tabular-nums">{qty}</td>
+                  <td className="px-2 py-3">
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      className={cn(
+                        "w-24",
+                        priceDisabled && readOnlyFieldClass,
+                      )}
+                      disabled={priceDisabled}
+                      value={row.delivery_days ?? ""}
+                      onChange={(e) =>
+                        updateItemRow(qi.id, {
+                          delivery_days: e.target.value ? Math.max(1, Number(e.target.value)) : null,
+                        })
+                      }
+                    />
+                  </td>
                   <td className="px-2 py-3">
                     {row.previous_unit_price > 0 ? (
                       <span className="text-sm text-muted-foreground tabular-nums">

@@ -102,6 +102,7 @@ type ProposalItem = {
   round_id?: string | null
   unit_price: number
   tax_percent: number | null
+  delivery_days?: number | null
   item_status: "accepted" | "rejected"
   observations: string | null
 }
@@ -312,7 +313,6 @@ export default function EqualizacaoPage({
     preco_unit: true,
     imposto: true,
     total_item: true,
-    cond_pgto: true,
   })
   const [columnsOpen, setColumnsOpen] = React.useState(false)
   const [splitExpanded, setSplitExpanded] = React.useState(false)
@@ -1796,7 +1796,6 @@ export default function EqualizacaoPage({
               "preco_unit",
               "imposto",
               "total_item",
-              "cond_pgto",
             ] as const
             const visibleToggleable = toggleableKeys.filter((k) => columnVisibility[k])
             const colsPerSupplier = visibleToggleable.length + 1
@@ -1810,7 +1809,6 @@ export default function EqualizacaoPage({
               preco_unit: 100,
               imposto: 80,
               total_item: 100,
-              cond_pgto: 80,
               selecao: 40,
             }
             const supplierColWidth =
@@ -1853,7 +1851,6 @@ export default function EqualizacaoPage({
                               { key: "preco_unit", label: "Preço Unit." },
                               { key: "imposto", label: "Imposto %" },
                               { key: "total_item", label: "Total Item" },
-                              { key: "cond_pgto", label: "Cond. Pgto" },
                             ] as const
                           ).map(({ key, label }) => (
                             <button
@@ -2188,6 +2185,9 @@ export default function EqualizacaoPage({
                                 ? "—"
                                 : formatCurrency(weightedPriceByProposal[p.id] ?? 0)}
                             </span>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Cond. Pgto: {p.payment_condition ?? "—"}
+                            </p>
                             {!isReadOnly && (
                               <Button
                                 variant="outline"
@@ -2242,14 +2242,6 @@ export default function EqualizacaoPage({
                               className="min-w-[100px] w-[100px] border-l text-center text-xs whitespace-nowrap py-2"
                             >
                               Total Item
-                            </TableHead>
-                          )}
-                          {columnVisibility.cond_pgto && (
-                            <TableHead
-                              key={`${p.id}-cond`}
-                              className="min-w-[80px] w-[80px] border-l text-center text-xs whitespace-nowrap py-2"
-                            >
-                              Cond. Pgto
                             </TableHead>
                           )}
                         </React.Fragment>
@@ -2345,8 +2337,8 @@ export default function EqualizacaoPage({
                                     itemSelections[qi.id] != null && "bg-primary/5",
                                   )}
                                 >
-                                  {hasQuotablePrice && targetP?.delivery_days != null
-                                    ? `${targetP.delivery_days}`
+                                  {hasQuotablePrice && pi?.delivery_days != null
+                                    ? `${pi.delivery_days}`
                                     : "—"}
                                 </TableCell>
                               )}
@@ -2397,19 +2389,6 @@ export default function EqualizacaoPage({
                                         currency: "BRL",
                                       })
                                     : "—"}
-                                </TableCell>
-                              )}
-                              {columnVisibility.cond_pgto && (
-                                <TableCell
-                                  key={`${p.id}-cond`}
-                                  className={cn(
-                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
-                                    isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
-                                    !hasQuotablePrice && "text-muted-foreground",
-                                    itemSelections[qi.id] != null && "bg-primary/5",
-                                  )}
-                                >
-                                  {hasQuotablePrice ? (targetP?.payment_condition ?? "—") : "—"}
                                 </TableCell>
                               )}
                             </React.Fragment>
