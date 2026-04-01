@@ -145,22 +145,6 @@ function formatCurrency(value: number) {
   return money.format(Number.isFinite(value) ? value : 0)
 }
 
-function formatDateBRFromIso(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (!Number.isNaN(d.getTime())) {
-    const dd = String(d.getDate()).padStart(2, "0")
-    const mm = String(d.getMonth() + 1).padStart(2, "0")
-    const yyyy = d.getFullYear()
-    return `${dd}/${mm}/${yyyy}`
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-    const [y, m, d] = iso.split("-")
-    return `${d}/${m}/${y}`
-  }
-  return iso
-}
-
 function formatDeadlineBR(isoDate: string | null): string {
   if (!isoDate) return ""
   const [y, m, d] = isoDate.split("-")
@@ -302,7 +286,6 @@ export default function FornecedorCotacaoPropostaPage({
 
   const [proposalId, setProposalId] = React.useState<string | null>(null)
   const [proposalStatus, setProposalStatus] = React.useState<string>("invited")
-  const [proposalUpdatedAt, setProposalUpdatedAt] = React.useState<string | null>(null)
   const [supplierInfo, setSupplierInfo] = React.useState<{
     name: string
     cnpj: string | null
@@ -316,7 +299,6 @@ export default function FornecedorCotacaoPropostaPage({
   const [previousActiveProposal, setPreviousActiveProposal] =
     React.useState<QuotationProposalRow | null>(null)
 
-  const [isEditingActive, setIsEditingActive] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
   const [submitDialogOpen, setSubmitDialogOpen] = React.useState(false)
   const [showSubmitWarning, setShowSubmitWarning] = React.useState(false)
@@ -510,13 +492,11 @@ export default function FornecedorCotacaoPropostaPage({
         setPrefillFromRoundNumber(null)
         setProposalId(activeProposal.id)
         setProposalStatus(activeProposal.status ?? "invited")
-        setProposalUpdatedAt(activeProposal.updated_at ?? null)
         setPaymentCondition(activeProposal.payment_condition ?? "")
         setValidityDate(activeProposal.validity_date ? String(activeProposal.validity_date) : "")
         setObservations(activeProposal.observations ?? "")
         setPreviousActiveProposal(previousProposal)
         setItemRows(buildItemFormRows(itemsLocal, activeProposal, previousProposal))
-        setIsEditingActive((activeProposal.status ?? "invited") !== "submitted")
       } else if (previousProposal) {
         const prevMeta =
           previous ??
@@ -525,7 +505,6 @@ export default function FornecedorCotacaoPropostaPage({
         setPrefillFromRoundNumber(prevMeta?.round_number ?? null)
         setProposalId(null)
         setProposalStatus("invited")
-        setProposalUpdatedAt(null)
         setPaymentCondition(previousProposal.payment_condition ?? "")
         setValidityDate(
           previousProposal.validity_date ? String(previousProposal.validity_date) : "",
@@ -533,18 +512,15 @@ export default function FornecedorCotacaoPropostaPage({
         setObservations(previousProposal.observations ?? "")
         setPreviousActiveProposal(previousProposal)
         setItemRows(buildItemFormRows(itemsLocal, previousProposal, null, true))
-        setIsEditingActive(true)
       } else {
         setPrefillFromRoundNumber(null)
         setProposalId(null)
         setProposalStatus("invited")
-        setProposalUpdatedAt(null)
         setPaymentCondition("")
         setValidityDate("")
         setObservations("")
         setPreviousActiveProposal(null)
         setItemRows(buildItemFormRows(itemsLocal, null, null))
-        setIsEditingActive(true)
       }
 
       setLoading(false)
@@ -564,17 +540,6 @@ export default function FornecedorCotacaoPropostaPage({
     setSubmitWarningCount(0)
   }, [selectedRoundId])
 
-  React.useEffect(() => {
-    if (!selectedRoundId || !activeRound) return
-    if (selectedRoundId !== activeRound.id) {
-      setIsEditingActive(false)
-      return
-    }
-    const p = proposalsByRoundId[activeRound.id]
-    if (p?.status === "submitted") setIsEditingActive(false)
-    else setIsEditingActive(true)
-  }, [selectedRoundId, activeRound?.id, proposalsByRoundId, activeRound])
-
   const buyerCompanyId = quotation?.company_id ?? null
 
   const selectedRound = React.useMemo(
@@ -589,25 +554,28 @@ export default function FornecedorCotacaoPropostaPage({
   const viewingActiveRound =
     Boolean(activeRound && selectedRoundId && selectedRoundId === activeRound.id)
 
-  const activeRoundIsOpen = activeRound?.status === "active"
+  const activeRoundProposal =
+    viewingActiveRound && activeRound?.id ? proposalsByRoundId[activeRound.id] ?? null : null
 
   const isReadonlyForm = Boolean(
     selectedRound?.status === "closed" ||
-      (roundProposalForView?.status === "submitted" && !isEditingActive),
+      (activeRoundProposal?.status === "submitted"),
   )
 
-  const canEditActiveForm = Boolean(
-    supplierId &&
-      quotation &&
-      activeRound &&
-      viewingActiveRound &&
-      activeRoundIsOpen &&
-      !isReadonlyForm,
-  )
+  const canEditActiveForm = !isReadonlyForm
 
   const urgentDeadline = activeRound?.response_deadline
     ? isDeadlineUrgent(activeRound.response_deadline)
     : false
+  const submittedAtLabel = React.useMemo(() => {
+    const iso = activeRoundProposal?.updated_at
+    if (!iso) return null
+    const dt = new Date(iso)
+    if (Number.isNaN(dt.getTime())) return null
+    const data = dt.toLocaleDateString("pt-BR")
+    const hora = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    return { data, hora }
+  }, [activeRoundProposal?.updated_at])
 
   const generalDisplay = React.useMemo(() => {
     const fromActiveTab = viewingActiveRound
@@ -867,9 +835,6 @@ export default function FornecedorCotacaoPropostaPage({
           return false
         }
         setProposalStatus("submitted")
-        setIsEditingActive(false)
-        const nowIso = new Date().toISOString()
-        setProposalUpdatedAt(nowIso)
         toast.success("Proposta enviada com sucesso.")
       } else {
         toast.success("Rascunho salvo.")
@@ -885,7 +850,6 @@ export default function FornecedorCotacaoPropostaPage({
         refreshProposalForRound(activeRound.id, full)
         if (!submitAfter) {
           setProposalStatus(full.status)
-          setProposalUpdatedAt(full.updated_at ?? null)
         }
       }
       return true
@@ -1019,38 +983,21 @@ export default function FornecedorCotacaoPropostaPage({
       ) : null}
 
       {selectedRound?.status === "closed" ? (
-        <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            Esta rodada está encerrada. Visualizando em modo somente leitura.
-          </span>
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-center gap-2 text-sm text-slate-600">
+          <Lock className="w-4 h-4 flex-shrink-0" />
+          <span>Esta rodada foi encerrada pelo comprador.</span>
         </div>
       ) : null}
 
-      {viewingActiveRound &&
-      roundProposalForView?.status === "submitted" &&
-      !isEditingActive &&
-      selectedRound?.status !== "closed" ? (
-        <div className="flex flex-col gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-2">
-            <CheckCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              Proposta enviada em{" "}
-              {formatDateBRFromIso(
-                roundProposalForView?.updated_at ?? proposalUpdatedAt,
-              )}
-              . Clique em &apos;Editar Proposta&apos; para alterar.
-            </span>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={() => setIsEditingActive(true)}
-          >
-            Editar Proposta
-          </Button>
+      {selectedRound?.status !== "closed" &&
+      viewingActiveRound &&
+      activeRoundProposal?.status === "submitted" ? (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2 text-sm text-blue-700">
+          <CheckCircle className="w-4 h-4 flex-shrink-0 text-blue-500" />
+          <span>
+            Proposta enviada em {submittedAtLabel?.data ?? "—"} às{" "}
+            {submittedAtLabel?.hora ?? "—"}. Aguarde nova rodada para alterar.
+          </span>
         </div>
       ) : null}
 
@@ -1400,7 +1347,7 @@ export default function FornecedorCotacaoPropostaPage({
         </div>
       </section>
 
-      {canEditActiveForm ? (
+      {!isReadonlyForm && selectedRound?.status === "active" ? (
         <div
           className={cn(
             "fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 py-4 px-4",
