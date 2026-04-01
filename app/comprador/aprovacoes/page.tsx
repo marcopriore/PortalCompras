@@ -205,8 +205,6 @@ export default function AprovacoesPage() {
     if (!isAdmin) {
       reqQuery = reqQuery.eq("approver_id", userId)
     }
-    const { data: reqData } = await reqQuery.order("created_at", { ascending: false })
-
     let orderQuery = supabase
       .from("approval_requests")
       .select("*")
@@ -215,7 +213,11 @@ export default function AprovacoesPage() {
     if (!isAdmin) {
       orderQuery = orderQuery.eq("approver_id", userId)
     }
-    const { data: orderData } = await orderQuery.order("created_at", { ascending: false })
+
+    const [{ data: reqData }, { data: orderData }] = await Promise.all([
+      reqQuery.order("created_at", { ascending: false }),
+      orderQuery.order("created_at", { ascending: false }),
+    ])
 
     const reqRequests = (reqData ?? []) as ApprovalRequest[]
     const orderRequests = (orderData ?? []) as ApprovalRequest[]

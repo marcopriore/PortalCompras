@@ -16,6 +16,12 @@ import {
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import {
+  formatDateBR,
+  formatDateTimeBR,
+  isExpiredDate,
+  isUrgentDate,
+} from "@/lib/utils/date-helpers"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -58,38 +64,6 @@ type ActivityRow = {
   updated_at: string
   quotation_id: string
   quotations: { code: string } | { code: string }[] | null
-}
-
-function formatDateBR(isoDate: string | null): string {
-  if (!isoDate) return ""
-  const [y, m, d] = isoDate.split("-")
-  if (!y || !m || !d) return isoDate
-  return `${d}/${m}/${y}`
-}
-
-function formatCreatedAtBR(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  const dd = String(d.getDate()).padStart(2, "0")
-  const mm = String(d.getMonth() + 1).padStart(2, "0")
-  const yyyy = d.getFullYear()
-  return `${dd}/${mm}/${yyyy}`
-}
-
-function isUrgentRound(deadline: string | null): boolean {
-  if (!deadline) return false
-  const end = new Date(`${deadline}T23:59:59`)
-  const limit = new Date()
-  limit.setHours(0, 0, 0, 0)
-  limit.setDate(limit.getDate() + 2)
-  return end.getTime() <= limit.getTime()
-}
-
-function isExpiredRound(deadline: string | null): boolean {
-  if (!deadline) return false
-  const todayStart = new Date(new Date().toDateString())
-  return new Date(deadline) < todayStart
 }
 
 function relativeListDay(iso: string): string {
@@ -401,13 +375,27 @@ export default function FornecedorDashboardPage() {
             setOpenQuotations([])
           }
         } else {
-          const openQuotationsRes = await supabase
-            .from("quotations")
-            .select("id, code, description, status, created_at, company_id")
-            .in("id", quotationIds)
-            .in("status", ["waiting", "analysis"])
+          const [openQuotationsRes, roundsRes, myProposalsRes] = await Promise.all([
+            supabase
+              .from("quotations")
+              .select("id, code, description, status, created_at, company_id")
+              .in("id", quotationIds)
+              .in("status", ["waiting", "analysis"]),
+            supabase
+              .from("quotation_rounds")
+              .select("id, quotation_id, round_number, response_deadline, status")
+              .in("quotation_id", quotationIds)
+              .eq("status", "active"),
+            supabase
+              .from("quotation_proposals")
+              .select("quotation_id, round_id, status")
+              .eq("supplier_id", supplierId)
+              .in("quotation_id", quotationIds),
+          ])
 
           if (openQuotationsRes.error) throw openQuotationsRes.error
+          if (roundsRes.error) throw roundsRes.error
+          if (myProposalsRes.error) throw myProposalsRes.error
 
           const openQuoteRows =
             (openQuotationsRes.data ?? []) as OpenQuotationRow[]
@@ -431,22 +419,7 @@ export default function FornecedorDashboardPage() {
             )
           }
 
-          const roundsRes = await supabase
-            .from("quotation_rounds")
-            .select("id, quotation_id, round_number, response_deadline, status")
-            .in("quotation_id", quotationIds)
-            .eq("status", "active")
-
-          if (roundsRes.error) throw roundsRes.error
-
           const activeRounds = (roundsRes.data ?? []) as RoundRow[]
-
-          const myProposalsRes = await supabase
-            .from("quotation_proposals")
-            .select("quotation_id, round_id, status")
-            .eq("supplier_id", supplierId)
-            .in("quotation_id", quotationIds)
-          if (myProposalsRes.error) throw myProposalsRes.error
           const myProposalsRows = (myProposalsRes.data ?? []) as ProposalRow[]
 
           const roundsForOpen = activeRounds.filter((r) =>
@@ -751,8 +724,8 @@ export default function FornecedorDashboardPage() {
                     </thead>
                     <tbody>
                       {filteredQuotations.slice(0, 5).map((q) => {
-                        const urgent = isUrgentRound(q.responseDeadline)
-                        const expired = isExpiredRound(q.responseDeadline)
+                        const urgent = isUrgentDate(q.responseDeadline, 2)
+                        const expired = isExpiredDate(q.responseDeadline)
                         const co = q.companies
                         const statusDisplay = getProposalStatusBadge(
                           q.proposalStatus,
@@ -795,7 +768,7 @@ export default function FornecedorDashboardPage() {
                               )}
                             </td>
                             <td className="px-3 py-3 align-top whitespace-nowrap text-foreground">
-                              {formatCreatedAtBR(q.createdAt)}
+                              {formatDateTimeBR(q.createdAt)}
                             </td>
                             <td className="px-3 py-3 align-top whitespace-nowrap">
                               {q.responseDeadline ? (

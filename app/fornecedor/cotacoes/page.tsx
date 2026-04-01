@@ -4,6 +4,12 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import {
+  formatDateBR,
+  formatDateTimeBR,
+  isExpiredDate,
+  isUrgentDate,
+} from "@/lib/utils/date-helpers"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -62,38 +68,6 @@ type QuotationsTableRow = {
   roundNumber: number | null
   responseDeadline: string | null
   proposalStatus: string | null
-}
-
-function formatDateBR(isoDate: string | null): string {
-  if (!isoDate) return ""
-  const [y, m, d] = isoDate.split("-")
-  if (!y || !m || !d) return isoDate
-  return `${d}/${m}/${y}`
-}
-
-function formatCreatedAtBR(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  const dd = String(d.getDate()).padStart(2, "0")
-  const mm = String(d.getMonth() + 1).padStart(2, "0")
-  const yyyy = d.getFullYear()
-  return `${dd}/${mm}/${yyyy}`
-}
-
-function isUrgentRound(deadline: string | null): boolean {
-  if (!deadline) return false
-  const end = new Date(`${deadline}T23:59:59`)
-  const limit = new Date()
-  limit.setHours(0, 0, 0, 0)
-  limit.setDate(limit.getDate() + 2)
-  return end.getTime() <= limit.getTime()
-}
-
-function isExpiredRound(deadline: string | null): boolean {
-  if (!deadline) return false
-  const todayStart = new Date(new Date().toDateString())
-  return new Date(deadline) < todayStart
 }
 
 const statusBadgeBase =
@@ -768,8 +742,8 @@ export default function FornecedorCotacoesPage() {
                     </thead>
                     <tbody>
                       {paginatedQuotations.map((q) => {
-                        const urgent = isUrgentRound(q.responseDeadline)
-                        const expired = isExpiredRound(q.responseDeadline)
+                        const urgent = isUrgentDate(q.responseDeadline, 2)
+                        const expired = isExpiredDate(q.responseDeadline)
                         const statusDisplay = getProposalStatusBadge(
                           q.proposalStatus,
                           q.status,
@@ -821,7 +795,7 @@ export default function FornecedorCotacoesPage() {
                               )}
                             </td>
                             <td className="px-3 py-3 align-top whitespace-nowrap text-foreground">
-                              {formatCreatedAtBR(q.createdAt)}
+                              {formatDateTimeBR(q.createdAt)}
                             </td>
                             <td className="px-3 py-3 align-top whitespace-nowrap">
                               {q.status === "completed" || q.status === "cancelled" ? (
