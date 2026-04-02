@@ -2,7 +2,6 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { Package, Eye, EyeOff } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -12,7 +11,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { createClient } from "@/lib/supabase/client"
 
 export default function LoginPage() {
-  const router = useRouter()
   const [email, setEmail] = useState("")
   const [cnpj, setCnpj] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -53,7 +51,7 @@ export default function LoginPage() {
         return
       }
 
-      router.push("/fornecedor")
+      window.location.href = "/fornecedor"
     } catch {
       toast.error("Erro inesperado ao entrar. Tente novamente.")
     } finally {

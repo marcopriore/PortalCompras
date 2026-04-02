@@ -27,15 +27,16 @@ export default async function CompradorLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_id, full_name, is_superadmin")
+    .select("company_id, full_name, is_superadmin, profile_type")
     .eq("id", user.id)
     .single()
 
-  const isSuperAdmin = Boolean((profile as any)?.is_superadmin)
+  const profileType = (profile as { profile_type?: string } | null)?.profile_type ?? "buyer"
+  if (profileType === "supplier") {
+    redirect("/fornecedor?error=unauthorized_portal")
+  }
 
-  // Debug temporário
-  // eslint-disable-next-line no-console
-  console.log('Layout debug:', { isSuperAdmin })
+  const isSuperAdmin = Boolean((profile as any)?.is_superadmin)
 
   const userName =
     (profile as { full_name?: string } | null)?.full_name ||

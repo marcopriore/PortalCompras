@@ -41,6 +41,8 @@ export async function proxy(request: NextRequest) {
     },
   )
 
+  await supabase.auth.getSession()
+
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -56,8 +58,13 @@ export async function proxy(request: NextRequest) {
   if (!user) {
     if (!isProtectedRoute || isAuthRoute || isPublicFornecedorPath(pathname)) return response
     const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = "/login"
-    redirectUrl.searchParams.set("redirectTo", pathname)
+    if (pathname.startsWith("/fornecedor")) {
+      redirectUrl.pathname = "/fornecedor/login"
+      redirectUrl.searchParams.delete("redirectTo")
+    } else {
+      redirectUrl.pathname = "/login"
+      redirectUrl.searchParams.set("redirectTo", pathname)
+    }
     return NextResponse.redirect(redirectUrl)
   }
 
@@ -69,13 +76,17 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  const { data } = await supabase
+  const { data: profileRow, error: profileError } = await supabase
     .from("profiles")
     .select("profile_type")
     .eq("id", user.id)
-    .single()
+    .maybeSingle()
 
-  const profileType = data?.profile_type ?? "buyer"
+  if (profileError) {
+    console.error("[proxy] profiles select:", profileError.message)
+  }
+
+  const profileType = profileRow?.profile_type ?? "buyer"
 
   if (isAuthRoute) {
     const redirectUrl = request.nextUrl.clone()

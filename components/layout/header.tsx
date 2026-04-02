@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import { Bell, ChevronDown, LogOut, User, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -28,8 +27,6 @@ export function Header({
   userInitials,
   tenantSelector,
 }: HeaderProps) {
-  const router = useRouter()
-
   const [notifications] = useState([
     { id: 1, title: "Nova cotação recebida", time: "5 min atrás", unread: true },
     { id: 2, title: "Proposta aprovada", time: "1h atrás", unread: true },
@@ -50,10 +47,10 @@ export function Header({
       await fetch("/api/auth/logout", {
         method: "POST",
       })
-      router.push("/login")
     } catch {
-      router.push("/login")
+      // ignore
     }
+    window.location.href = "/login"
   }
 
   return (

@@ -79,10 +79,11 @@ export default function FornecedorPortalShell({
     try {
       const supabase = createClient()
       await supabase.auth.signOut()
-    } catch {
-      // ignore
+    } catch (e) {
+      console.error("signOut error:", e)
+    } finally {
+      window.location.href = "/fornecedor/login"
     }
-    router.push("/fornecedor/login")
   }
 
   return (

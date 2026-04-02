@@ -10,6 +10,15 @@ import { logAudit } from "@/lib/audit"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +46,7 @@ import {
   ChevronLeft,
   Download,
   FileEdit,
+  Pencil,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -54,6 +64,7 @@ type PurchaseOrderStatus =
 
 type PurchaseOrder = {
   id: string
+  company_id: string
   code: string
   erp_code: string | null
   supplier_name: string
@@ -84,6 +95,23 @@ type PurchaseOrderItem = {
   unit_price: number
   tax_percent: number | null
   total_price: number | null
+}
+
+type EditItem = {
+  id: string
+  material_code: string
+  material_description: string
+  unit_of_measure: string
+  unit_price: number
+  tax_percent: number | null
+  quantity: number
+  max_quantity: number | null
+}
+
+type PaymentConditionOption = {
+  id: string
+  code: string
+  description: string
 }
 
 const money = new Intl.NumberFormat("pt-BR", {
@@ -158,6 +186,7 @@ export default function PurchaseOrderDetailPage({
 
   const [order, setOrder] = React.useState<PurchaseOrder | null>(null)
   const [items, setItems] = React.useState<PurchaseOrderItem[]>([])
+  const [paymentOptions, setPaymentOptions] = React.useState<PaymentConditionOption[]>([])
   const [loading, setLoading] = React.useState(true)
   const [exporting, setExporting] = React.useState(false)
   const [confirmingPedido, setConfirmingPedido] = React.useState(false)
@@ -167,6 +196,16 @@ export default function PurchaseOrderDetailPage({
   const [cancellingRefused, setCancellingRefused] = React.useState(false)
   const [resendingOrder, setResendingOrder] = React.useState(false)
 
+  const [isEditing, setIsEditing] = React.useState(false)
+  const [editForm, setEditForm] = React.useState({
+    payment_condition: "",
+    delivery_days: "",
+    delivery_address: "",
+    observations: "",
+  })
+  const [editItems, setEditItems] = React.useState<EditItem[]>([])
+  const [savingEdit, setSavingEdit] = React.useState(false)
+
   const fetchOrderData = React.useCallback(
     async (options?: { silent?: boolean }) => {
       if (!id || !companyId) return
@@ -174,16 +213,28 @@ export default function PurchaseOrderDetailPage({
       if (!silent) setLoading(true)
       try {
         const supabase = createClient()
-        const [orderRes, itemsRes] = await Promise.all([
-          supabase.from("purchase_orders").select("*").eq("id", id).single(),
+        const [orderRes, itemsRes, paymentsRes] = await Promise.all([
+          supabase
+            .from("purchase_orders")
+            .select("*")
+            .eq("id", id)
+            .eq("company_id", companyId)
+            .single(),
           supabase
             .from("purchase_order_items")
             .select("*")
             .eq("purchase_order_id", id)
             .order("material_code", { ascending: true }),
+          supabase
+            .from("payment_conditions")
+            .select("id, code, description")
+            .eq("company_id", companyId)
+            .eq("active", true)
+            .order("code", { ascending: true }),
         ])
         setOrder((orderRes.data as PurchaseOrder) ?? null)
         setItems(((itemsRes.data as unknown) as PurchaseOrderItem[]) ?? [])
+        setPaymentOptions(((paymentsRes.data as PaymentConditionOption[]) ?? []) as PaymentConditionOption[])
       } finally {
         if (!silent) setLoading(false)
       }
@@ -194,6 +245,11 @@ export default function PurchaseOrderDetailPage({
   React.useEffect(() => {
     void fetchOrderData()
   }, [fetchOrderData])
+
+  React.useEffect(() => {
+    if (!order) return
+    if (order.status !== "refused") setIsEditing(false)
+  }, [order])
 
   const handleConfirmOrder = async () => {
     if (!order || !companyId) return
@@ -281,6 +337,125 @@ export default function PurchaseOrderDetailPage({
       toast.error("Não foi possível reenviar o pedido.")
     } finally {
       setResendingOrder(false)
+    }
+  }
+
+  const handleStartEdit = async () => {
+    if (!order) return
+    setEditForm({
+      payment_condition: order.payment_condition ?? "",
+      delivery_days: order.delivery_days != null ? String(order.delivery_days) : "",
+      delivery_address: order.delivery_address ?? "",
+      observations: order.observations ?? "",
+    })
+    setEditItems(
+      items.map((item) => ({
+        id: item.id,
+        material_code: item.material_code,
+        material_description: item.material_description,
+        unit_of_measure: item.unit_of_measure ?? "",
+        unit_price: Number(item.unit_price),
+        tax_percent: item.tax_percent != null ? Number(item.tax_percent) : null,
+        quantity: Number(item.quantity),
+        max_quantity: null,
+      })),
+    )
+    setIsEditing(true)
+
+    if (!order.requisition_code?.trim()) return
+
+    const supabase = createClient()
+    const { data: reqData } = await supabase
+      .from("requisitions")
+      .select("id")
+      .eq("code", order.requisition_code.trim())
+      .eq("company_id", order.company_id)
+      .maybeSingle()
+
+    if (!reqData) return
+
+    const { data: reqItems } = await supabase
+      .from("requisition_items")
+      .select("material_code, quantity")
+      .eq("requisition_id", reqData.id)
+
+    if (!reqItems?.length) return
+
+    const reqMap = Object.fromEntries(
+      reqItems.map((ri) => [ri.material_code as string, Number(ri.quantity)]),
+    )
+    setEditItems((prev) =>
+      prev.map((row) => ({
+        ...row,
+        max_quantity: reqMap[row.material_code] ?? null,
+      })),
+    )
+  }
+
+  const handleSaveAndResend = async () => {
+    if (!order || !companyId) return
+
+    if (editForm.delivery_days.trim()) {
+      const d = parseInt(editForm.delivery_days, 10)
+      if (Number.isNaN(d) || d < 1) {
+        toast.error("Prazo de entrega deve ser um número inteiro a partir de 1.")
+        return
+      }
+    }
+
+    for (const item of editItems) {
+      if (item.max_quantity != null && item.quantity > item.max_quantity) {
+        toast.error(
+          `${item.material_code}: quantidade excede a requisição (máx: ${item.max_quantity})`,
+        )
+        return
+      }
+      if (item.quantity <= 0 || !Number.isFinite(item.quantity)) {
+        toast.error(`${item.material_code}: quantidade deve ser maior que zero`)
+        return
+      }
+    }
+
+    setSavingEdit(true)
+    try {
+      const supabase = createClient()
+
+      const { error: orderError } = await supabase
+        .from("purchase_orders")
+        .update({
+          payment_condition: editForm.payment_condition.trim() || null,
+          delivery_days: editForm.delivery_days.trim()
+            ? (() => {
+                const n = parseInt(editForm.delivery_days, 10)
+                return Number.isNaN(n) ? null : n
+              })()
+            : null,
+          delivery_address: editForm.delivery_address.trim() || null,
+          observations: editForm.observations.trim() || null,
+          status: "sent",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id)
+        .eq("company_id", companyId)
+
+      if (orderError) throw orderError
+
+      const itemResults = await Promise.all(
+        editItems.map((row) =>
+          supabase.from("purchase_order_items").update({ quantity: row.quantity }).eq("id", row.id),
+        ),
+      )
+      const firstItemErr = itemResults.find((r) => r.error)?.error
+      if (firstItemErr) throw firstItemErr
+
+      toast.success("Pedido atualizado e reenviado ao fornecedor.")
+      setIsEditing(false)
+      await fetchOrderData({ silent: true })
+    } catch (err) {
+      console.error(err)
+      toast.error("Erro ao salvar: " + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -513,6 +688,10 @@ export default function PurchaseOrderDetailPage({
 
   const totalItemsCount = items.length
 
+  const displayedOrderTotal = isEditing
+    ? editItems.reduce((s, i) => s + i.quantity * i.unit_price, 0)
+    : (order.total_price ?? 0)
+
   const getStepState = (index: number) => {
     const step = steps[index]
     if (step.completed) return "done" as const
@@ -631,24 +810,56 @@ export default function PurchaseOrderDetailPage({
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-destructive border-destructive hover:bg-destructive/10"
-                disabled={cancellingRefused || resendingOrder}
-                onClick={() => setCancelRefusedOpen(true)}
-              >
-                <X className="mr-2 h-4 w-4" />
-                Cancelar Pedido
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                disabled={cancellingRefused || resendingOrder}
-                onClick={() => setResendOpen(true)}
-              >
-                Reenviar ao Fornecedor
-              </Button>
+              {!isEditing ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={cancellingRefused || resendingOrder || savingEdit}
+                    onClick={() => void handleStartEdit()}
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Editar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive border-destructive hover:bg-destructive/10"
+                    disabled={cancellingRefused || resendingOrder || savingEdit}
+                    onClick={() => setCancelRefusedOpen(true)}
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Cancelar Pedido
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={cancellingRefused || resendingOrder || savingEdit}
+                    onClick={() => setResendOpen(true)}
+                  >
+                    Reenviar ao Fornecedor
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={savingEdit}
+                    onClick={() => setIsEditing(false)}
+                  >
+                    Cancelar Edição
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={savingEdit}
+                    className="bg-green-600 text-white hover:bg-green-700"
+                    onClick={() => void handleSaveAndResend()}
+                  >
+                    {savingEdit ? "Salvando..." : "Salvar e Reenviar →"}
+                  </Button>
+                </>
+              )}
             </>
           )}
           <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
@@ -724,17 +935,72 @@ export default function PurchaseOrderDetailPage({
                 {order.supplier_cnpj ?? "—"}
               </p>
             </div>
-            <div>
+            <div className="space-y-2">
               <p className="text-xs text-muted-foreground">Condição de Pagamento</p>
-              <p className="text-sm text-muted-foreground">
-                {order.payment_condition ?? "—"}
-              </p>
+              {isEditing ? (
+                paymentOptions.length > 0 ? (
+                  <div className="space-y-2">
+                    <Select
+                      value={
+                        paymentOptions.some((o) => o.code === editForm.payment_condition)
+                          ? editForm.payment_condition
+                          : undefined
+                      }
+                      onValueChange={(v) =>
+                        setEditForm((f) => ({ ...f, payment_condition: v }))
+                      }
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Selecione a condição de pagamento" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {paymentOptions.map((opt) => (
+                          <SelectItem key={opt.id} value={opt.code}>
+                            {opt.code} — {opt.description}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {!paymentOptions.some((o) => o.code === editForm.payment_condition) &&
+                    editForm.payment_condition.trim() ? (
+                      <p className="text-xs text-muted-foreground">
+                        Valor atual (fora da lista cadastrada): {editForm.payment_condition}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <Input
+                    value={editForm.payment_condition}
+                    onChange={(e) =>
+                      setEditForm((f) => ({ ...f, payment_condition: e.target.value }))
+                    }
+                    placeholder="Condição de pagamento"
+                  />
+                )
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {order.payment_condition ?? "—"}
+                </p>
+              )}
             </div>
-            <div>
+            <div className="space-y-2">
               <p className="text-xs text-muted-foreground">Prazo de Entrega</p>
-              <p className="text-sm font-medium">
-                {order.delivery_days != null ? `${order.delivery_days} dias` : "—"}
-              </p>
+              {isEditing ? (
+                <Input
+                  type="number"
+                  min={1}
+                  value={editForm.delivery_days}
+                  onChange={(e) =>
+                    setEditForm((f) => ({ ...f, delivery_days: e.target.value }))
+                  }
+                  placeholder="Dias"
+                  className="max-w-[120px]"
+                />
+              ) : (
+                <p className="text-sm font-medium">
+                  {order.delivery_days != null ? `${order.delivery_days} dias` : "—"}
+                </p>
+              )}
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Entrega Prevista</p>
@@ -772,17 +1038,38 @@ export default function PurchaseOrderDetailPage({
                 {order.erp_code ?? "Aguardando integração"}
               </p>
             </div>
-            <div>
+            <div className="space-y-2">
               <p className="text-xs text-muted-foreground">Endereço de Entrega</p>
-              <p className="text-sm text-muted-foreground">
-                {order.delivery_address ?? "—"}
-              </p>
+              {isEditing ? (
+                <Input
+                  value={editForm.delivery_address}
+                  onChange={(e) =>
+                    setEditForm((f) => ({ ...f, delivery_address: e.target.value }))
+                  }
+                  placeholder="Endereço de entrega"
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {order.delivery_address ?? "—"}
+                </p>
+              )}
             </div>
-            <div>
+            <div className="space-y-2">
               <p className="text-xs text-muted-foreground">Observações</p>
-              <p className="text-sm text-muted-foreground">
-                {order.observations ?? "—"}
-              </p>
+              {isEditing ? (
+                <Textarea
+                  rows={3}
+                  value={editForm.observations}
+                  onChange={(e) =>
+                    setEditForm((f) => ({ ...f, observations: e.target.value }))
+                  }
+                  placeholder="Observações"
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {order.observations ?? "—"}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -794,10 +1081,22 @@ export default function PurchaseOrderDetailPage({
             <CardTitle>Itens do Pedido</CardTitle>
           </div>
           <Badge variant="outline" className="text-xs">
-            {totalItemsCount} item{totalItemsCount === 1 ? "" : "s"}
+            {(isEditing ? editItems.length : totalItemsCount)} item
+            {(isEditing ? editItems.length : totalItemsCount) === 1 ? "" : "s"}
           </Badge>
         </CardHeader>
         <CardContent>
+          {isEditing ? (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                Alterações na quantidade podem impactar o valor total acordado na proposta.
+                {order.requisition_code
+                  ? " A quantidade não pode exceder a requisição de origem."
+                  : null}
+              </span>
+            </div>
+          ) : null}
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -812,35 +1111,94 @@ export default function PurchaseOrderDetailPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell className="font-mono text-sm">
-                      {item.material_code}
-                    </TableCell>
-                    <TableCell>{item.material_description}</TableCell>
-                    <TableCell className="text-right">{item.quantity}</TableCell>
-                    <TableCell className="text-center">
-                      {item.unit_of_measure ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {money.format(item.unit_price)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {item.tax_percent == null ? "—" : `${item.tax_percent}%`}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {money.format(
-                        item.total_price ?? item.quantity * item.unit_price,
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {isEditing
+                  ? editItems.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-mono text-sm">
+                          {item.material_code}
+                        </TableCell>
+                        <TableCell>{item.material_description}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="inline-flex flex-col items-end gap-1">
+                            <input
+                              type="number"
+                              min={1}
+                              max={item.max_quantity ?? undefined}
+                              value={item.quantity}
+                              onChange={(e) => {
+                                const raw = e.target.value
+                                if (raw === "") return
+                                const val = Number(raw)
+                                if (!Number.isFinite(val)) return
+                                if (
+                                  item.max_quantity != null &&
+                                  val > item.max_quantity
+                                ) {
+                                  toast.error(
+                                    `Quantidade máxima para ${item.material_code}: ${item.max_quantity}`,
+                                  )
+                                  return
+                                }
+                                setEditItems((prev) =>
+                                  prev.map((i) =>
+                                    i.id === item.id ? { ...i, quantity: val } : i,
+                                  ),
+                                )
+                              }}
+                              className="h-8 w-20 rounded border border-input bg-background px-2 text-center text-sm"
+                            />
+                            {item.max_quantity != null ? (
+                              <p className="text-xs text-muted-foreground">
+                                máx: {item.max_quantity}
+                              </p>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {item.unit_of_measure || "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {money.format(item.unit_price)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.tax_percent == null
+                            ? "—"
+                            : `${item.tax_percent}%`}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {money.format(item.quantity * item.unit_price)}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  : items.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-mono text-sm">
+                          {item.material_code}
+                        </TableCell>
+                        <TableCell>{item.material_description}</TableCell>
+                        <TableCell className="text-right">{item.quantity}</TableCell>
+                        <TableCell className="text-center">
+                          {item.unit_of_measure ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {money.format(item.unit_price)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.tax_percent == null ? "—" : `${item.tax_percent}%`}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {money.format(
+                            item.total_price ?? item.quantity * item.unit_price,
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
                 <TableRow>
                   <TableCell colSpan={6} className="text-right font-bold">
                     Total do Pedido
                   </TableCell>
                   <TableCell className="text-right font-bold">
-                    {money.format(order.total_price ?? 0)}
+                    {money.format(displayedOrderTotal)}
                   </TableCell>
                 </TableRow>
               </TableBody>

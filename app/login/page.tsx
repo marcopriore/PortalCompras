@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
@@ -11,7 +10,6 @@ import { Label } from '@/components/ui/label'
 import { logAudit } from '@/lib/audit'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -52,14 +50,18 @@ export default function LoginPage() {
         return
       }
 
-      await logAudit({
-        eventType: 'user.login',
-        description: `Login realizado por ${email}`,
-        userName: email,
-        metadata: { email },
-      })
+      try {
+        await logAudit({
+          eventType: 'user.login',
+          description: `Login realizado por ${email}`,
+          userName: email,
+          metadata: { email },
+        })
+      } catch {
+        // não bloquear redirect se auditoria falhar
+      }
 
-      router.push('/comprador')
+      window.location.href = '/comprador'
     } catch {
       toast.error('Erro inesperado ao entrar. Tente novamente.')
     } finally {
