@@ -9,6 +9,7 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  ShoppingCart,
 } from "lucide-react"
 import { toast } from "sonner"
 import { ValoreLogo } from "@/components/ui/valore-logo"
@@ -34,6 +35,7 @@ const ACTIVE_BORDER = "#4F3EF5"
 const navItems = [
   { href: "/fornecedor", label: "Dashboard", icon: LayoutDashboard },
   { href: "/fornecedor/cotacoes", label: "Cotações", icon: FileText },
+  { href: "/fornecedor/pedidos", label: "Pedidos", icon: ShoppingCart },
 ] as const
 
 export interface FornecedorPortalShellProps {

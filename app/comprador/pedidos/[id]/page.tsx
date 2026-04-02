@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table"
 import {
   AlertCircle,
+  AlertTriangle,
   CheckCircle,
   CheckCircle2,
   ChevronLeft,
@@ -40,8 +41,16 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import type { LucideIcon } from "lucide-react"
+import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
 
-type PurchaseOrderStatus = "draft" | "processing" | "sent" | "error" | "completed"
+type PurchaseOrderStatus =
+  | "draft"
+  | "processing"
+  | "sent"
+  | "refused"
+  | "error"
+  | "completed"
+  | "cancelled"
 
 type PurchaseOrder = {
   id: string
@@ -57,6 +66,10 @@ type PurchaseOrder = {
   total_price: number | null
   status: PurchaseOrderStatus
   erp_error_message: string | null
+  cancellation_reason: string | null
+  estimated_delivery_date: string | null
+  delivery_date_change_reason: string | null
+  accepted_at: string | null
   observations: string | null
   created_at: string
   updated_at: string | null
@@ -78,31 +91,37 @@ const money = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
 })
 
-const statusConfig: Record<
-  PurchaseOrderStatus,
-  { label: string; className: string; Icon?: LucideIcon }
-> = {
-  draft: {
-    label: "Rascunho",
-    className: "bg-zinc-100 text-zinc-700 border border-zinc-200",
-    Icon: FileEdit,
-  },
-  processing: {
-    label: "Em Processamento",
-    className: "bg-yellow-100 text-yellow-800",
-  },
-  sent: {
-    label: "Enviado ao ERP",
-    className: "bg-blue-100 text-blue-800",
-  },
-  error: {
-    label: "Erro no ERP",
-    className: "bg-red-100 text-red-800",
-  },
-  completed: {
-    label: "Concluído",
-    className: "bg-green-100 text-green-800",
-  },
+function formatDateBRDateOnly(value: string | null | undefined): string {
+  if (!value) return "—"
+  const s = String(value).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split("-").map(Number)
+    return format(new Date(y, m - 1, d), "dd/MM/yyyy", { locale: ptBR })
+  }
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return "—"
+  return format(d, "dd/MM/yyyy", { locale: ptBR })
+}
+
+function addCalendarDaysFromAcceptedAt(acceptedAtIso: string, days: number): string {
+  const d = new Date(acceptedAtIso)
+  if (Number.isNaN(d.getTime())) return ""
+  d.setDate(d.getDate() + days)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+function getOrderEstimatedDeliveryLabel(order: PurchaseOrder): string {
+  if (order.estimated_delivery_date) {
+    return formatDateBRDateOnly(order.estimated_delivery_date)
+  }
+  if (order.accepted_at && order.delivery_days != null && order.delivery_days > 0) {
+    const ymd = addCalendarDaysFromAcceptedAt(order.accepted_at, order.delivery_days)
+    return ymd ? formatDateBRDateOnly(ymd) : "—"
+  }
+  return "—"
 }
 
 function getTodayDDMMYYYY() {
@@ -143,6 +162,10 @@ export default function PurchaseOrderDetailPage({
   const [exporting, setExporting] = React.useState(false)
   const [confirmingPedido, setConfirmingPedido] = React.useState(false)
   const [cancellingPedido, setCancellingPedido] = React.useState(false)
+  const [cancelRefusedOpen, setCancelRefusedOpen] = React.useState(false)
+  const [resendOpen, setResendOpen] = React.useState(false)
+  const [cancellingRefused, setCancellingRefused] = React.useState(false)
+  const [resendingOrder, setResendingOrder] = React.useState(false)
 
   const fetchOrderData = React.useCallback(
     async (options?: { silent?: boolean }) => {
@@ -179,11 +202,11 @@ export default function PurchaseOrderDetailPage({
       const supabase = createClient()
       const { error } = await supabase
         .from("purchase_orders")
-        .update({ status: "processing" })
+        .update({ status: "sent" })
         .eq("id", order.id)
         .eq("company_id", companyId)
       if (error) throw error
-      toast.success("Pedido confirmado e enviado para processamento.")
+      toast.success("Pedido enviado ao fornecedor. Aguardando aceite.")
       await fetchOrderData({ silent: true })
     } catch (e) {
       console.error(e)
@@ -201,18 +224,63 @@ export default function PurchaseOrderDetailPage({
       const { error } = await supabase
         .from("purchase_orders")
         .update({
-          status: "error",
-          erp_error_message: "Pedido cancelado pelo comprador",
+          status: "cancelled",
+          cancellation_reason: "Pedido cancelado pelo comprador",
         })
         .eq("id", order.id)
         .eq("company_id", companyId)
       if (error) throw error
+      toast.success("Pedido cancelado.")
       await fetchOrderData({ silent: true })
     } catch (e) {
       console.error(e)
       toast.error("Não foi possível cancelar o pedido.")
     } finally {
       setCancellingPedido(false)
+    }
+  }
+
+  const handleCancelFromRefused = async () => {
+    if (!order || !companyId) return
+    setCancellingRefused(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({ status: "cancelled" })
+        .eq("id", order.id)
+        .eq("company_id", companyId)
+      if (error) throw error
+      toast.success("Pedido cancelado.")
+      setCancelRefusedOpen(false)
+      await fetchOrderData({ silent: true })
+    } catch (e) {
+      console.error(e)
+      toast.error("Não foi possível cancelar o pedido.")
+    } finally {
+      setCancellingRefused(false)
+    }
+  }
+
+  const handleResendToSupplier = async () => {
+    if (!order || !companyId) return
+    setResendingOrder(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from("purchase_orders")
+        .update({ status: "sent" })
+        .eq("id", order.id)
+        .eq("company_id", companyId)
+      if (error) throw error
+      toast.success("Pedido reenviado ao fornecedor.")
+      setResendOpen(false)
+      await fetchOrderData({ silent: true })
+    } catch (e) {
+      console.error(e)
+      toast.error("Não foi possível reenviar o pedido.")
+    } finally {
+      setResendingOrder(false)
     }
   }
 
@@ -249,6 +317,7 @@ export default function PurchaseOrderDetailPage({
         ["CNPJ:", order.supplier_cnpj ?? "—"],
         ["Condição de Pagamento:", order.payment_condition ?? "—"],
         ["Prazo de Entrega:", order.delivery_days != null ? `${order.delivery_days} dias` : "—"],
+        ["Entrega Prevista:", getOrderEstimatedDeliveryLabel(order)],
         ["Código Cotação:", order.quotation_code ?? "—"],
         ["Código Requisição:", order.requisition_code ?? "—"],
         ["Endereço de Entrega:", order.delivery_address ?? "—"],
@@ -400,7 +469,7 @@ export default function PurchaseOrderDetailPage({
     ? format(new Date(order.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })
     : "—"
 
-  const statusDisplay = statusConfig[order.status]
+  const statusDisplay = getPOStatusForBuyer(order.status)
 
   const steps: {
     key: string
@@ -418,12 +487,26 @@ export default function PurchaseOrderDetailPage({
     },
     {
       key: "sent",
-      label: "Enviado ao ERP",
-      completed: order.status === "sent" || order.status === "completed" || order.status === "error",
+      label: "Aguardando aceite do fornecedor",
+      completed:
+        order.status === "processing" ||
+        order.status === "completed" ||
+        order.status === "error" ||
+        order.status === "refused",
+    },
+    {
+      key: "processing",
+      label: "Processando integração com o ERP",
+      completed: order.status === "completed" || order.status === "error",
     },
     {
       key: "final",
-      label: order.status === "error" ? "Erro no ERP" : "Integrado",
+      label:
+        order.status === "error"
+          ? "Erro na integração"
+          : order.status === "completed"
+            ? "Concluído"
+            : "Pendente",
       completed: order.status === "completed" || order.status === "error",
     },
   ]
@@ -450,10 +533,10 @@ export default function PurchaseOrderDetailPage({
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <span
-            className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusDisplay.className}`}
+            className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${poStatusBadgeClass(statusDisplay.color)}`}
           >
-            {statusDisplay.Icon ? (
-              <statusDisplay.Icon className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            {order.status === "draft" ? (
+              <FileEdit className="mr-1.5 h-3.5 w-3.5 shrink-0" aria-hidden />
             ) : null}
             {statusDisplay.label}
           </span>
@@ -484,8 +567,7 @@ export default function PurchaseOrderDetailPage({
                   <AlertDialogHeader>
                     <AlertDialogTitle>Cancelar pedido?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      O pedido será marcado como cancelado. Esta ação pode ser revisada no histórico do
-                      pedido.
+                      O pedido será marcado como cancelado e não seguirá para o fornecedor.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -502,6 +584,73 @@ export default function PurchaseOrderDetailPage({
               </AlertDialog>
             </>
           )}
+          {order.status === "refused" && (
+            <>
+              <AlertDialog open={cancelRefusedOpen} onOpenChange={setCancelRefusedOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Cancelar pedido?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      O pedido será marcado como cancelado definitivamente.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={cancellingRefused}>Voltar</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      disabled={cancellingRefused}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        void handleCancelFromRefused()
+                      }}
+                    >
+                      {cancellingRefused ? "Cancelando..." : "Confirmar cancelamento"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <AlertDialog open={resendOpen} onOpenChange={setResendOpen}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Reenviar ao fornecedor?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Reenviar pedido {order.code} ao fornecedor?
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel disabled={resendingOrder}>Voltar</AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={resendingOrder}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        void handleResendToSupplier()
+                      }}
+                    >
+                      {resendingOrder ? "Enviando..." : "Confirmar reenvio"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive border-destructive hover:bg-destructive/10"
+                disabled={cancellingRefused || resendingOrder}
+                onClick={() => setCancelRefusedOpen(true)}
+              >
+                <X className="mr-2 h-4 w-4" />
+                Cancelar Pedido
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                disabled={cancellingRefused || resendingOrder}
+                onClick={() => setResendOpen(true)}
+              >
+                Reenviar ao Fornecedor
+              </Button>
+            </>
+          )}
           <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
             <Download className="mr-2 h-4 w-4" />
             {exporting ? "Exportando..." : "Exportar"}
@@ -515,6 +664,35 @@ export default function PurchaseOrderDetailPage({
           <div>
             <p className="text-sm font-medium text-destructive">Erro ao integrar com o ERP</p>
             <p className="text-sm text-destructive/90">{order.erp_error_message}</p>
+          </div>
+        </div>
+      )}
+
+      {order.status === "refused" && (
+        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex gap-3 items-start">
+          <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5 shrink-0" />
+          <div className="space-y-1 text-sm text-orange-900">
+            <p className="font-medium">Este pedido foi recusado pelo fornecedor.</p>
+            {order.cancellation_reason?.trim() ? (
+              <p className="text-orange-800">Motivo: {order.cancellation_reason}</p>
+            ) : null}
+            <p className="text-orange-800/90">
+              Revise as condições e reenvie, ou cancele o pedido.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {order.status === "cancelled" && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex gap-3 items-start">
+          <X className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-red-900">Pedido cancelado</p>
+            {order.cancellation_reason?.trim() ? (
+              <p className="text-sm text-red-800/90 mt-1">{order.cancellation_reason}</p>
+            ) : (
+              <p className="text-sm text-red-800/90 mt-1">Este pedido não seguirá no fluxo.</p>
+            )}
           </div>
         </div>
       )}
@@ -554,9 +732,19 @@ export default function PurchaseOrderDetailPage({
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Prazo de Entrega</p>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm font-medium">
                 {order.delivery_days != null ? `${order.delivery_days} dias` : "—"}
               </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Entrega Prevista</p>
+              <p className="text-sm font-medium">{getOrderEstimatedDeliveryLabel(order)}</p>
+              {order.delivery_date_change_reason ? (
+                <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+                  Data atualizada pelo fornecedor
+                </p>
+              ) : null}
             </div>
           </CardContent>
         </Card>
@@ -666,6 +854,15 @@ export default function PurchaseOrderDetailPage({
           <CardTitle>Histórico</CardTitle>
         </CardHeader>
         <CardContent>
+          {order.status === "cancelled" ? (
+            <p className="text-sm text-muted-foreground">
+              O fluxo foi encerrado. O motivo consta no aviso acima.
+            </p>
+          ) : order.status === "refused" ? (
+            <p className="text-sm text-muted-foreground">
+              O fornecedor recusou o pedido. Use os botões no topo para reenviar ou cancelar.
+            </p>
+          ) : (
           <ol className="relative border-l border-border pl-4 space-y-4">
             {steps.map((step, index) => {
               const state = getStepState(index)
@@ -704,6 +901,7 @@ export default function PurchaseOrderDetailPage({
               )
             })}
           </ol>
+          )}
         </CardContent>
       </Card>
     </div>

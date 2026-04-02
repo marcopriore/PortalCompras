@@ -22,14 +22,21 @@ import {
 import {
   ShoppingCart,
   Clock,
-  Send,
   CheckCircle,
   Search,
   Eye,
   X,
 } from "lucide-react"
+import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
 
-type PurchaseOrderStatus = "draft" | "processing" | "sent" | "error" | "completed"
+type PurchaseOrderStatus =
+  | "draft"
+  | "processing"
+  | "sent"
+  | "refused"
+  | "error"
+  | "completed"
+  | "cancelled"
 
 type PurchaseOrder = {
   id: string
@@ -59,37 +66,6 @@ const money = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
 })
 
-function getStatusMeta(status: PurchaseOrderStatus): { label: string; className: string } {
-  if (status === "draft") {
-    return {
-      label: "Rascunho",
-      className: "bg-zinc-100 text-zinc-700 border border-zinc-200",
-    }
-  }
-  if (status === "processing") {
-    return {
-      label: "Em Processamento",
-      className: "bg-yellow-100 text-yellow-800",
-    }
-  }
-  if (status === "sent") {
-    return {
-      label: "Enviado ao ERP",
-      className: "bg-blue-100 text-blue-800",
-    }
-  }
-  if (status === "error") {
-    return {
-      label: "Erro no ERP",
-      className: "bg-red-100 text-red-800",
-    }
-  }
-  return {
-    label: "Concluído",
-    className: "bg-green-100 text-green-800",
-  }
-}
-
 export default function PedidosPage() {
   const router = useRouter()
   const { companyId } = useUser()
@@ -98,7 +74,7 @@ export default function PedidosPage() {
   const [loading, setLoading] = React.useState(true)
   const [filters, setFilters] = React.useState<Filters>({
     search: "",
-    status: ["draft", "processing", "sent", "error"],
+    status: ["draft", "sent", "refused", "processing", "error", "completed", "cancelled"],
     dateFrom: "",
     dateTo: "",
   })
@@ -137,7 +113,7 @@ export default function PedidosPage() {
   const clearFilters = () => {
     setFilters({
       search: "",
-      status: ["draft", "processing", "sent", "error"],
+      status: ["draft", "sent", "refused", "processing", "error", "completed", "cancelled"],
       dateFrom: "",
       dateTo: "",
     })
@@ -170,10 +146,10 @@ export default function PedidosPage() {
 
   const metrics = React.useMemo(() => {
     const total = orders.length
-    const processing = orders.filter((o) => o.status === "processing").length
-    const sent = orders.filter((o) => o.status === "sent").length
+    const awaitingAccept = orders.filter((o) => o.status === "sent").length
+    const processingIntegration = orders.filter((o) => o.status === "processing").length
     const completed = orders.filter((o) => o.status === "completed").length
-    return { total, processing, sent, completed }
+    return { total, awaitingAccept, processingIntegration, completed }
   }, [orders])
 
   const hasActiveFilters =
@@ -204,22 +180,24 @@ export default function PedidosPage() {
             <ShoppingCart className="w-6 h-6 text-blue-600" />
           </div>
         </div>
-        <div className="min-w-0 bg-white border border-yellow-100 rounded-xl p-5 flex items-center justify-between">
+        <div className="min-w-0 bg-white border border-amber-100 rounded-xl p-5 flex items-center justify-between">
           <div>
-            <p className="text-sm text-yellow-600 font-medium">Em Processamento</p>
-            <p className="text-3xl font-bold text-yellow-700 mt-1">{metrics.processing}</p>
+            <p className="text-sm text-amber-600 font-medium">Aguardando Aceite</p>
+            <p className="text-3xl font-bold text-amber-700 mt-1">{metrics.awaitingAccept}</p>
           </div>
-          <div className="bg-yellow-100 p-3 rounded-full">
-            <Clock className="w-6 h-6 text-yellow-600" />
+          <div className="bg-amber-100 p-3 rounded-full">
+            <Clock className="w-6 h-6 text-amber-600" />
           </div>
         </div>
-        <div className="min-w-0 bg-white border border-purple-100 rounded-xl p-5 flex items-center justify-between">
+        <div className="min-w-0 bg-white border border-blue-100 rounded-xl p-5 flex items-center justify-between">
           <div>
-            <p className="text-sm text-purple-600 font-medium">Enviados ao ERP</p>
-            <p className="text-3xl font-bold text-purple-700 mt-1">{metrics.sent}</p>
+            <p className="text-sm text-blue-600 font-medium">Processando Integração</p>
+            <p className="text-3xl font-bold text-blue-700 mt-1">
+              {metrics.processingIntegration}
+            </p>
           </div>
-          <div className="bg-purple-100 p-3 rounded-full">
-            <Send className="w-6 h-6 text-purple-600" />
+          <div className="bg-blue-100 p-3 rounded-full">
+            <CheckCircle className="w-6 h-6 text-blue-600" />
           </div>
         </div>
         <div className="min-w-0 bg-white border border-green-100 rounded-xl p-5 flex items-center justify-between">
@@ -269,10 +247,12 @@ export default function PedidosPage() {
                 label="Status"
                 options={[
                   { value: "draft", label: "Rascunho" },
-                  { value: "processing", label: "Processando" },
-                  { value: "sent", label: "Enviado" },
-                  { value: "error", label: "Erro" },
+                  { value: "sent", label: "Aguardando Aceite" },
+                  { value: "refused", label: "Recusado pelo Fornecedor" },
+                  { value: "processing", label: "Processando Integração" },
+                  { value: "error", label: "Erro Integração" },
                   { value: "completed", label: "Concluído" },
+                  { value: "cancelled", label: "Cancelado" },
                 ]}
                 selected={filters.status}
                 onChange={(values) => setFilters((prev) => ({ ...prev, status: values }))}
@@ -348,7 +328,7 @@ export default function PedidosPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredOrders.map((order) => {
-                    const statusMeta = getStatusMeta(order.status)
+                    const statusMeta = getPOStatusForBuyer(order.status)
                     const itemsCount = order.purchase_order_items?.length ?? 0
                     const created = order.created_at
                       ? format(new Date(order.created_at), "dd/MM/yyyy", {
@@ -390,7 +370,7 @@ export default function PedidosPage() {
                           <TableCell>{prazo}</TableCell>
                           <TableCell>
                             <span
-                              className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${statusMeta.className}`}
+                              className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${poStatusBadgeClass(statusMeta.color)}`}
                             >
                               {statusMeta.label}
                             </span>

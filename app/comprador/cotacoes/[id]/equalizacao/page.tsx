@@ -1156,13 +1156,19 @@ export default function EqualizacaoPage({
           unitOfMeasure: string
           unitPrice: number
           taxPercent: number | null
+          deliveryDays: number | null
         }[] = []
 
         let totalPrice = 0
+        let maxDeliveryDaysFromItems = 0
         for (const qi of linesForPo) {
           const pi = proposalItemsByProposal.get(p.id)?.get(qi.id)
           if (!pi || pi.unit_price <= 0) continue
           totalPrice += pi.unit_price * qi.quantity
+          const lineDd = pi.delivery_days
+          if (lineDd != null && lineDd > maxDeliveryDaysFromItems) {
+            maxDeliveryDaysFromItems = lineDd
+          }
           itemsPayload.push({
             quotationItemId: qi.id,
             materialCode: qi.material_code,
@@ -1171,10 +1177,15 @@ export default function EqualizacaoPage({
             unitOfMeasure: qi.unit_of_measure,
             unitPrice: pi.unit_price,
             taxPercent: pi.tax_percent,
+            deliveryDays: pi.delivery_days ?? null,
           })
         }
 
         if (itemsPayload.length === 0) continue
+
+        const headerDeliveryDays = p.delivery_days ?? 0
+        const poDeliveryDays =
+          maxDeliveryDaysFromItems > 0 ? maxDeliveryDaysFromItems : headerDeliveryDays
 
         const { data: poData, error: purchaseOrderInsertError } = await supabase
           .from("purchase_orders")
@@ -1182,10 +1193,11 @@ export default function EqualizacaoPage({
             company_id: companyId,
             quotation_id: quotation.id,
             proposal_id: p.id,
+            supplier_id: p.supplier_id ?? null,
             supplier_name: p.supplier_name,
             supplier_cnpj: p.supplier_cnpj,
             payment_condition: p.payment_condition,
-            delivery_days: p.delivery_days,
+            delivery_days: poDeliveryDays > 0 ? poDeliveryDays : null,
             delivery_address: "A definir",
             quotation_code: quotation.code,
             requisition_code: null,
@@ -1216,6 +1228,7 @@ export default function EqualizacaoPage({
           unit_of_measure: i.unitOfMeasure,
           unit_price: i.unitPrice,
           tax_percent: i.taxPercent,
+          delivery_days: i.deliveryDays,
         }))
 
         const { error: purchaseOrderItemsInsertError } = await supabase

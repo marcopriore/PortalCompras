@@ -34,6 +34,7 @@ type ProposalItem = {
   quotation_item_id: string
   unit_price: number
   tax_percent: number | null
+  delivery_days: number | null
   item_status: "accepted" | "rejected"
   observations: string | null
 }
@@ -41,6 +42,7 @@ type ProposalItem = {
 type Proposal = {
   id: string
   quotation_id: string
+  supplier_id: string | null
   supplier_name: string
   supplier_cnpj: string | null
   payment_condition: string | null
@@ -189,6 +191,18 @@ export default function NovoPedidoPage({
     [items],
   )
 
+  const displayMaxDeliveryDays = React.useMemo(() => {
+    if (!proposal) return null
+    const max = proposal.proposal_items
+      .filter((pi) => pi.item_status === "accepted")
+      .reduce((m, pi) => {
+        const dd = pi.delivery_days
+        return dd != null && dd > m ? dd : m
+      }, 0)
+    if (max > 0) return max
+    return proposal.delivery_days
+  }, [proposal])
+
   const handleChangeForm =
     (field: keyof typeof form) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -210,16 +224,25 @@ export default function NovoPedidoPage({
     try {
       const supabase = createClient()
 
+      const acceptedProposalItems = proposal.proposal_items.filter(
+        (pi) => pi.item_status === "accepted",
+      )
+      const maxDeliveryDays = acceptedProposalItems.reduce((max, pi) => {
+        const dd = pi.delivery_days
+        return dd != null && dd > max ? dd : max
+      }, 0)
+
       const { data: poData, error: poError } = await supabase
         .from("purchase_orders")
         .insert({
           company_id: companyId,
           quotation_id: quotation.id,
           proposal_id: proposal.id,
+          supplier_id: proposal.supplier_id ?? null,
           supplier_name: proposal.supplier_name,
           supplier_cnpj: proposal.supplier_cnpj,
           payment_condition: proposal.payment_condition,
-          delivery_days: proposal.delivery_days,
+          delivery_days: maxDeliveryDays > 0 ? maxDeliveryDays : null,
           delivery_address: form.deliveryAddress,
           quotation_code: quotation.code,
           requisition_code: form.requisitionCode || null,
@@ -240,17 +263,25 @@ export default function NovoPedidoPage({
       const purchaseOrderId = poData.id as string
 
       if (items.length > 0) {
-        const itemsPayload = items.map((i) => ({
-          purchase_order_id: purchaseOrderId,
-          company_id: companyId,
-          quotation_item_id: i.quotationItemId,
-          material_code: i.materialCode,
-          material_description: i.materialDescription,
-          quantity: i.quantity,
-          unit_of_measure: i.unitOfMeasure,
-          unit_price: i.unitPrice,
-          tax_percent: i.taxPercent,
-        }))
+        const itemsPayload = items.map((i) => {
+          const pi = proposal.proposal_items.find(
+            (p) =>
+              p.quotation_item_id === i.quotationItemId &&
+              p.item_status === "accepted",
+          )
+          return {
+            purchase_order_id: purchaseOrderId,
+            company_id: companyId,
+            quotation_item_id: i.quotationItemId,
+            material_code: i.materialCode,
+            material_description: i.materialDescription,
+            quantity: i.quantity,
+            unit_of_measure: i.unitOfMeasure,
+            unit_price: i.unitPrice,
+            tax_percent: i.taxPercent,
+            delivery_days: pi?.delivery_days ?? null,
+          }
+        })
 
         await supabase.from("purchase_order_items").insert(itemsPayload)
       }
@@ -336,7 +367,7 @@ export default function NovoPedidoPage({
     supplierName: proposal.supplier_name,
     supplierCnpj: proposal.supplier_cnpj,
     paymentCondition: proposal.payment_condition,
-    deliveryDays: proposal.delivery_days,
+    deliveryDays: displayMaxDeliveryDays,
     quotationCode: quotation.code,
     deliveryAddress: form.deliveryAddress,
     requisitionCode: form.requisitionCode,
@@ -403,7 +434,9 @@ export default function NovoPedidoPage({
             <div>
               <Label>Prazo de Entrega</Label>
               <p className="mt-1 text-sm text-muted-foreground">
-                {filledForm.deliveryDays != null ? `${filledForm.deliveryDays} dias` : "—"}
+                {filledForm.deliveryDays != null && filledForm.deliveryDays > 0
+                  ? `${filledForm.deliveryDays} dias`
+                  : "—"}
               </p>
             </div>
           </div>
