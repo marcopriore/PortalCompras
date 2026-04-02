@@ -3,16 +3,6 @@
 import * as React from "react"
 import Link from "next/link"
 import {
-  CheckCircle,
-  Mail,
-  Package,
-  ShoppingCart,
-  Send,
-  XCircle,
-  Trophy,
-} from "lucide-react"
-import type { LucideIcon } from "lucide-react"
-import {
   PieChart,
   Pie,
   Cell,
@@ -27,35 +17,14 @@ import {
 } from "recharts"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
-import { getPOStatusForSupplier } from "@/lib/po-status"
-
-type ProposalActivityRow = {
-  status: string
-  updated_at: string
-  quotation_id: string
-  quotations: { code: string } | { code: string }[] | null
-}
-
-type OrderActivityRow = {
-  id: string
-  code: string
-  status: string
-  updated_at: string
-  accepted_at: string | null
-  estimated_delivery_date: string | null
-  cancellation_reason: string | null
-}
-
-type ActivityItem = {
-  id: string
-  type: "proposal" | "order"
-  status: string
-  updated_at: string
-  label: string
-  code: string
-  icon: LucideIcon
-  iconClass: string
-}
+import {
+  mapOrderRowsToActivityItems,
+  mapProposalRowsToActivityItems,
+  mergeActivityByUpdatedAt,
+  type ActivityItem,
+  type OrderActivityRow,
+  type ProposalActivityRow,
+} from "@/lib/utils/activity-helpers"
 
 function relativeListDay(iso: string): string {
   const t = new Date(iso)
@@ -67,19 +36,6 @@ function relativeListDay(iso: string): string {
   if (diff <= 0) return "hoje"
   if (diff === 1) return "ontem"
   return `há ${diff} dias`
-}
-
-function pickQuotationCode(embed: ProposalActivityRow["quotations"]): string {
-  if (!embed) return "—"
-  if (Array.isArray(embed)) return embed[0]?.code ?? "—"
-  return embed.code ?? "—"
-}
-
-const proposalStatusLabel: Record<string, string> = {
-  invited: "Convite recebido",
-  submitted: "Proposta enviada",
-  selected: "Proposta selecionada",
-  rejected: "Proposta não selecionada",
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -192,109 +148,13 @@ export default function FornecedorDashboardPage() {
         if (proposalsRes.error) throw proposalsRes.error
         if (ordersRes.error) throw ordersRes.error
 
-        const mappedProposals: ActivityItem[] = ((proposalsRes.data as ProposalActivityRow[]) ?? []).map((row, idx) => {
-          let icon: LucideIcon = Send
-          let iconClass = "text-green-600"
-          if (row.status === "invited") {
-            icon = Mail
-            iconClass = "text-blue-600"
-          } else if (row.status === "selected") {
-            icon = Trophy
-            iconClass = "text-amber-500"
-          } else if (row.status === "rejected") {
-            icon = XCircle
-            iconClass = "text-red-600"
-          }
-
-          return {
-            id: `${row.quotation_id}-${row.updated_at}-${idx}`,
-            type: "proposal",
-            status: row.status,
-            updated_at: row.updated_at,
-            label: proposalStatusLabel[row.status] ?? `Status: ${row.status}`,
-            code: pickQuotationCode(row.quotations),
-            icon,
-            iconClass,
-          }
-        })
-
-        const mappedOrders: ActivityItem[] = ((ordersRes.data as OrderActivityRow[]) ?? []).map((row) => {
-          const baseLabel = getPOStatusForSupplier(row.status).label
-          if (row.status === "sent") {
-            return {
-              id: row.id,
-              type: "order",
-              status: row.status,
-              updated_at: row.updated_at,
-              label: `Pedido recebido — ${row.code}`,
-              code: row.code,
-              icon: ShoppingCart,
-              iconClass: "text-blue-600",
-            }
-          }
-          if (row.status === "processing") {
-            return {
-              id: row.id,
-              type: "order",
-              status: row.status,
-              updated_at: row.updated_at,
-              label: `Pedido aceito — ${row.code}`,
-              code: row.code,
-              icon: CheckCircle,
-              iconClass: "text-green-600",
-            }
-          }
-          if (row.status === "refused") {
-            return {
-              id: row.id,
-              type: "order",
-              status: row.status,
-              updated_at: row.updated_at,
-              label: `Pedido recusado — ${row.code}`,
-              code: row.code,
-              icon: XCircle,
-              iconClass: "text-red-600",
-            }
-          }
-          if (row.status === "completed") {
-            return {
-              id: row.id,
-              type: "order",
-              status: row.status,
-              updated_at: row.updated_at,
-              label: `Pedido finalizado — ${row.code}`,
-              code: row.code,
-              icon: Package,
-              iconClass: "text-green-600",
-            }
-          }
-          if (row.status === "cancelled") {
-            return {
-              id: row.id,
-              type: "order",
-              status: row.status,
-              updated_at: row.updated_at,
-              label: `Pedido cancelado — ${row.code}`,
-              code: row.code,
-              icon: XCircle,
-              iconClass: "text-slate-600",
-            }
-          }
-          return {
-            id: row.id,
-            type: "order",
-            status: row.status,
-            updated_at: row.updated_at,
-            label: `${baseLabel} — ${row.code}`,
-            code: row.code,
-            icon: ShoppingCart,
-            iconClass: "text-slate-600",
-          }
-        })
-
-        const combined = [...mappedProposals, ...mappedOrders]
-          .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-          .slice(0, 8)
+        const mappedProposals = mapProposalRowsToActivityItems(
+          (proposalsRes.data as ProposalActivityRow[]) ?? [],
+        )
+        const mappedOrders = mapOrderRowsToActivityItems(
+          (ordersRes.data as OrderActivityRow[]) ?? [],
+        )
+        const combined = mergeActivityByUpdatedAt(mappedProposals, mappedOrders).slice(0, 8)
 
         if (!cancelled) setActivity(combined)
       } catch (err) {
@@ -584,7 +444,7 @@ export default function FornecedorDashboardPage() {
         )}
         {!activityLoading && activity.length > 5 && (
           <Link
-            href="#"
+            href="/fornecedor/atividades"
             className="text-sm text-primary hover:underline cursor-pointer mt-2 inline-block"
           >
             Ver toda a atividade →

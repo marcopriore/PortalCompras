@@ -6,15 +6,23 @@ export function formatDateBR(dateStr: string | null | undefined): string {
   return `${d}/${m}/${y}`
 }
 
-/** Formata ISO timestamp para dd/mm/aaaa (data local) */
-export function formatDateTimeBR(dateStr: string | null | undefined): string {
+/** Formata ISO timestamp para dd/mm/aaaa (data local). Com `includeTime`, inclui HH:mm. */
+export function formatDateTimeBR(
+  dateStr: string | null | undefined,
+  includeTime = false,
+): string {
   if (!dateStr) return "—"
   const d = new Date(dateStr)
   if (Number.isNaN(d.getTime())) return "—"
   const dd = String(d.getDate()).padStart(2, "0")
   const mm = String(d.getMonth() + 1).padStart(2, "0")
   const yyyy = d.getFullYear()
-  return `${dd}/${mm}/${yyyy}`
+  if (!includeTime) {
+    return `${dd}/${mm}/${yyyy}`
+  }
+  const hh = String(d.getHours()).padStart(2, "0")
+  const min = String(d.getMinutes()).padStart(2, "0")
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`
 }
 
 /** Prazo em formato data (YYYY-MM-DD) já passou em relação ao dia civil atual */

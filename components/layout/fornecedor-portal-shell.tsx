@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils"
 const SIDEBAR_BG = "#1a1a2e"
 const ACTIVE_BORDER = "#4F3EF5"
 
+/** Rotas como /fornecedor/atividades não entram no menu; permanecem válidas sob este shell. */
 const navItems = [
   { href: "/fornecedor", label: "Dashboard", icon: LayoutDashboard },
   { href: "/fornecedor/cotacoes", label: "Cotações", icon: FileText },
