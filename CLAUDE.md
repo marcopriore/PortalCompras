@@ -10,7 +10,7 @@
 - Supabase (PostgreSQL + RLS + Auth)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.16.7
+- Versão atual: v2.18.0
 
 ---
 
@@ -113,7 +113,10 @@ Container: `grid grid-cols-4 gap-4 mb-6`
 | quotation_proposals | round_id FK quotation_rounds, status: invited/submitted/selected/rejected; **sem delivery_days no cabeçalho** |
 | proposal_items | round_id FK quotation_rounds (OBRIGATÓRIO); **delivery_days** (integer, nullable) — prazo por item |
 | requisitions | status: pending/approved/rejected/in_quotation/completed |
-| purchase_orders | status: draft/processing/sent/error/completed |
+| purchase_orders | status: draft/sent/processing/refused/error/completed/cancelled; **supplier_id**, **accepted_at**, **accepted_by_supplier**, **estimated_delivery_date** (date), **cancellation_reason**, **delivery_date_change_reason**; **delivery_days** no cabeçalho (maior prazo na criação) |
+| purchase_order_items | linhas do pedido; **delivery_days** por item (nullable) — migration `012` |
+| items | catálogo; **long_description** (text) — migration `009` |
+| quotation_items | snapshot na cotação; **long_description** (text) — migration `009` |
 | approval_levels | flow ('requisition'\|'order'), cost_center, category |
 | approval_requests | flow, entity_id, approver_id, status: pending/approved/rejected |
 | tenant_features | feature_keys liberados por tenant |
@@ -134,9 +137,13 @@ Container: `grid grid-cols-4 gap-4 mb-6`
 
 ## REGRAS DE NEGÓCIO CRÍTICAS
 
-- **Condição de Pagamento:** obrigatória no cabeçalho da proposta (portal fornecedor). Valores vêm de `payment_conditions` por tenant (cadastro em Configurações do comprador).
-- **Prazo de Entrega:** por item, em `proposal_items.delivery_days` (não no cabeçalho da proposta).
-- **Rodadas:** encerram automaticamente quando `response_deadline` &lt; hoje — função `close_expired_rounds()` invocada em `proxy.ts` (Next.js 16) nas requisições autenticadas às áreas protegidas.
+- **Condição de Pagamento:** obrigatória no cabeçalho da proposta (portal fornecedor). Valores vêm de `payment_conditions` por tenant (cadastro em Configurações do comprador) — não é texto livre na picklist.
+- **Prazo de Entrega (pedido):** ao criar `purchase_orders` (equalização / novo pedido), **`delivery_days` no cabeçalho** = maior valor entre **`proposal_items.delivery_days`** das linhas da proposta (fallback ao prazo da proposta quando não houver por item); **`purchase_order_items.delivery_days`** repete o prazo por linha quando existir no snapshot.
+- **Data prevista (`estimated_delivery_date`):** gravada no aceite pelo fornecedor como string **`YYYY-MM-DD`** (sem objeto `Date` no payload). Na tela do fornecedor, se ainda não houver data salva, a UI **sugere** data = hoje + maior prazo (itens ou cabeçalho do pedido); o fornecedor confirma ou ajusta no aceite. No portal do comprador, se não houver `estimated_delivery_date`, a UI pode exibir fallback derivado de **`accepted_at` + `delivery_days`** apenas para exibição.
+- **Status `refused`:** recusa pelo fornecedor (`cancellation_reason`); **não** usar `cancelled` para recusa. O comprador pode **reenviar** (`sent`) ou **cancelar** (`cancelled`).
+- **`long_description`:** descrição detalhada em `items` e `quotation_items` (migration `009`); `complementary_spec` removido da UI conforme evolução do produto.
+- **Prazo de Entrega (cotação):** por item, em `proposal_items.delivery_days` (não no cabeçalho da proposta).
+- **Rodadas:** `proxy.ts` chama `supabase.rpc('close_expired_rounds')` em requisições autenticadas (exceto `/login` e rotas públicas `/fornecedor/login`, `/fornecedor/cadastro`); falhas são ignoradas. A função fecha rodadas expiradas na instância Supabase (body **não** versionado em `supabase/migrations/` aqui).
 - **Proposta `submitted`:** somente leitura no portal do fornecedor — não editar; aguardar nova rodada.
 - **Ordem dos fornecedores:** fixada por `quotation_suppliers.position` (convite, equalização, exportações).
 - **profile_type = 'supplier':** acessa `/fornecedor`; **profile_type = 'buyer':** acessa `/comprador` (fluxo em `proxy.ts` + `/login` e `/fornecedor/login`).
@@ -172,6 +179,12 @@ Container: `grid grid-cols-4 gap-4 mb-6`
 | v2.16.5 | Ordem fixa fornecedores equalização |
 | v2.16.6 | Sidebar fornecedor altura fixa, header igual comprador |
 | v2.16.7 | Condição pagamento picklist - CRUD + importação Excel |
+| v2.17.0 | Wizard importação proposta Excel — 3 etapas |
+| v2.17.1 | Descrição detalhada `long_description` |
+| v2.17.2 | Remover `complementary_spec` da UI |
+| v2.17.3 | Dashboard fornecedor com gráficos |
+| v2.17.4 | Landing page redesign dark theme |
+| v2.18.0 | Módulo pedidos fornecedor completo (listagem, detalhe, RLS, status `refused`) |
 
 ### Fluxo de release
 
@@ -186,17 +199,25 @@ git push origin vX.X.X
 
 ---
 
+## FUNÇÕES SQL (referência)
+
+- **`close_expired_rounds`** — RPC invocada por `proxy.ts` para encerrar rodadas com prazo vencido; body **não** está versionado em `supabase/migrations/` neste repositório (definir/manter na instância Supabase).
+- **`get_my_supplier_id()`** — definida em `008_payment_conditions.sql`: retorna `profiles.supplier_id` do `auth.uid()` (`LANGUAGE sql` `STABLE`); usada na política de leitura de `payment_conditions` pelo fornecedor convidado. Políticas de `purchase_orders` / `purchase_order_items` para supplier estão em `010_supplier_purchase_orders.sql` (critérios com `profiles` / `supplier_id`).
+
+---
+
 ## STATUS DAS TELAS
 
 | Rota | Status |
 |------|--------|
+| / | ✅ Landing page redesign (tema escuro — `app/page.tsx`) |
 | /comprador | ⚠️ cards mockados |
 | /comprador/requisicoes/** | ✅ |
 | /comprador/aprovacoes | ✅ |
 | /comprador/cotacoes/** | ✅ |
 | /comprador/cotacoes/[id]/equalizacao | ✅ complexo |
 | /comprador/pedidos | ✅ |
-| /comprador/pedidos/[id] | ⚠️ visual simples |
+| /comprador/pedidos/[id] | ✅ Detalhe, status comprador, recusa/reenvio, entrega prevista |
 | /comprador/itens | ✅ somente leitura |
 | /comprador/fornecedores | ✅ somente leitura |
 | /comprador/relatorios | ⚠️ parcial mockado |
@@ -205,3 +226,5 @@ git push origin vX.X.X
 | /fornecedor | ✅ Dashboard com métricas reais |
 | /fornecedor/cotacoes | ✅ Listagem completa com filtros |
 | /fornecedor/cotacoes/[id] | ✅ Resposta proposta completa |
+| /fornecedor/pedidos | ✅ Listagem com métricas e filtros |
+| /fornecedor/pedidos/[id] | ✅ Detalhe com aceite/recusa/atualização de data e justificativa |

@@ -42,3 +42,28 @@
 - Prefixo fix: para correções
 - Prefixo refactor: para refatorações sem mudança de comportamento
 - Tags semânticas: vX.X.X após cada entrega validada
+
+---
+
+## Datas e timezone
+- NUNCA usar `new Date('YYYY-MM-DD')` para interpretar data de calendário — pode causar deslocamento por fuso.
+- Para persistir no Supabase: enviar string `YYYY-MM-DD` diretamente nos campos `date` (ex.: `estimated_delivery_date`), sem converter para `Date` no payload.
+- Para calcular data futura a partir de hoje: instanciar `new Date()`, usar `setDate`, depois formatar manualmente ano/mês/dia (padding) em string local — não depender de `toISOString().split('T')[0]` para esse fim se houver risco de UTC.
+- Para exibir `YYYY-MM-DD` vinda do banco: parsear em componentes locais (`y, m-1, d`) ou helper que não force UTC na meia-noite.
+
+## Supabase — constraints e RLS
+- Antes de usar `.upsert()` com `onConflict`, confirmar que existe UNIQUE ou PRIMARY KEY compatível na tabela.
+- Colunas geradas (generated) não entram no payload de `insert`/`update`.
+- RLS pode retornar zero linhas sem erro explícito — testar com usuário real (buyer vs supplier, `company_id`, `supplier_id`).
+- Função `get_my_supplier_id()` (migration `008`) retorna o `supplier_id` do perfil atual; útil em políticas de leitura (ex.: `payment_conditions`). Políticas de pedidos do fornecedor estão em `010_supplier_purchase_orders.sql`.
+
+## Status de pedidos (`purchase_orders`)
+- Valores válidos no check do PostgreSQL (após migration `011`): `draft`, `sent`, `processing`, `refused`, `error`, `completed`, `cancelled`.
+- NUNCA usar `cancelled` para recusa do fornecedor — usar `refused` e preencher `cancellation_reason`.
+- Em `refused`, o comprador pode voltar para `sent` (reenvio) ou `cancelled` (cancelar definitivamente).
+- Labels de UI: usar `getPOStatusForBuyer` / `getPOStatusForSupplier` em `lib/po-status.ts`.
+
+## Padrões de negócio — pedidos
+- `delivery_days` no cabeçalho do pedido: ao criar, usar o **maior** `delivery_days` entre `proposal_items` aceitos (e fallback ao nível proposta quando aplicável — ver `novo-pedido` e `equalizacao`).
+- `estimated_delivery_date`: definida pelo fornecedor no aceite (string `YYYY-MM-DD`); a UI pode sugerir hoje + maior prazo antes do aceite.
+- Condições de pagamento no fluxo de proposta/pedido: preferir registros de `payment_conditions` do tenant, não texto livre onde a UI impõe picklist.

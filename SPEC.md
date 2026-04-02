@@ -1,8 +1,8 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.16.7
+## Versão atual: v2.18.0
 
-Documento de referência alinhado ao código e às migrations versionadas no repositório. Onde o schema completo existe apenas na instância Supabase (tabelas não presentes em `supabase/migrations/`), isso é indicado explicitamente.
+Documento de referência alinhado ao código e às migrations versionadas no repositório. Onde o schema completo existe apenas na instância Supabase (funções não presentes em `supabase/migrations/`), isso é indicado explicitamente.
 
 ---
 
@@ -29,7 +29,7 @@ Documento de referência alinhado ao código e às migrations versionadas no rep
 ### 2.2 Modelo multi-tenant
 
 - **Shared database, shared schema:** isolamento por `company_id` nas tabelas de negócio.
-- **RLS:** habilitado nas tabelas cobertas pelas migrations (ex.: `quotations`, `payment_conditions`) e estendido a leitura do fornecedor onde aplicável (`006_supplier_portal_rls.sql`, `008_payment_conditions.sql`).
+- **RLS:** habilitado nas tabelas cobertas pelas migrations e estendido ao portal do fornecedor (cotações, condições de pagamento, pedidos do fornecedor).
 - **Superadmin:** flag `is_superadmin` em `profiles` (usada no layout do comprador) + seletor de tenant no header quando aplicável.
 
 ### 2.3 Autenticação e portais
@@ -39,7 +39,7 @@ Documento de referência alinhado ao código e às migrations versionadas no rep
 - **Rotas públicas do fornecedor:** `/fornecedor/login`, `/fornecedor/cadastro` (definidas em `proxy.ts`).
 - **Proteção de rotas:** `proxy.ts` na raiz (padrão Next.js 16) com `matcher` em `/comprador/:path*`, `/fornecedor/:path*`, `/admin/:path*`, `/login`. Sem sessão, redireciona para `/login` com `redirectTo`.
 - **Acesso cruzado:** `profile_type === 'supplier'` em `/comprador/**` → redirect para `/fornecedor?error=unauthorized_portal`. Usuário não supplier em `/fornecedor/**` (protegido) → redirect para `/comprador?error=unauthorized_portal`. Toasts: `PortalUnauthorizedToast` no layout comprador; efeito equivalente em `FornecedorPortalShell` no portal fornecedor.
-- **Encerramento de rodadas:** em requisições autenticadas (exceto `/login` e rotas públicas do fornecedor), `proxy.ts` chama `supabase.rpc('close_expired_rounds')` (falhas ignoradas para não bloquear navegação).
+- **Encerramento de rodadas:** em requisições autenticadas, exceto `/login` e rotas públicas do fornecedor acima, `proxy.ts` chama `supabase.rpc('close_expired_rounds')` dentro de `try/catch` (falhas ignoradas para não bloquear navegação).
 
 ---
 
@@ -59,14 +59,14 @@ Documento de referência alinhado ao código e às migrations versionadas no rep
 | `/comprador/cotacoes/nova` | Nova cotação | Criação | ✅ |
 | `/comprador/cotacoes/[id]` | Detalhe | Dados da cotação | ✅ |
 | `/comprador/cotacoes/[id]/editar` | Edição | Edição em rascunho etc. | ✅ |
-| `/comprador/cotacoes/[id]/equalizacao` | Equalização | Comparação de propostas, ordem por `quotation_suppliers.position`, exportação, lógica extensa | ✅ |
-| `/comprador/cotacoes/[id]/novo-pedido` | Novo pedido | Geração a partir de proposta selecionada | ✅ |
-| `/comprador/pedidos` | Listagem | Pedidos com campos como `delivery_days`, `payment_condition` no cabeçalho do pedido | ✅ |
-| `/comprador/pedidos/[id]` | Detalhe | Detalhe do pedido | ⚠️ visual simples |
-| `/comprador/itens` | Itens | Catálogo `items`, somente leitura na UI | ✅ |
+| `/comprador/cotacoes/[id]/equalizacao` | Equalização | Comparação de propostas, ordem por `quotation_suppliers.position`, geração de pedidos, exportação | ✅ |
+| `/comprador/cotacoes/[id]/novo-pedido` | Novo pedido | Geração a partir de proposta selecionada; `delivery_days` do pedido = maior prazo entre itens da proposta aceitos | ✅ |
+| `/comprador/pedidos` | Listagem | Pedidos, filtros por status (incl. `refused`), badges via `lib/po-status.ts` | ✅ |
+| `/comprador/pedidos/[id]` | Detalhe | Itens, export Excel, fluxo draft/sent/refused/processing, reenvio ao fornecedor ou cancelamento quando `refused`, entrega prevista e alerta de alteração de data | ✅ |
+| `/comprador/itens` | Itens | Catálogo `items` (incl. `long_description`), somente leitura na UI | ✅ |
 | `/comprador/fornecedores` | Fornecedores | Listagem somente leitura | ✅ |
 | `/comprador/relatorios` | Relatórios | Abas e gráficos; parte dos dados é estática no arquivo | ⚠️ parcialmente mockado |
-| `/comprador/configuracoes` | Configurações | Abas (empresa, perfil, notificações, aprovações, segurança) + **Condições de pagamento** (`payment_conditions`: CRUD, importação Excel via `xlsx`) | ✅ |
+| `/comprador/configuracoes` | Configurações | Abas + `payment_conditions` (CRUD, importação Excel) | ✅ |
 | `/comprador/configuracoes/usuarios` | Usuários | Gestão e importação Excel | ✅ |
 | `/comprador/configuracoes/permissoes` | Permissões | Matriz por role | ✅ |
 
@@ -76,17 +76,18 @@ Documento de referência alinhado ao código e às migrations versionadas no rep
 
 | Rota | Descrição | Funcionalidades principais | Status |
 |------|-----------|----------------------------|--------|
-| `/fornecedor` | Dashboard | Métricas e listas com dados reais (cotações, prazos, atividades) | ✅ |
+| `/fornecedor` | Dashboard | Métricas, gráficos (Recharts), atividades | ✅ |
 | `/fornecedor/cotacoes` | Cotações | Listagem com filtros | ✅ |
-| `/fornecedor/cotacoes/[id]` | Resposta | Proposta da rodada ativa: condição de pagamento (picklist `payment_conditions`), itens com preço e `delivery_days` por linha; estado `submitted` em somente leitura com mensagem para aguardar nova rodada | ✅ |
+| `/fornecedor/cotacoes/[id]` | Resposta | Proposta da rodada ativa: condição de pagamento (`payment_conditions`), itens com preço e `delivery_days`; `submitted` somente leitura | ✅ |
+| `/fornecedor/pedidos` | Pedidos | Métricas (Pendente Aceite, Aceitos, Finalizados, Cancelado/Recusado), filtros (status, período, busca), tabela paginada | ✅ |
+| `/fornecedor/pedidos/[id]` | Detalhe pedido | Informações do pedido e do cliente, tabela de itens; ações no topo por status: aceitar (data prevista obrigatória, sugestão por maior prazo), recusar (motivo → `refused`), em `processing` atualizar data com justificativa (`delivery_date_change_reason`); banners por status | ✅ |
 | `/fornecedor/login` | Login | Autenticação Supabase | ✅ |
-| `/fornecedor/cadastro` | Cadastro | Fluxo multi-step (UI); integração backend conforme implementação da página | ⚠️ ver código |
-| `/fornecedor/(dashboard)/oportunidades` | Oportunidades | Dados **mockados** em array local | ⚠️ não produtivo |
-| `/fornecedor/(dashboard)/oportunidades/[id]` e `.../proposta` | Legado / demo | Rotas existentes sob grupo `(dashboard)` | ⚠️ ver código |
+| `/fornecedor/cadastro` | Cadastro | Fluxo multi-step (UI) | ⚠️ ver código |
+| `/fornecedor/(dashboard)/oportunidades` | Oportunidades | Dados mockados | ⚠️ não produtivo |
 
-**Shell:** `FornecedorPortalShell` — sidebar fixa, logout com redirect para `/fornecedor/login`.
+**Shell:** `FornecedorPortalShell` — sidebar (Dashboard, Cotações, Pedidos), logout para `/fornecedor/login`.
 
-**Observação:** A sidebar genérica em `Sidebar` com `type="fornecedor"` lista rotas como `/fornecedor/oportunidades` e `/fornecedor/propostas`, que **não** correspondem ao mesmo conjunto de páginas ativas que `/fornecedor/cotacoes` (navegação real do shell usa Dashboard + Cotações).
+**Landing pública:** `/` — página de apresentação com tema escuro (`app/page.tsx`).
 
 ### 3.3 Portal Admin (`/admin`)
 
@@ -95,14 +96,32 @@ Documento de referência alinhado ao código e às migrations versionadas no rep
 | `/admin/tenants` | Listagem de tenants | ✅ |
 | `/admin/tenants/[id]` | Detalhe do tenant | ✅ |
 | `/admin/tenants/[id]/features` | Features por tenant | ✅ |
-| `/admin/logs` | Logs de auditoria (visualização) | ✅ |
-
-**Layout:** logout via `POST /api/auth/logout`.
+| `/admin/logs` | Logs de auditoria | ✅ |
 
 ### 3.4 APIs (`app/api`)
 
 - `POST /api/auth/logout` — encerramento de sessão (admin).
-- `POST /api/admin/create-tenant`, `create-user`, `import-users` — operações administrativas server-side com service role (ver rotas).
+- Rotas admin (`create-tenant`, `create-user`, `import-users`, …) conforme `app/api`.
+
+---
+
+## 3.5 Fluxo de Pedidos (`purchase_orders`)
+
+**Transições principais (implementadas):**
+
+1. **`draft`** — pedido criado na equalização ou em “novo pedido”; comprador pode confirmar envio ao fornecedor ou cancelar (rascunho).
+2. **`sent`** — comprador enviou ao fornecedor; fornecedor aceita (→ `processing` + `estimated_delivery_date` + `accepted_at`) ou recusa (→ **`refused`**, com `cancellation_reason` — **não** usar `cancelled` para recusa).
+3. **`refused`** — comprador vê banner e pode **reenviar** (`sent`) ou **cancelar** (`cancelled`).
+4. **`processing`** — pedido aceito pelo fornecedor; fornecedor pode alterar data de entrega com justificativa.
+5. **`completed`** / **`error`** — estados de integração/conclusão conforme regras do sistema.
+6. **`cancelled`** — cancelamento pelo comprador (ex.: desde `draft`, ou após `refused`), ou outros fluxos que gravem este status; distinto de **`refused`**.
+
+**Rótulos por portal** (helpers em `lib/po-status.ts`):
+
+- **Comprador:** Rascunho, Aguardando Aceite, Recusado pelo Fornecedor, Processando Integração, Concluído, Cancelado, Erro Integração.
+- **Fornecedor:** Pendente Aceite, Pedido Recusado, Pedido Aceito, Pedido Finalizado, Pedido Cancelado (e slate para valores não mapeados).
+
+**Constraints de `status` no PostgreSQL** (migration `011`, inclusive): `draft`, `sent`, `processing`, `refused`, `error`, `completed`, `cancelled`.
 
 ---
 
@@ -113,44 +132,37 @@ Documento de referência alinhado ao código e às migrations versionadas no rep
 | Arquivo | Conteúdo relevante |
 |---------|-------------------|
 | `001_auth_tenants.sql` | `companies`, `profiles`, trigger `handle_new_user`, RLS básico |
-| `002_quotations.sql` | `quotations`, `quotation_items`, `quotation_suppliers`, trigger `generate_quotation_code`, RLS |
-| `003_approval_levels_flow.sql` | Extensões de fluxo de aprovação (conforme arquivo) |
-| `004_profiles_roles.sql` | Coluna `roles text[]` em `profiles` |
-| `005_profile_type.sql` | `profile_type` com check `buyer` \| `supplier` |
-| `006_supplier_portal_rls.sql` | `supplier_id` em `profiles`; políticas SELECT para supplier em `quotation_suppliers`, `quotations`, `quotation_rounds`, `quotation_proposals` |
-| `007_quotation_suppliers_position.sql` | Coluna `position` (integer) + índice `(quotation_id, position)` |
-| `008_payment_conditions.sql` | Tabela `payment_conditions`, função `get_my_supplier_id()`, RLS gestão por empresa + leitura supplier convidado |
+| `002_quotations.sql` | `quotations`, `quotation_items`, `quotation_suppliers`, RLS |
+| `003_approval_levels_flow.sql` | Fluxo de aprovação |
+| `004_profiles_roles.sql` | `roles text[]` em `profiles` |
+| `005_profile_type.sql` | `profile_type` buyer \| supplier |
+| `006_supplier_portal_rls.sql` | `supplier_id` em `profiles`; políticas supplier em cotações |
+| `007_quotation_suppliers_position.sql` | Coluna `position` |
+| `008_payment_conditions.sql` | `payment_conditions`, `get_my_supplier_id()`, RLS |
+| `009_long_description.sql` | `long_description` em `items` e `quotation_items` |
+| `010_supplier_purchase_orders.sql` | Colunas e RLS de `purchase_orders` / leitura de itens e `companies` para supplier |
+| `011_purchase_order_refused_and_delivery_reason.sql` | `delivery_date_change_reason`, constraint de status com `refused` |
+| `012_purchase_order_items_delivery_days.sql` | `delivery_days` em `purchase_order_items` |
 
-### 4.2 Tabelas e campos principais (aplicação + migrations)
+### 4.2 Tabelas e campos principais (atualizado)
 
-- **companies** — tenant (`name`, `cnpj`, `status`, …).
-- **profiles** — `id` (FK `auth.users`), `company_id`, `role`, `roles[]`, `profile_type`, `supplier_id` opcional, `full_name`, `is_superadmin` (usado no app; criação via API admin).
-- **payment_conditions** — `id`, `company_id`, `code`, `description`, `active`, `created_at`; **UNIQUE (company_id, code)**; RLS conforme `008`.
-- **suppliers** — cadastro por tenant (referenciado por `profiles.supplier_id` e cotações).
-- **quotations** — `code`, `description`, `status`, `category`, `payment_condition` (texto na cotação), `response_deadline`, …
-- **quotation_items** — itens da cotação (`material_code`, `quantity`, …).
-- **quotation_suppliers** — convites; **`position`** define ordem na equalização e telas relacionadas.
-- **quotation_rounds** — rodadas por cotação (`round_number`, `status` active/closed, `response_deadline`, …) — políticas RLS para supplier em `006`; DDL completo pode estar apenas na base remota.
-- **quotation_proposals** — por rodada e fornecedor; status `invited` \| `submitted` \| `selected` \| `rejected`; **condição de pagamento no cabeçalho da proposta** (`payment_condition` no código do fornecedor); **prazo de entrega por item**, não no cabeçalho (`delivery_days` em `proposal_items`).
-- **proposal_items** — linhas da proposta com **`round_id`** obrigatório na regra de produto; **`delivery_days`** nullable por item.
-- **items** — catálogo usado em `/comprador/itens` (campos como `code`, `short_description`, `status`, `commodity_group`, …); **sem migration neste repositório**.
-- **requisitions** / **requisition_items** — fluxo de requisição (status no código: pending, approved, rejected, in_quotation, completed).
-- **purchase_orders** / **purchase_order_items** — pedidos (status draft, processing, sent, error, completed); cabeçalho pode carregar `delivery_days` e `payment_condition` agregados da proposta/pedido na UI.
-- **approval_levels** / **approval_requests** — alçadas e instâncias de aprovação (`flow`, `entity_id`, `approver_id`, status pending/approved/rejected).
-- **tenant_features** / **role_permissions** — features por tenant e matriz de permissões por role.
+- **payment_conditions** — `id`, `company_id`, `code`, `description`, `active`, `created_at`; UNIQUE `(company_id, code)`.
+- **items** — catálogo; **`long_description`** (`009`).
+- **quotation_items** — **`long_description`** (`009`).
+- **purchase_orders** — além dos campos já usados na aplicação: **`supplier_id`**, **`accepted_at`**, **`accepted_by_supplier`**, **`estimated_delivery_date`**, **`cancellation_reason`**, **`delivery_date_change_reason`** (`010`/`011`); status inclui **`refused`** e **`cancelled`** (`011`); **`delivery_days`** agregado na criação (código: MAX por linha da proposta / fallback).
+- **purchase_order_items** — **`delivery_days`** por linha (`012`).
+- Demais tabelas (`quotations`, `proposal_items` com `delivery_days` por item, `round_id`, etc.) conforme migrations anteriores e código.
 
 ### 4.3 Funções SQL referenciadas no código
 
-- **`close_expired_rounds`** — RPC chamada em `proxy.ts` (implementação na base Supabase; não está nos arquivos SQL deste repo).
-- **`get_my_supplier_id`** — definida em `008_payment_conditions.sql`; usada na política de leitura de condições de pagamento pelo fornecedor convidado.
-- **`generate_quotation_code`** — trigger em `quotations` (`002`).
-- **`handle_new_user`** — criação de perfil ao registrar usuário (`001`).
+- **`close_expired_rounds`** — RPC chamada em `proxy.ts`. **Não** há definição desta função nos arquivos SQL do repositório; deve existir na instância Supabase.
+- **`get_my_supplier_id`** — `008_payment_conditions.sql`; usada na política SELECT de `payment_conditions` para fornecedor convidado.
+- **`generate_quotation_code`**, **`handle_new_user`** — conforme `001`/`002`.
 
 ### 4.4 RLS (resumo)
 
-- **Empresa:** políticas padrão “mesmo `company_id` do profile” em tabelas de cotação (`002`).
-- **Fornecedor:** leitura condicionada a `profile_type = 'supplier'` e `supplier_id` alinhado ao convite (`006`).
-- **payment_conditions:** ALL para usuários do mesmo `company_id`; SELECT adicional para suppliers convidados às cotações da empresa (`008`).
+- Políticas de pedidos para **supplier** (`010`): leitura/atualização de `purchase_orders` onde `supplier_id` do pedido = `supplier_id` do perfil; leitura de itens e de `companies` vinculadas.
+- **`payment_conditions`:** ALL para usuários do tenant; SELECT para suppliers convidados (`008`).
 
 ---
 
@@ -158,54 +170,45 @@ Documento de referência alinhado ao código e às migrations versionadas no rep
 
 ### 5.1 Fluxo de cotação (comprador → fornecedor)
 
-1. Comprador cria **cotação** e itens; define fornecedores convidados com **`quotation_suppliers.position`** (ordem estável).
-2. Abre-se **rodada** (`quotation_rounds`) com `response_deadline`.
-3. Para cada convidado existe **proposta** (`quotation_proposals`) ligada à rodada, status inicial típico `invited`.
-4. Fornecedor acessa `/fornecedor/cotacoes/[id]`, preenche **condição de pagamento** (obrigatória; opções de `payment_conditions` do tenant comprador) e, por **item**, preço e **`delivery_days`**.
-5. Envio da proposta: status passa a **`submitted`** — formulário **somente leitura** até nova rodada.
-6. Comprador equaliza em `/comprador/cotacoes/[id]/equalizacao` (usa `delivery_days` por item nas comparações/exportação).
-7. A partir da proposta selecionada, fluxo de **novo pedido** e **purchase_orders**.
+1. Comprador cria cotação e itens; fornecedores com **`quotation_suppliers.position`**.
+2. Rodadas com `response_deadline`; encerramento automático via **`close_expired_rounds`** no **`proxy.ts`**.
+3. Fornecedor responde com **`payment_conditions`** (picklist) e **`delivery_days`** por item.
+4. Equalização e geração de **`purchase_orders`** / **`purchase_order_items`** com prazos coerentes com o código (MAX por item, colunas `delivery_days`).
 
-### 5.2 Fluxo de aprovações
+### 5.2 Fluxo de pedidos
 
-- Requisições e pedidos disparam **approval_requests** conforme `approval_levels` (fluxo `requisition` ou `order`), visíveis em `/comprador/aprovacoes`.
-- Lógica detalhada (RPCs como `get_approver_for_requisition`) pode estar na base; UI consome `approval_requests` e eventos customizados (`approval-updated`).
+Ver **§ 3.5 Fluxo de Pedidos**. Labels de exibição em **`lib/po-status.ts`**.
 
-### 5.3 Rodadas de negociação
+### 5.3 Datas e timezone (UI)
 
-- Prazo em **`quotation_rounds.response_deadline`** (data).
-- Encerramento automático quando a data está no passado: **`close_expired_rounds`** disparada no **`proxy.ts`**.
-- UI do fornecedor exibe estado da rodada / banners conforme implementação em `fornecedor/cotacoes/[id]`.
+- Persistir **`estimated_delivery_date`** como string **`YYYY-MM-DD`** no Supabase.
+- Evitar `new Date('YYYY-MM-DD')` para interpretar datas puramente calendário; ver padrões em `app/fornecedor/pedidos/[id]/page.tsx` e `app/comprador/pedidos/[id]/page.tsx`.
 
-### 5.4 Acesso por portal
+### 5.4 Acesso por portal e logout
 
-- **`profile_type = 'buyer'`** — portal `/comprador` (salvo superadmin / rotas admin).
-- **`profile_type = 'supplier'`** — portal `/fornecedor`; leitura de dados de cotação via RLS de convidado.
-
-### 5.5 Logout
-
-- **Fornecedor:** `signOut` + `router.push('/fornecedor/login')` (`FornecedorPortalShell`).
-- **Comprador:** header usa `/api/auth/logout` conforme `header.tsx`.
+Conforme § 2.3 e implementação em `FornecedorPortalShell` / header comprador.
 
 ---
 
 ## 6. Integrações e Configurações
 
-- **Supabase Auth** — sessão compartilhada entre portais; cookies geridos com `@supabase/ssr` no `proxy.ts` e clients server/client.
-- **Condições de pagamento** — tabela `payment_conditions`; CRUD e importação Excel em `/comprador/configuracoes` (uso de `xlsx` no client).
-- **Exportação / Excel** — importação de usuários (ExcelJS em fluxos admin/usuários); relatórios e equalização com export conforme telas.
-- **Auditoria** — `lib/audit.ts` + página `/admin/logs`.
+- **Supabase Auth** + `@supabase/ssr` em `proxy.ts`.
+- **Condições de pagamento** — CRUD e Excel em configurações.
+- **Auditoria** — `lib/audit.ts` + `/admin/logs`.
+- **Importação de proposta** — wizard Excel (`components/fornecedor/import-proposal-wizard.tsx` e telas relacionadas).
 
 ---
 
-## 7. Backlog (pendências observadas no código)
+## 7. Backlog (pendências observadas no código / doc)
 
-1. **Dashboard comprador** — completar cards e gráficos com dados reais (hoje parte fixa/mock).
-2. **Detalhe de pedido** (`/comprador/pedidos/[id]`) — evoluir layout e informações.
-3. **Relatórios** — reduzir dependência de séries mockadas.
-4. **Rotas fornecedor legadas** — `/fornecedor/oportunidades` (mock) vs `/fornecedor/cotacoes` (real); alinhar sidebar e remover ou conectar rotas mortas.
-5. **Schema fora das migrations** — garantir que funções como `close_expired_rounds` e tabelas como `items` estejam documentadas/versionadas na instância Supabase alvo.
+1. **Dashboard comprador** (`/comprador`) — completar cards e gráficos com dados reais onde ainda há valores estáticos.
+2. **Relatórios** (`/comprador/relatorios`) — reduzir séries mockadas.
+3. **Rotas fornecedor legadas** — `/fornecedor/oportunidades` (mock) vs fluxo real em `/fornecedor/cotacoes`; alinhar ou remover rotas mortas.
+4. **RPC `close_expired_rounds`** — versionar definição SQL no repositório ou pipeline de migração da instância Supabase para rastreabilidade.
+5. **Cadastro fornecedor** (`/fornecedor/cadastro`) — validar integração backend e UX de produção.
+6. **Portal fornecedor** — evolução de telas além de cotações/pedidos (oportunidades/propostas legadas).
+7. **Detalhe pedido comprador** — possíveis melhorias visuais incrementais (histórico, integração ERP) conforme roadmap.
 
 ---
 
-*Última revisão do documento: alinhada à árvore de código e migrations do repositório na versão v2.16.7.*
+*Última revisão: alinhada ao código e migrations do repositório na versão **v2.18.0**.*
