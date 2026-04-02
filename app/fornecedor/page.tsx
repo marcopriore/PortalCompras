@@ -3,11 +3,15 @@
 import * as React from "react"
 import Link from "next/link"
 import {
+  CheckCircle,
   Mail,
+  Package,
+  ShoppingCart,
   Send,
   XCircle,
   Trophy,
 } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 import {
   PieChart,
   Pie,
@@ -23,12 +27,34 @@ import {
 } from "recharts"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { getPOStatusForSupplier } from "@/lib/po-status"
 
-type ActivityRow = {
+type ProposalActivityRow = {
   status: string
   updated_at: string
   quotation_id: string
   quotations: { code: string } | { code: string }[] | null
+}
+
+type OrderActivityRow = {
+  id: string
+  code: string
+  status: string
+  updated_at: string
+  accepted_at: string | null
+  estimated_delivery_date: string | null
+  cancellation_reason: string | null
+}
+
+type ActivityItem = {
+  id: string
+  type: "proposal" | "order"
+  status: string
+  updated_at: string
+  label: string
+  code: string
+  icon: LucideIcon
+  iconClass: string
 }
 
 function relativeListDay(iso: string): string {
@@ -43,7 +69,7 @@ function relativeListDay(iso: string): string {
   return `há ${diff} dias`
 }
 
-function pickQuotationCode(embed: ActivityRow["quotations"]): string {
+function pickQuotationCode(embed: ProposalActivityRow["quotations"]): string {
   if (!embed) return "—"
   if (Array.isArray(embed)) return embed[0]?.code ?? "—"
   return embed.code ?? "—"
@@ -126,7 +152,7 @@ export default function FornecedorDashboardPage() {
   const [topClientsData, setTopClientsData] = React.useState<{ name: string; count: number }[]>([])
   const [chartsLoading, setChartsLoading] = React.useState(false)
 
-  const [activity, setActivity] = React.useState<ActivityRow[]>([])
+  const [activity, setActivity] = React.useState<ActivityItem[]>([])
   const [activityLoading, setActivityLoading] = React.useState(true)
 
   React.useEffect(() => {
@@ -145,15 +171,132 @@ export default function FornecedorDashboardPage() {
       setActivityLoading(true)
       setError(false)
       try {
-        const activityRes = await supabase
-          .from("quotation_proposals")
-          .select("status, updated_at, quotation_id, quotations!inner(code)")
-          .eq("supplier_id", supplierId)
-          .order("updated_at", { ascending: false })
-          .limit(8)
+        const [proposalsRes, ordersRes] = await Promise.all([
+          supabase
+            .from("quotation_proposals")
+            .select("status, updated_at, quotation_id, quotations!inner(code)")
+            .eq("supplier_id", supplierId)
+            .order("updated_at", { ascending: false })
+            .limit(8),
+          supabase
+            .from("purchase_orders")
+            .select(
+              "id, code, status, updated_at, accepted_at, estimated_delivery_date, cancellation_reason",
+            )
+            .eq("supplier_id", supplierId)
+            .neq("status", "draft")
+            .order("updated_at", { ascending: false })
+            .limit(8),
+        ])
 
-        if (activityRes.error) throw activityRes.error
-        if (!cancelled) setActivity((activityRes.data as ActivityRow[]) ?? [])
+        if (proposalsRes.error) throw proposalsRes.error
+        if (ordersRes.error) throw ordersRes.error
+
+        const mappedProposals: ActivityItem[] = ((proposalsRes.data as ProposalActivityRow[]) ?? []).map((row, idx) => {
+          let icon: LucideIcon = Send
+          let iconClass = "text-green-600"
+          if (row.status === "invited") {
+            icon = Mail
+            iconClass = "text-blue-600"
+          } else if (row.status === "selected") {
+            icon = Trophy
+            iconClass = "text-amber-500"
+          } else if (row.status === "rejected") {
+            icon = XCircle
+            iconClass = "text-red-600"
+          }
+
+          return {
+            id: `${row.quotation_id}-${row.updated_at}-${idx}`,
+            type: "proposal",
+            status: row.status,
+            updated_at: row.updated_at,
+            label: proposalStatusLabel[row.status] ?? `Status: ${row.status}`,
+            code: pickQuotationCode(row.quotations),
+            icon,
+            iconClass,
+          }
+        })
+
+        const mappedOrders: ActivityItem[] = ((ordersRes.data as OrderActivityRow[]) ?? []).map((row) => {
+          const baseLabel = getPOStatusForSupplier(row.status).label
+          if (row.status === "sent") {
+            return {
+              id: row.id,
+              type: "order",
+              status: row.status,
+              updated_at: row.updated_at,
+              label: `Pedido recebido — ${row.code}`,
+              code: row.code,
+              icon: ShoppingCart,
+              iconClass: "text-blue-600",
+            }
+          }
+          if (row.status === "processing") {
+            return {
+              id: row.id,
+              type: "order",
+              status: row.status,
+              updated_at: row.updated_at,
+              label: `Pedido aceito — ${row.code}`,
+              code: row.code,
+              icon: CheckCircle,
+              iconClass: "text-green-600",
+            }
+          }
+          if (row.status === "refused") {
+            return {
+              id: row.id,
+              type: "order",
+              status: row.status,
+              updated_at: row.updated_at,
+              label: `Pedido recusado — ${row.code}`,
+              code: row.code,
+              icon: XCircle,
+              iconClass: "text-red-600",
+            }
+          }
+          if (row.status === "completed") {
+            return {
+              id: row.id,
+              type: "order",
+              status: row.status,
+              updated_at: row.updated_at,
+              label: `Pedido finalizado — ${row.code}`,
+              code: row.code,
+              icon: Package,
+              iconClass: "text-green-600",
+            }
+          }
+          if (row.status === "cancelled") {
+            return {
+              id: row.id,
+              type: "order",
+              status: row.status,
+              updated_at: row.updated_at,
+              label: `Pedido cancelado — ${row.code}`,
+              code: row.code,
+              icon: XCircle,
+              iconClass: "text-slate-600",
+            }
+          }
+          return {
+            id: row.id,
+            type: "order",
+            status: row.status,
+            updated_at: row.updated_at,
+            label: `${baseLabel} — ${row.code}`,
+            code: row.code,
+            icon: ShoppingCart,
+            iconClass: "text-slate-600",
+          }
+        })
+
+        const combined = [...mappedProposals, ...mappedOrders]
+          .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+          .slice(0, 8)
+
+        if (!cancelled) setActivity(combined)
       } catch (err) {
         console.error("Erro ao carregar atividade fornecedor:", err)
         if (!cancelled) {
@@ -419,37 +562,19 @@ export default function FornecedorDashboardPage() {
                 Nenhuma atividade no período.
               </li>
             ) : (
-              activity.slice(0, 5).map((row, idx) => {
-                const code = pickQuotationCode(row.quotations)
-                const label =
-                  proposalStatusLabel[row.status] ?? `Status: ${row.status}`
-                let Icon = Send
-                let iconClass = "text-green-600"
-                if (row.status === "invited") {
-                  Icon = Mail
-                  iconClass = "text-blue-600"
-                } else if (row.status === "selected") {
-                  Icon = Trophy
-                  iconClass = "text-amber-500"
-                } else if (row.status === "rejected") {
-                  Icon = XCircle
-                  iconClass = "text-red-600"
-                } else if (row.status === "submitted") {
-                  Icon = Send
-                  iconClass = "text-green-600"
-                }
-
+              activity.slice(0, 5).map((item) => {
+                const Icon = item.icon
                 return (
                   <li
-                    key={`${row.quotation_id}-${row.updated_at}-${idx}`}
+                    key={item.id}
                     className="flex items-center gap-3 border-b border-border py-3"
                   >
-                    <Icon className={`h-5 w-5 shrink-0 ${iconClass}`} />
+                    <Icon className={`h-5 w-5 shrink-0 ${item.iconClass}`} />
                     <span className="min-w-0 flex-1 text-sm text-foreground">
-                      {label} — {code}
+                      {item.type === "proposal" ? `${item.label} — ${item.code}` : item.label}
                     </span>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {relativeListDay(row.updated_at)}
+                      {relativeListDay(item.updated_at)}
                     </span>
                   </li>
                 )
@@ -457,7 +582,7 @@ export default function FornecedorDashboardPage() {
             )}
           </ul>
         )}
-        {!activityLoading && activity.length > 0 && (
+        {!activityLoading && activity.length > 5 && (
           <Link
             href="#"
             className="text-sm text-primary hover:underline cursor-pointer mt-2 inline-block"

@@ -14,7 +14,15 @@ function isProtectedFornecedorPath(pathname: string): boolean {
 }
 
 export async function proxy(request: NextRequest) {
-  const response = NextResponse.next()
+  const pathname = request.nextUrl.pathname
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set("x-pathname", pathname)
+
+  const response = NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  })
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,7 +45,6 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const pathname = request.nextUrl.pathname
   const isAuthRoute = pathname === "/login"
   const isFornecedorLoginRoute = pathname === "/fornecedor/login"
   const isProtectedComprador = pathname.startsWith("/comprador")

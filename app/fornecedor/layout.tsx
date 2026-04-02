@@ -1,4 +1,6 @@
 import { Suspense } from "react"
+import { headers } from "next/headers"
+import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import FornecedorPortalShell from "@/components/layout/fornecedor-portal-shell"
 
@@ -13,6 +15,12 @@ export default async function FornecedorLayout({
   } = await supabase.auth.getUser()
 
   if (!user) {
+    const headersList = await headers()
+    const pathname =
+      headersList.get("x-pathname") ?? headersList.get("x-invoke-path") ?? ""
+    const isPublicRoute =
+      pathname.includes("/fornecedor/login") || pathname.includes("/fornecedor/cadastro")
+    if (!isPublicRoute) redirect("/fornecedor/login")
     return <>{children}</>
   }
 
