@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
+import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
 import { cn } from "@/lib/utils"
 import { formatDateBR, isExpiredDate, isUrgentDate } from "@/lib/utils/date-helpers"
@@ -263,7 +264,7 @@ export default function FornecedorCotacaoPropostaPage({
   params: Promise<{ id: string }>
 }) {
   const { id: quotationId } = React.use(params)
-  const { supplierId, loading: userLoading } = useUser()
+  const { userId, supplierId, loading: userLoading } = useUser()
 
   const [loading, setLoading] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
@@ -837,8 +838,39 @@ export default function FornecedorCotacaoPropostaPage({
         }
         setProposalStatus("submitted")
         toast.success("Proposta enviada com sucesso.")
+        if (userId) {
+          await logAudit({
+            eventType: "proposal.submitted",
+            description: `Proposta enviada — ${quotation.code} Rodada ${activeRound.round_number}`,
+            userId,
+            companyId: quotation.company_id,
+            entity: "quotation_proposals",
+            entityId: newId,
+            metadata: {
+              quotation_code: quotation.code,
+              round_number: activeRound.round_number,
+              total_price: total,
+              items_count: itemRows.filter((r) => r.item_status !== "not_answered").length,
+            },
+          })
+        }
       } else {
         toast.success("Rascunho salvo.")
+        if (userId) {
+          await logAudit({
+            eventType: "proposal.saved",
+            description: `Proposta salva como rascunho — ${quotation.code} Rodada ${activeRound.round_number}`,
+            userId,
+            companyId: quotation.company_id,
+            entity: "quotation_proposals",
+            entityId: newId,
+            metadata: {
+              quotation_code: quotation.code,
+              round_number: activeRound.round_number,
+              total_price: total,
+            },
+          })
+        }
       }
 
       const { data: refreshed, error: refErr } = await supabase
@@ -1517,6 +1549,17 @@ export default function FornecedorCotacaoPropostaPage({
             setItemRows(rows)
             setPaymentCondition(paymentCode)
             toast.success("Proposta importada com sucesso. Revise e envie.")
+            if (userId && quotation) {
+              void logAudit({
+                eventType: "proposal.imported",
+                description: `Proposta importada via Excel — ${quotation.code}`,
+                userId,
+                companyId: quotation.company_id,
+                entity: "quotation_proposals",
+                entityId: proposalId ?? "new",
+                metadata: { quotation_code: quotation.code },
+              })
+            }
           }}
         />
       ) : null}

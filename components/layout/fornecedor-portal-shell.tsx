@@ -27,6 +27,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { createClient } from "@/lib/supabase/client"
+import { logAudit } from "@/lib/audit"
 import { cn } from "@/lib/utils"
 
 const SIDEBAR_BG = "#1a1a2e"
@@ -78,6 +79,19 @@ export default function FornecedorPortalShell({
   const handleLogout = async () => {
     try {
       const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (user) {
+        await logAudit({
+          eventType: "supplier.logout",
+          description: "Logout do Portal do Fornecedor",
+          userId: user.id,
+          entity: "profiles",
+          entityId: user.id,
+          metadata: { portal: "fornecedor" },
+        })
+      }
       await supabase.auth.signOut()
     } catch (e) {
       console.error("signOut error:", e)

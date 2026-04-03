@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -88,6 +88,38 @@ function getEventMeta(eventType: string): { label: string; className: string } {
       label: 'Integração saída',
       className: 'bg-indigo-100 text-indigo-800',
     },
+    'supplier.login': {
+      label: 'Login Fornecedor',
+      className: 'bg-sky-100 text-sky-800',
+    },
+    'supplier.logout': {
+      label: 'Logout Fornecedor',
+      className: 'bg-slate-100 text-slate-700',
+    },
+    'proposal.saved': {
+      label: 'Proposta Salva',
+      className: 'bg-amber-100 text-amber-800',
+    },
+    'proposal.submitted': {
+      label: 'Proposta Enviada',
+      className: 'bg-emerald-100 text-emerald-800',
+    },
+    'proposal.imported': {
+      label: 'Proposta Importada',
+      className: 'bg-cyan-100 text-cyan-800',
+    },
+    'purchase_order.accepted': {
+      label: 'Pedido Aceito',
+      className: 'bg-green-100 text-green-800',
+    },
+    'purchase_order.refused': {
+      label: 'Pedido Recusado',
+      className: 'bg-red-100 text-red-800',
+    },
+    'purchase_order.delivery_updated': {
+      label: 'Entrega Atualizada',
+      className: 'bg-violet-100 text-violet-800',
+    },
   }
 
   return (
@@ -97,6 +129,33 @@ function getEventMeta(eventType: string): { label: string; className: string } {
     }
   )
 }
+
+const PAGE_SIZE = 20
+
+/** Garante opções no filtro mesmo antes de existir log desse tipo. */
+const AUDIT_EVENT_TYPES_FOR_FILTER: string[] = [
+  'user.login',
+  'user.logout',
+  'user.created',
+  'user.updated',
+  'tenant.created',
+  'tenant.updated',
+  'quotation.created',
+  'quotation.updated',
+  'quotation.cancelled',
+  'impersonation',
+  'integration.items',
+  'integration.suppliers',
+  'integration.outbound',
+  'supplier.login',
+  'supplier.logout',
+  'proposal.saved',
+  'proposal.submitted',
+  'proposal.imported',
+  'purchase_order.accepted',
+  'purchase_order.refused',
+  'purchase_order.delivery_updated',
+]
 
 export default function AdminLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
@@ -108,6 +167,7 @@ export default function AdminLogsPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [tenants, setTenants] = useState<TenantOption[]>([])
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -130,9 +190,11 @@ export default function AdminLogsPage() {
     fetchLogs()
   }, [])
 
-  const eventTypes = Array.from(new Set(logs.map((l) => l.event_type))).sort()
+  const eventTypes = Array.from(
+    new Set([...AUDIT_EVENT_TYPES_FOR_FILTER, ...logs.map((l) => l.event_type)]),
+  ).sort()
 
-  const filtered = logs.filter((log) => {
+  const filteredLogs = logs.filter((log) => {
     const matchSearch =
       !search ||
       log.description.toLowerCase().includes(search.toLowerCase()) ||
@@ -166,6 +228,17 @@ export default function AdminLogsPage() {
       matchDateTo
     )
   })
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, eventTypeFilter, tenantFilter, userFilter, dateFrom, dateTo])
+
+  const paginatedLogs = useMemo(
+    () => filteredLogs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filteredLogs, page],
+  )
+
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE))
 
   const hasActiveFilters =
     !!search ||
@@ -282,7 +355,7 @@ export default function AdminLogsPage() {
       {/* Contagem + limpar filtros */}
       <div className="flex items-center justify-between mb-3">
         <Badge variant="secondary" className="text-sm px-3 py-1">
-          {filtered.length} registro{filtered.length !== 1 ? 's' : ''}
+          {filteredLogs.length} registro{filteredLogs.length !== 1 ? 's' : ''}
         </Badge>
         {hasActiveFilters && (
           <button
@@ -301,7 +374,7 @@ export default function AdminLogsPage() {
           <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
             Carregando logs...
           </div>
-        ) : filtered.length === 0 ? (
+        ) : filteredLogs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <ScrollText className="w-10 h-10 mb-3 opacity-40" />
             <p className="text-sm">Nenhum log encontrado.</p>
@@ -318,7 +391,7 @@ export default function AdminLogsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((log) => {
+              {paginatedLogs.map((log) => {
                 const meta = getEventMeta(log.event_type)
                 return (
                   <TableRow
@@ -353,6 +426,31 @@ export default function AdminLogsPage() {
           </Table>
         )}
       </div>
+
+      {!loading && filteredLogs.length > 0 ? (
+        <div className="flex justify-between items-center mt-4 text-sm text-muted-foreground">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className="text-foreground hover:underline disabled:opacity-40 disabled:pointer-events-none disabled:no-underline"
+          >
+            ← Anterior
+          </button>
+          <span>
+            Página {page} de {totalPages} · {filteredLogs.length} registro
+            {filteredLogs.length !== 1 ? 's' : ''}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            className="text-foreground hover:underline disabled:opacity-40 disabled:pointer-events-none disabled:no-underline"
+          >
+            Próximo →
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

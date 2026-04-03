@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { createClient } from "@/lib/supabase/client"
+import { logAudit } from "@/lib/audit"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -40,7 +41,7 @@ export default function LoginPage() {
       }
       const { data: profile } = await supabase
         .from("profiles")
-        .select("profile_type")
+        .select("profile_type, company_id")
         .eq("id", userId)
         .single()
       const profileType = profile?.profile_type ?? "buyer"
@@ -50,6 +51,16 @@ export default function LoginPage() {
         setAccessError("Acesso não permitido neste portal. Utilize o Portal do Comprador.")
         return
       }
+
+      await logAudit({
+        eventType: "supplier.login",
+        description: "Login no Portal do Fornecedor",
+        userId,
+        companyId: profile?.company_id ?? null,
+        entity: "profiles",
+        entityId: userId,
+        metadata: { portal: "fornecedor", email },
+      })
 
       window.location.href = "/fornecedor"
     } catch {

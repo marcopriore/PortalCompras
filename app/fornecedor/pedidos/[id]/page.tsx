@@ -7,6 +7,7 @@ import { ptBR } from "date-fns/locale"
 import { CheckCircle, ChevronLeft, Clock, Package, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
+import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -127,7 +128,7 @@ export default function FornecedorPedidoDetalhePage({
 }) {
   const { id: orderId } = React.use(params)
   const router = useRouter()
-  const { supplierId } = useUser()
+  const { userId, supplierId } = useUser()
 
   const [order, setOrder] = React.useState<PurchaseOrderDetail | null>(null)
   const [items, setItems] = React.useState<POItem[]>([])
@@ -269,6 +270,21 @@ export default function FornecedorPedidoDetalhePage({
         .eq("id", order.id)
         .eq("supplier_id", supplierId)
       if (error) throw error
+      if (userId) {
+        await logAudit({
+          eventType: "purchase_order.accepted",
+          description: `Pedido aceito — ${order.code}`,
+          userId,
+          companyId: order.company_id,
+          entity: "purchase_orders",
+          entityId: order.id,
+          metadata: {
+            order_code: order.code,
+            estimated_delivery_date: estimatedDate,
+            supplier_name: order.supplier_name,
+          },
+        })
+      }
       toast.success("Pedido aceito com sucesso.")
       setAcceptOpen(false)
       await fetchAll()
@@ -299,6 +315,21 @@ export default function FornecedorPedidoDetalhePage({
         .eq("id", order.id)
         .eq("supplier_id", supplierId)
       if (error) throw error
+      if (userId) {
+        await logAudit({
+          eventType: "purchase_order.refused",
+          description: `Pedido recusado — ${order.code}`,
+          userId,
+          companyId: order.company_id,
+          entity: "purchase_orders",
+          entityId: order.id,
+          metadata: {
+            order_code: order.code,
+            cancellation_reason: reason,
+            supplier_name: order.supplier_name,
+          },
+        })
+      }
       toast.success("Pedido recusado.")
       setRejectOpen(false)
       setRejectReason("")
@@ -333,6 +364,22 @@ export default function FornecedorPedidoDetalhePage({
         .eq("id", order.id)
         .eq("supplier_id", supplierId)
       if (error) throw error
+      if (userId) {
+        await logAudit({
+          eventType: "purchase_order.delivery_updated",
+          description: `Data de entrega atualizada — ${order.code}`,
+          userId,
+          companyId: order.company_id,
+          entity: "purchase_orders",
+          entityId: order.id,
+          metadata: {
+            order_code: order.code,
+            new_date: estimatedDate,
+            reason: justification,
+            supplier_name: order.supplier_name,
+          },
+        })
+      }
       toast.success("Data de entrega atualizada.")
       setDateChangeDialog(false)
       setDateChangeReason("")

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
@@ -33,8 +33,9 @@ import {
   Building2,
   Package,
   Users,
-  UserCheck,
   Puzzle,
+  ShoppingCart,
+  ClipboardList,
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 
@@ -50,6 +51,8 @@ type Profile = {
   id: string
   full_name: string
   role: string
+  roles?: string[] | null
+  profile_type?: string | null
   status: string
   created_at: string
   updated_at: string
@@ -61,6 +64,8 @@ type Metrics = {
   quotations: number
   suppliers: number
   items: number
+  purchaseOrders: number
+  requisitions: number
 }
 
 function maskCNPJ(value: string): string {
@@ -120,6 +125,8 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     quotations: 0,
     suppliers: 0,
     items: 0,
+    purchaseOrders: 0,
+    requisitions: 0,
   })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'overview' | 'users'>('overview')
@@ -135,7 +142,34 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
   const [customTo, setCustomTo] = useState<string>('')
 
   const totalUsers = profiles.length
-  const activeUsers = profiles.filter((p) => p.status === 'active').length
+
+  const userBreakdown = useMemo(() => {
+    let buyers = 0
+    let suppliers = 0
+    let admins = 0
+    let active = 0
+    let inactive = 0
+    for (const p of profiles) {
+      if (p.profile_type === 'supplier') suppliers += 1
+      else if (p.profile_type === 'buyer') buyers += 1
+      const rolesArr = Array.isArray(p.roles) && p.roles.length > 0
+        ? p.roles
+        : p.role
+          ? [p.role]
+          : []
+      if (rolesArr.includes('admin')) admins += 1
+      if (p.status === 'active') active += 1
+      else inactive += 1
+    }
+    return { buyers, suppliers, admins, active, inactive }
+  }, [profiles])
+
+  function profileRolesLabel(p: Profile): string {
+    if (Array.isArray(p.roles) && p.roles.length > 0) {
+      return p.roles.join(', ')
+    }
+    return p.role || '—'
+  }
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -146,7 +180,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
         supabase.from('companies').select('*').eq('id', id).single(),
         supabase
           .from('profiles')
-          .select('id, full_name, role, status, created_at')
+          .select('id, full_name, role, roles, profile_type, status, created_at')
           .eq('company_id', id)
           .order('created_at', { ascending: false }),
       ])
@@ -193,25 +227,47 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
         .select('*', { count: 'exact', head: true })
         .eq('company_id', id)
 
+      let purchaseOrdersQuery = supabase
+        .from('purchase_orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', id)
+        .neq('status', 'draft')
+
+      let requisitionsQuery = supabase
+        .from('requisitions')
+        .select('id', { count: 'exact', head: true })
+        .eq('company_id', id)
+
       if (periodStart) {
         const isoStart = periodStart.toISOString()
         const isoEnd = periodEnd.toISOString()
         quotationsQuery = quotationsQuery
           .gte('created_at', isoStart)
           .lte('created_at', isoEnd)
+        purchaseOrdersQuery = purchaseOrdersQuery
+          .gte('created_at', isoStart)
+          .lte('created_at', isoEnd)
+        requisitionsQuery = requisitionsQuery
+          .gte('created_at', isoStart)
+          .lte('created_at', isoEnd)
       }
 
-      const [quotationsRes, suppliersRes, itemsRes] = await Promise.all([
-        quotationsQuery,
-        suppliersQuery,
-        itemsQuery,
-      ])
+      const [quotationsRes, suppliersRes, itemsRes, purchaseOrdersRes, requisitionsRes] =
+        await Promise.all([
+          quotationsQuery,
+          suppliersQuery,
+          itemsQuery,
+          purchaseOrdersQuery,
+          requisitionsQuery,
+        ])
 
       setMetrics((m) => ({
         ...m,
         quotations: quotationsRes.count ?? 0,
         suppliers: suppliersRes.count ?? 0,
         items: itemsRes.count ?? 0,
+        purchaseOrders: purchaseOrdersRes.count ?? 0,
+        requisitions: requisitionsRes.count ?? 0,
       }))
     }
     fetchMetrics()
@@ -487,30 +543,44 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                 </div>
               </div>
 
+              <div className="rounded-lg p-3 flex items-center gap-3 border border-indigo-100 bg-indigo-50">
+                <div className="rounded-full bg-indigo-100 p-2">
+                  <Package className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-indigo-600 font-medium">
+                    Itens cadastrados
+                  </p>
+                  <p className="text-xl font-bold text-indigo-700">
+                    {metrics.items}
+                  </p>
+                </div>
+              </div>
+
               <div className="rounded-lg p-3 flex items-center gap-3 border border-purple-100 bg-purple-50">
                 <div className="rounded-full bg-purple-100 p-2">
-                  <Package className="w-5 h-5 text-purple-600" />
+                  <ShoppingCart className="w-5 h-5 text-purple-600" />
                 </div>
                 <div>
                   <p className="text-xs text-purple-600 font-medium">
-                    Itens cadastrados
+                    Pedidos de Compra
                   </p>
                   <p className="text-xl font-bold text-purple-700">
-                    {metrics.items}
+                    {metrics.purchaseOrders}
                   </p>
                 </div>
               </div>
 
               <div className="rounded-lg p-3 flex items-center gap-3 border border-orange-100 bg-orange-50">
                 <div className="rounded-full bg-orange-100 p-2">
-                  <UserCheck className="w-5 h-5 text-orange-600" />
+                  <ClipboardList className="w-5 h-5 text-orange-600" />
                 </div>
                 <div>
                   <p className="text-xs text-orange-600 font-medium">
-                    Usuários Ativos
+                    Requisições
                   </p>
                   <p className="text-xl font-bold text-orange-700">
-                    {activeUsers}/{totalUsers}
+                    {metrics.requisitions}
                   </p>
                 </div>
               </div>
@@ -527,6 +597,42 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
               Nenhum usuário cadastrado neste tenant.
             </div>
           ) : (
+            <>
+            <div className="rounded-xl border border-border bg-card p-4">
+              <p className="text-sm font-medium text-foreground mb-3">
+                Resumo — {totalUsers} usuário{totalUsers !== 1 ? 's' : ''}
+              </p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                <div>
+                  <p className="text-muted-foreground">Total</p>
+                  <p className="font-medium text-foreground">{totalUsers}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Compradores</p>
+                  <p className="font-medium text-foreground">
+                    {userBreakdown.buyers}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Fornecedores</p>
+                  <p className="font-medium text-foreground">
+                    {userBreakdown.suppliers}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Admins</p>
+                  <p className="font-medium text-foreground">
+                    {userBreakdown.admins}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-muted-foreground">Ativos / Inativos</p>
+                  <p className="font-medium text-foreground">
+                    {userBreakdown.active} / {userBreakdown.inactive}
+                  </p>
+                </div>
+              </div>
+            </div>
             <div className="rounded-xl border border-border bg-card">
               <Table>
                 <TableHeader className="bg-muted/30">
@@ -566,7 +672,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                         </div>
                       </TableCell>
                       <TableCell className="px-3 py-2 align-top text-sm text-foreground">
-                        {profile.role}
+                        {profileRolesLabel(profile)}
                       </TableCell>
                       <TableCell className="px-3 py-2 align-top">
                         <Badge
@@ -594,6 +700,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                 </TableBody>
               </Table>
             </div>
+            </>
           )}
         </div>
       )}

@@ -14,6 +14,14 @@ type AuditEventType =
   | 'integration.items'
   | 'integration.suppliers'
   | 'integration.outbound'
+  | 'supplier.login'
+  | 'supplier.logout'
+  | 'proposal.saved'
+  | 'proposal.submitted'
+  | 'proposal.imported'
+  | 'purchase_order.accepted'
+  | 'purchase_order.refused'
+  | 'purchase_order.delivery_updated'
 
 type LogAuditParams = {
   eventType: AuditEventType

@@ -1,4 +1,4 @@
- "use client"
+"use client"
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
@@ -54,9 +54,9 @@ export default function AdminLayout({
   ]
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
-      <aside className="flex w-60 flex-col bg-[oklch(0.12_0.02_250)] text-white">
-        <div className="flex h-16 items-center justify-between px-4">
+    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
+      <aside className="flex h-screen w-60 flex-col overflow-hidden bg-[oklch(0.12_0.02_250)] text-white">
+        <div className="flex h-16 flex-shrink-0 items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <ValoreLogo size={24} showName={true} nameColor="#ffffff" />
             <span className="text-xs bg-red-600 text-white px-1.5 py-0.5 rounded font-medium ml-1">
@@ -64,8 +64,8 @@ export default function AdminLayout({
             </span>
           </div>
         </div>
-        <hr className="border-border/20 my-3" />
-        <nav className="flex-1 space-y-1 px-3 text-sm">
+        <hr className="flex-shrink-0 border-border/20 my-3" />
+        <nav className="flex-1 min-h-0 overflow-y-auto space-y-1 px-3 text-sm">
           {navItems.map((item) => {
             const isActive =
               pathname === item.href || pathname.startsWith(item.href + "/")
@@ -87,7 +87,7 @@ export default function AdminLayout({
             )
           })}
         </nav>
-        <div className="px-3 pb-4 pt-2 mt-auto">
+        <div className="flex-shrink-0 px-3 pb-4 pt-2">
           <Button
             type="button"
             variant="ghost"
@@ -99,8 +99,8 @@ export default function AdminLayout({
           </Button>
         </div>
       </aside>
-      <div className="flex flex-1 flex-col min-h-screen bg-background">
-        <header className="h-14 border-b border-border bg-card flex items-center px-6 justify-between">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
+        <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border bg-card px-6">
           <h1 className="text-sm font-medium text-foreground">{getTitle()}</h1>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white text-xs font-bold">
@@ -109,7 +109,7 @@ export default function AdminLayout({
             <span>{adminName || "Admin"}</span>
           </div>
         </header>
-        <main className="flex-1 p-6">{children}</main>
+        <main className="min-h-0 flex-1 overflow-auto p-6">{children}</main>
       </div>
     </div>
   )
