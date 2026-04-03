@@ -7,6 +7,8 @@ import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { LastUpdated } from "@/components/ui/last-updated"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -191,9 +193,19 @@ export default function AprovacoesPage() {
   const [rejectSaving, setRejectSaving] = React.useState(false)
 
   const [actionLoading, setActionLoading] = React.useState<string | null>(null)
+  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
+  const [isRefreshing, setIsRefreshing] = React.useState(false)
+  const approvalContextRef = React.useRef({ companyId, userId })
+  approvalContextRef.current = { companyId, userId }
 
-  const loadData = React.useCallback(async () => {
+  const loadData = React.useCallback(async (silent = false) => {
     if (!companyId || !userId) return
+    const started = { companyId, userId }
+    const stillHere = () =>
+      approvalContextRef.current.companyId === started.companyId &&
+      approvalContextRef.current.userId === started.userId
+
+    if (!silent) setLoading(true)
     const supabase = createClient()
     const isAdmin = hasRole("admin")
 
@@ -246,6 +258,7 @@ export default function AprovacoesPage() {
     const reqMap = new Map(requisitions.map((r) => [r.id, r]))
     const orderMap = new Map(orders.map((o) => [o.id, o]))
 
+    if (!stillHere()) return
     setRequisitionRows(
       reqRequests.map((request) => ({
         request,
@@ -258,14 +271,29 @@ export default function AprovacoesPage() {
         order: orderMap.get(request.entity_id) ?? null,
       })),
     )
-    setLoading(false)
+    setLastUpdated(new Date())
+    if (!silent) setLoading(false)
   }, [companyId, userId, hasRole])
 
   React.useEffect(() => {
     if (!companyId || !userId) return
-    setLoading(true)
-    loadData()
+    void loadData(false)
   }, [companyId, userId, loadData])
+
+  const refreshAprovacoes = React.useCallback(async () => {
+    setIsRefreshing(true)
+    try {
+      await loadData(true)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [loadData])
+
+  useAutoRefresh({
+    intervalMs: 30_000,
+    onRefresh: refreshAprovacoes,
+    enabled: Boolean(companyId && userId) && !permissionsLoading,
+  })
 
   const pendingTotal = React.useMemo(
     () =>
@@ -497,7 +525,7 @@ export default function AprovacoesPage() {
       <div className="flex items-center gap-3">
         <ShieldCheck className="h-8 w-8 text-primary" />
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight">Aprovações</h1>
             {!loading && pendingTotal > 0 && (
               <Badge
@@ -507,6 +535,7 @@ export default function AprovacoesPage() {
                 {pendingTotal}
               </Badge>
             )}
+            <LastUpdated timestamp={lastUpdated} isRefreshing={isRefreshing} />
           </div>
           <p className="text-muted-foreground">
             Gerencie as aprovações pendentes de requisições e pedidos de compra.

@@ -14,6 +14,8 @@ import {
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { LastUpdated } from "@/components/ui/last-updated"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -89,21 +91,23 @@ export default function FornecedorPedidosPage() {
   const [period, setPeriod] = React.useState<string>("all")
   const [page, setPage] = React.useState(1)
   const searchInputRef = React.useRef<HTMLDivElement>(null)
+  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
+  const [isRefreshing, setIsRefreshing] = React.useState(false)
 
-  React.useEffect(() => {
-    if (userLoading) return
-    if (!supplierId) {
-      setRows([])
-      setLoading(false)
-      return
-    }
+  const loadPedidos = React.useCallback(
+    async (silent = false) => {
+      if (userLoading) return
+      if (!supplierId) {
+        setRows([])
+        setLoading(false)
+        return
+      }
 
-    let alive = true
-    const supabase = createClient()
-
-    const run = async () => {
-      setLoading(true)
+      if (!silent) {
+        setLoading(true)
+      }
       setError(false)
+      const supabase = createClient()
       try {
         const { data, error: qErr } = await supabase
           .from("purchase_orders")
@@ -120,23 +124,33 @@ export default function FornecedorPedidosPage() {
           .order("created_at", { ascending: false })
 
         if (qErr) throw qErr
-        if (!alive) return
         setRows((data as PurchaseOrderRow[]) ?? [])
+        setLastUpdated(new Date())
       } catch (e) {
         console.error(e)
-        if (!alive) return
         setError(true)
         setRows([])
       } finally {
-        if (alive) setLoading(false)
+        if (!silent) setLoading(false)
       }
-    }
+    },
+    [supplierId, userLoading],
+  )
 
-    void run()
-    return () => {
-      alive = false
+  React.useEffect(() => {
+    void loadPedidos(false)
+  }, [loadPedidos])
+
+  const refresh = React.useCallback(async () => {
+    setIsRefreshing(true)
+    try {
+      await loadPedidos(true)
+    } finally {
+      setIsRefreshing(false)
     }
-  }, [supplierId, userLoading])
+  }, [loadPedidos])
+
+  useAutoRefresh({ intervalMs: 30_000, onRefresh: refresh, enabled: Boolean(supplierId) && !userLoading })
 
   const metrics = React.useMemo(() => {
     return {
@@ -174,13 +188,18 @@ export default function FornecedorPedidosPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Pedidos de Compra
-        </h1>
-        <p className="text-muted-foreground">
-          Acompanhe e responda aos pedidos recebidos dos seus clientes
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              Pedidos de Compra
+            </h1>
+            <LastUpdated timestamp={lastUpdated} isRefreshing={isRefreshing} />
+          </div>
+          <p className="text-muted-foreground">
+            Acompanhe e responda aos pedidos recebidos dos seus clientes
+          </p>
+        </div>
       </div>
 
       {!userLoading && !supplierId ? (

@@ -4,6 +4,8 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { LastUpdated } from "@/components/ui/last-updated"
 import {
   formatDateBR,
   formatDateTimeBR,
@@ -162,6 +164,10 @@ export default function FornecedorCotacoesPage() {
 
   const [page, setPage] = React.useState(1)
   const pageSize = 10
+  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
+  const [isRefreshing, setIsRefreshing] = React.useState(false)
+  const supplierIdRef = React.useRef(supplierId)
+  supplierIdRef.current = supplierId
 
   const filteredQuotations = React.useMemo(() => {
     let rows = tableRows
@@ -219,30 +225,36 @@ export default function FornecedorCotacoesPage() {
     setPage(1)
   }, [filterSearch, filterStatuses, filterPeriod])
 
-  React.useEffect(() => {
-    if (userLoading) return
+  const loadCotacoesData = React.useCallback(
+    async (silent = false) => {
+      const startedSupplierId = supplierId
+      const stillHere = () => supplierIdRef.current === startedSupplierId
 
-    if (!supplierId) {
-      setLoading(false)
-      setError(false)
-      setMAwaiting(0)
-      setMInAnalysis(0)
-      setMWinners(0)
-      setMClosed(0)
-      setHasInvites(false)
-      setTableRows([])
-      setFilterSearch("")
-      setFilterStatuses([])
-      setFilterPeriod("all")
-      setPage(1)
-      return
-    }
+      if (userLoading) return
 
-    let cancelled = false
-    const supabase = createClient()
+      if (!supplierId) {
+        setLoading(false)
+        setError(false)
+        setMAwaiting(0)
+        setMInAnalysis(0)
+        setMWinners(0)
+        setMClosed(0)
+        setHasInvites(false)
+        setTableRows([])
+        if (!silent) {
+          setFilterSearch("")
+          setFilterStatuses([])
+          setFilterPeriod("all")
+          setPage(1)
+        }
+        return
+      }
 
-    const run = async () => {
-      setLoading(true)
+      const supabase = createClient()
+
+      if (!silent) {
+        setLoading(true)
+      }
       setError(false)
 
       let quotationIds: string[] = []
@@ -257,10 +269,10 @@ export default function FornecedorCotacoesPage() {
         quotationIds = [
           ...new Set((invitesRes.data ?? []).map((r) => r.quotation_id)),
         ]
-        if (!cancelled) setHasInvites(quotationIds.length > 0)
+        if (stillHere()) setHasInvites(quotationIds.length > 0)
       } catch (err) {
         console.error("Erro ao carregar cotações fornecedor:", err)
-        if (!cancelled) {
+        if (stillHere()) {
           setError(true)
           setHasInvites(false)
           setTableRows([])
@@ -270,7 +282,7 @@ export default function FornecedorCotacoesPage() {
 
       try {
         if (quotationIds.length === 0) {
-          if (!cancelled) {
+          if (stillHere()) {
             setMAwaiting(0)
             setMInAnalysis(0)
             setMClosed(0)
@@ -317,7 +329,7 @@ export default function FornecedorCotacoesPage() {
             )
           }
 
-          if (!cancelled) {
+          if (stillHere()) {
             setMWinners(selectedCountRes.count ?? 0)
             setMClosed(completedCountRes.count ?? 0)
           }
@@ -336,7 +348,7 @@ export default function FornecedorCotacoesPage() {
             if (invitedCountRes.error) throw invitedCountRes.error
             awaiting = invitedCountRes.count ?? 0
           }
-          if (!cancelled) setMAwaiting(awaiting)
+          if (stillHere()) setMAwaiting(awaiting)
 
           const submittedRows =
             (submittedRowsRes.data ?? []) as { quotation_id: string }[]
@@ -353,11 +365,11 @@ export default function FornecedorCotacoesPage() {
             const allowed = new Set((qaRows ?? []).map((q) => q.id))
             inAnalysis = submittedRows.filter((r) => allowed.has(r.quotation_id)).length
           }
-          if (!cancelled) setMInAnalysis(inAnalysis)
+          if (stillHere()) setMInAnalysis(inAnalysis)
         }
       } catch (err) {
         console.error("Erro ao carregar métricas fornecedor:", err)
-        if (!cancelled) {
+        if (stillHere()) {
           setError(true)
           setMAwaiting(0)
           setMInAnalysis(0)
@@ -368,7 +380,7 @@ export default function FornecedorCotacoesPage() {
 
       try {
         if (quotationIds.length === 0) {
-          if (!cancelled) setTableRows([])
+          if (stillHere()) setTableRows([])
         } else {
           const quotationsRes = await supabase
             .from("quotations")
@@ -443,11 +455,11 @@ export default function FornecedorCotacoesPage() {
             return da - db
           })
 
-          if (!cancelled) setTableRows(baseRows)
+          if (stillHere()) setTableRows(baseRows)
         }
       } catch (err) {
         console.error("Erro ao carregar cotações fornecedor:", err)
-        if (!cancelled) {
+        if (stillHere()) {
           setError(true)
           setTableRows([])
         }
@@ -483,7 +495,7 @@ export default function FornecedorCotacoesPage() {
           }
         }
 
-        if (!cancelled) {
+        if (stillHere()) {
           setTableRows((prev) =>
             prev.map((r) => ({
               ...r,
@@ -493,22 +505,43 @@ export default function FornecedorCotacoesPage() {
         }
       } catch (err) {
         console.error("Erro ao carregar propostas fornecedor:", err)
-        if (!cancelled) setError(true)
+        if (stillHere()) setError(true)
       }
 
-      if (!cancelled) setLoading(false)
-    }
+      if (stillHere()) {
+        setLastUpdated(new Date())
+        if (!silent) setLoading(false)
+      }
+    },
+    [supplierId, userLoading],
+  )
 
-    void run()
-    return () => {
-      cancelled = true
+  React.useEffect(() => {
+    void loadCotacoesData(false)
+  }, [loadCotacoesData])
+
+  const refreshCotacoes = React.useCallback(async () => {
+    setIsRefreshing(true)
+    try {
+      await loadCotacoesData(true)
+    } finally {
+      setIsRefreshing(false)
     }
-  }, [supplierId, userLoading])
+  }, [loadCotacoesData])
+
+  useAutoRefresh({
+    intervalMs: 60_000,
+    onRefresh: refreshCotacoes,
+    enabled: Boolean(supplierId) && !userLoading,
+  })
 
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Cotações</h1>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h1 className="text-2xl font-bold tracking-tight">Cotações</h1>
+          <LastUpdated timestamp={lastUpdated} isRefreshing={isRefreshing} />
+        </div>
         <p className="text-muted-foreground">
           Cotações em que você foi convidado
         </p>

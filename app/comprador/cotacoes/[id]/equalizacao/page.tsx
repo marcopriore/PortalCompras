@@ -65,6 +65,8 @@ import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { LastUpdated } from "@/components/ui/last-updated"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "sonner"
 
@@ -365,6 +367,12 @@ export default function EqualizacaoPage({
   const [creatingRound, setCreatingRound] = React.useState(false)
   const [novaRoundDeadline, setNovaRoundDeadline] = React.useState("")
   const [countdownTick, setCountdownTick] = React.useState(0)
+  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
+  const [isRefreshing, setIsRefreshing] = React.useState(false)
+
+  const structureSnapshotRef = React.useRef({ items: 0, suppliers: 0 })
+  const quotationSuppliersSnapshotRef = React.useRef<QuotationSupplier[]>([])
+  const selectedRoundIdRef = React.useRef<string | null>(null)
 
   const countdownIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
   const deadlineExpireFetchedRef = React.useRef(false)
@@ -376,6 +384,10 @@ export default function EqualizacaoPage({
   React.useEffect(() => {
     isFirstLoadRef.current = true
   }, [id])
+
+  React.useEffect(() => {
+    selectedRoundIdRef.current = selectedRoundId
+  }, [selectedRoundId])
 
   const maxRoundNumber =
     rounds.length > 0 ? Math.max(...rounds.map((r) => r.round_number)) : null
@@ -416,11 +428,11 @@ export default function EqualizacaoPage({
 
   const fetchEqualizationData = React.useCallback(
     async (options?: { showLoading?: boolean; forceRoundId?: string | null }) => {
-      void options?.showLoading
+      const showLoadingUI = options?.showLoading === true
       const forceRoundId = options?.forceRoundId
       if (!id) return
       const supabase = createClient()
-      setLoading(true)
+      if (showLoadingUI) setLoading(true)
 
       try {
         const { data: roundsData, error: roundsError } = await supabase
@@ -490,6 +502,12 @@ export default function EqualizacaoPage({
         const q = (qRes.data as Quotation) ?? null
         const items = ((itemsRes.data as unknown) as QuotationItem[]) ?? []
         const quotationSuppliersOrdered = (qsRes.data ?? []) as QuotationSupplier[]
+
+        structureSnapshotRef.current = {
+          items: items.length,
+          suppliers: quotationSuppliersOrdered.length,
+        }
+        quotationSuppliersSnapshotRef.current = quotationSuppliersOrdered
 
         const allProposalsRaw = allProposalsRawRes.data
 
@@ -577,12 +595,81 @@ export default function EqualizacaoPage({
           })
           setItemSelections(initial)
         }
+        setLastUpdated(new Date())
       } finally {
-        setLoading(false)
+        if (showLoadingUI) setLoading(false)
       }
     },
     [id, selectedRoundId],
   )
+
+  const refreshProposalsLight = React.useCallback(async () => {
+    if (!id) return
+    const supabase = createClient()
+    const snap = structureSnapshotRef.current
+
+    const [itemsCountRes, suppliersCountRes, proposalsRes] = await Promise.all([
+      supabase
+        .from("quotation_items")
+        .select("id", { count: "exact", head: true })
+        .eq("quotation_id", id),
+      supabase
+        .from("quotation_suppliers")
+        .select("supplier_id", { count: "exact", head: true })
+        .eq("quotation_id", id),
+      supabase
+        .from("quotation_proposals")
+        .select("*, proposal_items(*)")
+        .eq("quotation_id", id),
+    ])
+
+    if (itemsCountRes.error || suppliersCountRes.error || proposalsRes.error) {
+      return
+    }
+
+    const itemsCount = itemsCountRes.count ?? 0
+    const suppliersCount = suppliersCountRes.count ?? 0
+    if (itemsCount !== snap.items || suppliersCount !== snap.suppliers) {
+      await fetchEqualizationDataRef.current?.({ showLoading: false })
+      return
+    }
+
+    const allProposalsRaw = proposalsRes.data
+    const allCatalog = ((allProposalsRaw ?? []) as unknown as Proposal[]).map((p) => ({
+      ...p,
+      proposal_items: (p.proposal_items ?? []).filter(
+        (pi) =>
+          p.round_id != null && (pi.round_id === p.round_id || pi.round_id == null),
+      ),
+    }))
+    setAllProposalsCatalog(allCatalog)
+
+    const rid = selectedRoundIdRef.current
+    if (rid) {
+      const roundProposals = allCatalog.filter((p) => p.round_id === rid)
+      const probs = orderProposalsByQuotationSupplierColumnOrder(
+        roundProposals,
+        quotationSuppliersSnapshotRef.current,
+      )
+      setProposals(probs)
+    }
+  }, [id])
+
+  const refreshEqualizacao = React.useCallback(async () => {
+    setIsRefreshing(true)
+    try {
+      await refreshProposalsLight()
+    } finally {
+      setLastUpdated(new Date())
+      setIsRefreshing(false)
+    }
+  }, [refreshProposalsLight])
+
+  useAutoRefresh({
+    intervalMs: 30_000,
+    onRefresh: refreshEqualizacao,
+    enabled: Boolean(companyId && id),
+  })
 
   fetchEqualizationDataRef.current = fetchEqualizationData
 
@@ -1721,6 +1808,7 @@ export default function EqualizacaoPage({
             <h1 className="text-2xl font-bold tracking-tight shrink-0">
               Equalização de Propostas
             </h1>
+            <LastUpdated timestamp={lastUpdated} isRefreshing={isRefreshing} />
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <div

@@ -6,6 +6,8 @@ import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { LastUpdated } from "@/components/ui/last-updated"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -79,30 +81,53 @@ export default function PedidosPage() {
     dateTo: "",
   })
   const searchInputRef = React.useRef<HTMLDivElement>(null)
+  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
+  const [isRefreshing, setIsRefreshing] = React.useState(false)
+  const companyIdRef = React.useRef(companyId)
+  companyIdRef.current = companyId
 
-  React.useEffect(() => {
-    if (!companyId) return
-    const supabase = createClient()
-    let alive = true
+  const loadOrders = React.useCallback(
+    async (silent = false) => {
+      if (!companyId) return
+      const started = companyId
+      const stillHere = () => companyIdRef.current === started
 
-    const run = async () => {
-      setLoading(true)
+      if (!silent) setLoading(true)
+      const supabase = createClient()
       const { data } = await supabase
         .from("purchase_orders")
-        .select("id, code, supplier_name, supplier_cnpj, total_price, delivery_days, payment_condition, quotation_code, status, erp_error_message, created_at, updated_at, purchase_order_items(id)")
+        .select(
+          "id, code, supplier_name, supplier_cnpj, total_price, delivery_days, payment_condition, quotation_code, status, erp_error_message, created_at, updated_at, purchase_order_items(id)",
+        )
         .eq("company_id", companyId)
         .order("created_at", { ascending: false })
 
-      if (!alive) return
+      if (!stillHere()) return
       setOrders(((data as unknown) as PurchaseOrder[]) ?? [])
-      setLoading(false)
-    }
+      setLastUpdated(new Date())
+      if (!silent) setLoading(false)
+    },
+    [companyId],
+  )
 
-    run()
-    return () => {
-      alive = false
+  React.useEffect(() => {
+    void loadOrders(false)
+  }, [loadOrders])
+
+  const refreshPedidos = React.useCallback(async () => {
+    setIsRefreshing(true)
+    try {
+      await loadOrders(true)
+    } finally {
+      setIsRefreshing(false)
     }
-  }, [companyId])
+  }, [loadOrders])
+
+  useAutoRefresh({
+    intervalMs: 60_000,
+    onRefresh: refreshPedidos,
+    enabled: Boolean(companyId),
+  })
 
   const handleFilterChange =
     (field: keyof Filters) =>
@@ -161,7 +186,10 @@ export default function PedidosPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Pedidos de Compra</h1>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h1 className="text-2xl font-bold text-foreground">Pedidos de Compra</h1>
+          <LastUpdated timestamp={lastUpdated} isRefreshing={isRefreshing} />
+        </div>
         <p className="text-muted-foreground">
           Gerencie e acompanhe todos os pedidos de compra
         </p>
