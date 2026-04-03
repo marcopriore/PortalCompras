@@ -1,4 +1,7 @@
+import { config } from "dotenv"
 import { defineConfig, devices } from "@playwright/test"
+
+config({ path: ".env.local" })
 
 export default defineConfig({
   testDir: "./e2e",
@@ -16,7 +19,16 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      testIgnore: "**/critical-flows.spec.ts",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "critical-flows",
+      testMatch: "**/critical-flows.spec.ts",
+      use: {
+        ...devices["Desktop Chrome"],
+        actionTimeout: 15000,
+      },
     },
   ],
 })
