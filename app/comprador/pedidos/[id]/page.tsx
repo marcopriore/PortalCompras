@@ -41,17 +41,23 @@ import {
 import {
   AlertCircle,
   AlertTriangle,
+  Calendar,
   CheckCircle,
   CheckCircle2,
   ChevronLeft,
   Download,
   FileEdit,
+  FileText,
+  Package,
   Pencil,
+  Send,
   X,
+  XCircle,
 } from "lucide-react"
 import { toast } from "sonner"
 import type { LucideIcon } from "lucide-react"
 import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
+import { formatDateBR, formatDateTimeBR } from "@/lib/utils/date-helpers"
 
 type PurchaseOrderStatus =
   | "draft"
@@ -119,6 +125,207 @@ const money = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
 })
 
+type AuditLog = {
+  id: string
+  event_type: string
+  description: string
+  created_at: string
+  user_name: string | null
+  metadata: Record<string, unknown> | null
+}
+
+type TimelineEvent = {
+  id: string
+  date: string
+  title: string
+  description?: string
+  actor?: string
+  type: "system" | "buyer" | "supplier" | "error"
+  icon: LucideIcon
+  iconColor: string
+}
+
+function buildTimeline(order: PurchaseOrder, logs: AuditLog[]): TimelineEvent[] {
+  const inferred: TimelineEvent[] = []
+
+  const qCode = order.quotation_code?.trim()
+  inferred.push({
+    id: "inf-created",
+    date: order.created_at,
+    title: "Pedido criado",
+    description: qCode
+      ? `Rascunho gerado a partir da cotação ${qCode}`
+      : undefined,
+    type: "buyer",
+    icon: FileText,
+    iconColor: "text-blue-500",
+  })
+
+  if (order.status !== "draft") {
+    inferred.push({
+      id: "inf-sent",
+      date: order.created_at,
+      title: "Enviado ao fornecedor",
+      description: `Aguardando aceite de ${order.supplier_name}`,
+      type: "buyer",
+      icon: Send,
+      iconColor: "text-blue-500",
+    })
+  }
+
+  const hasAcceptedLog = logs.some((l) => l.event_type === "purchase_order.accepted")
+  if (order.accepted_at && !hasAcceptedLog) {
+    const est = order.estimated_delivery_date
+    inferred.push({
+      id: "inf-accepted",
+      date: order.accepted_at,
+      title: "Pedido aceito pelo fornecedor",
+      description: est ? `Entrega prevista: ${formatDateBR(est)}` : undefined,
+      type: "supplier",
+      icon: CheckCircle,
+      iconColor: "text-green-500",
+    })
+  }
+
+  const deliveryLogs = logs.filter(
+    (l) => l.event_type === "purchase_order.delivery_updated",
+  )
+  if (order.delivery_date_change_reason?.trim() && deliveryLogs.length === 0) {
+    const d = order.updated_at ?? order.created_at
+    inferred.push({
+      id: "inf-delivery",
+      date: d,
+      title: "Data de entrega atualizada",
+      description: `Motivo: ${order.delivery_date_change_reason}`,
+      type: "supplier",
+      icon: Calendar,
+      iconColor: "text-amber-500",
+    })
+  }
+
+  const hasRefusedLog = logs.some((l) => l.event_type === "purchase_order.refused")
+  if (order.status === "refused" && !hasRefusedLog) {
+    const d = order.updated_at ?? order.created_at
+    inferred.push({
+      id: "inf-refused",
+      date: d,
+      title: "Pedido recusado pelo fornecedor",
+      description: order.cancellation_reason
+        ? `Motivo: ${order.cancellation_reason}`
+        : undefined,
+      type: "supplier",
+      icon: XCircle,
+      iconColor: "text-red-500",
+    })
+  }
+
+  if (order.status === "cancelled") {
+    const d = order.updated_at ?? order.created_at
+    inferred.push({
+      id: "inf-cancelled",
+      date: d,
+      title: "Pedido cancelado",
+      description: order.cancellation_reason ?? undefined,
+      type: "buyer",
+      icon: XCircle,
+      iconColor: "text-red-500",
+    })
+  }
+
+  if (order.status === "completed") {
+    const d = order.updated_at ?? order.created_at
+    inferred.push({
+      id: "inf-completed",
+      date: d,
+      title: "Pedido finalizado",
+      type: "system",
+      icon: Package,
+      iconColor: "text-green-500",
+    })
+  }
+
+  if (order.status === "error") {
+    const d = order.updated_at ?? order.created_at
+    inferred.push({
+      id: "inf-error",
+      date: d,
+      title: "Erro na integração ERP",
+      description: order.erp_error_message ?? undefined,
+      type: "error",
+      icon: AlertTriangle,
+      iconColor: "text-red-500",
+    })
+  }
+
+  const fromLogs: TimelineEvent[] = []
+
+  for (const log of logs) {
+    const meta = log.metadata ?? {}
+    if (log.event_type === "purchase_order.accepted") {
+      const est = meta.estimated_delivery_date
+      const estStr =
+        typeof est === "string" && est.trim()
+          ? `Entrega prevista: ${formatDateBR(est)}`
+          : undefined
+      fromLogs.push({
+        id: `log-${log.id}`,
+        date: log.created_at,
+        title: "Pedido aceito pelo fornecedor",
+        description: estStr ?? (log.description?.trim() ? log.description : undefined),
+        actor: log.user_name ?? undefined,
+        type: "supplier",
+        icon: CheckCircle,
+        iconColor: "text-green-500",
+      })
+    } else if (log.event_type === "purchase_order.refused") {
+      const reason = meta.cancellation_reason
+      const reasonStr =
+        typeof reason === "string" && reason.trim() ? `Motivo: ${reason}` : undefined
+      fromLogs.push({
+        id: `log-${log.id}`,
+        date: log.created_at,
+        title: "Pedido recusado pelo fornecedor",
+        description:
+          reasonStr ?? (log.description?.trim() ? log.description : undefined),
+        actor: log.user_name ?? undefined,
+        type: "supplier",
+        icon: XCircle,
+        iconColor: "text-red-500",
+      })
+    } else if (log.event_type === "purchase_order.delivery_updated") {
+      const reason = meta.reason
+      const newDate = meta.new_date
+      const parts: string[] = []
+      if (typeof reason === "string" && reason.trim()) {
+        parts.push(`Motivo: ${reason}`)
+      }
+      if (typeof newDate === "string" && newDate.trim()) {
+        parts.push(`Nova data: ${formatDateBR(newDate)}`)
+      }
+      const fromMeta = parts.length > 0 ? parts.join(" · ") : undefined
+      fromLogs.push({
+        id: `log-${log.id}`,
+        date: log.created_at,
+        title: "Data de entrega atualizada",
+        description:
+          fromMeta ?? (log.description?.trim() ? log.description : undefined),
+        actor: log.user_name ?? undefined,
+        type: "supplier",
+        icon: Calendar,
+        iconColor: "text-amber-500",
+      })
+    }
+  }
+
+  const merged = [...inferred, ...fromLogs]
+  merged.sort(
+    (a, b) =>
+      new Date(a.date).getTime() - new Date(b.date).getTime() ||
+      a.id.localeCompare(b.id),
+  )
+  return merged
+}
+
 function formatDateBRDateOnly(value: string | null | undefined): string {
   if (!value) return "—"
   const s = String(value).trim()
@@ -185,6 +392,7 @@ export default function PurchaseOrderDetailPage({
   const { id } = React.use(params)
 
   const [order, setOrder] = React.useState<PurchaseOrder | null>(null)
+  const [orderLogs, setOrderLogs] = React.useState<AuditLog[]>([])
   const [items, setItems] = React.useState<PurchaseOrderItem[]>([])
   const [paymentOptions, setPaymentOptions] = React.useState<PaymentConditionOption[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -213,7 +421,7 @@ export default function PurchaseOrderDetailPage({
       if (!silent) setLoading(true)
       try {
         const supabase = createClient()
-        const [orderRes, itemsRes, paymentsRes] = await Promise.all([
+        const [orderRes, itemsRes, paymentsRes, logsRes] = await Promise.all([
           supabase
             .from("purchase_orders")
             .select("*")
@@ -231,10 +439,25 @@ export default function PurchaseOrderDetailPage({
             .eq("company_id", companyId)
             .eq("active", true)
             .order("code", { ascending: true }),
+          supabase
+            .from("audit_logs")
+            .select("id, event_type, description, created_at, user_name, metadata")
+            .eq("entity_id", id)
+            .in("event_type", [
+              "purchase_order.accepted",
+              "purchase_order.refused",
+              "purchase_order.delivery_updated",
+            ])
+            .order("created_at", { ascending: true }),
         ])
         setOrder((orderRes.data as PurchaseOrder) ?? null)
         setItems(((itemsRes.data as unknown) as PurchaseOrderItem[]) ?? [])
         setPaymentOptions(((paymentsRes.data as PaymentConditionOption[]) ?? []) as PaymentConditionOption[])
+        if (logsRes.error) {
+          setOrderLogs([])
+        } else {
+          setOrderLogs((logsRes.data as AuditLog[]) ?? [])
+        }
       } finally {
         if (!silent) setLoading(false)
       }
@@ -250,6 +473,11 @@ export default function PurchaseOrderDetailPage({
     if (!order) return
     if (order.status !== "refused") setIsEditing(false)
   }, [order])
+
+  const timeline = React.useMemo(
+    () => (order ? buildTimeline(order, orderLogs) : []),
+    [order, orderLogs],
+  )
 
   const handleConfirmOrder = async () => {
     if (!order || !companyId) return
@@ -646,59 +874,11 @@ export default function PurchaseOrderDetailPage({
 
   const statusDisplay = getPOStatusForBuyer(order.status)
 
-  const steps: {
-    key: string
-    label: string
-    date?: string
-    completed: boolean
-    Icon?: LucideIcon
-  }[] = [
-    {
-      key: "draft",
-      label: "Rascunho criado",
-      date: createdAtLabel,
-      completed: order.status !== "draft",
-      Icon: FileEdit,
-    },
-    {
-      key: "sent",
-      label: "Aguardando aceite do fornecedor",
-      completed:
-        order.status === "processing" ||
-        order.status === "completed" ||
-        order.status === "error" ||
-        order.status === "refused",
-    },
-    {
-      key: "processing",
-      label: "Processando integração com o ERP",
-      completed: order.status === "completed" || order.status === "error",
-    },
-    {
-      key: "final",
-      label:
-        order.status === "error"
-          ? "Erro na integração"
-          : order.status === "completed"
-            ? "Concluído"
-            : "Pendente",
-      completed: order.status === "completed" || order.status === "error",
-    },
-  ]
-
   const totalItemsCount = items.length
 
   const displayedOrderTotal = isEditing
     ? editItems.reduce((s, i) => s + i.quantity * i.unit_price, 0)
     : (order.total_price ?? 0)
-
-  const getStepState = (index: number) => {
-    const step = steps[index]
-    if (step.completed) return "done" as const
-    const previousDone = index === 0 || steps[index - 1].completed
-    if (previousDone) return "current" as const
-    return "future" as const
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -1207,61 +1387,62 @@ export default function PurchaseOrderDetailPage({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Histórico</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {order.status === "cancelled" ? (
-            <p className="text-sm text-muted-foreground">
-              O fluxo foi encerrado. O motivo consta no aviso acima.
-            </p>
-          ) : order.status === "refused" ? (
-            <p className="text-sm text-muted-foreground">
-              O fornecedor recusou o pedido. Use os botões no topo para reenviar ou cancelar.
-            </p>
-          ) : (
-          <ol className="relative border-l border-border pl-4 space-y-4">
-            {steps.map((step, index) => {
-              const state = getStepState(index)
-              const isDone = state === "done"
-              const isCurrent = state === "current"
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h3 className="text-sm font-semibold text-foreground mb-4">
+          Histórico do Pedido
+        </h3>
 
+        {timeline.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhum evento registrado.</p>
+        ) : (
+          <ol className="relative border-l border-border pl-6 space-y-6">
+            {timeline.map((event, idx) => {
+              const EventIcon = event.icon
               return (
-                <li key={step.key} className="relative pl-4">
-                  <span
-                    className={`absolute left-[-10px] top-1 flex h-4 w-4 items-center justify-center rounded-full border ${
-                      isDone
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : isCurrent
-                          ? "bg-primary/20 border-2 border-primary text-primary"
-                          : "bg-muted border-muted-foreground/20 text-muted-foreground"
+                <li key={event.id} className="relative">
+                  <div
+                    className={`absolute -left-[25px] flex items-center justify-center w-5 h-5 rounded-full bg-card border-2 ${
+                      idx === timeline.length - 1 ? "border-primary" : "border-border"
                     }`}
                   >
-                    {step.Icon ? (
-                      <>
-                        <step.Icon className="h-3 w-3 shrink-0" aria-hidden />
-                        <span className="sr-only">{step.label}</span>
-                      </>
-                    ) : (
-                      <span className="sr-only">{step.label}</span>
-                    )}
-                  </span>
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">
-                      {step.label}
-                    </span>
-                    {step.date && (
-                      <span className="text-xs text-muted-foreground">{step.date}</span>
-                    )}
+                    <EventIcon
+                      className={`w-2.5 h-2.5 ${event.iconColor}`}
+                      aria-hidden
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-foreground">{event.title}</p>
+                      {event.type === "supplier" ? (
+                        <span className="text-xs bg-purple-50 text-purple-700 border border-purple-100 rounded-full px-2 py-0.5">
+                          Fornecedor
+                        </span>
+                      ) : null}
+                      {event.type === "buyer" ? (
+                        <span className="text-xs bg-blue-50 text-blue-700 border border-blue-100 rounded-full px-2 py-0.5">
+                          Comprador
+                        </span>
+                      ) : null}
+                    </div>
+                    {event.description ? (
+                      <p className="text-xs text-muted-foreground mt-0.5">{event.description}</p>
+                    ) : null}
+                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                      <p className="text-xs text-muted-foreground">
+                        {formatDateTimeBR(event.date, true)}
+                      </p>
+                      {event.actor ? (
+                        <p className="text-xs text-muted-foreground">· por {event.actor}</p>
+                      ) : null}
+                    </div>
                   </div>
                 </li>
               )
             })}
           </ol>
-          )}
-        </CardContent>
-      </Card>
+        )}
+      </div>
     </div>
   )
 }
