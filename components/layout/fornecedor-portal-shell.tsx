@@ -29,6 +29,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { logAudit } from "@/lib/audit"
 import { cn } from "@/lib/utils"
+import { NotificationBell } from "@/components/ui/notification-bell"
 
 const SIDEBAR_BG = "#1a1a2e"
 const ACTIVE_BORDER = "#4F3EF5"
@@ -189,7 +190,8 @@ export default function FornecedorPortalShell({
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-16 flex-shrink-0 items-center justify-end border-b border-border bg-card px-6">
+          <header className="flex h-16 flex-shrink-0 items-center justify-end gap-2 border-b border-border bg-card px-6">
+            <NotificationBell />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button

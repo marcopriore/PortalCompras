@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
+import { createNotification } from "@/lib/notify"
 import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
 import { cn } from "@/lib/utils"
@@ -853,6 +854,26 @@ export default function FornecedorCotacaoPropostaPage({
               items_count: itemRows.filter((r) => r.item_status !== "not_answered").length,
             },
           })
+        }
+        try {
+          const { data: quotationCreator } = await supabase
+            .from("quotations")
+            .select("created_by")
+            .eq("id", quotationId)
+            .single()
+          if (quotationCreator?.created_by) {
+            await createNotification({
+              userId: quotationCreator.created_by,
+              companyId: quotation.company_id,
+              type: "proposal.submitted",
+              title: "Nova proposta recebida",
+              body: `${supplierInfo?.name ?? "Fornecedor"} enviou proposta para ${quotation.code}`,
+              entity: "quotation_proposals",
+              entityId: newId,
+            })
+          }
+        } catch (e) {
+          console.error("notify proposal.submitted:", e)
         }
       } else {
         toast.success("Rascunho salvo.")

@@ -7,7 +7,9 @@ import { ptBR } from "date-fns/locale"
 import { CheckCircle, ChevronLeft, Clock, Package, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
+import { createNotification } from "@/lib/notify"
 import { logAudit } from "@/lib/audit"
+import { formatDateBR as formatDateBRForNotify } from "@/lib/utils/date-helpers"
 import { useUser } from "@/lib/hooks/useUser"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -66,6 +68,8 @@ type PurchaseOrderDetail = {
   status: string
   observations: string | null
   created_at: string
+  created_by: string | null
+  quotation_id: string | null
   accepted_at: string | null
   estimated_delivery_date: string | null
   delivery_days: number | null
@@ -74,6 +78,26 @@ type PurchaseOrderDetail = {
   updated_at: string | null
   company_id: string
   companies: CompanyEmbed
+}
+
+async function getPurchaseOrderBuyerUserId(
+  supabase: ReturnType<typeof createClient>,
+  order: Pick<PurchaseOrderDetail, "id" | "company_id" | "created_by" | "quotation_id">,
+): Promise<string | null> {
+  if (order.created_by) return order.created_by
+  if (order.quotation_id) {
+    const { data, error } = await supabase
+      .from("quotations")
+      .select("created_by")
+      .eq("id", order.quotation_id)
+      .single()
+    if (error) {
+      console.error("getPurchaseOrderBuyerUserId quotation:", error)
+      return null
+    }
+    return data?.created_by ?? null
+  }
+  return null
 }
 
 type POItem = {
@@ -155,7 +179,8 @@ export default function FornecedorPedidoDetalhePage({
           id, code, quotation_code, requisition_code, erp_code,
           supplier_name, supplier_cnpj, payment_condition,
           delivery_address, total_price, status, observations,
-          created_at, accepted_at, estimated_delivery_date, delivery_days,
+          created_at, created_by, quotation_id,
+          accepted_at, estimated_delivery_date, delivery_days,
           accepted_by_supplier, cancellation_reason, updated_at,
           company_id, companies(name, cnpj)
         `,
@@ -285,6 +310,22 @@ export default function FornecedorPedidoDetalhePage({
           },
         })
       }
+      try {
+        const buyerId = await getPurchaseOrderBuyerUserId(supabase, order)
+        if (buyerId) {
+          await createNotification({
+            userId: buyerId,
+            companyId: order.company_id,
+            type: "order.accepted",
+            title: "Pedido aceito pelo fornecedor",
+            body: `${order.supplier_name} aceitou o ${order.code}`,
+            entity: "purchase_orders",
+            entityId: order.id,
+          })
+        }
+      } catch (e) {
+        console.error("notify order.accepted:", e)
+      }
       toast.success("Pedido aceito com sucesso.")
       setAcceptOpen(false)
       await fetchAll()
@@ -329,6 +370,22 @@ export default function FornecedorPedidoDetalhePage({
             supplier_name: order.supplier_name,
           },
         })
+      }
+      try {
+        const buyerId = await getPurchaseOrderBuyerUserId(supabase, order)
+        if (buyerId) {
+          await createNotification({
+            userId: buyerId,
+            companyId: order.company_id,
+            type: "order.refused",
+            title: "Pedido recusado pelo fornecedor",
+            body: `${order.supplier_name} recusou o ${order.code}. Motivo: ${reason}`,
+            entity: "purchase_orders",
+            entityId: order.id,
+          })
+        }
+      } catch (e) {
+        console.error("notify order.refused:", e)
       }
       toast.success("Pedido recusado.")
       setRejectOpen(false)
@@ -379,6 +436,22 @@ export default function FornecedorPedidoDetalhePage({
             supplier_name: order.supplier_name,
           },
         })
+      }
+      try {
+        const buyerId = await getPurchaseOrderBuyerUserId(supabase, order)
+        if (buyerId) {
+          await createNotification({
+            userId: buyerId,
+            companyId: order.company_id,
+            type: "order.delivery_updated",
+            title: "Data de entrega atualizada",
+            body: `${order.supplier_name} atualizou a entrega do ${order.code} para ${formatDateBRForNotify(estimatedDate)}`,
+            entity: "purchase_orders",
+            entityId: order.id,
+          })
+        }
+      } catch (e) {
+        console.error("notify order.delivery_updated:", e)
       }
       toast.success("Data de entrega atualizada.")
       setDateChangeDialog(false)

@@ -1,7 +1,6 @@
 "use client"
 
-import { useState } from "react"
-import { Bell, ChevronDown, LogOut, User, Settings } from "lucide-react"
+import { ChevronDown, LogOut, User, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -12,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
+import { NotificationBell } from "@/components/ui/notification-bell"
 import { logAudit } from "@/lib/audit"
 interface HeaderProps {
   userName: string
@@ -27,14 +26,6 @@ export function Header({
   userInitials,
   tenantSelector,
 }: HeaderProps) {
-  const [notifications] = useState([
-    { id: 1, title: "Nova cotação recebida", time: "5 min atrás", unread: true },
-    { id: 2, title: "Proposta aprovada", time: "1h atrás", unread: true },
-    { id: 3, title: "Prazo expirando", time: "2h atrás", unread: false },
-  ])
-
-  const unreadCount = notifications.filter((n) => n.unread).length
-
   const handleLogout = async () => {
     try {
       await logAudit({
@@ -60,37 +51,7 @@ export function Header({
       </div>
 
       <div className="flex items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5" />
-              {unreadCount > 0 && (
-                <Badge className="absolute -top-1 -right-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
-                  {unreadCount}
-                </Badge>
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-80">
-            <DropdownMenuLabel>Notificações</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {notifications.map((notification) => (
-              <DropdownMenuItem key={notification.id} className="flex flex-col items-start gap-1 p-3">
-                <div className="flex items-center gap-2 w-full">
-                  {notification.unread && (
-                    <div className="h-2 w-2 rounded-full bg-primary" />
-                  )}
-                  <span className="font-medium text-sm">{notification.title}</span>
-                </div>
-                <span className="text-xs text-muted-foreground">{notification.time}</span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-center justify-center text-primary">
-              Ver todas as notificações
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <NotificationBell />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
