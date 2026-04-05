@@ -62,6 +62,7 @@ import {
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
+import { createNotification } from "@/lib/notify"
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -832,6 +833,43 @@ export default function EqualizacaoPage({
 
         const { error: insPErr } = await supabase.from("quotation_proposals").insert(insertPayload)
         if (insPErr) throw insPErr
+      }
+
+      try {
+        const supplierIds = [
+          ...new Set(
+            prevList
+              .map((p) => p.supplier_id)
+              .filter((sid): sid is string => Boolean(sid)),
+          ),
+        ]
+
+        if (supplierIds.length > 0) {
+          const { data: supplierProfiles, error: profilesErr } = await supabase
+            .from("profiles")
+            .select("id, supplier_id")
+            .in("supplier_id", supplierIds)
+            .eq("profile_type", "supplier")
+
+          if (profilesErr) {
+            console.error("notify new round profiles:", profilesErr)
+          } else if (supplierProfiles && supplierProfiles.length > 0) {
+            const notificationPromises = supplierProfiles.map((profile) =>
+              createNotification({
+                userId: profile.id,
+                companyId: companyId,
+                type: "quotation.new_round",
+                title: "Nova rodada de negociação",
+                body: `Uma nova rodada foi aberta na cotação ${quotation.code}. Envie sua proposta atualizada.`,
+                entity: "quotation_rounds",
+                entityId: newRoundId,
+              }),
+            )
+            await Promise.allSettled(notificationPromises)
+          }
+        }
+      } catch (notifyErr) {
+        console.error("notify new round:", notifyErr)
       }
 
       const { error: waitErr } = await supabase
