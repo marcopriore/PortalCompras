@@ -38,6 +38,7 @@ import {
   Building2,
   ClipboardList,
   Download,
+  Mail,
   Pencil,
   Plus,
   Save,
@@ -103,7 +104,133 @@ type NotificationForm = {
   order_approved: boolean
   delivery_done: boolean
   daily_summary: boolean
+  new_requisition_bell: boolean
+  new_requisition_email: boolean
+  quotation_received_bell: boolean
+  quotation_received_email: boolean
+  order_accepted_bell: boolean
+  order_accepted_email: boolean
+  order_refused_bell: boolean
+  order_refused_email: boolean
+  order_approved_bell: boolean
+  order_approved_email: boolean
+  delivery_done_bell: boolean
+  delivery_done_email: boolean
+  daily_summary_bell: boolean
+  daily_summary_email: boolean
 }
+
+function defaultNotificationForm(): NotificationForm {
+  return {
+    new_requisition: true,
+    quotation_received: true,
+    order_approved: true,
+    delivery_done: true,
+    daily_summary: false,
+    new_requisition_bell: true,
+    new_requisition_email: false,
+    quotation_received_bell: true,
+    quotation_received_email: false,
+    order_accepted_bell: true,
+    order_accepted_email: false,
+    order_refused_bell: true,
+    order_refused_email: false,
+    order_approved_bell: true,
+    order_approved_email: false,
+    delivery_done_bell: true,
+    delivery_done_email: false,
+    daily_summary_bell: false,
+    daily_summary_email: false,
+  }
+}
+
+function notificationFormFromRow(raw: Record<string, unknown>): NotificationForm {
+  const n = raw
+  const legNewReq = Boolean(n.new_requisition ?? true)
+  const legQuot = Boolean(n.quotation_received ?? true)
+  const legOrdApp = Boolean(n.order_approved ?? true)
+  const legDel = Boolean(n.delivery_done ?? true)
+  const legDaily = Boolean(n.daily_summary ?? false)
+  return {
+    new_requisition: legNewReq,
+    quotation_received: legQuot,
+    order_approved: legOrdApp,
+    delivery_done: legDel,
+    daily_summary: legDaily,
+    new_requisition_bell: Boolean(n.new_requisition_bell ?? legNewReq),
+    new_requisition_email: Boolean(n.new_requisition_email ?? false),
+    quotation_received_bell: Boolean(n.quotation_received_bell ?? legQuot),
+    quotation_received_email: Boolean(n.quotation_received_email ?? false),
+    order_accepted_bell: Boolean(n.order_accepted_bell ?? true),
+    order_accepted_email: Boolean(n.order_accepted_email ?? false),
+    order_refused_bell: Boolean(n.order_refused_bell ?? true),
+    order_refused_email: Boolean(n.order_refused_email ?? false),
+    order_approved_bell: Boolean(n.order_approved_bell ?? legOrdApp),
+    order_approved_email: Boolean(n.order_approved_email ?? false),
+    delivery_done_bell: Boolean(n.delivery_done_bell ?? legDel),
+    delivery_done_email: Boolean(n.delivery_done_email ?? false),
+    daily_summary_bell: Boolean(n.daily_summary_bell ?? false),
+    daily_summary_email: Boolean(n.daily_summary_email ?? legDaily),
+  }
+}
+
+const notificationTypes: {
+  key: string
+  label: string
+  description: string
+  bellKey: keyof NotificationForm
+  emailKey: keyof NotificationForm
+}[] = [
+  {
+    key: "new_requisition",
+    label: "Nova Requisição",
+    description: "Quando uma nova requisição for criada",
+    bellKey: "new_requisition_bell",
+    emailKey: "new_requisition_email",
+  },
+  {
+    key: "quotation_received",
+    label: "Proposta Recebida",
+    description: "Quando um fornecedor enviar uma proposta",
+    bellKey: "quotation_received_bell",
+    emailKey: "quotation_received_email",
+  },
+  {
+    key: "order_accepted",
+    label: "Pedido Aceito",
+    description: "Quando um fornecedor aceitar um pedido",
+    bellKey: "order_accepted_bell",
+    emailKey: "order_accepted_email",
+  },
+  {
+    key: "order_refused",
+    label: "Pedido Recusado",
+    description: "Quando um fornecedor recusar um pedido",
+    bellKey: "order_refused_bell",
+    emailKey: "order_refused_email",
+  },
+  {
+    key: "order_approved",
+    label: "Pedido Aprovado",
+    description: "Quando um pedido for aprovado no fluxo de aprovação",
+    bellKey: "order_approved_bell",
+    emailKey: "order_approved_email",
+  },
+  {
+    key: "delivery_done",
+    label: "Entrega Realizada",
+    description: "Quando uma entrega for confirmada",
+    bellKey: "delivery_done_bell",
+    emailKey: "delivery_done_email",
+  },
+  {
+    key: "daily_summary",
+    label: "Resumo Diário",
+    description: "Receba um resumo diário das atividades por e-mail",
+    bellKey: "daily_summary_bell",
+    emailKey: "daily_summary_email",
+  },
+]
 
 type SecurityPasswordForm = {
   currentPassword: string
@@ -241,13 +368,7 @@ export default function ConfiguracoesPage() {
     department: "",
     phone: "",
   })
-  const [notifForm, setNotifForm] = React.useState<NotificationForm>({
-    new_requisition: true,
-    quotation_received: true,
-    order_approved: true,
-    delivery_done: true,
-    daily_summary: false,
-  })
+  const [notifForm, setNotifForm] = React.useState<NotificationForm>(() => defaultNotificationForm())
   const [notifExists, setNotifExists] = React.useState(false)
 
   const [securityForm, setSecurityForm] = React.useState<SecurityPasswordForm>({
@@ -374,23 +495,10 @@ export default function ConfiguracoesPage() {
         }
 
         if (notifRes.data) {
-          const n = notifRes.data as any
-          setNotifForm({
-            new_requisition: Boolean(n.new_requisition),
-            quotation_received: Boolean(n.quotation_received),
-            order_approved: Boolean(n.order_approved),
-            delivery_done: Boolean(n.delivery_done),
-            daily_summary: Boolean(n.daily_summary),
-          })
+          setNotifForm(notificationFormFromRow(notifRes.data as Record<string, unknown>))
           setNotifExists(true)
         } else {
-          setNotifForm({
-            new_requisition: true,
-            quotation_received: true,
-            order_approved: true,
-            delivery_done: true,
-            daily_summary: false,
-          })
+          setNotifForm(defaultNotificationForm())
           setNotifExists(false)
         }
       } finally {
@@ -767,31 +875,54 @@ export default function ConfiguracoesPage() {
     setMessages((m) => ({ ...m, notifications: { success: null, error: null } }))
 
     const supabase = createClient()
+    const legacyFlags = {
+      new_requisition:
+        notifForm.new_requisition_bell || notifForm.new_requisition_email,
+      quotation_received:
+        notifForm.quotation_received_bell || notifForm.quotation_received_email,
+      order_approved:
+        notifForm.order_approved_bell || notifForm.order_approved_email,
+      delivery_done:
+        notifForm.delivery_done_bell || notifForm.delivery_done_email,
+      daily_summary:
+        notifForm.daily_summary_bell || notifForm.daily_summary_email,
+    }
+    const channelPayload = {
+      new_requisition_bell: notifForm.new_requisition_bell,
+      new_requisition_email: notifForm.new_requisition_email,
+      quotation_received_bell: notifForm.quotation_received_bell,
+      quotation_received_email: notifForm.quotation_received_email,
+      order_accepted_bell: notifForm.order_accepted_bell,
+      order_accepted_email: notifForm.order_accepted_email,
+      order_refused_bell: notifForm.order_refused_bell,
+      order_refused_email: notifForm.order_refused_email,
+      order_approved_bell: notifForm.order_approved_bell,
+      order_approved_email: notifForm.order_approved_email,
+      delivery_done_bell: notifForm.delivery_done_bell,
+      delivery_done_email: notifForm.delivery_done_email,
+      daily_summary_bell: notifForm.daily_summary_bell,
+      daily_summary_email: notifForm.daily_summary_email,
+    }
+    const preferencesPayload = { ...legacyFlags, ...channelPayload }
     try {
       if (notifExists) {
         await supabase
           .from("notification_preferences")
-          .update({
-            new_requisition: notifForm.new_requisition,
-            quotation_received: notifForm.quotation_received,
-            order_approved: notifForm.order_approved,
-            delivery_done: notifForm.delivery_done,
-            daily_summary: notifForm.daily_summary,
-          })
+          .update(preferencesPayload)
           .eq("user_id", userId)
           .eq("company_id", companyId)
       } else {
         await supabase.from("notification_preferences").insert({
           user_id: userId,
           company_id: companyId,
-          new_requisition: notifForm.new_requisition,
-          quotation_received: notifForm.quotation_received,
-          order_approved: notifForm.order_approved,
-          delivery_done: notifForm.delivery_done,
-          daily_summary: notifForm.daily_summary,
+          ...preferencesPayload,
         })
         setNotifExists(true)
       }
+      setNotifForm((f) => ({
+        ...f,
+        ...legacyFlags,
+      }))
 
       setMessages((m) => ({ ...m, notifications: { success: "Preferências salvas.", error: null } }))
     } catch (e: any) {
@@ -1532,82 +1663,60 @@ export default function ConfiguracoesPage() {
               </p>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col gap-1">
-                    <Label>Nova Requisição</Label>
-                    <span className="text-sm text-muted-foreground">
-                      Receba alertas quando uma nova requisição for criada
-                    </span>
-                  </div>
-                  <Switch
-                    checked={notifForm.new_requisition}
-                    onCheckedChange={(checked) =>
-                      setNotifForm((f) => ({ ...f, new_requisition: checked }))
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col gap-1">
-                    <Label>Cotação Recebida</Label>
-                    <span className="text-sm text-muted-foreground">
-                      Notificação quando um fornecedor enviar uma proposta
-                    </span>
-                  </div>
-                  <Switch
-                    checked={notifForm.quotation_received}
-                    onCheckedChange={(checked) =>
-                      setNotifForm((f) => ({ ...f, quotation_received: checked }))
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col gap-1">
-                    <Label>Pedido Aprovado</Label>
-                    <span className="text-sm text-muted-foreground">
-                      Alerta quando um pedido for aprovado
-                    </span>
-                  </div>
-                  <Switch
-                    checked={notifForm.order_approved}
-                    onCheckedChange={(checked) =>
-                      setNotifForm((f) => ({ ...f, order_approved: checked }))
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col gap-1">
-                    <Label>Entrega Realizada</Label>
-                    <span className="text-sm text-muted-foreground">
-                      Notificação quando uma entrega for confirmada
-                    </span>
-                  </div>
-                  <Switch
-                    checked={notifForm.delivery_done}
-                    onCheckedChange={(checked) =>
-                      setNotifForm((f) => ({ ...f, delivery_done: checked }))
-                    }
-                  />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div className="flex flex-col gap-1">
-                    <Label>Resumo Diário por E-mail</Label>
-                    <span className="text-sm text-muted-foreground">
-                      Receba um resumo diário das atividades
-                    </span>
-                  </div>
-                  <Switch
-                    checked={notifForm.daily_summary}
-                    onCheckedChange={(checked) =>
-                      setNotifForm((f) => ({ ...f, daily_summary: checked }))
-                    }
-                  />
-                </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="py-3 text-left font-medium text-muted-foreground">
+                        Notificação
+                      </th>
+                      <th className="w-24 py-3 text-center font-medium text-muted-foreground">
+                        <div className="flex flex-col items-center gap-1">
+                          <Bell className="h-4 w-4" />
+                          <span>Sininho</span>
+                        </div>
+                      </th>
+                      <th className="w-24 py-3 text-center font-medium text-muted-foreground">
+                        <div className="flex flex-col items-center gap-1">
+                          <Mail className="h-4 w-4" />
+                          <span>E-mail</span>
+                        </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {notificationTypes.map((nt) => (
+                      <tr key={nt.key} className="border-b border-border last:border-0">
+                        <td className="py-4">
+                          <p className="font-medium">{nt.label}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{nt.description}</p>
+                        </td>
+                        <td className="py-4 text-center">
+                          <Switch
+                            checked={notifForm[nt.bellKey] as boolean}
+                            onCheckedChange={(v) =>
+                              setNotifForm((f) => ({ ...f, [nt.bellKey]: v }))
+                            }
+                          />
+                        </td>
+                        <td className="py-4 text-center">
+                          <Switch
+                            checked={notifForm[nt.emailKey] as boolean}
+                            onCheckedChange={(v) =>
+                              setNotifForm((f) => ({ ...f, [nt.emailKey]: v }))
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+
+              <p className="mt-4 text-xs text-muted-foreground">
+                * Notificações por e-mail requerem configuração do Resend. As notificações pelo
+                sininho estão sempre disponíveis.
+              </p>
 
               {messages.notifications.error && (
                 <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">

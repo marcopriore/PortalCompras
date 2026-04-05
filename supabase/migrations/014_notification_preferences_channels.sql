@@ -1,0 +1,76 @@
+-- Preferências de notificação por canal (sininho / e-mail)
+CREATE TABLE IF NOT EXISTS public.notification_preferences (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  company_id uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
+  new_requisition boolean NOT NULL DEFAULT true,
+  quotation_received boolean NOT NULL DEFAULT true,
+  order_approved boolean NOT NULL DEFAULT true,
+  delivery_done boolean NOT NULL DEFAULT true,
+  daily_summary boolean NOT NULL DEFAULT false,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE (user_id, company_id)
+);
+
+ALTER TABLE public.notification_preferences
+  ADD COLUMN IF NOT EXISTS new_requisition_bell boolean,
+  ADD COLUMN IF NOT EXISTS new_requisition_email boolean,
+  ADD COLUMN IF NOT EXISTS quotation_received_bell boolean,
+  ADD COLUMN IF NOT EXISTS quotation_received_email boolean,
+  ADD COLUMN IF NOT EXISTS order_accepted_bell boolean,
+  ADD COLUMN IF NOT EXISTS order_accepted_email boolean,
+  ADD COLUMN IF NOT EXISTS order_refused_bell boolean,
+  ADD COLUMN IF NOT EXISTS order_refused_email boolean,
+  ADD COLUMN IF NOT EXISTS order_approved_bell boolean,
+  ADD COLUMN IF NOT EXISTS order_approved_email boolean,
+  ADD COLUMN IF NOT EXISTS delivery_done_bell boolean,
+  ADD COLUMN IF NOT EXISTS delivery_done_email boolean,
+  ADD COLUMN IF NOT EXISTS daily_summary_bell boolean,
+  ADD COLUMN IF NOT EXISTS daily_summary_email boolean;
+
+UPDATE public.notification_preferences
+SET
+  new_requisition_bell = COALESCE(new_requisition_bell, new_requisition),
+  new_requisition_email = COALESCE(new_requisition_email, false),
+  quotation_received_bell = COALESCE(quotation_received_bell, quotation_received),
+  quotation_received_email = COALESCE(quotation_received_email, false),
+  order_accepted_bell = COALESCE(order_accepted_bell, true),
+  order_accepted_email = COALESCE(order_accepted_email, false),
+  order_refused_bell = COALESCE(order_refused_bell, true),
+  order_refused_email = COALESCE(order_refused_email, false),
+  order_approved_bell = COALESCE(order_approved_bell, order_approved),
+  order_approved_email = COALESCE(order_approved_email, false),
+  delivery_done_bell = COALESCE(delivery_done_bell, delivery_done),
+  delivery_done_email = COALESCE(delivery_done_email, false),
+  daily_summary_bell = COALESCE(daily_summary_bell, false),
+  daily_summary_email = COALESCE(daily_summary_email, daily_summary);
+
+ALTER TABLE public.notification_preferences
+  ALTER COLUMN new_requisition_bell SET DEFAULT true,
+  ALTER COLUMN new_requisition_bell SET NOT NULL,
+  ALTER COLUMN new_requisition_email SET DEFAULT false,
+  ALTER COLUMN new_requisition_email SET NOT NULL,
+  ALTER COLUMN quotation_received_bell SET DEFAULT true,
+  ALTER COLUMN quotation_received_bell SET NOT NULL,
+  ALTER COLUMN quotation_received_email SET DEFAULT false,
+  ALTER COLUMN quotation_received_email SET NOT NULL,
+  ALTER COLUMN order_accepted_bell SET DEFAULT true,
+  ALTER COLUMN order_accepted_bell SET NOT NULL,
+  ALTER COLUMN order_accepted_email SET DEFAULT false,
+  ALTER COLUMN order_accepted_email SET NOT NULL,
+  ALTER COLUMN order_refused_bell SET DEFAULT true,
+  ALTER COLUMN order_refused_bell SET NOT NULL,
+  ALTER COLUMN order_refused_email SET DEFAULT false,
+  ALTER COLUMN order_refused_email SET NOT NULL,
+  ALTER COLUMN order_approved_bell SET DEFAULT true,
+  ALTER COLUMN order_approved_bell SET NOT NULL,
+  ALTER COLUMN order_approved_email SET DEFAULT false,
+  ALTER COLUMN order_approved_email SET NOT NULL,
+  ALTER COLUMN delivery_done_bell SET DEFAULT true,
+  ALTER COLUMN delivery_done_bell SET NOT NULL,
+  ALTER COLUMN delivery_done_email SET DEFAULT false,
+  ALTER COLUMN delivery_done_email SET NOT NULL,
+  ALTER COLUMN daily_summary_bell SET DEFAULT false,
+  ALTER COLUMN daily_summary_bell SET NOT NULL,
+  ALTER COLUMN daily_summary_email SET DEFAULT false,
+  ALTER COLUMN daily_summary_email SET NOT NULL;
