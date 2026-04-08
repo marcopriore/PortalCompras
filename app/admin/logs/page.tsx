@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Search, ScrollText } from 'lucide-react'
+import { ScrollText } from 'lucide-react'
 
 type AuditLog = {
   id: string
@@ -27,11 +27,6 @@ type AuditLog = {
   metadata: Record<string, unknown> | null
   created_at: string
   companies?: { name: string } | null
-}
-
-type TenantOption = {
-  id: string
-  name: string
 }
 
 function getEventMeta(eventType: string): { label: string; className: string } {
@@ -130,10 +125,9 @@ function getEventMeta(eventType: string): { label: string; className: string } {
   )
 }
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 25
 
-/** Garante opções no filtro mesmo antes de existir log desse tipo. */
-const AUDIT_EVENT_TYPES_FOR_FILTER: string[] = [
+const AUDIT_EVENT_TYPE_VALUES = [
   'user.login',
   'user.logout',
   'user.created',
@@ -155,107 +149,123 @@ const AUDIT_EVENT_TYPES_FOR_FILTER: string[] = [
   'purchase_order.accepted',
   'purchase_order.refused',
   'purchase_order.delivery_updated',
-]
+] as const
+
+const AUDIT_EVENT_TYPES_FOR_FILTER = AUDIT_EVENT_TYPE_VALUES.map((value) => ({
+  value,
+  label: getEventMeta(value).label,
+}))
 
 export default function AdminLogsPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([])
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [eventTypeFilter, setEventTypeFilter] = useState('all')
-  const [tenantFilter, setTenantFilter] = useState('all')
   const [userFilter, setUserFilter] = useState('')
+  const [tenantFilter, setTenantFilter] = useState('')
+  const [eventTypeFilter, setEventTypeFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [tenants, setTenants] = useState<TenantOption[]>([])
   const [page, setPage] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+  const [logs, setLogs] = useState<AuditLog[]>([])
+  const [loading, setLoading] = useState(false)
+  const [tenants, setTenants] = useState<{ id: string; name: string }[]>([])
+
+  const prevFiltersRef = useRef({
+    search: '',
+    userFilter: '',
+    tenantFilter: '',
+    eventTypeFilter: '',
+    dateFrom: '',
+    dateTo: '',
+  })
+
+  const fetchLogs = useCallback(async () => {
+    const snapshot = {
+      search,
+      userFilter,
+      tenantFilter,
+      eventTypeFilter,
+      dateFrom,
+      dateTo,
+    }
+    const prev = prevFiltersRef.current
+    const filtersChanged =
+      prev.search !== snapshot.search ||
+      prev.userFilter !== snapshot.userFilter ||
+      prev.tenantFilter !== snapshot.tenantFilter ||
+      prev.eventTypeFilter !== snapshot.eventTypeFilter ||
+      prev.dateFrom !== snapshot.dateFrom ||
+      prev.dateTo !== snapshot.dateTo
+
+    if (filtersChanged) {
+      prevFiltersRef.current = snapshot
+      if (page !== 1) {
+        setLoading(true)
+        setPage(1)
+        return
+      }
+    }
+
+    setLoading(true)
+
+    const supabase = createClient()
+    const from = (page - 1) * PAGE_SIZE
+    const to = from + PAGE_SIZE - 1
+
+    let query = supabase
+      .from('audit_logs')
+      .select('*, companies(name)', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, to)
+
+    if (tenantFilter) query = query.eq('company_id', tenantFilter)
+    if (eventTypeFilter) query = query.eq('event_type', eventTypeFilter)
+    if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00.000Z`)
+    if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`)
+
+    if (userFilter.trim()) {
+      query = query.ilike('user_name', `%${userFilter.trim()}%`)
+    }
+
+    if (search.trim()) {
+      query = query.ilike('description', `%${search.trim()}%`)
+    }
+
+    const { data, count, error } = await query
+
+    if (!error) {
+      setLogs((data ?? []) as AuditLog[])
+      setTotalCount(count ?? 0)
+    }
+
+    setLoading(false)
+  }, [
+    page,
+    search,
+    userFilter,
+    tenantFilter,
+    eventTypeFilter,
+    dateFrom,
+    dateTo,
+  ])
 
   useEffect(() => {
-    const fetchLogs = async () => {
-      setLoading(true)
-      const supabase = createClient()
-
-      const [logsRes, tenantsRes] = await Promise.all([
-        supabase
-          .from('audit_logs')
-          .select('*, companies(name)')
-          .order('created_at', { ascending: false })
-          .limit(500),
-        supabase.from('companies').select('id, name').order('name'),
-      ])
-
-      if (logsRes.data) setLogs(logsRes.data as AuditLog[])
-      if (tenantsRes.data) setTenants(tenantsRes.data as TenantOption[])
-      setLoading(false)
-    }
-    fetchLogs()
-  }, [])
-
-  const eventTypes = Array.from(
-    new Set([...AUDIT_EVENT_TYPES_FOR_FILTER, ...logs.map((l) => l.event_type)]),
-  ).sort()
-
-  const filteredLogs = logs.filter((log) => {
-    const matchSearch =
-      !search ||
-      log.description.toLowerCase().includes(search.toLowerCase()) ||
-      (log.user_name ?? '').toLowerCase().includes(search.toLowerCase())
-
-    const matchEvent =
-      eventTypeFilter === 'all' || log.event_type === eventTypeFilter
-
-    const matchTenant =
-      tenantFilter === 'all' || log.company_id === tenantFilter
-
-    const matchUser =
-      !userFilter ||
-      (log.user_name ?? '')
-        .toLowerCase()
-        .includes(userFilter.toLowerCase())
-
-    const matchDateFrom =
-      !dateFrom || new Date(log.created_at) >= new Date(dateFrom)
-
-    const matchDateTo =
-      !dateTo ||
-      new Date(log.created_at) <= new Date(`${dateTo}T23:59:59`)
-
-    return (
-      matchSearch &&
-      matchEvent &&
-      matchTenant &&
-      matchUser &&
-      matchDateFrom &&
-      matchDateTo
-    )
-  })
+    void fetchLogs()
+  }, [fetchLogs])
 
   useEffect(() => {
     setPage(1)
-  }, [search, eventTypeFilter, tenantFilter, userFilter, dateFrom, dateTo])
+  }, [search, userFilter, tenantFilter, eventTypeFilter, dateFrom, dateTo])
 
-  const paginatedLogs = useMemo(
-    () => filteredLogs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [filteredLogs, page],
-  )
+  useEffect(() => {
+    async function fetchTenants() {
+      const supabase = createClient()
+      const { data } = await supabase.from('companies').select('id, name').order('name')
+      setTenants(data ?? [])
+    }
+    void fetchTenants()
+  }, [])
 
-  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE))
-
-  const hasActiveFilters =
-    !!search ||
-    eventTypeFilter !== 'all' ||
-    tenantFilter !== 'all' ||
-    !!userFilter ||
-    !!dateFrom ||
-    !!dateTo
-
-  const handleClearFilters = () => {
-    setSearch('')
-    setEventTypeFilter('all')
-    setTenantFilter('all')
-    setUserFilter('')
-    setDateFrom('')
-    setDateTo('')
-  }
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   return (
     <div className="space-y-4">
@@ -268,136 +278,135 @@ export default function AdminLogsPage() {
       </div>
 
       {/* Filtros */}
-      <div className="bg-muted/40 border border-border rounded-xl p-4 mb-2">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-          {/* Busca por texto */}
-          <div className="flex flex-col">
-            <p className="text-xs font-medium text-muted-foreground mb-1 block">
-              Buscar
-            </p>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar descrição ou usuário..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-8"
-              />
-            </div>
-          </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 mb-4">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-muted-foreground">Descrição</label>
+          <Input
+            placeholder="Buscar na descrição..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
 
-          {/* Filtro por tenant */}
-          <div className="flex flex-col">
-            <p className="text-xs font-medium text-muted-foreground mb-1 block">
-              Tenant
-            </p>
-            <select
-              value={tenantFilter}
-              onChange={(e) => setTenantFilter(e.target.value)}
-              className="border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
-            >
-              <option value="all">Todos os Tenants</option>
-              {tenants.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-muted-foreground">Usuário</label>
+          <Input
+            placeholder="Nome do usuário..."
+            value={userFilter}
+            onChange={(e) => setUserFilter(e.target.value)}
+          />
+        </div>
 
-          {/* Filtro por tipo de evento */}
-          <div className="flex flex-col">
-            <p className="text-xs font-medium text-muted-foreground mb-1 block">
-              Tipo de Evento
-            </p>
-            <select
-              value={eventTypeFilter}
-              onChange={(e) => setEventTypeFilter(e.target.value)}
-              className="border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
-            >
-              <option value="all">Todos os Eventos</option>
-              {eventTypes.map((e) => (
-                <option key={e} value={e}>
-                  {getEventMeta(e).label}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-muted-foreground">Tenant</label>
+          <select
+            value={tenantFilter}
+            onChange={(e) => setTenantFilter(e.target.value)}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="">Todos os tenants</option>
+            {tenants.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          {/* Data de */}
-          <div className="flex flex-col">
-            <p className="text-xs font-medium text-muted-foreground mb-1 block">
-              De
-            </p>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
-            />
-          </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-muted-foreground">Tipo de Evento</label>
+          <select
+            value={eventTypeFilter}
+            onChange={(e) => setEventTypeFilter(e.target.value)}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="">Todos os tipos</option>
+            {AUDIT_EVENT_TYPES_FOR_FILTER.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          {/* Data até */}
-          <div className="flex flex-col">
-            <p className="text-xs font-medium text-muted-foreground mb-1 block">
-              Até
-            </p>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background text-foreground"
-            />
-          </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-muted-foreground">De</label>
+          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-muted-foreground">Até</label>
+          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
         </div>
       </div>
 
-      {/* Contagem + limpar filtros */}
       <div className="flex items-center justify-between mb-3">
-        <Badge variant="secondary" className="text-sm px-3 py-1">
-          {filteredLogs.length} registro{filteredLogs.length !== 1 ? 's' : ''}
-        </Badge>
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={handleClearFilters}
-            className="text-xs text-muted-foreground hover:text-foreground underline"
-          >
-            Limpar filtros
-          </button>
-        )}
+        <span className="text-sm text-muted-foreground">
+          {loading ? 'Carregando...' : `${totalCount} registro(s) encontrado(s)`}
+        </span>
+        <button
+          type="button"
+          className="text-sm text-primary underline"
+          onClick={() => {
+            setSearch('')
+            setUserFilter('')
+            setTenantFilter('')
+            setEventTypeFilter('')
+            setDateFrom('')
+            setDateTo('')
+            setPage(1)
+          }}
+        >
+          Limpar filtros
+        </button>
       </div>
 
-      {/* Tabela / estados */}
+      {/* Tabela */}
       <div className="rounded-lg border border-border bg-card overflow-x-auto">
-        {loading ? (
-          <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
-            Carregando logs...
-          </div>
-        ) : filteredLogs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-            <ScrollText className="w-10 h-10 mb-3 opacity-40" />
-            <p className="text-sm">Nenhum log encontrado.</p>
-          </div>
-        ) : (
-          <Table>
-            <TableHeader className="bg-muted/30">
+        <Table>
+          <TableHeader className="bg-muted/30">
+            <TableRow>
+              <TableHead className="whitespace-nowrap">Data/Hora</TableHead>
+              <TableHead>Evento</TableHead>
+              <TableHead>Tenant</TableHead>
+              <TableHead>Usuário</TableHead>
+              <TableHead>Descrição</TableHead>
+              <TableHead>Metadata</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
               <TableRow>
-                <TableHead className="whitespace-nowrap">Data/Hora</TableHead>
-                <TableHead>Evento</TableHead>
-                <TableHead>Tenant</TableHead>
-                <TableHead>Usuário</TableHead>
-                <TableHead>Descrição</TableHead>
+                <TableCell
+                  colSpan={6}
+                  className="text-center py-8 text-sm text-muted-foreground"
+                >
+                  Carregando...
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {paginatedLogs.map((log) => {
+            ) : logs.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="text-center py-8 text-sm text-muted-foreground"
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <ScrollText className="w-8 h-8 opacity-40" />
+                    Nenhum registro encontrado.
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              logs.map((log) => {
                 const meta = getEventMeta(log.event_type)
+                const metaObj =
+                  log.metadata != null &&
+                  typeof log.metadata === 'object' &&
+                  (Array.isArray(log.metadata)
+                    ? log.metadata.length > 0
+                    : Object.keys(log.metadata as Record<string, unknown>).length > 0)
                 return (
-                  <TableRow
-                    key={log.id}
-                    className="hover:bg-muted/50 transition-colors"
-                  >
+                  <TableRow key={log.id} className="hover:bg-muted/50 transition-colors">
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                       {format(new Date(log.created_at), 'dd/MM/yyyy HH:mm:ss', {
                         locale: ptBR,
@@ -416,42 +425,54 @@ export default function AdminLogsPage() {
                     <TableCell className="text-sm text-foreground">
                       {log.user_name ?? '—'}
                     </TableCell>
-                    <TableCell className="text-sm text-foreground">
-                      {log.description}
+                    <TableCell className="text-sm text-foreground">{log.description}</TableCell>
+                    <TableCell className="px-3 py-2 max-w-xs">
+                      {metaObj ? (
+                        <details className="cursor-pointer">
+                          <summary className="text-xs text-primary underline">Ver detalhes</summary>
+                          <pre className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-all">
+                            {JSON.stringify(log.metadata, null, 2)}
+                          </pre>
+                        </details>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 )
-              })}
-            </TableBody>
-          </Table>
-        )}
+              })
+            )}
+          </TableBody>
+        </Table>
       </div>
 
-      {!loading && filteredLogs.length > 0 ? (
-        <div className="flex justify-between items-center mt-4 text-sm text-muted-foreground">
-          <button
-            type="button"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="text-foreground hover:underline disabled:opacity-40 disabled:pointer-events-none disabled:no-underline"
-          >
-            ← Anterior
-          </button>
-          <span>
-            Página {page} de {totalPages} · {filteredLogs.length} registro
-            {filteredLogs.length !== 1 ? 's' : ''}
+      {totalCount > PAGE_SIZE ? (
+        <div className="flex items-center justify-between mt-4">
+          <span className="text-sm text-muted-foreground">
+            Página {page} de {totalPages}
           </span>
-          <button
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="text-foreground hover:underline disabled:opacity-40 disabled:pointer-events-none disabled:no-underline"
-          >
-            Próximo →
-          </button>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page === 1 || loading}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              ← Anterior
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Próximo →
+            </Button>
+          </div>
         </div>
       ) : null}
     </div>
   )
 }
-
