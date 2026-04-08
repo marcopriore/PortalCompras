@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
+import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -73,6 +74,7 @@ type PurchaseOrder = {
   company_id: string
   code: string
   erp_code: string | null
+  supplier_id: string | null
   supplier_name: string
   supplier_cnpj: string | null
   payment_condition: string | null
@@ -112,6 +114,46 @@ type EditItem = {
   tax_percent: number | null
   quantity: number
   max_quantity: number | null
+}
+
+async function notifySupplierOrderSent(order: {
+  id: string
+  code: string
+  supplier_name: string
+  company_id: string
+  supplier_id: string | null
+}) {
+  if (!order.supplier_id) return
+
+  try {
+    const supabase = createClient()
+    const { data: supplierProfile } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .eq("supplier_id", order.supplier_id)
+      .eq("company_id", order.company_id)
+      .eq("profile_type", "supplier")
+      .maybeSingle()
+
+    if (!supplierProfile) return
+
+    await notifyWithEmail({
+      userId: supplierProfile.id,
+      companyId: order.company_id,
+      type: "order.sent",
+      title: "Novo pedido de compra recebido",
+      body: `O pedido ${order.code} foi emitido para você. Acesse o portal para visualizar e aceitar.`,
+      entity: "purchase_order",
+      entityId: order.id,
+      subject: `Novo Pedido de Compra — ${order.code}`,
+      html: `<p>Olá, <strong>${supplierProfile.full_name ?? order.supplier_name}</strong>!</p>
+           <p>O pedido <strong>${order.code}</strong> foi emitido para você.</p>
+           <p>Acesse o portal do fornecedor para visualizar os detalhes e confirmar o recebimento.</p>`,
+      emailPrefKey: "order_approved_email",
+    })
+  } catch {
+    // notificação não deve interromper o fluxo do pedido
+  }
 }
 
 type PaymentConditionOption = {
@@ -490,6 +532,13 @@ export default function PurchaseOrderDetailPage({
         .eq("id", order.id)
         .eq("company_id", companyId)
       if (error) throw error
+      void notifySupplierOrderSent({
+        id: order.id,
+        code: order.code,
+        supplier_name: order.supplier_name,
+        company_id: order.company_id,
+        supplier_id: order.supplier_id ?? null,
+      })
       toast.success("Pedido enviado ao fornecedor. Aguardando aceite.")
       await fetchOrderData({ silent: true })
     } catch (e) {
@@ -557,6 +606,13 @@ export default function PurchaseOrderDetailPage({
         .eq("id", order.id)
         .eq("company_id", companyId)
       if (error) throw error
+      void notifySupplierOrderSent({
+        id: order.id,
+        code: order.code,
+        supplier_name: order.supplier_name,
+        company_id: order.company_id,
+        supplier_id: order.supplier_id ?? null,
+      })
       toast.success("Pedido reenviado ao fornecedor.")
       setResendOpen(false)
       await fetchOrderData({ silent: true })
@@ -676,6 +732,13 @@ export default function PurchaseOrderDetailPage({
       const firstItemErr = itemResults.find((r) => r.error)?.error
       if (firstItemErr) throw firstItemErr
 
+      void notifySupplierOrderSent({
+        id: order.id,
+        code: order.code,
+        supplier_name: order.supplier_name,
+        company_id: order.company_id,
+        supplier_id: order.supplier_id ?? null,
+      })
       toast.success("Pedido atualizado e reenviado ao fornecedor.")
       setIsEditing(false)
       await fetchOrderData({ silent: true })

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
+import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
@@ -409,6 +410,30 @@ export default function AprovacoesPage() {
           toast.error("Não foi possível atualizar o status (possível bloqueio de permissão).")
           return
         }
+
+        if (flow === "requisition") {
+          const { data: req } = await supabase
+            .from("requisitions")
+            .select("requester_id, requester_name, code")
+            .eq("id", entityId)
+            .single()
+
+          if (req?.requester_id) {
+            void notifyWithEmail({
+              userId: req.requester_id,
+              companyId,
+              type: "requisition.approved",
+              title: "Requisição aprovada",
+              body: `Sua requisição ${req.code} foi aprovada e está disponível para cotação.`,
+              entity: "requisition",
+              entityId,
+              subject: `Requisição Aprovada — ${req.code}`,
+              html: `<p>Sua requisição <strong>${req.code}</strong> foi aprovada.</p>
+           <p>Ela já está disponível para abertura de cotação.</p>`,
+              emailPrefKey: "order_approved_email",
+            })
+          }
+        }
       }
 
       toast.success(
@@ -432,7 +457,8 @@ export default function AprovacoesPage() {
   }
 
   const handleRejectConfirm = async () => {
-    if (!rejectTarget || !rejectReason.trim()) return
+    if (!rejectTarget || !rejectReason.trim() || !companyId) return
+    const rejectionReason = rejectReason.trim()
     setRejectSaving(true)
     const supabase = createClient()
 
@@ -441,7 +467,7 @@ export default function AprovacoesPage() {
         .from("approval_requests")
         .update({
           status: "rejected",
-          rejection_reason: rejectReason.trim(),
+          rejection_reason: rejectionReason,
           decided_at: new Date().toISOString(),
         })
         .eq("id", rejectTarget.requestId)
@@ -452,9 +478,33 @@ export default function AprovacoesPage() {
         .from(table)
         .update({
           status: "rejected",
-          rejection_reason: rejectReason.trim(),
+          rejection_reason: rejectionReason,
         })
         .eq("id", rejectTarget.entityId)
+
+      if (rejectTarget.flow === "requisition") {
+        const { data: req } = await supabase
+          .from("requisitions")
+          .select("requester_id, code")
+          .eq("id", rejectTarget.entityId)
+          .single()
+
+        if (req?.requester_id) {
+          void notifyWithEmail({
+            userId: req.requester_id,
+            companyId,
+            type: "requisition.rejected",
+            title: "Requisição reprovada",
+            body: `Sua requisição ${req.code} foi reprovada. Motivo: ${rejectionReason}`,
+            entity: "requisition",
+            entityId: rejectTarget.entityId,
+            subject: `Requisição Reprovada — ${req.code}`,
+            html: `<p>Sua requisição <strong>${req.code}</strong> foi reprovada.</p>
+           <p><strong>Motivo:</strong> ${rejectionReason}</p>`,
+            emailPrefKey: "order_approved_email",
+          })
+        }
+      }
 
       toast.success(
         rejectTarget.flow === "requisition"

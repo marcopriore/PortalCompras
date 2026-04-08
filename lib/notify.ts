@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
 
 export interface CreateNotificationParams {
@@ -10,10 +11,13 @@ export interface CreateNotificationParams {
   entityId?: string
 }
 
-export async function createNotification(params: CreateNotificationParams) {
+export async function createNotification(
+  params: CreateNotificationParams,
+  supabase?: SupabaseClient,
+) {
   try {
-    const supabase = createClient()
-    const { error } = await supabase.from("notifications").insert({
+    const db = supabase ?? createClient()
+    const { error } = await db.from("notifications").insert({
       user_id: params.userId,
       company_id: params.companyId,
       type: params.type,

@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
@@ -295,6 +296,19 @@ export default function NovaRequisicaoPage() {
               approver_name: "Aprovação automática (fluxo desabilitado)",
             })
             .eq("id", requisitionId)
+          void notifyWithEmail({
+            userId,
+            companyId,
+            type: "requisition.approved",
+            title: "Requisição aprovada automaticamente",
+            body: `Sua requisição ${requisitionCode} foi aprovada e está disponível para cotação.`,
+            entity: "requisition",
+            entityId: requisitionId,
+            subject: `Requisição Aprovada — ${requisitionCode}`,
+            html: `<p>Sua requisição <strong>${requisitionCode}</strong> foi aprovada automaticamente.</p>
+         <p>Ela já está disponível para abertura de cotação.</p>`,
+            emailPrefKey: "order_approved_email",
+          })
           router.push("/comprador/requisicoes")
           return
         }
@@ -320,8 +334,44 @@ export default function NovaRequisicaoPage() {
               approver_name: "Aprovação automática (sem regra configurada para este CC)",
             })
             .eq("id", requisitionId)
+          void notifyWithEmail({
+            userId,
+            companyId,
+            type: "requisition.approved",
+            title: "Requisição aprovada automaticamente",
+            body: `Sua requisição ${requisitionCode} foi aprovada e está disponível para cotação.`,
+            entity: "requisition",
+            entityId: requisitionId,
+            subject: `Requisição Aprovada — ${requisitionCode}`,
+            html: `<p>Sua requisição <strong>${requisitionCode}</strong> foi aprovada automaticamente.</p>
+         <p>Ela já está disponível para abertura de cotação.</p>`,
+            emailPrefKey: "order_approved_email",
+          })
           router.push("/comprador/requisicoes")
           return
+        }
+
+        const { data: approvers } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .eq("company_id", companyId)
+          .eq("status", "active")
+          .contains("roles", ["approver_requisition"])
+
+        for (const approver of approvers ?? []) {
+          void notifyWithEmail({
+            userId: approver.id,
+            companyId,
+            type: "requisition.created",
+            title: "Nova requisição aguardando aprovação",
+            body: `A requisição ${requisitionCode} foi criada por ${requesterName} e aguarda sua aprovação.`,
+            entity: "requisition",
+            entityId: requisitionId,
+            subject: `Nova Requisição — ${requisitionCode}`,
+            html: `<p>Olá, <strong>${approver.full_name ?? "Aprovador"}</strong>!</p>
+           <p>A requisição <strong>${requisitionCode}</strong> foi criada por <strong>${requesterName}</strong> e aguarda sua aprovação.</p>`,
+            emailPrefKey: "new_requisition_email",
+          })
         }
 
         await supabase

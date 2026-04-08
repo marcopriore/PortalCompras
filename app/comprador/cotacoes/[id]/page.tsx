@@ -28,6 +28,7 @@ import {
   Package,
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
+import { createNotification } from '@/lib/notify'
 
 type QuotationStatus = 'draft' | 'waiting' | 'analysis' | 'completed' | 'cancelled' | 'rejected'
 
@@ -70,6 +71,60 @@ const statusConfig: Record<
 }
 
 type SectionKey = 'general' | 'items' | 'suppliers'
+
+async function notifySuppliersQuotationStatus(
+  quotationId: string,
+  quotationCode: string,
+  companyId: string,
+  status: 'cancelled' | 'completed',
+) {
+  try {
+    const supabase = createClient()
+
+    const { data: suppliers } = await supabase
+      .from('quotation_suppliers')
+      .select('supplier_id')
+      .eq('quotation_id', quotationId)
+      .eq('company_id', companyId)
+
+    if (!suppliers?.length) return
+
+    const supplierIds = suppliers
+      .map((s) => (s as { supplier_id: string | null }).supplier_id)
+      .filter((sid): sid is string => Boolean(sid))
+
+    if (supplierIds.length === 0) return
+
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('profile_type', 'supplier')
+      .in('supplier_id', supplierIds)
+
+    const title =
+      status === 'cancelled' ? 'Cotação cancelada' : 'Cotação concluída'
+
+    const body =
+      status === 'cancelled'
+        ? `A cotação ${quotationCode} foi cancelada pelo comprador.`
+        : `A cotação ${quotationCode} foi concluída. Obrigado pela sua participação.`
+
+    for (const profile of profiles ?? []) {
+      void createNotification({
+        userId: profile.id,
+        companyId,
+        type: `quotation.${status}`,
+        title,
+        body,
+        entity: 'quotation',
+        entityId: quotationId,
+      })
+    }
+  } catch {
+    // notificações não devem interromper o fluxo da cotação
+  }
+}
 
 function Section({
   title,
@@ -217,6 +272,14 @@ export default function QuotationDetailsPage({
         router.push('/comprador/cotacoes')
       } else if (newStatus === 'cancelled') {
         toast.success('Cotação cancelada.')
+        if (companyId) {
+          void notifySuppliersQuotationStatus(
+            quotation.id,
+            quotation.code,
+            companyId,
+            'cancelled',
+          )
+        }
         await logAudit({
           eventType: 'quotation.cancelled',
           description: `Cotação ${quotation.code} cancelada`,

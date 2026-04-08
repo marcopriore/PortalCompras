@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { createNotification } from '@/lib/notify'
 
 export async function POST(request: Request) {
   try {
@@ -64,6 +65,36 @@ export async function POST(request: Request) {
         { status: 500 },
       )
     }
+
+    const profileId = authData.user.id
+    void (async () => {
+      try {
+        const { data: admins } = await supabaseAdmin
+          .from('profiles')
+          .select('id')
+          .eq('company_id', companyId)
+          .eq('status', 'active')
+          .contains('roles', ['admin'])
+
+        for (const admin of admins ?? []) {
+          if (admin.id === profileId) continue
+          await createNotification(
+            {
+              userId: admin.id,
+              companyId,
+              type: 'user.created',
+              title: 'Novo usuário cadastrado',
+              body: `O usuário ${fullName} foi adicionado ao sistema.`,
+              entity: 'profile',
+              entityId: profileId,
+            },
+            supabaseAdmin,
+          )
+        }
+      } catch {
+        // notificações não devem afetar a resposta da API
+      }
+    })()
 
     return NextResponse.json({ success: true, userId: authData.user.id })
   } catch {
