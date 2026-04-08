@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 import {
   Dialog,
@@ -38,6 +38,7 @@ import {
   Building2,
   ClipboardList,
   Download,
+  Loader2,
   Mail,
   Pencil,
   Plus,
@@ -89,6 +90,7 @@ type CompanyForm = {
   city: string
   state: string
   zip_code: string
+  logo_url: string | null
 }
 
 type ProfileForm = {
@@ -96,6 +98,7 @@ type ProfileForm = {
   job_title: string
   department: string
   phone: string
+  avatar_url: string | null
 }
 
 type NotificationForm = {
@@ -361,13 +364,17 @@ export default function ConfiguracoesPage() {
     city: "",
     state: "",
     zip_code: "",
+    logo_url: null,
   })
   const [profileForm, setProfileForm] = React.useState<ProfileForm>({
     full_name: "",
     job_title: "",
     department: "",
     phone: "",
+    avatar_url: null,
   })
+  const [logoUploading, setLogoUploading] = React.useState(false)
+  const [avatarUploading, setAvatarUploading] = React.useState(false)
   const [notifForm, setNotifForm] = React.useState<NotificationForm>(() => defaultNotificationForm())
   const [notifExists, setNotifExists] = React.useState(false)
 
@@ -477,6 +484,7 @@ export default function ConfiguracoesPage() {
             job_title: p.job_title ?? "",
             department: p.department ?? "",
             phone: p.phone ?? "",
+            avatar_url: p.avatar_url ?? null,
           })
         }
 
@@ -491,6 +499,7 @@ export default function ConfiguracoesPage() {
             city: c.city ?? "",
             state: c.state ?? "",
             zip_code: c.zip_code ?? "",
+            logo_url: c.logo_url ?? null,
           })
         }
 
@@ -866,6 +875,92 @@ export default function ConfiguracoesPage() {
       setMessages((m) => ({ ...m, profile: { success: null, error: e?.message ?? "Falha ao salvar." } }))
     } finally {
       setSaving((s) => ({ ...s, profile: false }))
+    }
+  }
+
+  async function handleLogoUpload(file: File) {
+    if (!companyId) return
+    setLogoUploading(true)
+
+    try {
+      const supabase = createClient()
+      if (!file.type.startsWith("image/")) {
+        toast.error("Arquivo inválido", { description: "Selecione uma imagem." })
+        return
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error("Arquivo muito grande", { description: "Máximo 2MB." })
+        return
+      }
+
+      const ext = file.name.split(".").pop() || "png"
+      const path = `${companyId}/logo.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from("company-logos")
+        .upload(path, file, { upsert: true })
+
+      if (uploadError) throw uploadError
+
+      const { data: urlData } = supabase.storage.from("company-logos").getPublicUrl(path)
+      const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`
+
+      const { error: updateError } = await supabase
+        .from("companies")
+        .update({ logo_url: publicUrl })
+        .eq("id", companyId)
+
+      if (updateError) throw updateError
+
+      setCompanyForm((prev) => ({ ...prev, logo_url: publicUrl }))
+      toast.success("Logo atualizada com sucesso!")
+    } catch {
+      toast.error("Erro ao fazer upload")
+    } finally {
+      setLogoUploading(false)
+    }
+  }
+
+  async function handleAvatarUpload(file: File) {
+    if (!userId) return
+    setAvatarUploading(true)
+
+    try {
+      const supabase = createClient()
+      if (!file.type.startsWith("image/")) {
+        toast.error("Arquivo inválido", { description: "Selecione uma imagem." })
+        return
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error("Arquivo muito grande", { description: "Máximo 2MB." })
+        return
+      }
+
+      const ext = file.name.split(".").pop() || "png"
+      const path = `${userId}/avatar.${ext}`
+
+      const { error: uploadError } = await supabase.storage
+        .from("profile-avatars")
+        .upload(path, file, { upsert: true })
+
+      if (uploadError) throw uploadError
+
+      const { data: urlData } = supabase.storage.from("profile-avatars").getPublicUrl(path)
+      const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: publicUrl })
+        .eq("id", userId)
+
+      if (updateError) throw updateError
+
+      setProfileForm((prev) => ({ ...prev, avatar_url: publicUrl }))
+      toast.success("Foto atualizada com sucesso!")
+    } catch {
+      toast.error("Erro ao fazer upload")
+    } finally {
+      setAvatarUploading(false)
     }
   }
 
@@ -1387,6 +1482,9 @@ export default function ConfiguracoesPage() {
               <CardContent className="flex flex-col gap-6">
                 <div className="flex items-center gap-6">
                   <Avatar className="h-20 w-20">
+                    {companyForm.logo_url ? (
+                      <AvatarImage src={companyForm.logo_url} alt="Logo da empresa" />
+                    ) : null}
                     <AvatarFallback
                       style={{ backgroundColor: getAvatarColor(companyForm.name || "Empresa") }}
                       className="text-xl"
@@ -1395,19 +1493,42 @@ export default function ConfiguracoesPage() {
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col gap-2">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="inline-flex">
-                          <Button variant="outline" size="sm" disabled>
-                            <Upload className="mr-2 h-4 w-4" />
-                            Alterar Logo
-                          </Button>
+                    <label className="cursor-pointer">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={logoUploading || !canManageCompany}
+                        asChild
+                      >
+                        <span>
+                          {logoUploading ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Enviando...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="mr-2 h-4 w-4" />
+                              Alterar Logo
+                            </>
+                          )}
                         </span>
-                      </TooltipTrigger>
-                      <TooltipContent>Em breve</TooltipContent>
-                    </Tooltip>
+                      </Button>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={logoUploading || !canManageCompany}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) void handleLogoUpload(file)
+                          e.target.value = ""
+                        }}
+                      />
+                    </label>
                     <p className="text-xs text-muted-foreground">
-                      Atualização de logo em breve
+                      PNG, JPG ou SVG. Máximo 2MB.
                     </p>
                   </div>
                 </div>
@@ -1551,6 +1672,9 @@ export default function ConfiguracoesPage() {
             <CardContent className="flex flex-col gap-6">
               <div className="flex items-center gap-6">
                 <Avatar className="h-20 w-20">
+                  {profileForm.avatar_url ? (
+                    <AvatarImage src={profileForm.avatar_url} alt="Foto de perfil" />
+                  ) : null}
                   <AvatarFallback
                     style={{
                       backgroundColor: getAvatarColor(profileForm.full_name || "Usuário"),
@@ -1561,19 +1685,42 @@ export default function ConfiguracoesPage() {
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col gap-2">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex">
-                        <Button variant="outline" size="sm" disabled>
-                          <Upload className="mr-2 h-4 w-4" />
-                          Alterar Foto
-                        </Button>
+                  <label className="cursor-pointer">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={avatarUploading}
+                      asChild
+                    >
+                      <span>
+                        {avatarUploading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Enviando...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="mr-2 h-4 w-4" />
+                            Alterar Foto
+                          </>
+                        )}
                       </span>
-                    </TooltipTrigger>
-                    <TooltipContent>Em breve</TooltipContent>
-                  </Tooltip>
+                    </Button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={avatarUploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) void handleAvatarUpload(file)
+                        e.target.value = ""
+                      }}
+                    />
+                  </label>
                   <p className="text-xs text-muted-foreground">
-                    Upload de foto indisponível no momento
+                    PNG ou JPG. Máximo 2MB.
                   </p>
                 </div>
               </div>
