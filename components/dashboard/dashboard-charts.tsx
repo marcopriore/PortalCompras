@@ -95,33 +95,36 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
         <CardDescription>Distribuição por status</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2 p-4">
-        <div className="flex w-full items-center gap-4">
-          <div className="flex-shrink-0">
-            <PieChart width={220} height={220}>
-              <Pie
-                data={data}
-                cx={110}
-                cy={110}
-                innerRadius={60}
-                outerRadius={100}
-                paddingAngle={2}
-                dataKey="value"
-              >
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "var(--card)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius)",
-                }}
-              />
-            </PieChart>
+        <div className="flex w-full items-center" style={{ height: 220 }}>
+          <div className="h-full flex-1">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={data}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={65}
+                  outerRadius={100}
+                  paddingAngle={2}
+                  dataKey="value"
+                >
+                  {data.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => `${value} cotações`}
+                  contentStyle={{
+                    backgroundColor: "var(--card)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)",
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
           </div>
 
-          <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex w-48 flex-shrink-0 flex-col justify-center gap-2 pl-2">
             {data.map((entry) => (
               <div key={entry.name} className="flex items-center gap-2">
                 <div

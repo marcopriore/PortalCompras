@@ -827,33 +827,35 @@ export default function RelatoriosPage() {
                 <CardDescription>Distribuição de cotações por status</CardDescription>
               </CardHeader>
               <CardContent className="p-4">
-                <div className="flex w-full items-center gap-4">
-                  <div className="flex-shrink-0">
-                    <PieChart width={220} height={220}>
-                      <Pie
-                        data={statusDonutData}
-                        cx={110}
-                        cy={110}
-                        innerRadius={60}
-                        outerRadius={100}
-                        paddingAngle={2}
-                        dataKey="value"
-                      >
-                        {statusDonutData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value: number) => `${value} cotações`}
-                        contentStyle={{
-                          backgroundColor: "var(--popover)",
-                          border: "1px solid var(--border)",
-                          borderRadius: "var(--radius)",
-                        }}
-                      />
-                    </PieChart>
+                <div className="flex w-full items-center" style={{ height: 220 }}>
+                  <div className="h-full flex-1">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={statusDonutData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={65}
+                          outerRadius={100}
+                          paddingAngle={2}
+                          dataKey="value"
+                        >
+                          {statusDonutData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: number) => `${value} cotações`}
+                          contentStyle={{
+                            backgroundColor: "var(--popover)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "var(--radius)",
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
                   </div>
-                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                  <div className="flex w-48 flex-shrink-0 flex-col justify-center gap-2 pl-2">
                     {statusDonutData.map((entry) => {
                       const total = statusDonutData.reduce((acc, d) => acc + d.value, 0)
                       const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
@@ -885,33 +887,35 @@ export default function RelatoriosPage() {
                     Nenhum dado disponível
                   </div>
                 ) : (
-                  <div className="flex w-full items-center gap-4">
-                    <div className="flex-shrink-0">
-                      <PieChart width={220} height={220}>
-                        <Pie
-                          data={pedidosPorStatus}
-                          cx={110}
-                          cy={110}
-                          innerRadius={60}
-                          outerRadius={100}
-                          paddingAngle={2}
-                          dataKey="value"
-                        >
-                          {pedidosPorStatus.map((entry, index) => (
-                            <Cell key={`cell-po-status-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value: number) => `${value} pedidos`}
-                          contentStyle={{
-                            backgroundColor: "var(--popover)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "var(--radius)",
-                          }}
-                        />
-                      </PieChart>
+                  <div className="flex w-full items-center" style={{ height: 220 }}>
+                    <div className="h-full flex-1">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={pedidosPorStatus}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={65}
+                            outerRadius={100}
+                            paddingAngle={2}
+                            dataKey="value"
+                          >
+                            {pedidosPorStatus.map((entry, index) => (
+                              <Cell key={`cell-po-status-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            formatter={(value: number) => `${value} pedidos`}
+                            contentStyle={{
+                              backgroundColor: "var(--popover)",
+                              border: "1px solid var(--border)",
+                              borderRadius: "var(--radius)",
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
                     </div>
-                    <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <div className="flex w-48 flex-shrink-0 flex-col justify-center gap-2 pl-2">
                       {pedidosPorStatus.map((entry) => {
                         const total = pedidosPorStatus.reduce((acc, d) => acc + d.value, 0)
                         const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
