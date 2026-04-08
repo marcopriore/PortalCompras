@@ -387,6 +387,16 @@ export default function ConfiguracoesPage() {
   const [securitySuccess, setSecuritySuccess] = React.useState<string | null>(null)
   const [securityError, setSecurityError] = React.useState<string | null>(null)
 
+  const [mfaEnabled, setMfaEnabled] = React.useState(false)
+  const [mfaLoading, setMfaLoading] = React.useState(false)
+  const [mfaStep, setMfaStep] = React.useState<"idle" | "setup" | "verify" | "disable">("idle")
+  const [mfaQR, setMfaQR] = React.useState<string | null>(null)
+  const [mfaSecret, setMfaSecret] = React.useState<string | null>(null)
+  const [mfaFactorId, setMfaFactorId] = React.useState<string | null>(null)
+  const [mfaCode, setMfaCode] = React.useState("")
+  const [mfaError, setMfaError] = React.useState<string | null>(null)
+  const [mfaSuccess, setMfaSuccess] = React.useState<string | null>(null)
+
   const { hasFeature } = usePermissions()
 
   const [approvalRequisitionEnabled, setApprovalRequisitionEnabled] = React.useState(false)
@@ -510,6 +520,22 @@ export default function ConfiguracoesPage() {
           setNotifForm(defaultNotificationForm())
           setNotifExists(false)
         }
+
+        const { data: factorsData } = await supabase.auth.mfa.listFactors()
+        const fd = factorsData as {
+          totp?: { id: string; factor_type?: string; status?: string }[]
+          all?: { id: string; factor_type?: string; status?: string }[]
+        } | null
+        const factorList =
+          fd?.totp && fd.totp.length > 0 ? fd.totp : (fd?.all ?? [])
+        const totpFactor = factorList.find(
+          (f) =>
+            String(f.factor_type ?? "").toLowerCase() === "totp" &&
+            f.status === "verified",
+        )
+        setMfaEnabled(!!totpFactor)
+        if (totpFactor) setMfaFactorId(totpFactor.id)
+        else setMfaFactorId(null)
       } finally {
         setLoading(false)
       }
@@ -1340,6 +1366,101 @@ export default function ConfiguracoesPage() {
       setApprovalsSaving(false)
       setDeleteRuleId(null)
     }
+  }
+
+  async function handleEnableMFA() {
+    setMfaSuccess(null)
+    setMfaLoading(true)
+    setMfaError(null)
+    const supabase = createClient()
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+      friendlyName: "Valore 2FA",
+    })
+    if (error || !data) {
+      setMfaError(error?.message ?? "Erro ao iniciar 2FA.")
+      setMfaLoading(false)
+      return
+    }
+    const totp = data.totp as { qr_code?: string; secret?: string }
+    setMfaQR(totp.qr_code ?? null)
+    setMfaSecret(totp.secret ?? null)
+    setMfaFactorId(data.id)
+    setMfaStep("setup")
+    setMfaLoading(false)
+  }
+
+  async function handleVerifyMFA() {
+    if (!mfaFactorId || mfaCode.length !== 6) return
+    setMfaSuccess(null)
+    setMfaLoading(true)
+    setMfaError(null)
+    const supabase = createClient()
+    const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+      factorId: mfaFactorId,
+    })
+    if (challengeError || !challengeData) {
+      setMfaError(challengeError?.message ?? "Erro ao validar.")
+      setMfaLoading(false)
+      return
+    }
+    const { error: verifyError } = await supabase.auth.mfa.verify({
+      factorId: mfaFactorId,
+      challengeId: challengeData.id,
+      code: mfaCode,
+    })
+    if (verifyError) {
+      setMfaError("Código inválido. Tente novamente.")
+      setMfaLoading(false)
+      return
+    }
+    setMfaEnabled(true)
+    setMfaStep("idle")
+    setMfaCode("")
+    setMfaQR(null)
+    setMfaSecret(null)
+    setMfaSuccess("2FA ativado com sucesso!")
+    setMfaLoading(false)
+  }
+
+  async function handleDisableMFA() {
+    if (!mfaFactorId) return
+    setMfaSuccess(null)
+    setMfaLoading(true)
+    setMfaError(null)
+    const supabase = createClient()
+    const { error } = await supabase.auth.mfa.unenroll({ factorId: mfaFactorId })
+    if (error) {
+      setMfaError(error.message)
+      setMfaLoading(false)
+      return
+    }
+    setMfaEnabled(false)
+    setMfaFactorId(null)
+    setMfaStep("idle")
+    setMfaQR(null)
+    setMfaSecret(null)
+    setMfaCode("")
+    setMfaSuccess("2FA desativado.")
+    setMfaLoading(false)
+  }
+
+  async function handleCancelMfaSetup() {
+    if (mfaFactorId) {
+      try {
+        const supabase = createClient()
+        await supabase.auth.mfa.unenroll({ factorId: mfaFactorId })
+      } catch {
+        // fator pode já ter sido removido
+      }
+    }
+    setMfaStep("idle")
+    setMfaCode("")
+    setMfaError(null)
+    setMfaQR(null)
+    setMfaSecret(null)
+    setMfaFactorId(null)
+    setMfaLoading(false)
   }
 
   const handleChangePassword = async () => {
@@ -2357,38 +2478,32 @@ export default function ConfiguracoesPage() {
 
       {/* ABA SEGURANÇA */}
       {activeTab === "seguranca" && (
-        <div className="grid gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
           <Card>
             <CardHeader>
               <CardTitle>Alterar Senha</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Atualize sua senha de acesso ao sistema
-              </p>
+              <p className="text-sm text-muted-foreground">Atualize sua senha de acesso</p>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="senhaAtual">Senha Atual</Label>
-                  <Input
-                    id="senhaAtual"
-                    type="password"
-                    value={securityForm.currentPassword}
-                    onChange={(e) =>
-                      setSecurityForm((f) => ({ ...f, currentPassword: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="novaSenha">Nova Senha</Label>
-                  <Input
-                    id="novaSenha"
-                    type="password"
-                    value={securityForm.newPassword}
-                    onChange={(e) =>
-                      setSecurityForm((f) => ({ ...f, newPassword: e.target.value }))
-                    }
-                  />
-                </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="senhaAtual">Senha Atual</Label>
+                <Input
+                  id="senhaAtual"
+                  type="password"
+                  value={securityForm.currentPassword}
+                  onChange={(e) =>
+                    setSecurityForm((f) => ({ ...f, currentPassword: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="novaSenha">Nova Senha</Label>
+                <Input
+                  id="novaSenha"
+                  type="password"
+                  value={securityForm.newPassword}
+                  onChange={(e) => setSecurityForm((f) => ({ ...f, newPassword: e.target.value }))}
+                />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="confirmarSenha">Confirmar Nova Senha</Label>
@@ -2423,7 +2538,7 @@ export default function ConfiguracoesPage() {
             <CardHeader>
               <CardTitle>Autenticação em Dois Fatores</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Adicione uma camada extra de segurança à sua conta
+                Proteja sua conta com Google Authenticator
               </p>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
@@ -2431,59 +2546,107 @@ export default function ConfiguracoesPage() {
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center gap-2">
                     <Label>2FA via Aplicativo</Label>
-                    <Badge variant="outline">Em breve</Badge>
+                    <Badge variant={mfaEnabled ? "default" : "outline"}>
+                      {mfaEnabled ? "Ativo" : "Inativo"}
+                    </Badge>
                   </div>
                   <span className="text-sm text-muted-foreground">
-                    Use um aplicativo autenticador como Google Authenticator
+                    {mfaEnabled
+                      ? "Sua conta está protegida com autenticação em dois fatores."
+                      : "Use Google Authenticator ou similar para gerar códigos."}
                   </span>
                 </div>
-                <Switch checked disabled />
+                <Switch
+                  checked={mfaEnabled}
+                  disabled={mfaLoading || mfaStep !== "idle"}
+                  onCheckedChange={(val) =>
+                    val ? void handleEnableMFA() : setMfaStep("disable")
+                  }
+                />
               </div>
-              <div className="flex items-center justify-between rounded-lg border p-4">
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-2">
-                    <Label>2FA via SMS</Label>
-                    <Badge variant="outline">Em breve</Badge>
-                  </div>
-                  <span className="text-sm text-muted-foreground">
-                    Receba códigos de verificação por SMS
-                  </span>
-                </div>
-                <Switch checked disabled />
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Sessões Ativas</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Dispositivos com sessão ativa na sua conta
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="flex flex-col gap-1">
-                    <p className="font-medium">Chrome - Windows</p>
-                    <p className="text-sm text-muted-foreground">
-                      São Paulo, Brasil - Sessão atual
-                    </p>
+              {mfaStep === "setup" && mfaQR && (
+                <div className="flex flex-col gap-3 rounded-lg border p-4">
+                  <p className="text-sm font-medium">
+                    1. Escaneie o QR Code com seu aplicativo autenticador
+                  </p>
+                  <div className="flex justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={mfaQR} alt="QR Code 2FA" className="w-40 h-40" />
                   </div>
-                  <Badge variant="outline">Em breve</Badge>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border p-4">
-                  <div className="flex flex-col gap-1">
-                    <p className="font-medium">Safari - iPhone</p>
-                    <p className="text-sm text-muted-foreground">
-                      São Paulo, Brasil
+                  {mfaSecret && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      Chave manual: <span className="font-mono font-medium">{mfaSecret}</span>
                     </p>
+                  )}
+                  <p className="text-sm font-medium">
+                    2. Digite o código gerado pelo aplicativo
+                  </p>
+                  <Input
+                    placeholder="000000"
+                    maxLength={6}
+                    value={mfaCode}
+                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
+                    className="text-center tracking-widest text-lg"
+                  />
+                  {mfaError && <p className="text-sm text-destructive">{mfaError}</p>}
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={() => void handleCancelMfaSetup()}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => void handleVerifyMFA()}
+                      disabled={mfaLoading || mfaCode.length !== 6}
+                    >
+                      {mfaLoading ? "Verificando..." : "Ativar 2FA"}
+                    </Button>
                   </div>
-                  <Button variant="ghost" size="sm" disabled>
-                    Encerrar
-                  </Button>
                 </div>
-              </div>
+              )}
+
+              {mfaStep === "disable" && (
+                <div className="flex flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                  <p className="text-sm font-medium text-destructive">
+                    Desativar autenticação em dois fatores?
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Sua conta ficará menos protegida. Esta ação pode ser revertida a qualquer
+                    momento.
+                  </p>
+                  {mfaError && <p className="text-sm text-destructive">{mfaError}</p>}
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      variant="outline"
+                      type="button"
+                      onClick={() => {
+                        setMfaStep("idle")
+                        setMfaError(null)
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      type="button"
+                      onClick={() => void handleDisableMFA()}
+                      disabled={mfaLoading}
+                    >
+                      {mfaLoading ? "Desativando..." : "Confirmar"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {mfaSuccess && (
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm text-primary">
+                  {mfaSuccess}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
