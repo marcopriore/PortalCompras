@@ -827,21 +827,17 @@ export default function RelatoriosPage() {
                 <CardDescription>Distribuição de cotações por status</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
+                <div className="flex w-full items-center gap-6">
+                  <div className="flex-shrink-0">
+                    <PieChart width={200} height={200}>
                       <Pie
                         data={statusDonutData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={100}
+                        cx={100}
+                        cy={100}
+                        innerRadius={55}
+                        outerRadius={90}
                         paddingAngle={2}
                         dataKey="value"
-                        label={({ name, percent }) =>
-                          `${name} ${(percent * 100).toFixed(0)}%`
-                        }
-                        labelLine={false}
                       >
                         {statusDonutData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
@@ -856,7 +852,30 @@ export default function RelatoriosPage() {
                         }}
                       />
                     </PieChart>
-                  </ResponsiveContainer>
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    {statusDonutData.map((entry) => {
+                      const total = statusDonutData.reduce((acc, d) => acc + d.value, 0)
+                      const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
+                      return (
+                        <div key={entry.name} className="flex items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: entry.color }}
+                            />
+                            <span className="text-sm text-muted-foreground truncate">
+                              {entry.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 text-sm flex-shrink-0">
+                            <span className="font-medium">{entry.value}</span>
+                            <span className="text-muted-foreground">({pct}%)</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -872,51 +891,50 @@ export default function RelatoriosPage() {
                     Nenhum dado disponível
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    <div className="h-52">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={pedidosPorStatus}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={52}
-                            outerRadius={88}
-                            paddingAngle={2}
-                            dataKey="value"
-                          >
-                            {pedidosPorStatus.map((entry, index) => (
-                              <Cell key={`cell-po-status-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            formatter={(value: number) => `${value} pedidos`}
-                            contentStyle={{
-                              backgroundColor: "var(--popover)",
-                              border: "1px solid var(--border)",
-                              borderRadius: "var(--radius)",
-                            }}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
+                  <div className="flex w-full items-center gap-6">
+                    <div className="flex-shrink-0">
+                      <PieChart width={200} height={200}>
+                        <Pie
+                          data={pedidosPorStatus}
+                          cx={100}
+                          cy={100}
+                          innerRadius={55}
+                          outerRadius={90}
+                          paddingAngle={2}
+                          dataKey="value"
+                        >
+                          {pedidosPorStatus.map((entry, index) => (
+                            <Cell key={`cell-po-status-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value: number) => `${value} pedidos`}
+                          contentStyle={{
+                            backgroundColor: "var(--popover)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "var(--radius)",
+                          }}
+                        />
+                      </PieChart>
                     </div>
-                    <div className="space-y-2">
+                    <div className="flex min-w-0 flex-1 flex-col gap-2">
                       {pedidosPorStatus.map((entry) => {
                         const total = pedidosPorStatus.reduce((acc, d) => acc + d.value, 0)
+                        const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
                         return (
-                          <div key={entry.name} className="flex items-center justify-between gap-4">
-                            <div className="flex items-center gap-2">
+                          <div key={entry.name} className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
                               <div
-                                className="w-3 h-3 rounded-full"
+                                className="w-3 h-3 rounded-full flex-shrink-0"
                                 style={{ backgroundColor: entry.color }}
                               />
-                              <span className="text-sm text-muted-foreground">{entry.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm">
-                              <span className="font-medium">{entry.value}</span>
-                              <span className="text-muted-foreground">
-                                ({total > 0 ? Math.round((entry.value / total) * 100) : 0}%)
+                              <span className="text-sm text-muted-foreground truncate">
+                                {entry.name}
                               </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-sm flex-shrink-0">
+                              <span className="font-medium">{entry.value}</span>
+                              <span className="text-muted-foreground">({pct}%)</span>
                             </div>
                           </div>
                         )
@@ -1065,7 +1083,7 @@ export default function RelatoriosPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Volume de Spend por Mês</CardTitle>
-                <CardDescription>Total de pedidos concluídos no período</CardDescription>
+                <CardDescription>Valor em R$ de pedidos concluídos no período</CardDescription>
               </CardHeader>
               <CardContent>
                 {spendPorMes.length === 0 ? (
