@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
@@ -65,9 +65,6 @@ export default function ItensPage() {
   const [groupFilter, setGroupFilter] = useState<string[]>([])
 
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
-
-  const [editOpen, setEditOpen] = useState(false)
-  const [editingItem, setEditingItem] = useState<Item | null>(null)
 
   const [erpSyncOpen, setErpSyncOpen] = useState(false)
 
@@ -150,11 +147,6 @@ export default function ItensPage() {
     void loadItems()
   }, [loadItems])
 
-  const openEdit = (item: Item) => {
-    setEditingItem(item)
-    setEditOpen(true)
-  }
-
   async function handleDownloadTemplate() {
     const ExcelJS = (await import('exceljs')).default
     const wb = new ExcelJS.Workbook()
@@ -196,6 +188,63 @@ export default function ItensPage() {
     const a = document.createElement('a')
     a.href = url
     a.download = 'template_itens_valore.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleExportItems() {
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Itens')
+
+    ws.columns = [
+      { header: 'codigo', key: 'codigo', width: 15 },
+      { header: 'descricao_curta', key: 'descricao_curta', width: 40 },
+      { header: 'descricao_detalhada', key: 'descricao_detalhada', width: 60 },
+      { header: 'unidade_medida', key: 'unidade_medida', width: 15 },
+      { header: 'ncm', key: 'ncm', width: 15 },
+      { header: 'grupo_mercadoria', key: 'grupo_mercadoria', width: 25 },
+      { header: 'status', key: 'status', width: 10 },
+      { header: 'origem', key: 'origem', width: 15 },
+      { header: 'ultima_sincronizacao', key: 'ultima_sincronizacao', width: 25 },
+    ]
+
+    ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    ws.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF4F3EF5' },
+    }
+
+    for (const item of items) {
+      ws.addRow({
+        codigo: item.code,
+        descricao_curta: item.short_description,
+        descricao_detalhada: item.long_description ?? '',
+        unidade_medida: item.unit_of_measure ?? '',
+        ncm: item.ncm ?? '',
+        grupo_mercadoria: item.commodity_group ?? '',
+        status: item.status === 'active' ? 'ativo' : 'inativo',
+        origem:
+          item.source === 'erp'
+            ? 'Integração ERP'
+            : item.source === 'excel'
+              ? 'Importação Excel'
+              : 'Cadastro Manual',
+        ultima_sincronizacao: item.sync_at
+          ? format(new Date(item.sync_at), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+          : '',
+      })
+    }
+
+    const buffer = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `itens_valore_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -338,6 +387,10 @@ export default function ItensPage() {
               Importar Excel
             </Button>
           )}
+          <Button variant="outline" size="sm" type="button" onClick={() => void handleExportItems()}>
+            <Download className="mr-2 h-4 w-4" />
+            Baixar Base
+          </Button>
           <Button variant="outline" size="sm" type="button" onClick={() => setErpSyncOpen(true)}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Sincronizar ERP
@@ -430,12 +483,11 @@ export default function ItensPage() {
                 <th className="px-3 py-2 text-left">Unidade</th>
                 <th className="px-3 py-2 text-left">NCM</th>
                 <th className="px-3 py-2 text-left">Grupo de Mercadoria</th>
-                <th className="px-3 py-2 text-right">Ações</th>
               </tr>
             </thead>
             <tbody>
               {filteredItems.map((item) => (
-                <Fragment key={item.id}>
+                <React.Fragment key={item.id}>
                   <tr
                     className="border-b border-border last:border-0 hover:bg-muted/50 cursor-pointer transition-colors"
                     onClick={() =>
@@ -465,23 +517,10 @@ export default function ItensPage() {
                     <td className="px-3 py-2 align-top">
                       {item.commodity_group ?? '-'}
                     </td>
-                    <td className="px-3 py-2 align-top text-right">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openEdit(item)
-                        }}
-                      >
-                        Detalhes
-                      </Button>
-                    </td>
                   </tr>
                   {expandedItemId === item.id && (
                     <tr className="bg-muted/30">
-                      <td colSpan={7} className="px-6 py-3">
+                      <td colSpan={6} className="px-6 py-3">
                         <div className="flex gap-2">
                           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                             Descrição Detalhada:
@@ -493,99 +532,12 @@ export default function ItensPage() {
                       </td>
                     </tr>
                   )}
-                </Fragment>
+                </React.Fragment>
               ))}
             </tbody>
           </table>
         </div>
       )}
-
-      <Dialog
-        open={editOpen}
-        onOpenChange={(open) => {
-          setEditOpen(open)
-          if (!open) setEditingItem(null)
-        }}
-      >
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Item {editingItem?.code ?? ''}</DialogTitle>
-          </DialogHeader>
-          {editingItem ? (
-            <div className="space-y-4">
-              <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Código
-                </p>
-                <p className="text-sm font-medium">{editingItem.code}</p>
-              </div>
-              <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Descrição Curta
-                </p>
-                <p className="text-sm">{editingItem.short_description}</p>
-              </div>
-              <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Descrição Detalhada
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {editingItem.long_description || 'Sem descrição detalhada'}
-                </p>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="grid gap-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Unidade
-                  </p>
-                  <p className="text-sm">{editingItem.unit_of_measure || '—'}</p>
-                </div>
-                <div className="grid gap-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                    NCM
-                  </p>
-                  <p className="text-sm">{editingItem.ncm || '—'}</p>
-                </div>
-                <div className="grid gap-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Grupo
-                  </p>
-                  <p className="text-sm">{editingItem.commodity_group || '—'}</p>
-                </div>
-              </div>
-              <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                  Origem
-                </p>
-                <p className="text-sm capitalize">
-                  {editingItem.source === 'erp'
-                    ? 'Integração ERP'
-                    : editingItem.source === 'excel'
-                      ? 'Importação Excel'
-                      : 'Cadastro Manual'}
-                </p>
-              </div>
-              {editingItem.sync_at && (
-                <div className="grid gap-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide">
-                    Última Sincronização
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {format(new Date(editingItem.sync_at), "dd/MM/yyyy 'às' HH:mm", {
-                      locale: ptBR,
-                    })}
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
-              Fechar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={erpSyncOpen} onOpenChange={setErpSyncOpen}>
         <DialogContent className="sm:max-w-md">
