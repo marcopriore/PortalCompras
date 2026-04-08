@@ -47,6 +47,29 @@ export default function CompradorDashboard() {
   const [ordersChange, setOrdersChange] = useState<number>(0)
   const [leadTimeChange, setLeadTimeChange] = useState<number>(0)
 
+  type OrderWithReq = {
+    created_at: string
+    requisition_code: string | null
+  }
+
+  const calcLeadTimeFromReqMap = (
+    orders: OrderWithReq[],
+    reqMap: Map<string, string>,
+  ): number | null => {
+    const deltas = orders
+      .filter((o) => Boolean(o.requisition_code && reqMap.has(o.requisition_code)))
+      .map((o) => {
+        const reqDate = new Date(reqMap.get(o.requisition_code as string) as string)
+        const poDate = new Date(o.created_at)
+        return Math.max(
+          0,
+          Math.round((poDate.getTime() - reqDate.getTime()) / (1000 * 60 * 60 * 24)),
+        )
+      })
+    if (!deltas.length) return null
+    return Math.round(deltas.reduce((a, b) => a + b, 0) / deltas.length)
+  }
+
   useEffect(() => {
     if (!companyId) return
 
@@ -64,16 +87,16 @@ export default function CompradorDashboard() {
         quotationsRes,
         recentRes,
         ordersInProgressRes,
-        leadTimeRes,
+        ordersWithReqRes,
         quotationsPendingCurrentMonthRes,
         quotationsPendingPrevRes,
         ordersInProgressCurrentMonthRes,
         ordersInProgressPrevRes,
-        leadTimeCurrentMonthRes,
-        leadTimePrevMonthRes,
+        leadCurrentWithReqRes,
+        leadPrevWithReqRes,
         poItemsRes,
         quotationsForSpendRes,
-        completedOrdersSixMonthsRes,
+        ltMonthlyRes,
       ] = await Promise.all([
         supabase.from("quotations").select("status").eq("company_id", companyId),
         supabase
@@ -89,10 +112,12 @@ export default function CompradorDashboard() {
           .in("status", ["sent", "processing"]),
         supabase
           .from("purchase_orders")
-          .select("created_at, estimated_delivery_date")
+          .select("created_at, requisition_code")
           .eq("company_id", companyId)
           .eq("status", "completed")
-          .not("estimated_delivery_date", "is", null),
+          .not("requisition_code", "is", null)
+          .neq("requisition_code", "")
+          .gte("created_at", currentMonthStart),
         supabase
           .from("quotations")
           .select("*", { count: "exact", head: true })
@@ -121,17 +146,19 @@ export default function CompradorDashboard() {
           .lte("created_at", prevMonthEnd),
         supabase
           .from("purchase_orders")
-          .select("created_at, estimated_delivery_date")
+          .select("created_at, requisition_code")
           .eq("company_id", companyId)
           .eq("status", "completed")
-          .not("estimated_delivery_date", "is", null)
+          .not("requisition_code", "is", null)
+          .neq("requisition_code", "")
           .gte("created_at", currentMonthStart),
         supabase
           .from("purchase_orders")
-          .select("created_at, estimated_delivery_date")
+          .select("created_at, requisition_code")
           .eq("company_id", companyId)
           .eq("status", "completed")
-          .not("estimated_delivery_date", "is", null)
+          .not("requisition_code", "is", null)
+          .neq("requisition_code", "")
           .gte("created_at", prevMonthStart)
           .lte("created_at", prevMonthEnd),
         supabase
@@ -145,10 +172,11 @@ export default function CompradorDashboard() {
           .eq("company_id", companyId),
         supabase
           .from("purchase_orders")
-          .select("created_at, estimated_delivery_date")
+          .select("created_at, requisition_code")
           .eq("company_id", companyId)
           .eq("status", "completed")
-          .not("estimated_delivery_date", "is", null)
+          .not("requisition_code", "is", null)
+          .neq("requisition_code", "")
           .gte("created_at", sixMonthsAgo),
       ])
 
@@ -194,25 +222,23 @@ export default function CompradorDashboard() {
       const ordersCount = ordersInProgressRes.count ?? 0
       setOrdersInProgress(ordersCount)
 
-      const leadRows =
-        (leadTimeRes.data as { created_at: string; estimated_delivery_date: string }[] | null) ?? []
-      const computedAvgLeadTime =
-        leadRows.length > 0
-          ? Math.round(
-              leadRows.reduce((acc, po) => {
-                const days = Math.max(
-                  0,
-                  Math.round(
-                    (new Date(po.estimated_delivery_date).getTime() -
-                      new Date(po.created_at).getTime()) /
-                      (1000 * 60 * 60 * 24),
-                  ),
-                )
-                return acc + days
-              }, 0) / leadRows.length,
-            )
-          : null
-      setAvgLeadTime(computedAvgLeadTime)
+      const ordersWithReq = (ordersWithReqRes.data as OrderWithReq[] | null) ?? []
+      const reqCodesAll = [...new Set(ordersWithReq.map((o) => o.requisition_code).filter(Boolean))]
+      let reqMapAll = new Map<string, string>()
+      if (reqCodesAll.length > 0) {
+        const { data: reqsAll } = await supabase
+          .from("requisitions")
+          .select("code, created_at")
+          .eq("company_id", companyId)
+          .in("code", reqCodesAll as string[])
+        reqMapAll = new Map(
+          ((reqsAll ?? []) as { code: string; created_at: string }[]).map((r) => [
+            r.code,
+            r.created_at,
+          ]),
+        )
+      }
+      setAvgLeadTime(calcLeadTimeFromReqMap(ordersWithReq, reqMapAll))
 
       const quotationsPendingCurrentMonth = quotationsPendingCurrentMonthRes.count ?? 0
       const quotationsPendingPrev = quotationsPendingPrevRes.count ?? 0
@@ -234,34 +260,31 @@ export default function CompradorDashboard() {
           : 0
       setOrdersChange(oChange)
 
-      const calcAverageDays = (
-        rows: { created_at: string; estimated_delivery_date: string }[] | null,
-      ): number | null => {
-        const list = rows ?? []
-        if (!list.length) return null
-        return Math.round(
-          list.reduce((acc, po) => {
-            const days = Math.max(
-              0,
-              Math.round(
-                (new Date(po.estimated_delivery_date).getTime() -
-                  new Date(po.created_at).getTime()) /
-                  (1000 * 60 * 60 * 24),
-              ),
-            )
-            return acc + days
-          }, 0) / list.length,
+      const leadCurrentOrders = (leadCurrentWithReqRes.data as OrderWithReq[] | null) ?? []
+      const leadPrevOrders = (leadPrevWithReqRes.data as OrderWithReq[] | null) ?? []
+      const reqCodesCurrent = [
+        ...new Set(leadCurrentOrders.map((o) => o.requisition_code).filter(Boolean)),
+      ] as string[]
+      const reqCodesPrev = [
+        ...new Set(leadPrevOrders.map((o) => o.requisition_code).filter(Boolean)),
+      ] as string[]
+      const allReqCodesForDelta = [...new Set([...reqCodesCurrent, ...reqCodesPrev])]
+      let reqMapDelta = new Map<string, string>()
+      if (allReqCodesForDelta.length > 0) {
+        const { data: reqsDelta } = await supabase
+          .from("requisitions")
+          .select("code, created_at")
+          .eq("company_id", companyId)
+          .in("code", allReqCodesForDelta)
+        reqMapDelta = new Map(
+          ((reqsDelta ?? []) as { code: string; created_at: string }[]).map((r) => [
+            r.code,
+            r.created_at,
+          ]),
         )
       }
-
-      const leadCurrent = calcAverageDays(
-        (leadTimeCurrentMonthRes.data as { created_at: string; estimated_delivery_date: string }[] | null) ??
-          null,
-      )
-      const leadPrev = calcAverageDays(
-        (leadTimePrevMonthRes.data as { created_at: string; estimated_delivery_date: string }[] | null) ??
-          null,
-      )
+      const leadCurrent = calcLeadTimeFromReqMap(leadCurrentOrders, reqMapDelta)
+      const leadPrev = calcLeadTimeFromReqMap(leadPrevOrders, reqMapDelta)
       setLeadTimeChange((leadCurrent ?? 0) - (leadPrev ?? 0))
 
       const quotationCategoryById = new Map<string, string>()
@@ -302,20 +325,35 @@ export default function CompradorDashboard() {
         monthBuckets.push({ key, month: formattedMonth, values: [] })
       }
       const bucketByKey = new Map(monthBuckets.map((b) => [b.key, b]))
-      ;(
-        (completedOrdersSixMonthsRes.data as {
-          created_at: string
-          estimated_delivery_date: string
-        }[] | null) ?? []
-      ).forEach((po) => {
+      const monthlyOrders = (ltMonthlyRes.data as OrderWithReq[] | null) ?? []
+      const monthlyReqCodes = [
+        ...new Set(monthlyOrders.map((o) => o.requisition_code).filter(Boolean)),
+      ] as string[]
+      let reqMapMonthly = new Map<string, string>()
+      if (monthlyReqCodes.length > 0) {
+        const { data: reqsMonthly } = await supabase
+          .from("requisitions")
+          .select("code, created_at")
+          .eq("company_id", companyId)
+          .in("code", monthlyReqCodes)
+        reqMapMonthly = new Map(
+          ((reqsMonthly ?? []) as { code: string; created_at: string }[]).map((r) => [
+            r.code,
+            r.created_at,
+          ]),
+        )
+      }
+      monthlyOrders.forEach((po) => {
         const d = new Date(po.created_at)
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
         const bucket = bucketByKey.get(key)
         if (!bucket) return
+        if (!po.requisition_code || !reqMapMonthly.has(po.requisition_code)) return
         const days = Math.max(
           0,
           Math.round(
-            (new Date(po.estimated_delivery_date).getTime() - new Date(po.created_at).getTime()) /
+            (new Date(po.created_at).getTime() -
+              new Date(reqMapMonthly.get(po.requisition_code) as string).getTime()) /
               (1000 * 60 * 60 * 24),
           ),
         )
@@ -389,16 +427,19 @@ export default function CompradorDashboard() {
         <MetricsCard
           title="Saving Acumulado"
           value="—"
-          changeLabel="Disponível em breve"
+          changeLabel="Sem dados de referência"
           icon={TrendingDown}
         />
-        <MetricsCard
-          title="Lead Time Médio"
-          value={avgLeadTime !== null ? `${avgLeadTime} dias` : "—"}
-          change={leadTimeChange}
-          changeLabel="vs mês anterior (dias)"
-          icon={Clock}
-        />
+        <div className="space-y-1">
+          <MetricsCard
+            title="Tempo Fluxo Compras"
+            value={avgLeadTime !== null ? `${avgLeadTime} dias` : "—"}
+            change={leadTimeChange}
+            changeLabel="vs mês anterior"
+            icon={Clock}
+          />
+          <p className="text-xs text-muted-foreground">Da requisição até o pedido emitido</p>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

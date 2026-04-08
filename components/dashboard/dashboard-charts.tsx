@@ -25,8 +25,8 @@ export function SpendAnalysisChart({ data }: SpendAnalysisChartProps) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Análise de Gastos</CardTitle>
-          <CardDescription>Gastos por categoria no período</CardDescription>
+          <CardTitle>Spend por Categoria</CardTitle>
+          <CardDescription>Valor total de pedidos por categoria</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
@@ -39,8 +39,8 @@ export function SpendAnalysisChart({ data }: SpendAnalysisChartProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Análise de Gastos</CardTitle>
-        <CardDescription>Gastos por categoria no período</CardDescription>
+        <CardTitle>Spend por Categoria</CardTitle>
+        <CardDescription>Valor total de pedidos por categoria</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-[300px]">
@@ -86,6 +86,7 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
       </Card>
     )
   }
+  const total = data.reduce((acc, d) => acc + d.value, 0)
 
   return (
     <Card>
@@ -93,8 +94,8 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
         <CardTitle>Status das Cotações</CardTitle>
         <CardDescription>Distribuição por status</CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="h-[300px]">
+      <CardContent className="space-y-4">
+        <div className="h-[230px]">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
@@ -117,9 +118,27 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
                   borderRadius: "var(--radius)",
                 }}
               />
-              <Legend />
             </PieChart>
           </ResponsiveContainer>
+        </div>
+        <div className="space-y-2">
+          {data.map((entry) => (
+            <div key={entry.name} className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <div
+                  className="h-3 w-3 rounded-full"
+                  style={{ backgroundColor: entry.color }}
+                />
+                <span className="text-sm text-muted-foreground">{entry.name}</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-medium">{entry.value}</span>
+                <span className="text-muted-foreground">
+                  ({total > 0 ? Math.round((entry.value / total) * 100) : 0}%)
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>
