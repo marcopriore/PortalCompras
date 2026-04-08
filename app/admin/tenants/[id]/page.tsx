@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { useUser } from '@/lib/hooks/useUser'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Button } from '@/components/ui/button'
@@ -17,6 +18,12 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import {
   Table,
   TableBody,
@@ -33,9 +40,13 @@ import {
   Building2,
   Package,
   Users,
-  Puzzle,
   ShoppingCart,
   ClipboardList,
+  Scale,
+  BarChart2,
+  Settings,
+  ScrollText,
+  Download,
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 
@@ -66,6 +77,118 @@ type Metrics = {
   items: number
   purchaseOrders: number
   requisitions: number
+}
+
+type FeatureKey =
+  | 'quotations'
+  | 'equalization'
+  | 'orders'
+  | 'requisitions'
+  | 'suppliers'
+  | 'items'
+  | 'reports'
+  | 'users'
+  | 'settings'
+  | 'logs'
+
+const FEATURES: Array<{
+  key: FeatureKey
+  label: string
+  description: string
+  icon:
+    | 'FileText'
+    | 'Scale'
+    | 'ShoppingCart'
+    | 'ClipboardList'
+    | 'Building2'
+    | 'Package'
+    | 'BarChart2'
+    | 'Users'
+    | 'Settings'
+    | 'ScrollText'
+}> = [
+  {
+    key: 'quotations',
+    label: 'Cotações',
+    description: 'Criação e gestão de cotações de compra',
+    icon: 'FileText',
+  },
+  {
+    key: 'equalization',
+    label: 'Equalização de Propostas',
+    description: 'Comparativo e seleção de propostas dos fornecedores',
+    icon: 'Scale',
+  },
+  {
+    key: 'orders',
+    label: 'Pedidos de Compra',
+    description: 'Geração e acompanhamento de pedidos',
+    icon: 'ShoppingCart',
+  },
+  {
+    key: 'requisitions',
+    label: 'Requisições',
+    description: 'Criação e aprovação de requisições de compra',
+    icon: 'ClipboardList',
+  },
+  {
+    key: 'suppliers',
+    label: 'Fornecedores',
+    description: 'Base de fornecedores sincronizada via ERP',
+    icon: 'Building2',
+  },
+  {
+    key: 'items',
+    label: 'Itens / Materiais',
+    description: 'Catálogo de materiais sincronizado via ERP',
+    icon: 'Package',
+  },
+  {
+    key: 'reports',
+    label: 'Relatórios',
+    description: 'Análises e exportações de dados de compras',
+    icon: 'BarChart2',
+  },
+  {
+    key: 'users',
+    label: 'Gestão de Usuários',
+    description: 'Cadastro e controle de acesso de usuários',
+    icon: 'Users',
+  },
+  {
+    key: 'settings',
+    label: 'Configurações',
+    description: 'Configurações da empresa e preferências',
+    icon: 'Settings',
+  },
+  {
+    key: 'logs',
+    label: 'Logs de Auditoria',
+    description: 'Histórico de ações realizadas no sistema',
+    icon: 'ScrollText',
+  },
+]
+
+function getFeatureIcon(iconName: (typeof FEATURES)[number]['icon']) {
+  const commonProps = { className: 'h-4 w-4' }
+  if (iconName === 'FileText') return <FileText {...commonProps} />
+  if (iconName === 'Scale') return <Scale {...commonProps} />
+  if (iconName === 'ShoppingCart') return <ShoppingCart {...commonProps} />
+  if (iconName === 'ClipboardList') return <ClipboardList {...commonProps} />
+  if (iconName === 'Building2') return <Building2 {...commonProps} />
+  if (iconName === 'Package') return <Package {...commonProps} />
+  if (iconName === 'BarChart2') return <BarChart2 {...commonProps} />
+  if (iconName === 'Users') return <Users {...commonProps} />
+  if (iconName === 'Settings') return <Settings {...commonProps} />
+  return <ScrollText {...commonProps} />
+}
+
+function buildDefaultFeaturesState(): Record<string, boolean> {
+  const s: Record<string, boolean> = {}
+  for (const f of FEATURES) {
+    s[f.key] = true
+  }
+  return s
 }
 
 function maskCNPJ(value: string): string {
@@ -112,6 +235,8 @@ function getPeriodStart(period: PeriodFilter, customFrom: string): Date | null {
   return null
 }
 
+const USERS_PAGE_SIZE = 10
+
 type TenantDetailPageProps = {
   params: Promise<{ id: string }>
 }
@@ -119,6 +244,7 @@ type TenantDetailPageProps = {
 export default function TenantDetailPage({ params }: TenantDetailPageProps) {
   const { id } = React.use(params)
   const router = useRouter()
+  const { userId, isSuperAdmin, loading: userLoading } = useUser()
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [metrics, setMetrics] = useState<Metrics>({
@@ -140,6 +266,11 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
   const [period, setPeriod] = useState<PeriodFilter>('30d')
   const [customFrom, setCustomFrom] = useState<string>('')
   const [customTo, setCustomTo] = useState<string>('')
+  const [featuresState, setFeaturesState] = useState<Record<string, boolean>>(
+    buildDefaultFeaturesState,
+  )
+  const [featuresLoading, setFeaturesLoading] = useState(false)
+  const [usersPage, setUsersPage] = useState(1)
 
   const totalUsers = profiles.length
 
@@ -170,6 +301,69 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     }
     return p.role || '—'
   }
+
+  const paginatedProfiles = useMemo(
+    () =>
+      profiles.slice(
+        (usersPage - 1) * USERS_PAGE_SIZE,
+        usersPage * USERS_PAGE_SIZE,
+      ),
+    [profiles, usersPage],
+  )
+  const usersTotalPages = Math.max(
+    1,
+    Math.ceil(profiles.length / USERS_PAGE_SIZE),
+  )
+
+  async function handleExportUsers() {
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Usuários')
+
+    ws.columns = [
+      { header: 'Nome', key: 'nome', width: 30 },
+      { header: 'ID', key: 'id', width: 38 },
+      { header: 'Tipo de Perfil', key: 'tipo', width: 15 },
+      { header: 'Perfil / Roles', key: 'roles', width: 30 },
+      { header: 'Status', key: 'status', width: 12 },
+      { header: 'Data de Cadastro', key: 'criado_em', width: 20 },
+    ]
+
+    ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
+    ws.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF4F3EF5' },
+    }
+
+    for (const p of profiles) {
+      ws.addRow({
+        nome: p.full_name || 'Sem nome',
+        id: p.id,
+        tipo: p.profile_type === 'supplier' ? 'Fornecedor' : 'Comprador',
+        roles: profileRolesLabel(p),
+        status: p.status === 'active' ? 'Ativo' : 'Inativo',
+        criado_em: format(new Date(p.created_at), 'dd/MM/yyyy', {
+          locale: ptBR,
+        }),
+      })
+    }
+
+    const buffer = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `usuarios_${tenant?.name ?? 'tenant'}_${format(new Date(), 'yyyyMMdd')}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  useEffect(() => {
+    setUsersPage(1)
+  }, [profiles])
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -279,6 +473,65 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     fetchMetrics()
   }, [id, period, customFrom, customTo])
 
+  useEffect(() => {
+    if (!id || !isSuperAdmin || userLoading) return
+
+    const run = async () => {
+      setFeaturesLoading(true)
+      const supabase = createClient()
+      const state: Record<string, boolean> = {}
+      for (const f of FEATURES) {
+        state[f.key] = true
+      }
+      const { data: featuresRes } = await supabase
+        .from('tenant_features')
+        .select('*')
+        .eq('company_id', id)
+
+      for (const row of featuresRes ?? []) {
+        const r = row as { feature_key?: string; enabled?: boolean }
+        if (!r.feature_key) continue
+        if (state[r.feature_key] == null) continue
+        state[r.feature_key] = Boolean(r.enabled)
+      }
+
+      setFeaturesState(state)
+      setFeaturesLoading(false)
+    }
+
+    void run()
+  }, [id, isSuperAdmin, userLoading])
+
+  const handleToggle = async (key: FeatureKey, enabled: boolean) => {
+    if (!id || !tenant) return
+
+    const feature = FEATURES.find((f) => f.key === key)
+    if (!feature) return
+
+    const prev = featuresState[key]
+    setFeaturesState((s) => ({ ...s, [key]: enabled }))
+
+    try {
+      const supabase = createClient()
+      await supabase.from('tenant_features').upsert(
+        { company_id: id, feature_key: key, enabled },
+        { onConflict: 'company_id,feature_key' },
+      )
+
+      await logAudit({
+        eventType: 'tenant.updated',
+        description: `Módulo "${feature.label}" ${enabled ? 'habilitado' : 'desabilitado'} para ${tenant.name}`,
+        companyId: id,
+        userId,
+        entity: 'tenant_features',
+        entityId: id,
+        metadata: { feature_key: key, enabled },
+      })
+    } catch {
+      setFeaturesState((s) => ({ ...s, [key]: prev }))
+    }
+  }
+
   const handleSave = async () => {
     if (!tenant) return
     setSaving(true)
@@ -380,14 +633,6 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
             <Pencil className="w-4 h-4 mr-1.5" />
             Editar
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push(`/admin/tenants/${id}/features`)}
-          >
-            <Puzzle className="w-4 h-4 mr-1.5" />
-            Funcionalidades
-          </Button>
           <Button size="sm" onClick={handleImpersonate}>
             <LogIn className="w-4 h-4 mr-1.5" />
             Acessar
@@ -414,13 +659,13 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
 
       {/* Conteúdo das abas */}
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Coluna esquerda: Informações da Empresa */}
-          <div className="bg-card border border-border rounded-xl p-6">
-            <h2 className="font-semibold text-foreground mb-4">
-              Informações da Empresa
+        <div className="space-y-4">
+          {/* BLOCO 1: Dados do Tenant */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-foreground mb-3">
+              Dados do Tenant
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Nome</p>
                 <p className="text-sm font-medium text-foreground">
@@ -461,41 +706,39 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
             </div>
           </div>
 
-          {/* Coluna direita: Métricas */}
-          <div className="bg-card border border-border rounded-xl p-6">
-            <div className="flex items-center justify-between mb-4 gap-2">
-              <h2 className="font-semibold text-foreground">Métricas de Uso</h2>
-              <div className="flex flex-col items-end">
-                <p className="text-xs font-medium text-muted-foreground mb-1 block">
-                  Período
-                </p>
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  {(['7d', '30d', '6m', 'custom'] as PeriodFilter[]).map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setPeriod(p)}
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                        period === p
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {p === '7d'
-                        ? '7 dias'
-                        : p === '30d'
+          {/* BLOCO 2: Métricas de Uso */}
+          <div className="bg-card border border-border rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-foreground">
+                Métricas de Uso
+              </h2>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Período:</span>
+                {(['7d', '30d', '6m', 'custom'] as PeriodFilter[]).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPeriod(p)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                      period === p
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-muted text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {p === '7d'
+                      ? '7 dias'
+                      : p === '30d'
                         ? '30 dias'
                         : p === '6m'
-                        ? '6 meses'
-                        : 'Personalizado'}
-                    </button>
-                  ))}
-                </div>
+                          ? '6 meses'
+                          : 'Personalizado'}
+                  </button>
+                ))}
               </div>
             </div>
 
             {period === 'custom' && (
-              <div className="flex gap-2 mt-3">
-                <div className="flex-1">
+              <div className="flex gap-3 mb-4">
+                <div>
                   <label className="text-xs text-muted-foreground mb-1 block">
                     De
                   </label>
@@ -503,10 +746,10 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                     type="date"
                     value={customFrom}
                     onChange={(e) => setCustomFrom(e.target.value)}
-                    className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-background text-foreground"
+                    className="border border-border rounded-md px-2 py-1.5 text-sm bg-background text-foreground"
                   />
                 </div>
-                <div className="flex-1">
+                <div>
                   <label className="text-xs text-muted-foreground mb-1 block">
                     Até
                   </label>
@@ -514,23 +757,59 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                     type="date"
                     value={customTo}
                     onChange={(e) => setCustomTo(e.target.value)}
-                    className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-background text-foreground"
+                    className="border border-border rounded-md px-2 py-1.5 text-sm bg-background text-foreground"
                   />
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3 mt-4">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="rounded-lg p-3 flex items-center gap-3 border border-orange-100 bg-orange-50">
+                <div className="rounded-full bg-orange-100 p-2">
+                  <ClipboardList className="w-5 h-5 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-orange-600 font-medium">
+                    Requisições
+                  </p>
+                  <p className="text-xl font-bold text-orange-700">
+                    {metrics.requisitions}
+                  </p>
+                </div>
+              </div>
+
               <div className="rounded-lg p-3 flex items-center gap-3 border border-blue-100 bg-blue-50">
                 <div className="rounded-full bg-blue-100 p-2">
                   <FileText className="w-5 h-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-xs text-blue-600 font-medium">
-                    Cotações no período
-                  </p>
+                  <p className="text-xs text-blue-600 font-medium">Cotações</p>
                   <p className="text-xl font-bold text-blue-700">
                     {metrics.quotations}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg p-3 flex items-center gap-3 border border-purple-100 bg-purple-50">
+                <div className="rounded-full bg-purple-100 p-2">
+                  <ShoppingCart className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-purple-600 font-medium">Pedidos</p>
+                  <p className="text-xl font-bold text-purple-700">
+                    {metrics.purchaseOrders}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-lg p-3 flex items-center gap-3 border border-indigo-100 bg-indigo-50">
+                <div className="rounded-full bg-indigo-100 p-2">
+                  <Package className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-indigo-600 font-medium">Itens</p>
+                  <p className="text-xl font-bold text-indigo-700">
+                    {metrics.items}
                   </p>
                 </div>
               </div>
@@ -548,50 +827,79 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                   </p>
                 </div>
               </div>
-
-              <div className="rounded-lg p-3 flex items-center gap-3 border border-indigo-100 bg-indigo-50">
-                <div className="rounded-full bg-indigo-100 p-2">
-                  <Package className="w-5 h-5 text-indigo-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-indigo-600 font-medium">
-                    Itens cadastrados
-                  </p>
-                  <p className="text-xl font-bold text-indigo-700">
-                    {metrics.items}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-lg p-3 flex items-center gap-3 border border-purple-100 bg-purple-50">
-                <div className="rounded-full bg-purple-100 p-2">
-                  <ShoppingCart className="w-5 h-5 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-purple-600 font-medium">
-                    Pedidos de Compra
-                  </p>
-                  <p className="text-xl font-bold text-purple-700">
-                    {metrics.purchaseOrders}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-lg p-3 flex items-center gap-3 border border-orange-100 bg-orange-50">
-                <div className="rounded-full bg-orange-100 p-2">
-                  <ClipboardList className="w-5 h-5 text-orange-600" />
-                </div>
-                <div>
-                  <p className="text-xs text-orange-600 font-medium">
-                    Requisições
-                  </p>
-                  <p className="text-xl font-bold text-orange-700">
-                    {metrics.requisitions}
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
+
+          {/* BLOCO 3: Funcionalidades */}
+          {isSuperAdmin && (
+            <div className="bg-card border border-border rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">
+                    Funcionalidades
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    Módulos ativos para este tenant
+                  </p>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {Object.values(featuresState).filter(Boolean).length} de{' '}
+                  {FEATURES.length} ativos
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {FEATURES.map((feature) => {
+                  const enabled = featuresState[feature.key] ?? true
+                  return (
+                    <div
+                      key={feature.key}
+                      className={`border rounded-xl p-4 flex items-start justify-between gap-4 ${
+                        enabled
+                          ? 'border-border bg-card'
+                          : 'border-border bg-muted/30 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`rounded-lg p-2 flex-shrink-0 ${
+                            enabled
+                              ? 'bg-primary/10 text-primary'
+                              : 'bg-muted text-muted-foreground'
+                          }`}
+                        >
+                          {getFeatureIcon(feature.icon)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-foreground">
+                            {feature.label}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {feature.description}
+                          </p>
+                        </div>
+                      </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div>
+                            <Switch
+                              checked={enabled}
+                              onCheckedChange={(val) =>
+                                void handleToggle(feature.key, val)
+                              }
+                              disabled={featuresLoading}
+                            />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {enabled ? 'Habilitado' : 'Desabilitado'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -604,108 +912,193 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
             </div>
           ) : (
             <>
-            <div className="rounded-xl border border-border bg-card p-4">
-              <p className="text-sm font-medium text-foreground mb-3">
-                Resumo — {totalUsers} usuário{totalUsers !== 1 ? 's' : ''}
-              </p>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Total</p>
-                  <p className="font-medium text-foreground">{totalUsers}</p>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="rounded-lg p-3 flex items-center gap-3 border border-blue-100 bg-blue-50">
+                  <div className="rounded-full bg-blue-100 p-2">
+                    <Users className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-blue-600 font-medium">Total</p>
+                    <p className="text-xl font-bold text-blue-700">
+                      {totalUsers}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Compradores</p>
-                  <p className="font-medium text-foreground">
-                    {userBreakdown.buyers}
-                  </p>
+
+                <div className="rounded-lg p-3 flex items-center gap-3 border border-indigo-100 bg-indigo-50">
+                  <div className="rounded-full bg-indigo-100 p-2">
+                    <Users className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-indigo-600 font-medium">
+                      Compradores
+                    </p>
+                    <p className="text-xl font-bold text-indigo-700">
+                      {userBreakdown.buyers}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Fornecedores</p>
-                  <p className="font-medium text-foreground">
-                    {userBreakdown.suppliers}
-                  </p>
+
+                <div className="rounded-lg p-3 flex items-center gap-3 border border-purple-100 bg-purple-50">
+                  <div className="rounded-full bg-purple-100 p-2">
+                    <Building2 className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-purple-600 font-medium">
+                      Fornecedores
+                    </p>
+                    <p className="text-xl font-bold text-purple-700">
+                      {userBreakdown.suppliers}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Admins</p>
-                  <p className="font-medium text-foreground">
-                    {userBreakdown.admins}
-                  </p>
+
+                <div className="rounded-lg p-3 flex items-center gap-3 border border-orange-100 bg-orange-50">
+                  <div className="rounded-full bg-orange-100 p-2">
+                    <Users className="w-5 h-5 text-orange-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-orange-600 font-medium">Admins</p>
+                    <p className="text-xl font-bold text-orange-700">
+                      {userBreakdown.admins}
+                    </p>
+                  </div>
                 </div>
-                <div className="col-span-2">
-                  <p className="text-muted-foreground">Ativos / Inativos</p>
-                  <p className="font-medium text-foreground">
-                    {userBreakdown.active} / {userBreakdown.inactive}
-                  </p>
+
+                <div className="rounded-lg p-3 flex items-center gap-3 border border-green-100 bg-green-50">
+                  <div className="rounded-full bg-green-100 p-2">
+                    <Users className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-xs text-green-600 font-medium">Ativos</p>
+                    <p className="text-xl font-bold text-green-700">
+                      {userBreakdown.active}
+                    </p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="rounded-xl border border-border bg-card">
-              <Table>
-                <TableHeader className="bg-muted/30">
-                  <TableRow>
-                    <TableHead className="px-3 py-2">Usuário</TableHead>
-                    <TableHead className="px-3 py-2">Perfil</TableHead>
-                    <TableHead className="px-3 py-2">Status</TableHead>
-                    <TableHead className="px-3 py-2">Data de Cadastro</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {profiles.map((profile) => (
-                    <TableRow
-                      key={profile.id}
-                      className="border-border hover:bg-muted/50 transition-colors"
-                    >
-                      <TableCell className="px-3 py-2 align-top">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                            style={{
-                              backgroundColor: getAvatarColor(
-                                profile.full_name || 'Usuário',
-                              ),
-                            }}
-                          >
-                            {getInitials(profile.full_name || 'Usuário')}
-                          </div>
-                          <div>
-                            <p className="font-medium text-foreground">
-                              {profile.full_name || 'Usuário sem nome'}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {profile.id}
-                            </p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="px-3 py-2 align-top text-sm text-foreground">
-                        {profileRolesLabel(profile)}
-                      </TableCell>
-                      <TableCell className="px-3 py-2 align-top">
-                        <Badge
-                          variant={
-                            profile.status === 'active'
-                              ? 'outline'
-                              : 'destructive'
-                          }
-                          className={
-                            profile.status === 'active'
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                              : undefined
-                          }
-                        >
-                          {profile.status === 'active' ? 'Ativo' : 'Inativo'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="px-3 py-2 align-top text-sm text-muted-foreground">
-                        {format(new Date(profile.created_at), 'dd/MM/yyyy', {
-                          locale: ptBR,
-                        })}
-                      </TableCell>
+
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  {profiles.length} usuário
+                  {profiles.length !== 1 ? 's' : ''} cadastrado
+                  {profiles.length !== 1 ? 's' : ''}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleExportUsers()}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Baixar Excel
+                </Button>
+              </div>
+
+              <div className="rounded-xl border border-border bg-card">
+                <Table>
+                  <TableHeader className="bg-muted/30">
+                    <TableRow>
+                      <TableHead className="px-3 py-2">Usuário</TableHead>
+                      <TableHead className="px-3 py-2">Tipo</TableHead>
+                      <TableHead className="px-3 py-2">Perfil / Roles</TableHead>
+                      <TableHead className="px-3 py-2">Status</TableHead>
+                      <TableHead className="px-3 py-2">
+                        Data de Cadastro
+                      </TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedProfiles.map((profile) => (
+                      <TableRow
+                        key={profile.id}
+                        className="border-border hover:bg-muted/50 transition-colors"
+                      >
+                        <TableCell className="px-3 py-2 align-top">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
+                              style={{
+                                backgroundColor: getAvatarColor(
+                                  profile.full_name || 'Usuário',
+                                ),
+                              }}
+                            >
+                              {getInitials(profile.full_name || 'Usuário')}
+                            </div>
+                            <div>
+                              <p className="font-medium text-foreground">
+                                {profile.full_name || 'Usuário sem nome'}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {profile.id}
+                              </p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="px-3 py-2 align-top text-sm text-foreground">
+                          {profile.profile_type === 'supplier'
+                            ? 'Fornecedor'
+                            : 'Comprador'}
+                        </TableCell>
+                        <TableCell className="px-3 py-2 align-top text-sm text-foreground">
+                          {profileRolesLabel(profile)}
+                        </TableCell>
+                        <TableCell className="px-3 py-2 align-top">
+                          <Badge
+                            variant={
+                              profile.status === 'active'
+                                ? 'outline'
+                                : 'destructive'
+                            }
+                            className={
+                              profile.status === 'active'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                : undefined
+                            }
+                          >
+                            {profile.status === 'active'
+                              ? 'Ativo'
+                              : 'Inativo'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="px-3 py-2 align-top text-sm text-muted-foreground">
+                          {format(
+                            new Date(profile.created_at),
+                            'dd/MM/yyyy',
+                            { locale: ptBR },
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {usersTotalPages > 1 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">
+                    Página {usersPage} de {usersTotalPages}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={usersPage === 1}
+                      onClick={() => setUsersPage((p) => p - 1)}
+                    >
+                      ← Anterior
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={usersPage >= usersTotalPages}
+                      onClick={() => setUsersPage((p) => p + 1)}
+                    >
+                      Próximo →
+                    </Button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
