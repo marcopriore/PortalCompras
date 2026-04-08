@@ -150,7 +150,9 @@ export function Sidebar({ type }: SidebarProps) {
             </>
           ) : (
           navItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+            const isActive = item.href === "/comprador" || item.href === "/fornecedor"
+              ? pathname === item.href
+              : pathname === item.href || pathname.startsWith(item.href + "/")
             const NavIcon = item.icon
 
             const showApprovalsBadge =
