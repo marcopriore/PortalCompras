@@ -217,12 +217,12 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
         .select('*', { count: 'exact', head: true })
         .eq('company_id', id)
 
-      const suppliersQuery = supabase
+      let suppliersQuery = supabase
         .from('suppliers')
         .select('*', { count: 'exact', head: true })
         .eq('company_id', id)
 
-      const itemsQuery = supabase
+      let itemsQuery = supabase
         .from('items')
         .select('*', { count: 'exact', head: true })
         .eq('company_id', id)
@@ -248,6 +248,12 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
           .gte('created_at', isoStart)
           .lte('created_at', isoEnd)
         requisitionsQuery = requisitionsQuery
+          .gte('created_at', isoStart)
+          .lte('created_at', isoEnd)
+        suppliersQuery = suppliersQuery
+          .gte('created_at', isoStart)
+          .lte('created_at', isoEnd)
+        itemsQuery = itemsQuery
           .gte('created_at', isoStart)
           .lte('created_at', isoEnd)
       }
