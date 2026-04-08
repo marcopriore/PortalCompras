@@ -94,16 +94,16 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
         <CardTitle>Status das Cotações</CardTitle>
         <CardDescription>Distribuição por status</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex w-full items-center gap-6">
+      <CardContent className="space-y-2 p-4">
+        <div className="flex w-full items-center gap-4">
           <div className="flex-shrink-0">
-            <PieChart width={200} height={200}>
+            <PieChart width={220} height={220}>
               <Pie
                 data={data}
-                cx={100}
-                cy={100}
-                innerRadius={55}
-                outerRadius={90}
+                cx={110}
+                cy={110}
+                innerRadius={60}
+                outerRadius={100}
                 paddingAngle={2}
                 dataKey="value"
               >
@@ -123,20 +123,16 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
 
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             {data.map((entry) => (
-              <div key={entry.name} className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <div
-                    className="h-3 w-3 flex-shrink-0 rounded-full"
-                    style={{ backgroundColor: entry.color }}
-                  />
-                  <span className="truncate text-sm text-muted-foreground">{entry.name}</span>
-                </div>
-                <div className="flex flex-shrink-0 items-center gap-1 text-sm">
-                  <span className="font-medium">{entry.value}</span>
-                  <span className="text-muted-foreground">
-                    ({total > 0 ? Math.round((entry.value / total) * 100) : 0}%)
-                  </span>
-                </div>
+              <div key={entry.name} className="flex items-center gap-2">
+                <div
+                  className="h-3 w-3 flex-shrink-0 rounded-full"
+                  style={{ backgroundColor: entry.color }}
+                />
+                <span className="text-sm text-muted-foreground">{entry.name}</span>
+                <span className="text-sm font-medium text-foreground">{entry.value}</span>
+                <span className="text-xs text-muted-foreground">
+                  ({total > 0 ? Math.round((entry.value / total) * 100) : 0}%)
+                </span>
               </div>
             ))}
           </div>

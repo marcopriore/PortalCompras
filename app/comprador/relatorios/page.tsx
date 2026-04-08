@@ -826,16 +826,16 @@ export default function RelatoriosPage() {
                 <CardTitle>Cotações por Status</CardTitle>
                 <CardDescription>Distribuição de cotações por status</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="flex w-full items-center gap-6">
+              <CardContent className="p-4">
+                <div className="flex w-full items-center gap-4">
                   <div className="flex-shrink-0">
-                    <PieChart width={200} height={200}>
+                    <PieChart width={220} height={220}>
                       <Pie
                         data={statusDonutData}
-                        cx={100}
-                        cy={100}
-                        innerRadius={55}
-                        outerRadius={90}
+                        cx={110}
+                        cy={110}
+                        innerRadius={60}
+                        outerRadius={100}
                         paddingAngle={2}
                         dataKey="value"
                       >
@@ -858,20 +858,14 @@ export default function RelatoriosPage() {
                       const total = statusDonutData.reduce((acc, d) => acc + d.value, 0)
                       const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
                       return (
-                        <div key={entry.name} className="flex items-center justify-between gap-2">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <div
-                              className="w-3 h-3 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: entry.color }}
-                            />
-                            <span className="text-sm text-muted-foreground truncate">
-                              {entry.name}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1 text-sm flex-shrink-0">
-                            <span className="font-medium">{entry.value}</span>
-                            <span className="text-muted-foreground">({pct}%)</span>
-                          </div>
+                        <div key={entry.name} className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: entry.color }}
+                          />
+                          <span className="text-sm text-muted-foreground">{entry.name}</span>
+                          <span className="text-sm font-medium text-foreground">{entry.value}</span>
+                          <span className="text-xs text-muted-foreground">({pct}%)</span>
                         </div>
                       )
                     })}
@@ -885,21 +879,21 @@ export default function RelatoriosPage() {
                 <CardTitle>Pedidos por Status</CardTitle>
                 <CardDescription>Distribuição de pedidos por status</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-4">
                 {pedidosPorStatus.length === 0 ? (
                   <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
                     Nenhum dado disponível
                   </div>
                 ) : (
-                  <div className="flex w-full items-center gap-6">
+                  <div className="flex w-full items-center gap-4">
                     <div className="flex-shrink-0">
-                      <PieChart width={200} height={200}>
+                      <PieChart width={220} height={220}>
                         <Pie
                           data={pedidosPorStatus}
-                          cx={100}
-                          cy={100}
-                          innerRadius={55}
-                          outerRadius={90}
+                          cx={110}
+                          cy={110}
+                          innerRadius={60}
+                          outerRadius={100}
                           paddingAngle={2}
                           dataKey="value"
                         >
@@ -922,20 +916,14 @@ export default function RelatoriosPage() {
                         const total = pedidosPorStatus.reduce((acc, d) => acc + d.value, 0)
                         const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
                         return (
-                          <div key={entry.name} className="flex items-center justify-between gap-2">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <div
-                                className="w-3 h-3 rounded-full flex-shrink-0"
-                                style={{ backgroundColor: entry.color }}
-                              />
-                              <span className="text-sm text-muted-foreground truncate">
-                                {entry.name}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1 text-sm flex-shrink-0">
-                              <span className="font-medium">{entry.value}</span>
-                              <span className="text-muted-foreground">({pct}%)</span>
-                            </div>
+                          <div key={entry.name} className="flex items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: entry.color }}
+                            />
+                            <span className="text-sm text-muted-foreground">{entry.name}</span>
+                            <span className="text-sm font-medium text-foreground">{entry.value}</span>
+                            <span className="text-xs text-muted-foreground">({pct}%)</span>
                           </div>
                         )
                       })}
