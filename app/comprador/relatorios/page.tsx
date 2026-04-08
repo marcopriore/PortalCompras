@@ -827,16 +827,19 @@ export default function RelatoriosPage() {
                 <CardDescription>Distribuição de cotações por status</CardDescription>
               </CardHeader>
               <CardContent className="p-4">
-                <div className="flex w-full items-center" style={{ height: 220 }}>
-                  <div className="h-full flex-1">
+                <div
+                  className="grid w-full items-center gap-2"
+                  style={{ gridTemplateColumns: "minmax(0,1fr) 13rem", height: 240 }}
+                >
+                  <div className="h-full min-w-0 flex-1">
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
                           data={statusDonutData}
                           cx="50%"
                           cy="50%"
-                          innerRadius={65}
-                          outerRadius={100}
+                          innerRadius="60%"
+                          outerRadius="96%"
                           paddingAngle={2}
                           dataKey="value"
                         >
@@ -855,12 +858,12 @@ export default function RelatoriosPage() {
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="flex w-48 flex-shrink-0 flex-col justify-center gap-2 pl-2">
+                  <div className="flex w-full flex-shrink-0 flex-col justify-center gap-2 pl-1">
                     {statusDonutData.map((entry) => {
                       const total = statusDonutData.reduce((acc, d) => acc + d.value, 0)
                       const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
                       return (
-                        <div key={entry.name} className="flex items-center gap-2">
+                        <div key={entry.name} className="flex items-center gap-2 whitespace-nowrap">
                           <div
                             className="w-3 h-3 rounded-full flex-shrink-0"
                             style={{ backgroundColor: entry.color }}
@@ -887,16 +890,19 @@ export default function RelatoriosPage() {
                     Nenhum dado disponível
                   </div>
                 ) : (
-                  <div className="flex w-full items-center" style={{ height: 220 }}>
-                    <div className="h-full flex-1">
+                  <div
+                    className="grid w-full items-center gap-2"
+                    style={{ gridTemplateColumns: "minmax(0,1fr) 13rem", height: 240 }}
+                  >
+                    <div className="h-full min-w-0 flex-1">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
                             data={pedidosPorStatus}
                             cx="50%"
                             cy="50%"
-                            innerRadius={65}
-                            outerRadius={100}
+                            innerRadius="60%"
+                            outerRadius="96%"
                             paddingAngle={2}
                             dataKey="value"
                           >
@@ -915,12 +921,12 @@ export default function RelatoriosPage() {
                         </PieChart>
                       </ResponsiveContainer>
                     </div>
-                    <div className="flex w-48 flex-shrink-0 flex-col justify-center gap-2 pl-2">
+                    <div className="flex w-full flex-shrink-0 flex-col justify-center gap-2 pl-1">
                       {pedidosPorStatus.map((entry) => {
                         const total = pedidosPorStatus.reduce((acc, d) => acc + d.value, 0)
                         const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
                         return (
-                          <div key={entry.name} className="flex items-center gap-2">
+                          <div key={entry.name} className="flex items-center gap-2 whitespace-nowrap">
                             <div
                               className="w-3 h-3 rounded-full flex-shrink-0"
                               style={{ backgroundColor: entry.color }}

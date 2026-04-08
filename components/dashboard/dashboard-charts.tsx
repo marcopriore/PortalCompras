@@ -95,16 +95,19 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
         <CardDescription>Distribuição por status</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2 p-4">
-        <div className="flex w-full items-center" style={{ height: 220 }}>
-          <div className="h-full flex-1">
+        <div
+          className="grid w-full items-center gap-2"
+          style={{ gridTemplateColumns: "minmax(0,1fr) 13rem", height: 240 }}
+        >
+          <div className="h-full min-w-0 flex-1">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={data}
                   cx="50%"
                   cy="50%"
-                  innerRadius={65}
-                  outerRadius={100}
+                  innerRadius="60%"
+                  outerRadius="96%"
                   paddingAngle={2}
                   dataKey="value"
                 >
@@ -124,9 +127,9 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
             </ResponsiveContainer>
           </div>
 
-          <div className="flex w-48 flex-shrink-0 flex-col justify-center gap-2 pl-2">
+          <div className="flex w-full flex-shrink-0 flex-col justify-center gap-2 pl-1">
             {data.map((entry) => (
-              <div key={entry.name} className="flex items-center gap-2">
+              <div key={entry.name} className="flex items-center gap-2 whitespace-nowrap">
                 <div
                   className="h-3 w-3 flex-shrink-0 rounded-full"
                   style={{ backgroundColor: entry.color }}

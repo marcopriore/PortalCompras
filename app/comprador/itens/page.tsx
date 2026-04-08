@@ -1,6 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
@@ -14,13 +16,21 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import MultiSelectFilter from '@/components/ui/multi-select-filter'
-import { Info, Search, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  Check,
+  Download,
+  Info,
+  RefreshCw,
+  Search,
+  Upload,
+  X,
+} from 'lucide-react'
 
 type Item = {
   id: string
+  company_id?: string
   code: string
   short_description: string
   long_description: string | null
@@ -29,12 +39,22 @@ type Item = {
   ncm: string | null
   commodity_group: string | null
   created_at: string
+  source?: string | null
+  sync_at?: string | null
 }
 
-const UNIT_OPTIONS = ['UN', 'KG', 'L', 'M', 'M²', 'M³', 'CX', 'PC', 'HR', 'OUTRO']
+type ImportPreviewRow = {
+  code: string
+  short_description: string
+  long_description: string
+  unit_of_measure: string
+  ncm: string
+  commodity_group: string
+  status: string
+}
 
 export default function ItensPage() {
-  const { companyId, loading: userLoading } = useUser()
+  const { companyId, loading: userLoading, hasRole, isSuperAdmin } = useUser()
 
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,16 +64,32 @@ export default function ItensPage() {
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [groupFilter, setGroupFilter] = useState<string[]>([])
 
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
+
   const [editOpen, setEditOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<Item | null>(null)
-  const [formLongDescription, setFormLongDescription] = useState('')
-  const [saving, setSaving] = useState(false)
+
+  const [erpSyncOpen, setErpSyncOpen] = useState(false)
+
+  const canImportExcel = isSuperAdmin || hasRole('admin')
+
+  const [importOpen, setImportOpen] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importPreview, setImportPreview] = useState<ImportPreviewRow[]>([])
+  const [importErrors, setImportErrors] = useState<string[]>([])
+  const [importing, setImporting] = useState(false)
+  const [importStep, setImportStep] = useState<'upload' | 'preview' | 'done'>('upload')
 
   const totalItems = items.length
   const activeItems = useMemo(
     () => items.filter((i) => i.status === 'active').length,
     [items],
   )
+
+  const lastSync = useMemo(() => {
+    const withSync = items.filter((i) => i.sync_at).map((i) => i.sync_at as string)
+    return withSync.sort().at(-1) ?? null
+  }, [items])
 
   const commodityGroups = useMemo(() => {
     const groups = new Set<string>()
@@ -84,71 +120,200 @@ export default function ItensPage() {
     })
   }, [items, statusFilter, groupFilter, search])
 
-  useEffect(() => {
-    const fetchItems = async () => {
-      if (!companyId) return
+  const loadItems = useCallback(async () => {
+    if (!companyId) return
 
-      setLoading(true)
-      try {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from('items')
-          .select(
-            'id, code, short_description, long_description, status, unit_of_measure, ncm, commodity_group, created_at',
-          )
-          .eq('company_id', companyId)
-          .order('created_at', { ascending: false })
-
-        if (error) {
-          console.error('Erro ao buscar itens:', error)
-          toast.error('Erro ao carregar itens.')
-          return
-        }
-
-        setItems((data as Item[]) ?? [])
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchItems()
-  }, [companyId])
-
-  const openEdit = (item: Item) => {
-    setEditingItem(item)
-    setFormLongDescription(item.long_description ?? '')
-    setEditOpen(true)
-  }
-
-  const handleSaveLongDescription = async () => {
-    if (!companyId || !editingItem) return
-    setSaving(true)
+    setLoading(true)
     try {
       const supabase = createClient()
-      const trimmed = formLongDescription.trim()
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('items')
-        .update({ long_description: trimmed || null })
-        .eq('id', editingItem.id)
+        .select(
+          'id, company_id, code, short_description, long_description, status, unit_of_measure, ncm, commodity_group, source, sync_at, created_at',
+        )
         .eq('company_id', companyId)
+        .order('created_at', { ascending: false })
 
       if (error) {
-        console.error(error)
-        toast.error('Não foi possível salvar a descrição detalhada.')
+        console.error('Erro ao buscar itens:', error)
+        toast.error('Erro ao carregar itens.')
         return
       }
 
-      setItems((prev) =>
-        prev.map((i) =>
-          i.id === editingItem.id ? { ...i, long_description: trimmed || null } : i,
-        ),
-      )
-      toast.success('Descrição detalhada salva.')
-      setEditOpen(false)
-      setEditingItem(null)
+      setItems((data as Item[]) ?? [])
     } finally {
-      setSaving(false)
+      setLoading(false)
     }
+  }, [companyId])
+
+  useEffect(() => {
+    void loadItems()
+  }, [loadItems])
+
+  const openEdit = (item: Item) => {
+    setEditingItem(item)
+    setEditOpen(true)
+  }
+
+  async function handleDownloadTemplate() {
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Itens')
+
+    ws.columns = [
+      { header: 'codigo', key: 'codigo', width: 15 },
+      { header: 'descricao_curta', key: 'descricao_curta', width: 40 },
+      { header: 'descricao_detalhada', key: 'descricao_detalhada', width: 60 },
+      { header: 'unidade_medida', key: 'unidade_medida', width: 15 },
+      { header: 'ncm', key: 'ncm', width: 15 },
+      { header: 'grupo_mercadoria', key: 'grupo_mercadoria', width: 25 },
+      { header: 'status', key: 'status', width: 10 },
+    ]
+
+    ws.addRow({
+      codigo: 'MAT-001',
+      descricao_curta: 'Parafuso M8x30',
+      descricao_detalhada: 'Parafuso sextavado M8x30mm aço inox',
+      unidade_medida: 'UN',
+      ncm: '73181500',
+      grupo_mercadoria: 'Mecânica',
+      status: 'ativo',
+    })
+
+    const headerRow = ws.getRow(1)
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF4F3EF5' },
+    }
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+
+    const buffer = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'template_itens_valore.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleFileChange(file: File) {
+    setImportFile(file)
+    setImportErrors([])
+    setImportPreview([])
+
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    const buffer = await file.arrayBuffer()
+    await wb.xlsx.load(buffer)
+    const ws = wb.worksheets[0]
+
+    const rows: ImportPreviewRow[] = []
+    const errors: string[] = []
+
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return
+      const values = row.values as (string | number | undefined)[]
+      const obj: ImportPreviewRow = {
+        code: String(values[1] ?? '').trim(),
+        short_description: String(values[2] ?? '').trim(),
+        long_description: String(values[3] ?? '').trim(),
+        unit_of_measure: String(values[4] ?? '').trim(),
+        ncm: String(values[5] ?? '').trim(),
+        commodity_group: String(values[6] ?? '').trim(),
+        status: String(values[7] ?? '')
+          .trim()
+          .toLowerCase(),
+      }
+
+      const isEmptyRow =
+        !obj.code &&
+        !obj.short_description &&
+        !obj.long_description &&
+        !obj.unit_of_measure &&
+        !obj.ncm &&
+        !obj.commodity_group &&
+        !obj.status
+      if (isEmptyRow) return
+
+      if (!obj.code) errors.push(`Linha ${rowNumber}: código obrigatório`)
+      if (!obj.short_description) errors.push(`Linha ${rowNumber}: descrição curta obrigatória`)
+      if (!obj.unit_of_measure) errors.push(`Linha ${rowNumber}: unidade de medida obrigatória`)
+      if (!['ativo', 'inativo'].includes(obj.status)) {
+        errors.push(`Linha ${rowNumber}: status deve ser "ativo" ou "inativo"`)
+      }
+
+      rows.push(obj)
+    })
+
+    setImportPreview(rows)
+    setImportErrors(errors)
+    setImportStep('preview')
+  }
+
+  async function handleImport() {
+    if (!companyId || importPreview.length === 0) return
+    const supabase = createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      toast.error('Sessão inválida.')
+      return
+    }
+
+    setImporting(true)
+    let success = 0
+    let errorCount = 0
+    const errorDetails: string[] = []
+
+    for (const row of importPreview) {
+      const { error } = await supabase
+        .from('items')
+        .upsert(
+          {
+            company_id: companyId,
+            code: row.code,
+            short_description: row.short_description,
+            long_description: row.long_description || null,
+            unit_of_measure: row.unit_of_measure,
+            ncm: row.ncm || null,
+            commodity_group: row.commodity_group || null,
+            status: row.status === 'ativo' ? 'active' : 'inactive',
+            source: 'excel',
+            sync_at: new Date().toISOString(),
+          },
+          { onConflict: 'company_id,code' },
+        )
+
+      if (error) {
+        errorCount++
+        errorDetails.push(`${row.code}: ${error.message}`)
+      } else {
+        success++
+      }
+    }
+
+    const { error: logErr } = await supabase.from('item_import_logs').insert({
+      company_id: companyId,
+      imported_by: user.id,
+      source: 'excel',
+      total_rows: importPreview.length,
+      success,
+      errors: errorCount,
+      error_details: errorDetails,
+    })
+
+    if (logErr) {
+      console.error('item_import_logs:', logErr)
+    }
+
+    setImporting(false)
+    setImportStep('done')
+    await loadItems()
   }
 
   return (
@@ -160,9 +325,24 @@ export default function ItensPage() {
             Gerencie o cadastro de materiais
           </p>
         </div>
-        <span className="text-xs text-muted-foreground">
-          Atualizado via integração ERP
-        </span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {lastSync && (
+            <span className="text-xs text-muted-foreground">
+              Última atualização:{' '}
+              {format(new Date(lastSync), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+            </span>
+          )}
+          {canImportExcel && (
+            <Button variant="outline" size="sm" type="button" onClick={() => setImportOpen(true)}>
+              <Upload className="mr-2 h-4 w-4" />
+              Importar Excel
+            </Button>
+          )}
+          <Button variant="outline" size="sm" type="button" onClick={() => setErpSyncOpen(true)}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Sincronizar ERP
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -255,36 +435,65 @@ export default function ItensPage() {
             </thead>
             <tbody>
               {filteredItems.map((item) => (
-                <tr key={item.id} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2 align-top font-medium">{item.code}</td>
-                  <td className="px-3 py-2 align-top">
-                    <span className="inline-flex items-start gap-1">
-                      <span>{item.short_description}</span>
-                      {item.long_description ? (
-                        <span title={item.long_description} className="inline-flex shrink-0 mt-0.5">
-                          <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
-                        </span>
-                      ) : null}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <Badge variant={item.status === 'active' ? 'default' : 'outline'}>
-                      {item.status === 'active' ? 'Ativo' : 'Inativo'}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    {item.unit_of_measure ?? '-'}
-                  </td>
-                  <td className="px-3 py-2 align-top">{item.ncm ?? '-'}</td>
-                  <td className="px-3 py-2 align-top">
-                    {item.commodity_group ?? '-'}
-                  </td>
-                  <td className="px-3 py-2 align-top text-right">
-                    <Button type="button" variant="outline" size="sm" onClick={() => openEdit(item)}>
-                      Detalhes
-                    </Button>
-                  </td>
-                </tr>
+                <Fragment key={item.id}>
+                  <tr
+                    className="border-b border-border last:border-0 hover:bg-muted/50 cursor-pointer transition-colors"
+                    onClick={() =>
+                      setExpandedItemId(expandedItemId === item.id ? null : item.id)
+                    }
+                  >
+                    <td className="px-3 py-2 align-top font-medium">{item.code}</td>
+                    <td className="px-3 py-2 align-top">
+                      <span className="inline-flex items-start gap-1">
+                        <span>{item.short_description}</span>
+                        {item.long_description ? (
+                          <span title={item.long_description} className="inline-flex shrink-0 mt-0.5">
+                            <Info className="w-3.5 h-3.5 text-muted-foreground cursor-help" />
+                          </span>
+                        ) : null}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <Badge variant={item.status === 'active' ? 'default' : 'outline'}>
+                        {item.status === 'active' ? 'Ativo' : 'Inativo'}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      {item.unit_of_measure ?? '-'}
+                    </td>
+                    <td className="px-3 py-2 align-top">{item.ncm ?? '-'}</td>
+                    <td className="px-3 py-2 align-top">
+                      {item.commodity_group ?? '-'}
+                    </td>
+                    <td className="px-3 py-2 align-top text-right">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openEdit(item)
+                        }}
+                      >
+                        Detalhes
+                      </Button>
+                    </td>
+                  </tr>
+                  {expandedItemId === item.id && (
+                    <tr className="bg-muted/30">
+                      <td colSpan={7} className="px-6 py-3">
+                        <div className="flex gap-2">
+                          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                            Descrição Detalhada:
+                          </span>
+                          <span className="text-sm text-muted-foreground">
+                            {item.long_description || 'Sem descrição detalhada cadastrada.'}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -305,32 +514,250 @@ export default function ItensPage() {
           {editingItem ? (
             <div className="space-y-4">
               <div className="grid gap-1">
-                <Label className="text-muted-foreground">Descrição curta</Label>
-                <p className="text-sm text-foreground">{editingItem.short_description}</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Código
+                </p>
+                <p className="text-sm font-medium">{editingItem.code}</p>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="long_description">Descrição detalhada</Label>
-                <Textarea
-                  id="long_description"
-                  placeholder="Descrição completa do item sem abreviações..."
-                  value={formLongDescription}
-                  onChange={(e) => setFormLongDescription(e.target.value)}
-                  rows={3}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Descrição completa para uso interno e exibição ao fornecedor.
+              <div className="grid gap-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Descrição Curta
+                </p>
+                <p className="text-sm">{editingItem.short_description}</p>
+              </div>
+              <div className="grid gap-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Descrição Detalhada
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {editingItem.long_description || 'Sem descrição detalhada'}
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="grid gap-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                    Unidade
+                  </p>
+                  <p className="text-sm">{editingItem.unit_of_measure || '—'}</p>
+                </div>
+                <div className="grid gap-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                    NCM
+                  </p>
+                  <p className="text-sm">{editingItem.ncm || '—'}</p>
+                </div>
+                <div className="grid gap-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                    Grupo
+                  </p>
+                  <p className="text-sm">{editingItem.commodity_group || '—'}</p>
+                </div>
+              </div>
+              <div className="grid gap-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Origem
+                </p>
+                <p className="text-sm capitalize">
+                  {editingItem.source === 'erp'
+                    ? 'Integração ERP'
+                    : editingItem.source === 'excel'
+                      ? 'Importação Excel'
+                      : 'Cadastro Manual'}
+                </p>
+              </div>
+              {editingItem.sync_at && (
+                <div className="grid gap-1">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                    Última Sincronização
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {format(new Date(editingItem.sync_at), "dd/MM/yyyy 'às' HH:mm", {
+                      locale: ptBR,
+                    })}
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+              Fechar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={erpSyncOpen} onOpenChange={setErpSyncOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sincronizar com ERP</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-amber-800">
+                  Integração ERP não configurada
+                </p>
+                <p className="text-sm text-amber-700">
+                  Este tenant não possui integração com ERP ativa.
+                  Configure a integração no Portal Admin ou
+                  utilize a importação via Excel para atualizar o catálogo.
                 </p>
               </div>
             </div>
-          ) : null}
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="button" onClick={() => void handleSaveLongDescription()} disabled={saving}>
-              {saving ? 'Salvando…' : 'Salvar'}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" type="button" onClick={() => setErpSyncOpen(false)}>
+              Fechar
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={importOpen}
+        onOpenChange={(open) => {
+          setImportOpen(open)
+          if (!open) {
+            setImportStep('upload')
+            setImportFile(null)
+            setImportPreview([])
+            setImportErrors([])
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Importar Itens via Excel</DialogTitle>
+          </DialogHeader>
+
+          {importStep === 'upload' && (
+            <div className="space-y-4">
+              <Button variant="outline" size="sm" type="button" onClick={() => void handleDownloadTemplate()}>
+                <Download className="mr-2 h-4 w-4" />
+                Baixar Template
+              </Button>
+              <div
+                className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-border p-8 text-center"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  const file = e.dataTransfer.files[0]
+                  if (file) void handleFileChange(file)
+                }}
+              >
+                <Upload className="mb-2 h-8 w-8 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Arraste o arquivo Excel ou
+                </p>
+                <label className="mt-2 cursor-pointer text-sm font-medium text-primary underline">
+                  clique para selecionar
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) void handleFileChange(file)
+                    }}
+                  />
+                </label>
+              </div>
+              {importFile ? (
+                <p className="text-xs text-muted-foreground text-center">
+                  Arquivo: {importFile.name}
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          {importStep === 'preview' && (
+            <div className="space-y-4">
+              {importErrors.length > 0 && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+                  <p className="text-sm font-medium text-red-700 mb-1">
+                    {importErrors.length} erro(s) encontrado(s):
+                  </p>
+                  <ul className="text-xs text-red-600 space-y-0.5">
+                    {importErrors.slice(0, 5).map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                    {importErrors.length > 5 && (
+                      <li>...e mais {importErrors.length - 5} erro(s)</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground">
+                {importPreview.length} item(s) encontrado(s) no arquivo.
+                {importErrors.length > 0 && ' Corrija os erros antes de importar.'}
+              </p>
+              <div className="max-h-48 overflow-auto rounded border text-xs">
+                <table className="w-full">
+                  <thead className="bg-muted sticky top-0">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Código</th>
+                      <th className="px-2 py-1 text-left">Descrição</th>
+                      <th className="px-2 py-1 text-left">Unidade</th>
+                      <th className="px-2 py-1 text-left">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreview.slice(0, 10).map((row, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-2 py-1">{row.code}</td>
+                        <td className="px-2 py-1">{row.short_description}</td>
+                        <td className="px-2 py-1">{row.unit_of_measure}</td>
+                        <td className="px-2 py-1">{row.status}</td>
+                      </tr>
+                    ))}
+                    {importPreview.length > 10 && (
+                      <tr className="border-t">
+                        <td colSpan={4} className="px-2 py-1 text-muted-foreground">
+                          ...e mais {importPreview.length - 10} item(s)
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setImportStep('upload')}>
+                  Voltar
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => void handleImport()}
+                  disabled={importing || importErrors.length > 0}
+                >
+                  {importing ? 'Importando...' : `Importar ${importPreview.length} item(s)`}
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+
+          {importStep === 'done' && (
+            <div className="space-y-4 py-4 text-center">
+              <div className="flex justify-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+                  <Check className="h-6 w-6 text-green-600" />
+                </div>
+              </div>
+              <p className="text-sm font-medium">Importação concluída!</p>
+              <DialogFooter className="justify-center">
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setImportOpen(false)
+                    setImportStep('upload')
+                  }}
+                >
+                  Fechar
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
