@@ -16,32 +16,26 @@ import {
   Line,
   Legend,
 } from "recharts"
+interface SpendAnalysisChartProps {
+  data: { name: string; value: number }[]
+}
 
-const spendData = [
-  { categoria: "TI", valor: 45000 },
-  { categoria: "MRO", valor: 32000 },
-  { categoria: "Serviços", valor: 28000 },
-  { categoria: "Logística", valor: 22000 },
-  { categoria: "Marketing", valor: 18000 },
-]
-
-const quotationStatusData = [
-  { name: "Pendentes", value: 12, color: "var(--warning)" },
-  { name: "Respondidas", value: 8, color: "var(--primary)" },
-  { name: "Em Análise", value: 5, color: "var(--accent)" },
-  { name: "Encerradas", value: 15, color: "var(--muted-foreground)" },
-]
-
-const leadTimeData = [
-  { mes: "Jan", leadTime: 12 },
-  { mes: "Fev", leadTime: 10 },
-  { mes: "Mar", leadTime: 14 },
-  { mes: "Abr", leadTime: 9 },
-  { mes: "Mai", leadTime: 8 },
-  { mes: "Jun", leadTime: 7 },
-]
-
-export function SpendAnalysisChart() {
+export function SpendAnalysisChart({ data }: SpendAnalysisChartProps) {
+  if (!data.length) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Análise de Gastos</CardTitle>
+          <CardDescription>Gastos por categoria no período</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+            Nenhum dado disponível
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
   return (
     <Card>
       <CardHeader>
@@ -51,10 +45,10 @@ export function SpendAnalysisChart() {
       <CardContent>
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={spendData} layout="vertical">
+            <BarChart data={data} layout="vertical">
               <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
               <XAxis type="number" tickFormatter={(value) => `R$ ${value / 1000}k`} />
-              <YAxis type="category" dataKey="categoria" width={80} />
+              <YAxis type="category" dataKey="name" width={100} />
               <Tooltip
                 formatter={(value: number) => [`R$ ${value.toLocaleString("pt-BR")}`, "Valor"]}
                 contentStyle={{
@@ -63,7 +57,7 @@ export function SpendAnalysisChart() {
                   borderRadius: "var(--radius)",
                 }}
               />
-              <Bar dataKey="valor" fill="var(--primary)" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="value" fill="var(--primary)" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -77,7 +71,21 @@ interface QuotationStatusChartProps {
 }
 
 export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
-  const chartData = data && data.length > 0 ? data : quotationStatusData
+  if (!data || !data.length) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Status das Cotações</CardTitle>
+          <CardDescription>Distribuição por status</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+            Nenhum dado disponível
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card>
@@ -90,7 +98,7 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={chartData}
+                data={data}
                 cx="50%"
                 cy="50%"
                 innerRadius={60}
@@ -98,7 +106,7 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
                 paddingAngle={2}
                 dataKey="value"
               >
-                {chartData.map((entry, index) => (
+                {data.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
@@ -118,7 +126,26 @@ export function QuotationStatusChart({ data }: QuotationStatusChartProps) {
   )
 }
 
-export function LeadTimeChart() {
+interface LeadTimeChartProps {
+  data: { month: string; days: number }[]
+}
+
+export function LeadTimeChart({ data }: LeadTimeChartProps) {
+  if (!data.length) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Lead Time Médio</CardTitle>
+          <CardDescription>Dias até conclusão do processo</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
+            Nenhum dado disponível
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
   return (
     <Card>
       <CardHeader>
@@ -128,9 +155,9 @@ export function LeadTimeChart() {
       <CardContent>
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={leadTimeData}>
+            <LineChart data={data}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="mes" />
+              <XAxis dataKey="month" />
               <YAxis unit=" dias" />
               <Tooltip
                 formatter={(value: number) => [`${value} dias`, "Lead Time"]}
@@ -142,7 +169,7 @@ export function LeadTimeChart() {
               />
               <Line
                 type="monotone"
-                dataKey="leadTime"
+                dataKey="days"
                 stroke="var(--accent)"
                 strokeWidth={2}
                 dot={{ fill: "var(--accent)", strokeWidth: 2 }}

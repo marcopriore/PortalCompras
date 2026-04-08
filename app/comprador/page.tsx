@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { FileText, ShoppingCart, TrendingDown, Clock, Eye } from "lucide-react"
-import { format } from "date-fns"
+import { endOfMonth, format, startOfMonth, subMonths } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
@@ -39,6 +39,13 @@ export default function CompradorDashboard() {
     { id: string; code: string; description: string; status: QuotationStatus; created_at: string }[]
   >([])
   const [dashLoading, setDashLoading] = useState(true)
+  const [ordersInProgress, setOrdersInProgress] = useState<number | null>(null)
+  const [avgLeadTime, setAvgLeadTime] = useState<number | null>(null)
+  const [spendData, setSpendData] = useState<{ name: string; value: number }[]>([])
+  const [leadTimeChartData, setLeadTimeChartData] = useState<{ month: string; days: number }[]>([])
+  const [quotationsChange, setQuotationsChange] = useState<number>(0)
+  const [ordersChange, setOrdersChange] = useState<number>(0)
+  const [leadTimeChange, setLeadTimeChange] = useState<number>(0)
 
   useEffect(() => {
     if (!companyId) return
@@ -46,8 +53,28 @@ export default function CompradorDashboard() {
     const fetchDashboard = async () => {
       setDashLoading(true)
       const supabase = createClient()
+      const now = new Date()
+      const currentMonthStart = startOfMonth(now).toISOString()
+      const prevDate = subMonths(now, 1)
+      const prevMonthStart = startOfMonth(prevDate).toISOString()
+      const prevMonthEnd = endOfMonth(prevDate).toISOString()
+      const sixMonthsAgo = subMonths(now, 6).toISOString()
 
-      const [quotationsRes, recentRes] = await Promise.all([
+      const [
+        quotationsRes,
+        recentRes,
+        ordersInProgressRes,
+        leadTimeRes,
+        quotationsPendingCurrentMonthRes,
+        quotationsPendingPrevRes,
+        ordersInProgressCurrentMonthRes,
+        ordersInProgressPrevRes,
+        leadTimeCurrentMonthRes,
+        leadTimePrevMonthRes,
+        poItemsRes,
+        quotationsForSpendRes,
+        completedOrdersSixMonthsRes,
+      ] = await Promise.all([
         supabase.from("quotations").select("status").eq("company_id", companyId),
         supabase
           .from("quotations")
@@ -55,6 +82,74 @@ export default function CompradorDashboard() {
           .eq("company_id", companyId)
           .order("created_at", { ascending: false })
           .limit(5),
+        supabase
+          .from("purchase_orders")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .in("status", ["sent", "processing"]),
+        supabase
+          .from("purchase_orders")
+          .select("created_at, estimated_delivery_date")
+          .eq("company_id", companyId)
+          .eq("status", "completed")
+          .not("estimated_delivery_date", "is", null),
+        supabase
+          .from("quotations")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .in("status", ["waiting", "analysis"])
+          .gte("created_at", currentMonthStart),
+        supabase
+          .from("quotations")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .in("status", ["waiting", "analysis"])
+          .gte("created_at", prevMonthStart)
+          .lte("created_at", prevMonthEnd),
+        supabase
+          .from("purchase_orders")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .in("status", ["sent", "processing"])
+          .gte("created_at", currentMonthStart),
+        supabase
+          .from("purchase_orders")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .in("status", ["sent", "processing"])
+          .gte("created_at", prevMonthStart)
+          .lte("created_at", prevMonthEnd),
+        supabase
+          .from("purchase_orders")
+          .select("created_at, estimated_delivery_date")
+          .eq("company_id", companyId)
+          .eq("status", "completed")
+          .not("estimated_delivery_date", "is", null)
+          .gte("created_at", currentMonthStart),
+        supabase
+          .from("purchase_orders")
+          .select("created_at, estimated_delivery_date")
+          .eq("company_id", companyId)
+          .eq("status", "completed")
+          .not("estimated_delivery_date", "is", null)
+          .gte("created_at", prevMonthStart)
+          .lte("created_at", prevMonthEnd),
+        supabase
+          .from("purchase_order_items")
+          .select("total_price, purchase_orders!inner(company_id, status, quotation_id)")
+          .eq("purchase_orders.company_id", companyId)
+          .eq("purchase_orders.status", "completed"),
+        supabase
+          .from("quotations")
+          .select("id, category")
+          .eq("company_id", companyId),
+        supabase
+          .from("purchase_orders")
+          .select("created_at, estimated_delivery_date")
+          .eq("company_id", companyId)
+          .eq("status", "completed")
+          .not("estimated_delivery_date", "is", null)
+          .gte("created_at", sixMonthsAgo),
       ])
 
       if (quotationsRes.data) {
@@ -95,6 +190,145 @@ export default function CompradorDashboard() {
           })),
         )
       }
+
+      const ordersCount = ordersInProgressRes.count ?? 0
+      setOrdersInProgress(ordersCount)
+
+      const leadRows =
+        (leadTimeRes.data as { created_at: string; estimated_delivery_date: string }[] | null) ?? []
+      const computedAvgLeadTime =
+        leadRows.length > 0
+          ? Math.round(
+              leadRows.reduce((acc, po) => {
+                const days = Math.max(
+                  0,
+                  Math.round(
+                    (new Date(po.estimated_delivery_date).getTime() -
+                      new Date(po.created_at).getTime()) /
+                      (1000 * 60 * 60 * 24),
+                  ),
+                )
+                return acc + days
+              }, 0) / leadRows.length,
+            )
+          : null
+      setAvgLeadTime(computedAvgLeadTime)
+
+      const quotationsPendingCurrentMonth = quotationsPendingCurrentMonthRes.count ?? 0
+      const quotationsPendingPrev = quotationsPendingPrevRes.count ?? 0
+      const qChange =
+        quotationsPendingPrev > 0
+          ? Math.round(
+              ((quotationsPendingCurrentMonth - quotationsPendingPrev) / quotationsPendingPrev) * 100,
+            )
+          : 0
+      setQuotationsChange(qChange)
+
+      const ordersInProgressCurrentMonth = ordersInProgressCurrentMonthRes.count ?? 0
+      const ordersInProgressPrev = ordersInProgressPrevRes.count ?? 0
+      const oChange =
+        ordersInProgressPrev > 0
+          ? Math.round(
+              ((ordersInProgressCurrentMonth - ordersInProgressPrev) / ordersInProgressPrev) * 100,
+            )
+          : 0
+      setOrdersChange(oChange)
+
+      const calcAverageDays = (
+        rows: { created_at: string; estimated_delivery_date: string }[] | null,
+      ): number | null => {
+        const list = rows ?? []
+        if (!list.length) return null
+        return Math.round(
+          list.reduce((acc, po) => {
+            const days = Math.max(
+              0,
+              Math.round(
+                (new Date(po.estimated_delivery_date).getTime() -
+                  new Date(po.created_at).getTime()) /
+                  (1000 * 60 * 60 * 24),
+              ),
+            )
+            return acc + days
+          }, 0) / list.length,
+        )
+      }
+
+      const leadCurrent = calcAverageDays(
+        (leadTimeCurrentMonthRes.data as { created_at: string; estimated_delivery_date: string }[] | null) ??
+          null,
+      )
+      const leadPrev = calcAverageDays(
+        (leadTimePrevMonthRes.data as { created_at: string; estimated_delivery_date: string }[] | null) ??
+          null,
+      )
+      setLeadTimeChange((leadCurrent ?? 0) - (leadPrev ?? 0))
+
+      const quotationCategoryById = new Map<string, string>()
+      ;(
+        (quotationsForSpendRes.data as { id: string; category: string | null }[] | null) ?? []
+      ).forEach((q) => quotationCategoryById.set(q.id, q.category?.trim() || "Sem Categoria"))
+
+      const spendMap = new Map<string, number>()
+      ;(
+        (poItemsRes.data as {
+          total_price: number | null
+          purchase_orders:
+            | { quotation_id: string | null }
+            | { quotation_id: string | null }[]
+            | null
+        }[] | null) ?? []
+      ).forEach((row) => {
+        const po = Array.isArray(row.purchase_orders) ? row.purchase_orders[0] : row.purchase_orders
+        const quotationId = po?.quotation_id ?? null
+        const category =
+          (quotationId ? quotationCategoryById.get(quotationId) : null) ?? "Sem Categoria"
+        const current = spendMap.get(category) ?? 0
+        spendMap.set(category, current + Number(row.total_price ?? 0))
+      })
+      setSpendData(
+        Array.from(spendMap.entries())
+          .map(([name, value]) => ({ name, value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 6),
+      )
+
+      const monthBuckets: { key: string; month: string; values: number[] }[] = []
+      for (let i = 5; i >= 0; i--) {
+        const d = subMonths(now, i)
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+        const month = format(d, "MMM", { locale: ptBR })
+        const formattedMonth = month.charAt(0).toUpperCase() + month.slice(1).replace(".", "")
+        monthBuckets.push({ key, month: formattedMonth, values: [] })
+      }
+      const bucketByKey = new Map(monthBuckets.map((b) => [b.key, b]))
+      ;(
+        (completedOrdersSixMonthsRes.data as {
+          created_at: string
+          estimated_delivery_date: string
+        }[] | null) ?? []
+      ).forEach((po) => {
+        const d = new Date(po.created_at)
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+        const bucket = bucketByKey.get(key)
+        if (!bucket) return
+        const days = Math.max(
+          0,
+          Math.round(
+            (new Date(po.estimated_delivery_date).getTime() - new Date(po.created_at).getTime()) /
+              (1000 * 60 * 60 * 24),
+          ),
+        )
+        bucket.values.push(days)
+      })
+      setLeadTimeChartData(
+        monthBuckets.map((b) => ({
+          month: b.month,
+          days: b.values.length
+            ? Math.round(b.values.reduce((acc, v) => acc + v, 0) / b.values.length)
+            : 0,
+        })),
+      )
 
       setDashLoading(false)
     }
@@ -143,31 +377,32 @@ export default function CompradorDashboard() {
         <MetricsCard
           title="Cotações Pendentes"
           value={quotationsPending}
-          change={-8}
+          change={quotationsChange}
           icon={FileText}
         />
         <MetricsCard
           title="Pedidos em Andamento"
-          value={23}
-          change={15}
+          value={ordersInProgress ?? "—"}
+          change={ordersChange}
           icon={ShoppingCart}
         />
         <MetricsCard
           title="Saving Acumulado"
-          value="R$ 45.2k"
-          change={22}
+          value="—"
+          changeLabel="Disponível em breve"
           icon={TrendingDown}
         />
         <MetricsCard
           title="Lead Time Médio"
-          value="7 dias"
-          change={-12}
+          value={avgLeadTime !== null ? `${avgLeadTime} dias` : "—"}
+          change={leadTimeChange}
+          changeLabel="vs mês anterior (dias)"
           icon={Clock}
         />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SpendAnalysisChart />
+        <SpendAnalysisChart data={spendData} />
         <QuotationStatusChart data={quotationsByStatus} />
       </div>
 
@@ -244,7 +479,7 @@ export default function CompradorDashboard() {
             </CardContent>
           </Card>
         </div>
-        <LeadTimeChart />
+        <LeadTimeChart data={leadTimeChartData} />
       </div>
     </div>
   )

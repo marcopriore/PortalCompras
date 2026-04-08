@@ -53,6 +53,9 @@ export function MetricsCard({
                 <span className="text-muted-foreground">{changeLabel}</span>
               </div>
             )}
+            {change === undefined && changeLabel ? (
+              <div className="text-sm text-muted-foreground">{changeLabel}</div>
+            ) : null}
           </div>
           <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary/10">
             <Icon className="h-6 w-6 text-primary" />

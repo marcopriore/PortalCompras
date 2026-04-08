@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { format, subMonths } from "date-fns"
+import { ptBR } from "date-fns/locale"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -43,15 +45,6 @@ import {
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
-
-const leadTimeData = [
-  { mes: "Jan", media: 12, meta: 10 },
-  { mes: "Fev", media: 11, meta: 10 },
-  { mes: "Mar", media: 9, meta: 10 },
-  { mes: "Abr", media: 8, meta: 10 },
-  { mes: "Mai", media: 10, meta: 10 },
-  { mes: "Jun", media: 7, meta: 10 },
-]
 
 const relatoriosDisponiveis = [
   {
@@ -140,6 +133,11 @@ export default function RelatoriosPage() {
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [supplierRows, setSupplierRows] = useState<QuotationSupplierRow[]>([])
   const [dashLoading, setDashLoading] = useState(true)
+  const [completedOrdersCount, setCompletedOrdersCount] = useState<number | null>(null)
+  const [avgLeadTime, setAvgLeadTime] = useState<number | null>(null)
+  const [leadTimeMonthlyData, setLeadTimeMonthlyData] = useState<
+    { month: string; media: number | null; meta: number }[]
+  >([])
 
   const [categoryDateFrom, setCategoryDateFrom] = useState("")
   const [categoryDateTo, setCategoryDateTo] = useState("")
@@ -167,7 +165,13 @@ export default function RelatoriosPage() {
       setDashLoading(true)
       const supabase = createClient()
 
-      const [quotationsRes, suppliersRes] = await Promise.all([
+      const [
+        quotationsRes,
+        suppliersRes,
+        completedOrdersCountRes,
+        ltOrdersRes,
+        ltMonthlyRes,
+      ] = await Promise.all([
         supabase
           .from("quotations")
           .select("id, code, description, status, category, created_at")
@@ -178,10 +182,92 @@ export default function RelatoriosPage() {
           .from("quotation_suppliers")
           .select("quotation_id, supplier_name")
           .eq("company_id", companyId),
+        supabase
+          .from("purchase_orders")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("status", "completed")
+          .gte("created_at", periodStartIso),
+        supabase
+          .from("purchase_orders")
+          .select("created_at, estimated_delivery_date")
+          .eq("company_id", companyId)
+          .eq("status", "completed")
+          .not("estimated_delivery_date", "is", null)
+          .gte("created_at", periodStartIso),
+        supabase
+          .from("purchase_orders")
+          .select("created_at, estimated_delivery_date")
+          .eq("company_id", companyId)
+          .eq("status", "completed")
+          .not("estimated_delivery_date", "is", null)
+          .gte("created_at", subMonths(new Date(), 6).toISOString()),
       ])
 
       setQuotations((quotationsRes.data as Quotation[]) ?? [])
       setSupplierRows((suppliersRes.data as QuotationSupplierRow[]) ?? [])
+
+      const completedCount = completedOrdersCountRes.count ?? 0
+      setCompletedOrdersCount(completedCount)
+
+      const ltOrders =
+        (ltOrdersRes.data as { created_at: string; estimated_delivery_date: string }[] | null) ?? []
+      const avgLt =
+        ltOrders.length > 0
+          ? Math.round(
+              ltOrders.reduce((acc, po) => {
+                const days = Math.max(
+                  0,
+                  Math.round(
+                    (new Date(po.estimated_delivery_date).getTime() -
+                      new Date(po.created_at).getTime()) /
+                      (1000 * 60 * 60 * 24),
+                  ),
+                )
+                return acc + days
+              }, 0) / ltOrders.length,
+            )
+          : null
+      setAvgLeadTime(avgLt)
+
+      const now = new Date()
+      const buckets: { key: string; month: string; values: number[] }[] = []
+      for (let i = 5; i >= 0; i--) {
+        const d = subMonths(now, i)
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+        const m = format(d, "MMM", { locale: ptBR }).replace(".", "")
+        buckets.push({ key, month: m.charAt(0).toUpperCase() + m.slice(1), values: [] })
+      }
+      const byKey = new Map(buckets.map((b) => [b.key, b]))
+      ;(
+        (ltMonthlyRes.data as {
+          created_at: string
+          estimated_delivery_date: string
+        }[] | null) ?? []
+      ).forEach((po) => {
+        const d = new Date(po.created_at)
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+        const b = byKey.get(key)
+        if (!b) return
+        const days = Math.max(
+          0,
+          Math.round(
+            (new Date(po.estimated_delivery_date).getTime() - new Date(po.created_at).getTime()) /
+              (1000 * 60 * 60 * 24),
+          ),
+        )
+        b.values.push(days)
+      })
+      setLeadTimeMonthlyData(
+        buckets.map((b) => ({
+          month: b.month,
+          media: b.values.length
+            ? Math.round(b.values.reduce((acc, v) => acc + v, 0) / b.values.length)
+            : null,
+          meta: 10,
+        })),
+      )
+
       setDashLoading(false)
     }
 
@@ -189,6 +275,23 @@ export default function RelatoriosPage() {
   }, [companyId, periodStartIso])
 
   const totalQuotations = quotations.length
+  const monthsInPeriod = getMonthsBack(periodo)
+  const ordersPerMonth =
+    completedOrdersCount != null && monthsInPeriod > 0
+      ? (completedOrdersCount / monthsInPeriod).toFixed(1)
+      : null
+
+  const categoryOptions = useMemo(() => {
+    const cats = [
+      ...new Set(
+        quotations
+          .map((q) => q.category)
+          .filter((c): c is string => Boolean(c && c.trim()))
+          .map((c) => c.trim()),
+      ),
+    ].sort((a, b) => a.localeCompare(b))
+    return cats
+  }, [quotations])
 
   const statusDonutData = useMemo(() => {
     const counts: Record<Quotation["status"], number> = {
@@ -290,9 +393,7 @@ export default function RelatoriosPage() {
     return { from, to }
   }
 
-  const showUnavailableData = () => {
-    const message =
-      "Dados indisponíveis. Este relatório estará disponível quando o módulo de pedidos for implementado."
+  const showUnavailableData = (message: string) => {
     try {
       toast({ title: "Relatório indisponível", description: message })
     } catch {
@@ -435,11 +536,15 @@ export default function RelatoriosPage() {
   }
 
   const handleExportSaving = () => {
-    showUnavailableData()
+    showUnavailableData(
+      "O relatório de Saving estará disponível após configuração de preços de referência por item.",
+    )
   }
 
   const handleExportLeadTime = () => {
-    showUnavailableData()
+    showUnavailableData(
+      "O relatório de Lead Time exportará dados reais assim que houver pedidos concluídos com data de entrega estimada.",
+    )
   }
 
   return (
@@ -466,12 +571,7 @@ export default function RelatoriosPage() {
           </Select>
           <MultiSelectFilter
             label="Categoria"
-            options={[
-              { value: "tecnologia", label: "Tecnologia" },
-              { value: "industrial", label: "Industrial" },
-              { value: "escritorio", label: "Escritório" },
-              { value: "seguranca", label: "Segurança" },
-            ]}
+            options={categoryOptions.map((c) => ({ value: c, label: c }))}
             selected={categoria}
             onChange={setCategoria}
             width="w-40"
@@ -494,9 +594,9 @@ export default function RelatoriosPage() {
             <p className="text-xs text-muted-foreground">cotações registradas</p>
           </CardContent>
         </Card>
-        <Card className="relative border-2 border-red-400 rounded-lg">
-          <span className="absolute top-3 right-3 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded font-medium">
-            Dados simulados
+        <Card className="relative border-2 border-border rounded-lg">
+          <span className="absolute top-3 right-3 text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium">
+            Indisponível
           </span>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -505,14 +605,11 @@ export default function RelatoriosPage() {
             <TrendingUp className="h-4 w-4 text-success" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-success">R$ 113.700</div>
-            <p className="text-xs text-muted-foreground">12.6% de economia</p>
+            <div className="text-2xl font-bold text-muted-foreground">—</div>
+            <p className="text-xs text-muted-foreground">Disponível em breve</p>
           </CardContent>
         </Card>
-        <Card className="relative border-2 border-red-400 rounded-lg">
-          <span className="absolute top-3 right-3 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded font-medium">
-            Dados simulados
-          </span>
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Pedidos Realizados
@@ -520,14 +617,13 @@ export default function RelatoriosPage() {
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">184</div>
-            <p className="text-xs text-muted-foreground">30.7 pedidos/mês</p>
+            <div className="text-2xl font-bold">{dashLoading ? "—" : (completedOrdersCount ?? "—")}</div>
+            <p className="text-xs text-muted-foreground">
+              {ordersPerMonth ? `${ordersPerMonth} pedidos/mês` : ""}
+            </p>
           </CardContent>
         </Card>
-        <Card className="relative border-2 border-red-400 rounded-lg">
-          <span className="absolute top-3 right-3 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded font-medium">
-            Dados simulados
-          </span>
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
               Lead Time Médio
@@ -535,8 +631,10 @@ export default function RelatoriosPage() {
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">9.5 dias</div>
-            <p className="text-xs text-success">-2.3 dias vs meta</p>
+            <div className="text-2xl font-bold">
+              {dashLoading ? "—" : avgLeadTime !== null ? `${avgLeadTime} dias` : "—"}
+            </div>
+            <p className="text-xs text-muted-foreground"></p>
           </CardContent>
         </Card>
       </div>
@@ -699,20 +797,22 @@ export default function RelatoriosPage() {
               </CardContent>
             </Card>
 
-            <Card className="relative border-2 border-red-400 rounded-lg">
-              <span className="absolute top-3 right-3 text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded font-medium">
-                Dados simulados
-              </span>
+            <Card>
               <CardHeader>
                 <CardTitle>Lead Time vs Meta</CardTitle>
                 <CardDescription>Tempo médio de ciclo de compras em dias</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={leadTimeData}>
+                {!leadTimeMonthlyData.some((d) => d.media !== null) ? (
+                  <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
+                    Nenhum dado disponível
+                  </div>
+                ) : (
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={leadTimeMonthlyData}>
                       <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                      <XAxis dataKey="mes" className="text-xs" />
+                      <XAxis dataKey="month" className="text-xs" />
                       <YAxis className="text-xs" domain={[0, 15]} />
                       <Tooltip
                         formatter={(value: number) => `${value} dias`}
@@ -740,9 +840,10 @@ export default function RelatoriosPage() {
                         strokeDasharray="5 5"
                         dot={false}
                       />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
