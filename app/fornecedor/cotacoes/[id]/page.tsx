@@ -14,7 +14,9 @@ import {
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
-import { createNotification } from "@/lib/notify"
+import { notifyWithEmail } from "@/lib/notify-with-email"
+import { getUserEmail } from "@/lib/email/get-user-email"
+import { templateProposalSubmitted } from "@/lib/email/templates"
 import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
 import { cn } from "@/lib/utils"
@@ -862,14 +864,32 @@ export default function FornecedorCotacaoPropostaPage({
             .eq("id", quotationId)
             .single()
           if (quotationCreator?.created_by) {
-            await createNotification({
-              userId: quotationCreator.created_by,
+            const buyerId = quotationCreator.created_by
+            const { data: buyerProfile } = await supabase
+              .from("profiles")
+              .select("full_name")
+              .eq("id", buyerId)
+              .maybeSingle()
+            const buyerEmail = await getUserEmail(buyerId)
+            const { subject, html } = templateProposalSubmitted({
+              buyerName: buyerProfile?.full_name ?? "Comprador",
+              supplierName: supplierInfo?.name ?? "Fornecedor",
+              quotationCode: quotation.code,
+              roundNumber: activeRound.round_number,
+              totalPrice: total,
+            })
+            await notifyWithEmail({
+              userId: buyerId,
               companyId: quotation.company_id,
               type: "proposal.submitted",
               title: "Nova proposta recebida",
               body: `${supplierInfo?.name ?? "Fornecedor"} enviou proposta para ${quotation.code}`,
               entity: "quotation_proposals",
               entityId: newId,
+              toEmail: buyerEmail ?? undefined,
+              subject,
+              html,
+              emailPrefKey: "quotation_received_email",
             })
           }
         } catch (e) {

@@ -63,6 +63,9 @@ import {
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
 import { createNotification } from "@/lib/notify"
+import { getUserEmail } from "@/lib/email/get-user-email"
+import { templateNewRound } from "@/lib/email/templates"
+import { sendTransactionalEmailClient } from "@/lib/email/send-transactional-email-client"
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -866,6 +869,35 @@ export default function EqualizacaoPage({
               }),
             )
             await Promise.allSettled(notificationPromises)
+
+            const nameBySupplierId = new Map<string, string>()
+            for (const p of prevList) {
+              if (p.supplier_id && p.supplier_name) {
+                nameBySupplierId.set(p.supplier_id, p.supplier_name)
+              }
+            }
+            const deadlineLabel = formatDateBR(novaRoundDeadline)
+            const emailPromises = (
+              supplierProfiles as { id: string; supplier_id: string | null }[]
+            ).map(async (row) => {
+              const email = await getUserEmail(row.id)
+              if (!email) return
+              const supplierName =
+                (row.supplier_id && nameBySupplierId.get(row.supplier_id)) ?? "Fornecedor"
+              const { subject, html } = templateNewRound({
+                supplierName,
+                quotationCode: quotation.code,
+                roundNumber: newRoundNumber,
+                deadline: deadlineLabel !== "—" ? deadlineLabel : undefined,
+              })
+              await sendTransactionalEmailClient({
+                to: email,
+                subject,
+                html,
+                companyId,
+              })
+            })
+            await Promise.allSettled(emailPromises)
           }
         }
       } catch (notifyErr) {

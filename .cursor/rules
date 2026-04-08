@@ -37,6 +37,24 @@
 - Sempre validar dados do usuário antes de inserir no banco
 - RLS é a camada de segurança principal — confiar nela, não replicar no frontend
 
+## Notificações
+- Sempre usar `notifyWithEmail()` via API Route — nunca chamar Resend direto do client
+- `getUserEmail()` requer API Route com service role — nunca expor `RESEND_API_KEY` no client
+- `createNotification()` pode ser chamado direto do client (anon key + RLS)
+- Preferências de e-mail: verificar `*_email` em `notification_preferences` antes de enviar
+
+## Auto-refresh (polling)
+- Sempre usar `useAutoRefresh()` hook — nunca `setInterval` diretamente nas páginas
+- `onRefresh` deve ser `useCallback` estável para evitar re-criação de timer
+- Refresh silencioso: não resetar seleção, filtros ou rodada ativa
+- `pauseWhenHidden: true` por padrão
+
+## E-mail templates
+- Templates em `lib/email/templates/index.ts`
+- Base layout em `lib/email/templates/base.ts`
+- Sempre usar `emailBase()` wrapper para manter identidade visual
+- Usar `NEXT_PUBLIC_APP_URL` para links de CTA
+
 ## Commits
 - Prefixo feat: para novas funcionalidades
 - Prefixo fix: para correções
@@ -62,8 +80,15 @@
 - NUNCA usar `cancelled` para recusa do fornecedor — usar `refused` e preencher `cancellation_reason`.
 - Em `refused`, o comprador pode voltar para `sent` (reenvio) ou `cancelled` (cancelar definitivamente).
 - Labels de UI: usar `getPOStatusForBuyer` / `getPOStatusForSupplier` em `lib/po-status.ts`.
+- `refused` = fornecedor recusou; `cancelled` = cancelamento definitivo do comprador/sistema.
 
 ## Padrões de negócio — pedidos
 - `delivery_days` no cabeçalho do pedido: ao criar, usar o **maior** `delivery_days` entre `proposal_items` aceitos (e fallback ao nível proposta quando aplicável — ver `novo-pedido` e `equalizacao`).
 - `estimated_delivery_date`: definida pelo fornecedor no aceite (string `YYYY-MM-DD`); a UI pode sugerir hoje + maior prazo antes do aceite.
 - Condições de pagamento no fluxo de proposta/pedido: preferir registros de `payment_conditions` do tenant, não texto livre onde a UI impõe picklist.
+
+## Auditoria
+- `logAudit()` em `lib/audit.ts` falha silenciosamente por design (não bloquear UX)
+- Fornecedor auth: `supplier.login`, `supplier.logout`
+- Propostas: `proposal.saved`, `proposal.submitted`, `proposal.imported`
+- Pedidos: `purchase_order.accepted`, `purchase_order.refused`, `purchase_order.delivery_updated`
