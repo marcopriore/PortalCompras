@@ -351,15 +351,21 @@ function NovaCotacaoContent() {
       for (const req of selected) {
         for (const item of req.items) {
           const code = item.material_code ?? ''
-          if (
-            prev.some((i) => i.code === code) ||
-            newItems.some((i) => i.code === code)
-          ) {
-            continue
-          }
+          const description = item.material_description ?? ''
+
+          const alreadyExists =
+            prev.some((i) =>
+              code !== '' ? i.code === code : i.description === description,
+            ) ||
+            newItems.some((i) =>
+              code !== '' ? i.code === code : i.description === description,
+            )
+
+          if (alreadyExists) continue
+
           newItems.push({
             code,
-            description: item.material_description ?? '',
+            description,
             unit_of_measure: item.unit_of_measure ?? '',
             long_description: null,
             quantity: item.quantity ?? 1,
@@ -367,6 +373,7 @@ function NovaCotacaoContent() {
           })
         }
       }
+
       if (newItems.length > 0) {
         const added = newItems.length
         const reqCount = selected.length
@@ -375,7 +382,12 @@ function NovaCotacaoContent() {
             `${added} item(s) importado(s) de ${reqCount} requisição(ões).`,
           ),
         )
+      } else {
+        queueMicrotask(() =>
+          toast.warning('Todos os itens selecionados já estão na cotação.'),
+        )
       }
+
       return [...prev, ...newItems]
     })
 
