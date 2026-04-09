@@ -224,7 +224,7 @@ export default function HomePage() {
                       "linear-gradient(90deg, #4F3EF5 0%, #00C2FF 100%)",
                   }}
                 >
-                  Acessar como Comprador →
+                  Acesso Interno →
                 </button>
                 <button
                   type="button"
