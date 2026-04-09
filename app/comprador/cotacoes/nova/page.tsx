@@ -34,31 +34,24 @@ type QuotationItem = {
   long_description?: string | null
 }
 type SelectedItem = QuotationItem & { quantity: number }
-type Supplier = { id: string; name: string; cnpj: string; category: string }
+type Supplier = {
+  id: string
+  name: string
+  cnpj: string | null
+  category: string | null
+}
 
-const MOCK_ITEMS: QuotationItem[] = [
-  { code: 'MAT-0001', description: 'Parafuso sextavado 1/4"', unit_of_measure: 'UN' },
-  { code: 'MAT-0002', description: 'Arruela lisa 1/4"', unit_of_measure: 'UN' },
-  { code: 'MAT-0003', description: 'Chapa de aço 3mm', unit_of_measure: 'KG' },
-  { code: 'MAT-0004', description: 'Tinta epóxi branca', unit_of_measure: 'L' },
-  { code: 'MAT-0005', description: 'Rolamento esférico 6204', unit_of_measure: 'UN' },
-  { code: 'MAT-0006', description: 'Mangueira hidráulica 1/2"', unit_of_measure: 'M' },
-  { code: 'MAT-0007', description: 'Óleo lubrificante 68', unit_of_measure: 'L' },
-  { code: 'MAT-0008', description: 'Filtro de ar industrial', unit_of_measure: 'UN' },
-  { code: 'MAT-0009', description: 'Correia transportadora', unit_of_measure: 'M' },
-  { code: 'MAT-0010', description: 'Válvula solenoide 1"', unit_of_measure: 'UN' },
-]
+const SUPPLIER_SEARCH_DEBOUNCE_MS = 300
+const ITEM_SEARCH_DEBOUNCE_MS = 300
 
-const MOCK_SUPPLIERS: Supplier[] = [
-  { id: '1', name: 'Fornecedor Alfa Ltda', cnpj: '12.345.678/0001-00', category: 'MRO' },
-  { id: '2', name: 'Comercial Beta S.A.', cnpj: '23.456.789/0001-11', category: 'Matéria-Prima' },
-  { id: '3', name: 'Serviços Gama ME', cnpj: '34.567.890/0001-22', category: 'Serviços' },
-  { id: '4', name: 'Tecnologia Delta Ltda', cnpj: '45.678.901/0001-33', category: 'TI' },
-  { id: '5', name: 'Fornecedor Épsilon', cnpj: '56.789.012/0001-44', category: 'MRO' },
-  { id: '6', name: 'Indústria Zeta', cnpj: '67.890.123/0001-55', category: 'Matéria-Prima' },
-  { id: '7', name: 'Serviços Ômega', cnpj: '78.901.234/0001-66', category: 'Serviços' },
-  { id: '8', name: 'Fornecedor Sigma', cnpj: '89.012.345/0001-77', category: 'Outros' },
-]
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedValue(value), delay)
+    return () => clearTimeout(t)
+  }, [value, delay])
+  return debouncedValue
+}
 
 function Section({
   title, icon, sectionKey, open, onToggle, children,
@@ -108,8 +101,12 @@ function NovaCotacaoContent() {
   const [category, setCategory] = useState<string | undefined>()
   const [file, setFile] = useState<File | null>(null)
   const [itemSearch, setItemSearch] = useState('')
+  const [itemResults, setItemResults] = useState<QuotationItem[]>([])
+  const [itemSearchLoading, setItemSearchLoading] = useState(false)
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
   const [supplierSearch, setSupplierSearch] = useState('')
+  const [supplierResults, setSupplierResults] = useState<Supplier[]>([])
+  const [supplierSearchLoading, setSupplierSearchLoading] = useState(false)
   const [selectedSuppliers, setSelectedSuppliers] = useState<Supplier[]>([])
   const [errors, setErrors] = useState<Record<string, boolean>>({})
   const [open, setOpen] = useState({ general: true, items: true, suppliers: true })
@@ -117,6 +114,9 @@ function NovaCotacaoContent() {
   const [loadingAction, setLoadingAction] = useState<'draft' | 'submit' | null>(null)
 
   const { userId, companyId, loading: userLoading } = useUser()
+
+  const debouncedItemSearch = useDebounce(itemSearch, ITEM_SEARCH_DEBOUNCE_MS)
+  const debouncedSupplierSearch = useDebounce(supplierSearch, SUPPLIER_SEARCH_DEBOUNCE_MS)
 
   const today = useMemo(() => format(new Date(), 'dd/MM/yyyy', { locale: ptBR }), [])
 
@@ -154,17 +154,79 @@ function NovaCotacaoContent() {
     fetchRequisition()
   }, [requisitionId, companyId])
 
-  const filteredItems = useMemo(() => {
-    if (!itemSearch.trim()) return []
-    const q = itemSearch.toLowerCase()
-    return MOCK_ITEMS.filter(i => i.code.toLowerCase().includes(q) || i.description.toLowerCase().includes(q))
-  }, [itemSearch])
+  useEffect(() => {
+    if (!companyId || debouncedItemSearch.trim().length < 2) {
+      setItemResults([])
+      setItemSearchLoading(false)
+      return
+    }
+    const run = async () => {
+      setItemSearchLoading(true)
+      const supabase = createClient()
+      const term = `%${debouncedItemSearch.trim()}%`
+      try {
+        const { data, error } = await supabase
+          .from('items')
+          .select('id, code, short_description, unit_of_measure, long_description')
+          .eq('company_id', companyId)
+          .eq('status', 'active')
+          .or(`code.ilike.${term},short_description.ilike.${term}`)
+          .limit(20)
+        if (error) {
+          setItemResults([])
+          return
+        }
+        setItemResults(
+          (data ?? []).map(
+            (i: {
+              code: string
+              short_description: string
+              unit_of_measure: string | null
+              long_description: string | null
+            }) => ({
+              code: i.code,
+              description: i.short_description,
+              unit_of_measure: i.unit_of_measure ?? '',
+              long_description: i.long_description ?? null,
+            }),
+          ),
+        )
+      } finally {
+        setItemSearchLoading(false)
+      }
+    }
+    void run()
+  }, [companyId, debouncedItemSearch])
 
-  const filteredSuppliers = useMemo(() => {
-    if (!supplierSearch.trim()) return []
-    const q = supplierSearch.toLowerCase()
-    return MOCK_SUPPLIERS.filter(s => s.name.toLowerCase().includes(q) || s.cnpj.toLowerCase().includes(q))
-  }, [supplierSearch])
+  useEffect(() => {
+    if (!companyId || debouncedSupplierSearch.trim().length < 2) {
+      setSupplierResults([])
+      setSupplierSearchLoading(false)
+      return
+    }
+    const run = async () => {
+      setSupplierSearchLoading(true)
+      const supabase = createClient()
+      const term = `%${debouncedSupplierSearch.trim()}%`
+      try {
+        const { data, error } = await supabase
+          .from('suppliers')
+          .select('id, name, cnpj, category')
+          .eq('company_id', companyId)
+          .eq('status', 'active')
+          .or(`name.ilike.${term},cnpj.ilike.${term}`)
+          .limit(20)
+        if (error) {
+          setSupplierResults([])
+          return
+        }
+        setSupplierResults((data as Supplier[]) ?? [])
+      } finally {
+        setSupplierSearchLoading(false)
+      }
+    }
+    void run()
+  }, [companyId, debouncedSupplierSearch])
 
   const toggle = (key: string) => setOpen(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))
 
@@ -460,17 +522,31 @@ function NovaCotacaoContent() {
                 className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
             </div>
-            {filteredItems.length > 0 && (
+            {itemSearch.trim().length >= 2 && (
               <ul className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg max-h-48 overflow-y-auto">
-                {filteredItems.map(item => (
-                  <li key={item.code} onClick={() => addItem(item)} className="flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-accent">
-                    <div>
-                      <p className="text-sm font-medium">{item.code}</p>
-                      <p className="text-xs text-muted-foreground">{item.description}</p>
-                    </div>
-                    <span className="text-xs text-muted-foreground">{item.unit_of_measure}</span>
+                {itemSearchLoading ? (
+                  <li className="px-3 py-2 text-sm text-muted-foreground text-center">
+                    Buscando...
                   </li>
-                ))}
+                ) : itemResults.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-muted-foreground text-center">
+                    Nenhum item encontrado
+                  </li>
+                ) : (
+                  itemResults.map(item => (
+                    <li
+                      key={item.code}
+                      onClick={() => addItem(item)}
+                      className="flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-accent"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{item.code}</p>
+                        <p className="text-xs text-muted-foreground">{item.description}</p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{item.unit_of_measure}</span>
+                    </li>
+                  ))
+                )}
               </ul>
             )}
           </div>
@@ -525,17 +601,31 @@ function NovaCotacaoContent() {
                 className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
             </div>
-            {filteredSuppliers.length > 0 && (
+            {supplierSearch.trim().length >= 2 && (
               <ul className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg max-h-48 overflow-y-auto">
-                {filteredSuppliers.map(s => (
-                  <li key={s.id} onClick={() => addSupplier(s)} className="flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-accent">
-                    <div>
-                      <p className="text-sm font-medium">{s.name}</p>
-                      <p className="text-xs text-muted-foreground">{s.cnpj}</p>
-                    </div>
-                    <span className="text-xs text-muted-foreground">{s.category}</span>
+                {supplierSearchLoading ? (
+                  <li className="px-3 py-2 text-sm text-muted-foreground text-center">
+                    Buscando...
                   </li>
-                ))}
+                ) : supplierResults.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-muted-foreground text-center">
+                    Nenhum fornecedor encontrado
+                  </li>
+                ) : (
+                  supplierResults.map(s => (
+                    <li
+                      key={s.id}
+                      onClick={() => addSupplier(s)}
+                      className="flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-accent"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{s.name}</p>
+                        <p className="text-xs text-muted-foreground">{s.cnpj ?? '—'}</p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{s.category ?? '—'}</span>
+                    </li>
+                  ))
+                )}
               </ul>
             )}
           </div>
@@ -557,8 +647,8 @@ function NovaCotacaoContent() {
                 {selectedSuppliers.map(s => (
                   <tr key={s.id} className="border-b border-border last:border-0">
                     <td className="px-2 py-2">{s.name}</td>
-                    <td className="px-2 py-2">{s.cnpj}</td>
-                    <td className="px-2 py-2">{s.category}</td>
+                    <td className="px-2 py-2">{s.cnpj ?? '—'}</td>
+                    <td className="px-2 py-2">{s.category ?? '—'}</td>
                     <td className="px-2 py-2 text-right">
                       <Button type="button" variant="ghost" size="icon" onClick={() => setSelectedSuppliers(p => p.filter(x => x.id !== s.id))}>
                         <Trash2 className="h-4 w-4" />

@@ -51,7 +51,6 @@ const buyerNavItems: NavItem[] = [
 
 const supplierNavItems: NavItem[] = [
   { title: "Dashboard", href: "/fornecedor", icon: LayoutDashboard },
-  { title: "Oportunidades", href: "/fornecedor/oportunidades", icon: Package },
   { title: "Minhas Propostas", href: "/fornecedor/propostas", icon: FileText },
   { title: "Pedidos", href: "/fornecedor/pedidos", icon: ShoppingCart },
   { title: "Minha Empresa", href: "/fornecedor/empresa", icon: Building2 },

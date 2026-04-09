@@ -39,31 +39,23 @@ type SelectedItem = QuotationItem & {
   /** Preservado do banco na edição; não exibido na UI */
   complementary_spec: string | null
 }
-type Supplier = { id: string; name: string; cnpj: string; category: string }
+type Supplier = {
+  id: string
+  name: string
+  cnpj: string | null
+  category: string | null
+}
 
-const MOCK_ITEMS: QuotationItem[] = [
-  { code: "MAT-0001", description: 'Parafuso sextavado 1/4"', unit_of_measure: "UN" },
-  { code: "MAT-0002", description: 'Arruela lisa 1/4"', unit_of_measure: "UN" },
-  { code: "MAT-0003", description: "Chapa de aço 3mm", unit_of_measure: "KG" },
-  { code: "MAT-0004", description: "Tinta epóxi branca", unit_of_measure: "L" },
-  { code: "MAT-0005", description: "Rolamento esférico 6204", unit_of_measure: "UN" },
-  { code: "MAT-0006", description: 'Mangueira hidráulica 1/2"', unit_of_measure: "M" },
-  { code: "MAT-0007", description: "Óleo lubrificante 68", unit_of_measure: "L" },
-  { code: "MAT-0008", description: "Filtro de ar industrial", unit_of_measure: "UN" },
-  { code: "MAT-0009", description: "Correia transportadora", unit_of_measure: "M" },
-  { code: "MAT-0010", description: 'Válvula solenoide 1"', unit_of_measure: "UN" },
-]
+const SEARCH_DEBOUNCE_MS = 300
 
-const MOCK_SUPPLIERS: Supplier[] = [
-  { id: "1", name: "Fornecedor Alfa Ltda", cnpj: "12.345.678/0001-00", category: "MRO" },
-  { id: "2", name: "Comercial Beta S.A.", cnpj: "23.456.789/0001-11", category: "Matéria-Prima" },
-  { id: "3", name: "Serviços Gama ME", cnpj: "34.567.890/0001-22", category: "Serviços" },
-  { id: "4", name: "Tecnologia Delta Ltda", cnpj: "45.678.901/0001-33", category: "TI" },
-  { id: "5", name: "Fornecedor Épsilon", cnpj: "56.789.012/0001-44", category: "MRO" },
-  { id: "6", name: "Indústria Zeta", cnpj: "67.890.123/0001-55", category: "Matéria-Prima" },
-  { id: "7", name: "Serviços Ômega", cnpj: "78.901.234/0001-66", category: "Serviços" },
-  { id: "8", name: "Fornecedor Sigma", cnpj: "89.012.345/0001-77", category: "Outros" },
-]
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = React.useState<T>(value)
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedValue(value), delay)
+    return () => clearTimeout(t)
+  }, [value, delay])
+  return debouncedValue
+}
 
 function Section({
   title,
@@ -116,8 +108,12 @@ export default function EditarCotacaoPage({
   const [deadlineOpen, setDeadlineOpen] = React.useState(false)
   const [category, setCategory] = React.useState<string | undefined>()
   const [itemSearch, setItemSearch] = React.useState("")
+  const [itemResults, setItemResults] = React.useState<QuotationItem[]>([])
+  const [itemSearchLoading, setItemSearchLoading] = React.useState(false)
   const [selectedItems, setSelectedItems] = React.useState<SelectedItem[]>([])
   const [supplierSearch, setSupplierSearch] = React.useState("")
+  const [supplierResults, setSupplierResults] = React.useState<Supplier[]>([])
+  const [supplierSearchLoading, setSupplierSearchLoading] = React.useState(false)
   const [selectedSuppliers, setSelectedSuppliers] = React.useState<Supplier[]>([])
   const [errors, setErrors] = React.useState<Record<string, boolean>>({})
   const [open, setOpen] = React.useState({ general: true, items: true, suppliers: true })
@@ -127,6 +123,83 @@ export default function EditarCotacaoPage({
     () => format(new Date(), "dd/MM/yyyy", { locale: ptBR }),
     [],
   )
+
+  const debouncedItemSearch = useDebounce(itemSearch, SEARCH_DEBOUNCE_MS)
+  const debouncedSupplierSearch = useDebounce(supplierSearch, SEARCH_DEBOUNCE_MS)
+
+  React.useEffect(() => {
+    if (!companyId || debouncedItemSearch.trim().length < 2) {
+      setItemResults([])
+      setItemSearchLoading(false)
+      return
+    }
+    const run = async () => {
+      setItemSearchLoading(true)
+      const supabase = createClient()
+      const term = `%${debouncedItemSearch.trim()}%`
+      try {
+        const { data, error } = await supabase
+          .from("items")
+          .select("id, code, short_description, unit_of_measure, long_description")
+          .eq("company_id", companyId)
+          .eq("status", "active")
+          .or(`code.ilike.${term},short_description.ilike.${term}`)
+          .limit(20)
+        if (error) {
+          setItemResults([])
+          return
+        }
+        setItemResults(
+          (data ?? []).map(
+            (i: {
+              code: string
+              short_description: string
+              unit_of_measure: string | null
+              long_description: string | null
+            }) => ({
+              code: i.code,
+              description: i.short_description,
+              unit_of_measure: i.unit_of_measure ?? "",
+              long_description: i.long_description ?? null,
+            }),
+          ),
+        )
+      } finally {
+        setItemSearchLoading(false)
+      }
+    }
+    void run()
+  }, [companyId, debouncedItemSearch])
+
+  React.useEffect(() => {
+    if (!companyId || debouncedSupplierSearch.trim().length < 2) {
+      setSupplierResults([])
+      setSupplierSearchLoading(false)
+      return
+    }
+    const run = async () => {
+      setSupplierSearchLoading(true)
+      const supabase = createClient()
+      const term = `%${debouncedSupplierSearch.trim()}%`
+      try {
+        const { data, error } = await supabase
+          .from("suppliers")
+          .select("id, name, cnpj, category")
+          .eq("company_id", companyId)
+          .eq("status", "active")
+          .or(`name.ilike.${term},cnpj.ilike.${term}`)
+          .limit(20)
+        if (error) {
+          setSupplierResults([])
+          return
+        }
+        setSupplierResults((data as Supplier[]) ?? [])
+      } finally {
+        setSupplierSearchLoading(false)
+      }
+    }
+    void run()
+  }, [companyId, debouncedSupplierSearch])
 
   React.useEffect(() => {
     if (!id || !companyId) return
@@ -220,25 +293,6 @@ export default function EditarCotacaoPage({
 
     fetchData()
   }, [id, companyId, router])
-
-  const filteredItems = React.useMemo(() => {
-    if (!itemSearch.trim()) return []
-    const q = itemSearch.toLowerCase()
-    return MOCK_ITEMS.filter(
-      (i) =>
-        i.code.toLowerCase().includes(q) ||
-        i.description.toLowerCase().includes(q),
-    )
-  }, [itemSearch])
-
-  const filteredSuppliers = React.useMemo(() => {
-    if (!supplierSearch.trim()) return []
-    const q = supplierSearch.toLowerCase()
-    return MOCK_SUPPLIERS.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) || s.cnpj.toLowerCase().includes(q),
-    )
-  }, [supplierSearch])
 
   const toggle = (key: string) =>
     setOpen((prev) => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))
@@ -539,25 +593,31 @@ export default function EditarCotacaoPage({
                 className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
             </div>
-            {filteredItems.length > 0 && (
-              <ul className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
-                {filteredItems.map((item) => (
-                  <li
-                    key={item.code}
-                    onClick={() => addItem(item)}
-                    className="flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-accent"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{item.code}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {item.description}
-                      </p>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {item.unit_of_measure}
-                    </span>
+            {itemSearch.trim().length >= 2 && (
+              <ul className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg max-h-48 overflow-y-auto">
+                {itemSearchLoading ? (
+                  <li className="px-3 py-2 text-sm text-muted-foreground text-center">
+                    Buscando...
                   </li>
-                ))}
+                ) : itemResults.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-muted-foreground text-center">
+                    Nenhum item encontrado
+                  </li>
+                ) : (
+                  itemResults.map((item) => (
+                    <li
+                      key={item.code}
+                      onClick={() => addItem(item)}
+                      className="flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-accent"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{item.code}</p>
+                        <p className="text-xs text-muted-foreground">{item.description}</p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{item.unit_of_measure}</span>
+                    </li>
+                  ))
+                )}
               </ul>
             )}
           </div>
@@ -642,23 +702,31 @@ export default function EditarCotacaoPage({
                 className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
               />
             </div>
-            {filteredSuppliers.length > 0 && (
-              <ul className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
-                {filteredSuppliers.map((s) => (
-                  <li
-                    key={s.id}
-                    onClick={() => addSupplier(s)}
-                    className="flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-accent"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{s.name}</p>
-                      <p className="text-xs text-muted-foreground">{s.cnpj}</p>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {s.category}
-                    </span>
+            {supplierSearch.trim().length >= 2 && (
+              <ul className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-lg max-h-48 overflow-y-auto">
+                {supplierSearchLoading ? (
+                  <li className="px-3 py-2 text-sm text-muted-foreground text-center">
+                    Buscando...
                   </li>
-                ))}
+                ) : supplierResults.length === 0 ? (
+                  <li className="px-3 py-2 text-sm text-muted-foreground text-center">
+                    Nenhum fornecedor encontrado
+                  </li>
+                ) : (
+                  supplierResults.map((s) => (
+                    <li
+                      key={s.id}
+                      onClick={() => addSupplier(s)}
+                      className="flex cursor-pointer items-center justify-between px-3 py-2 hover:bg-accent"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{s.name}</p>
+                        <p className="text-xs text-muted-foreground">{s.cnpj ?? "—"}</p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{s.category ?? "—"}</span>
+                    </li>
+                  ))
+                )}
               </ul>
             )}
           </div>
@@ -683,8 +751,8 @@ export default function EditarCotacaoPage({
                     className="border-b border-border last:border-0"
                   >
                     <td className="px-2 py-2">{s.name}</td>
-                    <td className="px-2 py-2">{s.cnpj}</td>
-                    <td className="px-2 py-2">{s.category}</td>
+                    <td className="px-2 py-2">{s.cnpj ?? "—"}</td>
+                    <td className="px-2 py-2">{s.category ?? "—"}</td>
                     <td className="px-2 py-2 text-right">
                       <Button
                         type="button"
