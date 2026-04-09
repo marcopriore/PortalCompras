@@ -550,6 +550,34 @@ export default function EditarCotacaoPage({
         }
       }
 
+      const reqCodes = [
+        ...new Set(
+          selectedItems
+            .map((i) => i.requisition_code)
+            .filter((c): c is string => Boolean(c)),
+        ),
+      ]
+
+      if (reqCodes.length > 0) {
+        const { data: reqsToUpdate } = await supabase
+          .from("requisitions")
+          .select("id, code, quotation_id")
+          .eq("company_id", companyId!)
+          .in("code", reqCodes)
+
+        for (const req of reqsToUpdate ?? []) {
+          if (!req.quotation_id || req.quotation_id === id) {
+            await supabase
+              .from("requisitions")
+              .update({
+                status: "in_quotation",
+                quotation_id: id,
+              })
+              .eq("id", req.id)
+          }
+        }
+      }
+
       toast.success("Alterações salvas com sucesso.")
       router.push(`/comprador/cotacoes/${id}`)
     } catch {

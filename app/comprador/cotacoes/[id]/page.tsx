@@ -50,6 +50,7 @@ interface QuotationItem {
   long_description?: string | null
   unit_of_measure: string | null
   quantity: number
+  source_requisition_code?: string | null
 }
 
 interface QuotationSupplier {
@@ -226,7 +227,7 @@ export default function QuotationDetailsPage({
           supabase
             .from('quotation_items')
             .select(
-              'id, material_code, material_description, long_description, unit_of_measure, quantity',
+              'id, material_code, material_description, long_description, unit_of_measure, quantity, source_requisition_code',
             )
             .eq('quotation_id', id),
           supabase
@@ -268,8 +269,46 @@ export default function QuotationDetailsPage({
       setQuotation({ ...quotation, status: newStatus })
 
       if (newStatus === 'waiting') {
+        const supabase2 = createClient()
+
+        const { data: quotationItems } = await supabase2
+          .from('quotation_items')
+          .select('source_requisition_code')
+          .eq('quotation_id', quotation.id)
+          .not('source_requisition_code', 'is', null)
+
+        const reqCodes = [
+          ...new Set(
+            (quotationItems ?? [])
+              .map((i) => i.source_requisition_code)
+              .filter((c): c is string => Boolean(c)),
+          ),
+        ]
+
+        if (reqCodes.length > 0 && companyId) {
+          const { data: reqs } = await supabase2
+            .from('requisitions')
+            .select('id')
+            .eq('company_id', companyId)
+            .in('code', reqCodes)
+
+          if (reqs && reqs.length > 0) {
+            await supabase2
+              .from('requisitions')
+              .update({
+                status: 'in_quotation',
+                quotation_id: quotation.id,
+              })
+              .in(
+                'id',
+                reqs.map((r) => r.id),
+              )
+          }
+        }
+
         toast.success('Cotação enviada com sucesso!')
         router.push('/comprador/cotacoes')
+        return
       } else if (newStatus === 'cancelled') {
         toast.success('Cotação cancelada.')
         if (companyId) {
@@ -498,6 +537,7 @@ export default function QuotationDetailsPage({
                     <tr>
                       <th className="px-2 py-2 text-left">Código</th>
                       <th className="px-2 py-2 text-left">Descrição Curta</th>
+                      <th className="px-2 py-2 text-left">Requisição</th>
                       <th className="px-2 py-2 text-left">Unidade</th>
                       <th className="px-2 py-2 text-left">Quantidade</th>
                     </tr>
@@ -510,6 +550,15 @@ export default function QuotationDetailsPage({
                         </td>
                         <td className="px-2 py-2 align-top">
                           {item.material_description}
+                        </td>
+                        <td className="px-2 py-2 align-top">
+                          {item.source_requisition_code ? (
+                            <span className="text-xs font-mono text-blue-600 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5">
+                              {item.source_requisition_code}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
                         </td>
                         <td className="px-2 py-2 align-top">
                           {item.unit_of_measure ?? '-'}
