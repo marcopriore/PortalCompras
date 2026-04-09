@@ -3,6 +3,8 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { notifyWithEmail } from "@/lib/notify-with-email"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -216,7 +218,7 @@ export default function SolicitanteNovaPage() {
         requester_id: userId,
         requester_name: userName,
       })
-      .select("id")
+      .select("id, code")
       .single()
 
     if (reqError || !reqData) {
@@ -225,10 +227,14 @@ export default function SolicitanteNovaPage() {
       return
     }
 
+    const requisitionId = reqData.id
+    const requisitionCode = reqData.code
+
     // Inserir itens
-    await supabase.from("requisition_items").insert(
+    const { error: itemsErr } = await supabase.from("requisition_items").insert(
       items.map(item => ({
-        requisition_id: reqData.id,
+        requisition_id: requisitionId,
+        company_id: companyId,
         material_code: item.materialCode || null,
         material_description: item.materialDescription,
         quantity: item.quantity,
@@ -238,7 +244,141 @@ export default function SolicitanteNovaPage() {
       }))
     )
 
-    router.push(`/solicitante/${reqData.id}`)
+    if (itemsErr) {
+      setError("Não foi possível salvar os itens da requisição.")
+      setSaving(false)
+      return
+    }
+
+    try {
+      const costCenterForRpc = costCenter.trim() || ""
+
+      const { data: tfRow } = await supabase
+        .from("tenant_features")
+        .select("enabled")
+        .eq("company_id", companyId)
+        .eq("feature_key", "approval_requisition")
+        .maybeSingle()
+
+      const approvalEnabled =
+        (tfRow as { enabled?: boolean } | null)?.enabled ?? false
+
+      if (!approvalEnabled) {
+        await supabase
+          .from("requisitions")
+          .update({
+            status: "approved",
+            approved_at: new Date().toISOString(),
+            approver_name: "Aprovação automática (fluxo desabilitado)",
+          })
+          .eq("id", requisitionId)
+        void notifyWithEmail({
+          userId,
+          companyId,
+          type: "requisition.approved",
+          title: "Requisição aprovada automaticamente",
+          body: `Sua requisição ${requisitionCode} foi aprovada e está disponível para cotação.`,
+          entity: "requisition",
+          entityId: requisitionId,
+          subject: `Requisição Aprovada — ${requisitionCode}`,
+          html: `<p>Sua requisição <strong>${requisitionCode}</strong> foi aprovada automaticamente.</p>
+         <p>Ela já está disponível para abertura de cotação.</p>`,
+          emailPrefKey: "order_approved_email",
+        })
+        router.push(`/solicitante/${requisitionId}`)
+        return
+      }
+
+      const { data: approverData } = await supabase.rpc(
+        "get_approver_for_requisition",
+        {
+          p_company_id: companyId,
+          p_cost_center: costCenterForRpc,
+        }
+      )
+
+      const firstRow = Array.isArray(approverData)
+        ? approverData[0]
+        : approverData
+      const approverId =
+        (firstRow as { approver_id?: string | null } | null)?.approver_id ?? null
+      const approverName =
+        (firstRow as { approver_name?: string | null } | null)?.approver_name ?? null
+
+      if (!approverId) {
+        await supabase
+          .from("requisitions")
+          .update({
+            status: "approved",
+            approved_at: new Date().toISOString(),
+            approver_name: "Aprovação automática (sem regra configurada para este CC)",
+          })
+          .eq("id", requisitionId)
+        void notifyWithEmail({
+          userId,
+          companyId,
+          type: "requisition.approved",
+          title: "Requisição aprovada automaticamente",
+          body: `Sua requisição ${requisitionCode} foi aprovada e está disponível para cotação.`,
+          entity: "requisition",
+          entityId: requisitionId,
+          subject: `Requisição Aprovada — ${requisitionCode}`,
+          html: `<p>Sua requisição <strong>${requisitionCode}</strong> foi aprovada automaticamente.</p>
+         <p>Ela já está disponível para abertura de cotação.</p>`,
+          emailPrefKey: "order_approved_email",
+        })
+        router.push(`/solicitante/${requisitionId}`)
+        return
+      }
+
+      const { data: approvers } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("company_id", companyId)
+        .eq("status", "active")
+        .contains("roles", ["approver_requisition"])
+
+      for (const approver of approvers ?? []) {
+        void notifyWithEmail({
+          userId: approver.id,
+          companyId,
+          type: "requisition.created",
+          title: "Nova requisição aguardando aprovação",
+          body: `A requisição ${requisitionCode} foi criada por ${userName || "solicitante"} e aguarda sua aprovação.`,
+          entity: "requisition",
+          entityId: requisitionId,
+          subject: `Nova Requisição — ${requisitionCode}`,
+          html: `<p>Olá, <strong>${approver.full_name ?? "Aprovador"}</strong>!</p>
+           <p>A requisição <strong>${requisitionCode}</strong> foi criada por <strong>${userName || "solicitante"}</strong> e aguarda sua aprovação.</p>`,
+          emailPrefKey: "new_requisition_email",
+        })
+      }
+
+      await supabase
+        .from("requisitions")
+        .update({
+          approver_id: approverId,
+          approver_name: approverName,
+          status: "pending",
+        })
+        .eq("id", requisitionId)
+
+      await supabase.from("approval_requests").insert({
+        company_id: companyId,
+        flow: "requisition",
+        entity_id: requisitionId,
+        approver_id: approverId,
+        approver_name: approverName,
+        status: "pending",
+      })
+
+      router.push(`/solicitante/${requisitionId}`)
+    } catch {
+      toast.error(
+        "Requisição criada, mas houve erro ao configurar aprovação. Contate o administrador."
+      )
+      router.push(`/solicitante/${requisitionId}`)
+    }
   }
 
   return (
