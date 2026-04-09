@@ -6,9 +6,17 @@ import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
-import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,14 +28,12 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
+  AlertCircle,
   ChevronLeft,
   ClipboardList,
   CheckCircle2,
   XCircle,
   Clock,
-  FileText,
-  ShoppingCart,
-  Package,
   Circle,
   Loader2,
   Pencil,
@@ -73,200 +79,251 @@ type PurchaseOrderInfo = {
   estimated_delivery_date: string | null
 }
 
-type TimelineStep = {
-  key: string
-  label: string
-  description: string
-  icon: React.ElementType
-  status: "completed" | "active" | "pending" | "rejected"
-  date?: string | null
-  detail?: string | null
+type ApprovalHistory = {
+  id: string
+  status: string
+  approver_name: string | null
+  rejection_reason: string | null
+  decided_at: string | null
+  created_at: string
 }
 
-function buildTimeline(
-  req: Requisition,
-  quotation: QuotationInfo | null,
-  orders: PurchaseOrderInfo[],
-): TimelineStep[] {
-  const steps: TimelineStep[] = []
+type RequisitionItem = {
+  id: string
+  material_code: string | null
+  material_description: string
+  quantity: number
+  unit_of_measure: string | null
+  commodity_group: string | null
+  observations: string | null
+}
 
-  // ETAPA 1: Requisição criada
-  steps.push({
-    key: "created",
-    label: "Requisição Criada",
-    description: "Solicitação registrada no sistema",
-    icon: ClipboardList,
-    status: "completed",
-    date: req.created_at,
-  })
+function getStatusMeta(status: string) {
+  switch (status) {
+    case "pending":
+      return { label: "Aguardando Aprovação", className: "bg-yellow-100 text-yellow-800" }
+    case "approved":
+      return { label: "Aprovada", className: "bg-green-100 text-green-800" }
+    case "rejected":
+      return { label: "Reprovada", className: "bg-red-100 text-red-800" }
+    case "in_quotation":
+      return { label: "Em Cotação", className: "bg-blue-100 text-blue-800" }
+    case "completed":
+      return { label: "Concluída", className: "bg-gray-100 text-gray-700" }
+    default:
+      return { label: status, className: "bg-gray-100 text-gray-700" }
+  }
+}
 
-  // ETAPA 2: Aprovação
-  if (req.status === "rejected") {
-    steps.push({
-      key: "approval",
-      label: "Reprovada",
-      description: req.rejection_reason ?? "Requisição reprovada pelo aprovador",
-      icon: XCircle,
-      status: "rejected",
-      date: req.approved_at,
-      detail: req.approver_name ? `Por: ${req.approver_name}` : null,
-    })
-  } else if (req.status === "pending") {
-    steps.push({
-      key: "approval",
-      label: "Aguardando Aprovação",
-      description: "Sua requisição está aguardando aprovação",
-      icon: Clock,
-      status: "active",
-    })
-  } else {
-    steps.push({
-      key: "approval",
-      label: "Aprovada",
-      description: "Requisição aprovada",
-      icon: CheckCircle2,
+function HorizontalTimeline({
+  req,
+  quotation,
+  orders,
+}: {
+  req: Requisition
+  quotation: QuotationInfo | null
+  orders: PurchaseOrderInfo[]
+}) {
+  type StepStatus = "completed" | "active" | "pending" | "rejected"
+
+  const steps: {
+    key: string
+    label: string
+    status: StepStatus
+    date?: string | null
+  }[] = [
+    {
+      key: "created",
+      label: "Criada",
       status: "completed",
+      date: req.created_at,
+    },
+    {
+      key: "approval",
+      label: "Aprovação",
+      status:
+        req.status === "rejected"
+          ? "rejected"
+          : req.status === "pending"
+            ? "active"
+            : "completed",
       date: req.approved_at,
-      detail: req.approver_name ? `Por: ${req.approver_name}` : null,
-    })
-  }
-
-  // ETAPA 3: Cotação (só se aprovada)
-  if (!["pending", "rejected"].includes(req.status)) {
-    if (!quotation) {
-      steps.push({
-        key: "quotation",
-        label: "Cotação",
-        description: "Aguardando abertura de cotação pelo comprador",
-        icon: FileText,
-        status: "active",
-      })
-    } else {
-      const quotationDone = ["completed", "cancelled"].includes(quotation.status)
-      steps.push({
-        key: "quotation",
-        label: `Cotação ${quotation.code}`,
-        description: quotationDone ? "Cotação finalizada" : "Cotação em andamento",
-        icon: FileText,
-        status: quotationDone ? "completed" : "active",
-        date: quotation.created_at,
-        detail: quotation.status === "cancelled" ? "Cotação cancelada" : null,
-      })
-    }
-  }
-
-  // ETAPA 4: Pedidos (só se cotação existe)
-  if (quotation && !["pending", "rejected"].includes(req.status)) {
-    if (orders.length === 0) {
-      steps.push({
-        key: "orders",
-        label: "Pedido de Compra",
-        description: "Aguardando emissão do pedido pelo comprador",
-        icon: ShoppingCart,
-        status: "pending",
-      })
-    } else {
-      orders.forEach((order) => {
-        const orderDone = order.status === "completed"
-        const orderCancelled = order.status === "cancelled"
-        steps.push({
-          key: `order_${order.id}`,
-          label: `Pedido ${order.code}`,
-          description: orderCancelled
-            ? "Pedido cancelado"
-            : orderDone
-              ? "Pedido concluído"
-              : `${order.supplier_name} · ${order.status === "sent" ? "Aguardando aceite do fornecedor" : order.status === "processing" ? "Em processamento" : "Em andamento"}`,
-          icon: ShoppingCart,
-          status: orderDone ? "completed" : orderCancelled ? "rejected" : "active",
-          date: order.created_at,
-          detail: order.total_price
-            ? `R$ ${order.total_price.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
-            : null,
-        })
-      })
-    }
-  }
-
-  // ETAPA 5: Entrega (só se tem pedido completed)
-  if (orders.some((o) => o.status === "completed")) {
-    const completedOrder = orders.find((o) => o.status === "completed")
-    steps.push({
+    },
+    {
+      key: "quotation",
+      label: "Cotação",
+      status: ["pending", "rejected"].includes(req.status)
+        ? "pending"
+        : quotation
+          ? ["completed", "cancelled"].includes(quotation.status)
+            ? "completed"
+            : "active"
+          : "active",
+      date: quotation?.created_at,
+    },
+    {
+      key: "order",
+      label: "Pedido",
+      status:
+        ["pending", "rejected"].includes(req.status) || !quotation
+          ? "pending"
+          : orders.length === 0
+            ? "pending"
+            : orders.some((o) => o.status === "completed")
+              ? "completed"
+              : "active",
+      date: orders[0]?.created_at,
+    },
+    {
       key: "delivery",
-      label: "Entrega Prevista",
-      description: completedOrder?.estimated_delivery_date
-        ? `Entrega prevista para ${format(new Date(completedOrder.estimated_delivery_date), "dd/MM/yyyy", { locale: ptBR })}`
-        : "Aguardando confirmação de entrega",
-      icon: Package,
-      status: req.status === "completed" ? "completed" : "active",
-      date: completedOrder?.estimated_delivery_date,
-    })
-  }
-
-  return steps
-}
-
-function TimelineItem({ step, isLast }: { step: TimelineStep; isLast: boolean }) {
-  const Icon = step.icon
-
-  const iconColor = {
-    completed: "bg-green-100 text-green-600 border-green-200",
-    active: "bg-blue-100 text-blue-600 border-blue-200",
-    pending: "bg-muted text-muted-foreground border-border",
-    rejected: "bg-red-100 text-red-600 border-red-200",
-  }[step.status]
-
-  const lineColor = {
-    completed: "bg-green-200",
-    active: "bg-blue-200",
-    pending: "bg-border",
-    rejected: "bg-red-200",
-  }[step.status]
+      label: "Entrega",
+      status:
+        req.status === "completed"
+          ? "completed"
+          : orders.some((o) => o.status === "completed")
+            ? "active"
+            : "pending",
+      date: orders.find((o) => o.status === "completed")?.estimated_delivery_date,
+    },
+  ]
 
   return (
-    <div className="flex gap-4">
-      {/* Ícone + linha */}
-      <div className="flex flex-col items-center">
-        <div
-          className={`w-9 h-9 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${iconColor}`}
-        >
-          {step.status === "active" && step.key !== "created" ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Icon className="w-4 h-4" />
-          )}
-        </div>
-        {!isLast && <div className={`w-0.5 flex-1 mt-1 min-h-[2rem] ${lineColor}`} />}
-      </div>
+    <div className="bg-card border border-border rounded-xl p-4 overflow-x-auto">
+      <div className="flex items-center justify-between relative min-w-[320px]">
+        <div className="absolute top-5 left-0 right-0 h-0.5 bg-border mx-8" />
 
-      {/* Conteúdo */}
-      <div className="pb-6 min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2 flex-wrap">
-          <div>
-            <p
-              className={`text-sm font-medium ${
-                step.status === "rejected"
-                  ? "text-red-700"
-                  : step.status === "active"
-                    ? "text-blue-700"
-                    : step.status === "completed"
-                      ? "text-foreground"
-                      : "text-muted-foreground"
-              }`}
-            >
-              {step.label}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">{step.description}</p>
-            {step.detail && (
-              <p className="text-xs text-muted-foreground mt-0.5">{step.detail}</p>
-            )}
+        {steps.map((step) => {
+          const colorMap = {
+            completed: {
+              circle: "bg-blue-500 border-blue-500",
+              text: "text-blue-700",
+            },
+            active: {
+              circle: "bg-blue-500 border-blue-500 animate-pulse",
+              text: "text-blue-700",
+            },
+            pending: {
+              circle: "bg-background border-border",
+              text: "text-muted-foreground",
+            },
+            rejected: {
+              circle: "bg-blue-500 border-blue-500",
+              text: "text-blue-700",
+            },
+          }[step.status]
+
+          return (
+            <div key={step.key} className="flex flex-col items-center gap-2 z-10 flex-1 min-w-0">
+              <div
+                className={`w-10 h-10 rounded-full border-2 flex items-center justify-center shrink-0 ${colorMap.circle}`}
+              >
+                {step.status === "completed" && (
+                  <CheckCircle2 className="w-5 h-5 text-white" />
+                )}
+                {step.status === "active" && (
+                  <Loader2 className="w-4 h-4 text-white animate-spin" />
+                )}
+                {step.status === "rejected" && (
+                  <XCircle className="w-5 h-5 text-white" />
+                )}
+                {step.status === "pending" && (
+                  <Circle className="w-4 h-4 text-muted-foreground" />
+                )}
+              </div>
+              <div className="text-center px-0.5">
+                <p className={`text-xs font-medium ${colorMap.text}`}>{step.label}</p>
+                {step.date && (
+                  <p className="text-xs text-muted-foreground">
+                    {format(new Date(step.date), "dd/MM", { locale: ptBR })}
+                  </p>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function HistorySection({
+  history,
+  req,
+}: {
+  history: ApprovalHistory[]
+  req: Requisition
+}) {
+  return (
+    <div className="bg-card border border-border rounded-xl p-4">
+      <h3 className="text-sm font-semibold text-foreground mb-4">Histórico</h3>
+      <div className="space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5">
+            <ClipboardList className="w-3.5 h-3.5 text-muted-foreground" />
           </div>
-          {step.date && (
-            <span className="text-xs text-muted-foreground flex-shrink-0">
-              {format(new Date(step.date), "dd/MM/yyyy", { locale: ptBR })}
-            </span>
-          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground">Requisição criada</p>
+            <p className="text-xs text-muted-foreground">
+              Por {req.requester_name ?? "solicitante"} ·{" "}
+              {format(new Date(req.created_at), "dd/MM/yyyy 'às' HH:mm", {
+                locale: ptBR,
+              })}
+            </p>
+          </div>
         </div>
+
+        {history.map((h) => {
+          const isApproved = h.status === "approved"
+          const isRejected = h.status === "rejected"
+          const isPending = h.status === "pending"
+
+          return (
+            <div key={h.id} className="flex items-start gap-3">
+              <div
+                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                  isApproved
+                    ? "bg-green-100"
+                    : isRejected
+                      ? "bg-red-100"
+                      : "bg-yellow-100"
+                }`}
+              >
+                {isApproved && (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                )}
+                {isRejected && <XCircle className="w-3.5 h-3.5 text-red-600" />}
+                {isPending && <Clock className="w-3.5 h-3.5 text-yellow-600" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p
+                  className={`text-sm font-medium ${
+                    isApproved
+                      ? "text-green-700"
+                      : isRejected
+                        ? "text-red-700"
+                        : "text-yellow-700"
+                  }`}
+                >
+                  {isPending
+                    ? "Enviada para aprovação"
+                    : isApproved
+                      ? `Aprovada${h.approver_name ? ` por ${h.approver_name}` : ""}`
+                      : `Reprovada${h.approver_name ? ` por ${h.approver_name}` : ""}`}
+                </p>
+                {h.rejection_reason && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Motivo: {h.rejection_reason}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {format(new Date(h.decided_at ?? h.created_at), "dd/MM/yyyy 'às' HH:mm", {
+                    locale: ptBR,
+                  })}
+                </p>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -283,6 +340,8 @@ export default function SolicitanteDetailPage({
   const [requisition, setRequisition] = React.useState<Requisition | null>(null)
   const [quotation, setQuotation] = React.useState<QuotationInfo | null>(null)
   const [orders, setOrders] = React.useState<PurchaseOrderInfo[]>([])
+  const [history, setHistory] = React.useState<ApprovalHistory[]>([])
+  const [items, setItems] = React.useState<RequisitionItem[]>([])
   const [loading, setLoading] = React.useState(true)
   const [cancelOpen, setCancelOpen] = React.useState(false)
   const [cancelling, setCancelling] = React.useState(false)
@@ -313,7 +372,33 @@ export default function SolicitanteDetailPage({
     const req = reqData as Requisition
     setRequisition(req)
 
-    // Carregar cotação vinculada
+    const [historyResult, itemsResult, ordersResult] = await Promise.all([
+      supabase
+        .from("approval_requests")
+        .select("id, status, approver_name, rejection_reason, decided_at, created_at")
+        .eq("entity_id", id)
+        .eq("flow", "requisition")
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("requisition_items")
+        .select(
+          "id, material_code, material_description, quantity, unit_of_measure, commodity_group, observations",
+        )
+        .eq("requisition_id", id)
+        .order("created_at"),
+      supabase
+        .from("purchase_orders")
+        .select(
+          "id, code, status, supplier_name, total_price, created_at, estimated_delivery_date",
+        )
+        .eq("requisition_code", req.code)
+        .order("created_at"),
+    ])
+
+    setHistory((historyResult.data as ApprovalHistory[]) ?? [])
+    setItems((itemsResult.data as RequisitionItem[]) ?? [])
+    setOrders((ordersResult.data as PurchaseOrderInfo[]) ?? [])
+
     let quot: QuotationInfo | null = null
     if (req.quotation_id) {
       const { data: qData } = await supabase
@@ -324,17 +409,6 @@ export default function SolicitanteDetailPage({
       if (qData) quot = qData as QuotationInfo
     }
     setQuotation(quot)
-
-    // Carregar pedidos vinculados via requisition_code
-    const { data: ordersData } = await supabase
-      .from("purchase_orders")
-      .select(
-        "id, code, status, supplier_name, total_price, created_at, estimated_delivery_date",
-      )
-      .eq("requisition_code", req.code)
-      .order("created_at")
-
-    setOrders((ordersData as PurchaseOrderInfo[]) ?? [])
     setLoading(false)
   }, [id, router])
 
@@ -384,99 +458,170 @@ export default function SolicitanteDetailPage({
 
   if (!requisition) return null
 
-  const timeline = buildTimeline(requisition, quotation, orders)
-
   const priorityLabel = {
     normal: "Normal",
     urgent: "Urgente",
     critical: "Crítico",
   }[requisition.priority] ?? requisition.priority
 
-  const priorityColor = {
-    normal: "bg-gray-100 text-gray-700",
-    urgent: "bg-orange-100 text-orange-700",
-    critical: "bg-red-100 text-red-700",
-  }[requisition.priority] ?? "bg-gray-100 text-gray-700"
+  const statusMeta = getStatusMeta(requisition.status)
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card px-6 py-4">
-        <div className="max-w-2xl mx-auto flex items-center gap-3">
+        <div className="max-w-4xl mx-auto flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={() => router.push("/solicitante")}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <div>
-            <p className="text-sm font-semibold text-foreground">{requisition.code}</p>
-            <p className="text-xs text-muted-foreground">{requisition.title}</p>
-          </div>
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
-        {/* Informações resumidas */}
-        <Card>
-          <CardContent className="p-4 grid grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground">Prioridade</p>
-              <Badge className={priorityColor}>{priorityLabel}</Badge>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Centro de Custo</p>
-              <p className="text-sm font-medium">{requisition.cost_center || "—"}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Criada em</p>
-              <p className="text-sm font-medium">
-                {format(new Date(requisition.created_at), "dd/MM/yyyy", { locale: ptBR })}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Necessário até</p>
-              <p className="text-sm font-medium">
-                {requisition.needed_by
-                  ? format(new Date(requisition.needed_by), "dd/MM/yyyy", {
-                      locale: ptBR,
-                    })
-                  : "—"}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">{requisition.code}</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">{requisition.title}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
+            {requisition.status === "rejected" && (
+              <Button onClick={() => router.push(`/solicitante/${id}/editar`)}>
+                <Pencil className="w-4 h-4 mr-2" />
+                Editar e Resubmeter
+              </Button>
+            )}
+            {requisition.status === "pending" && (
+              <Button
+                variant="outline"
+                className="text-destructive border-destructive/30 hover:bg-destructive/5"
+                onClick={() => setCancelOpen(true)}
+              >
+                <XCircle className="w-4 h-4 mr-2" />
+                Cancelar
+              </Button>
+            )}
+          </div>
+        </div>
 
-        {/* Timeline */}
+        {requisition.status === "rejected" && requisition.rejection_reason && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">
+            <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-red-800">Motivo da reprovação</p>
+              <p className="text-sm text-red-700 mt-0.5">{requisition.rejection_reason}</p>
+            </div>
+          </div>
+        )}
+
+        <HorizontalTimeline req={requisition} quotation={quotation} orders={orders} />
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">Acompanhamento</CardTitle>
+          <CardHeader>
+            <CardTitle>Informações Gerais</CardTitle>
           </CardHeader>
-          <CardContent className="pt-2">
-            {timeline.map((step, i) => (
-              <TimelineItem key={step.key} step={step} isLast={i === timeline.length - 1} />
-            ))}
+          <CardContent>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Solicitante
+                </p>
+                <p className="text-sm text-foreground font-medium">
+                  {requisition.requester_name ?? "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Centro de Custo
+                </p>
+                <p className="text-sm text-foreground font-medium">
+                  {requisition.cost_center ?? "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Data de Criação
+                </p>
+                <p className="text-sm text-foreground font-medium">
+                  {format(new Date(requisition.created_at), "dd/MM/yyyy", { locale: ptBR })}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Data de Necessidade
+                </p>
+                <p className="text-sm text-foreground font-medium">
+                  {requisition.needed_by
+                    ? format(new Date(requisition.needed_by), "dd/MM/yyyy", { locale: ptBR })
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Prioridade
+                </p>
+                <p className="text-sm text-foreground font-medium">{priorityLabel}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Aprovador
+                </p>
+                <p className="text-sm text-foreground font-medium">
+                  {requisition.approver_name ?? "—"}
+                </p>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
-        {requisition.status === "rejected" && (
-          <Button
-            className="w-full"
-            onClick={() => router.push(`/solicitante/${id}/editar`)}
-          >
-            <Pencil className="w-4 h-4 mr-2" />
-            Editar e Resubmeter
-          </Button>
-        )}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
+            <CardTitle>Itens da Requisição</CardTitle>
+            <Badge variant="outline" className="text-xs">
+              {items.length} {items.length === 1 ? "item" : "itens"}
+            </Badge>
+          </CardHeader>
+          <CardContent>
+            {items.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                Nenhum item cadastrado.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Código</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead className="text-right">Qtd</TableHead>
+                      <TableHead>Unidade</TableHead>
+                      <TableHead>Grupo</TableHead>
+                      <TableHead>Observações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((it) => (
+                      <TableRow key={it.id}>
+                        <TableCell className="font-mono text-sm">
+                          {it.material_code ?? "—"}
+                        </TableCell>
+                        <TableCell className="font-medium text-sm">
+                          {it.material_description}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">{it.quantity}</TableCell>
+                        <TableCell className="text-sm">{it.unit_of_measure ?? "—"}</TableCell>
+                        <TableCell className="text-sm">{it.commodity_group ?? "—"}</TableCell>
+                        <TableCell className="text-sm">{it.observations ?? "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-        {/* Ação: cancelar (só pending) */}
-        {requisition.status === "pending" && (
-          <Button
-            variant="outline"
-            className="w-full text-destructive border-destructive/30 hover:bg-destructive/5"
-            onClick={() => setCancelOpen(true)}
-          >
-            <XCircle className="w-4 h-4 mr-2" />
-            Cancelar Requisição
-          </Button>
-        )}
+        <HistorySection history={history} req={requisition} />
       </main>
 
       <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>

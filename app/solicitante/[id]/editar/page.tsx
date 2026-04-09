@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client"
 import { notifyWithEmail } from "@/lib/notify-with-email"
 import { toast } from "sonner"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -37,7 +38,6 @@ import {
   Trash2,
   Plus,
   ChevronLeft,
-  Paperclip,
   PackageSearch,
   X,
   AlertTriangle,
@@ -573,7 +573,7 @@ export default function SolicitanteEditarRequisicaoPage({
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card px-6 py-4 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -583,33 +583,41 @@ export default function SolicitanteEditarRequisicaoPage({
               <ChevronLeft className="w-4 h-4" />
             </Button>
             <div>
-              <p className="text-sm font-semibold">Editar Requisição</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold">Editar Requisição</p>
+                {requisitionCode && (
+                  <span className="text-xs text-muted-foreground font-mono bg-muted px-2 py-0.5 rounded">
+                    {requisitionCode}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground">
                 Corrija os dados e resubmeta para aprovação
               </p>
             </div>
           </div>
-          <Button onClick={() => void handleSubmit()} disabled={saving}>
-            {saving ? "Resubmetendo..." : "Resubmeter Requisição"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => router.push(`/solicitante/${id}`)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => void handleSubmit()} disabled={saving}>
+              {saving ? "Resubmetendo..." : "Resubmeter Requisição"}
+            </Button>
+          </div>
         </div>
       </header>
 
       <TooltipProvider>
-        <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex gap-3 items-start">
-            <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-yellow-800">
-                Esta requisição foi rejeitada. Edite e resubmeta para aprovação.
-              </p>
-              {rejectionReason && (
-                <p className="text-sm text-yellow-700">
-                  Motivo da rejeição: {rejectionReason}
-                </p>
-              )}
+        <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+          {rejectionReason && (
+            <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 flex items-start gap-3">
+              <AlertTriangle className="h-4 w-4 text-orange-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-orange-800">Motivo da reprovação</p>
+                <p className="text-sm text-orange-700 mt-0.5">{rejectionReason}</p>
+              </div>
             </div>
-          </div>
+          )}
 
           {error && (
             <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
@@ -624,102 +632,89 @@ export default function SolicitanteEditarRequisicaoPage({
                 Edite os dados da requisição de compra.
               </p>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-6 grid-rows-[auto_1fr]">
-                <div className="flex flex-col gap-2">
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
                   <Label htmlFor="title">Título</Label>
-                  <div className="relative pb-5">
-                    <Input
-                      id="title"
-                      value={form.title}
-                      maxLength={100}
-                      onChange={(e) =>
-                        setForm((f) => ({
-                          ...f,
-                          title: e.target.value.slice(0, 100),
-                        }))
-                      }
-                      placeholder="Ex: Materiais para manutenção"
-                    />
-                    <p className="absolute bottom-0 right-0 text-xs text-muted-foreground">
-                      {form.title.length}/100
-                    </p>
-                  </div>
+                  <span className="text-xs text-muted-foreground">{form.title.length}/100</span>
                 </div>
-                <div className="flex flex-col gap-2">
+                <Input
+                  id="title"
+                  value={form.title}
+                  maxLength={100}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, title: e.target.value.slice(0, 100) }))
+                  }
+                  placeholder="Ex: Materiais para manutenção"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
                   <Label htmlFor="costCenter">Centro de Custo</Label>
                   <Input
                     id="costCenter"
                     value={form.costCenter}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, costCenter: e.target.value }))
-                    }
+                    onChange={(e) => setForm((f) => ({ ...f, costCenter: e.target.value }))}
                     placeholder="Ex: CC-001"
                   />
                 </div>
-                <div className="flex flex-col gap-2">
+                <div className="space-y-2">
+                  <Label htmlFor="neededBy">Data de Necessidade</Label>
+                  <Input
+                    id="neededBy"
+                    type="date"
+                    value={form.neededBy}
+                    onChange={(e) => setForm((f) => ({ ...f, neededBy: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="priority">Prioridade</Label>
+                  <Select
+                    value={form.priority}
+                    onValueChange={(v) => setForm((f) => ({ ...f, priority: v as Priority }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="normal">Normal</SelectItem>
+                      <SelectItem value="urgent">Urgente</SelectItem>
+                      <SelectItem value="critical">Crítica</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
                   <Label htmlFor="description">Descrição</Label>
-                  <div className="relative pb-5">
-                    <Textarea
-                      id="description"
-                      rows={4}
-                      className="h-[100px] resize-none"
-                      value={form.description}
-                      maxLength={500}
-                      onChange={(e) =>
-                        setForm((f) => ({
-                          ...f,
-                          description: e.target.value.slice(0, 500),
-                        }))
-                      }
-                      placeholder="Descrição opcional da requisição"
-                    />
-                    <p className="absolute bottom-0 right-0 text-xs text-muted-foreground">
-                      {form.description.length}/500
-                    </p>
-                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {form.description.length}/500
+                  </span>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <div className="flex gap-4 items-stretch">
-                    <div className="flex flex-col gap-2 flex-1 min-w-0">
-                      <Label htmlFor="neededBy">Data de Necessidade</Label>
-                      <Input
-                        id="neededBy"
-                        type="date"
-                        value={form.neededBy}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, neededBy: e.target.value }))
-                        }
-                        className="w-40"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2 flex-1 min-w-0">
-                      <Label htmlFor="priority">Prioridade</Label>
-                      <Select
-                        value={form.priority}
-                        onValueChange={(v) =>
-                          setForm((f) => ({ ...f, priority: v as Priority }))
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="normal">Normal</SelectItem>
-                          <SelectItem value="urgent">Urgente</SelectItem>
-                          <SelectItem value="critical">Crítica</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </div>
+                <Textarea
+                  id="description"
+                  rows={3}
+                  value={form.description}
+                  maxLength={500}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, description: e.target.value.slice(0, 500) }))
+                  }
+                  placeholder="Descrição opcional da requisição"
+                />
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Itens Solicitados</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Itens da Requisição</CardTitle>
+                <Badge variant="outline" className="text-xs">
+                  {items.length} {items.length === 1 ? "item" : "itens"}
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="relative">
@@ -811,10 +806,6 @@ export default function SolicitanteEditarRequisicaoPage({
                 )}
               </div>
 
-              <p className="text-sm text-muted-foreground">
-                {items.length} item(ns) adicionado(s)
-              </p>
-
               {items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
                   <PackageSearch className="h-12 w-12 text-muted-foreground mb-4" />
@@ -905,10 +896,10 @@ export default function SolicitanteEditarRequisicaoPage({
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Paperclip className="h-5 w-5" />
-                Anexos
-              </CardTitle>
+              <CardTitle className="text-base">Anexos</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                PDF, Excel ou imagens · Os arquivos serão enviados junto com a requisição
+              </p>
             </CardHeader>
             <CardContent className="space-y-4">
               <input
@@ -953,15 +944,6 @@ export default function SolicitanteEditarRequisicaoPage({
               )}
             </CardContent>
           </Card>
-
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={() => router.push(`/solicitante/${id}`)}
-          >
-            Cancelar
-          </Button>
         </main>
       </TooltipProvider>
     </div>
