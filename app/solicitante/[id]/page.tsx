@@ -45,6 +45,7 @@ type RequisitionStatus =
   | "rejected"
   | "in_quotation"
   | "completed"
+  | "cancelled"
 
 type Requisition = {
   id: string
@@ -110,6 +111,8 @@ function getStatusMeta(status: string) {
       return { label: "Em Cotação", className: "bg-blue-100 text-blue-800" }
     case "completed":
       return { label: "Concluída", className: "bg-gray-100 text-gray-700" }
+    case "cancelled":
+      return { label: "Cancelada", className: "bg-gray-100 text-gray-700" }
     default:
       return { label: status, className: "bg-gray-100 text-gray-700" }
   }
@@ -142,7 +145,7 @@ function HorizontalTimeline({
       key: "approval",
       label: "Aprovação",
       status:
-        req.status === "rejected"
+        req.status === "rejected" || req.status === "cancelled"
           ? "rejected"
           : req.status === "pending"
             ? "active"
@@ -152,7 +155,7 @@ function HorizontalTimeline({
     {
       key: "quotation",
       label: "Cotação",
-      status: ["pending", "rejected"].includes(req.status)
+      status: ["pending", "rejected", "cancelled"].includes(req.status)
         ? "pending"
         : quotation
           ? ["completed", "cancelled"].includes(quotation.status)
@@ -165,7 +168,7 @@ function HorizontalTimeline({
       key: "order",
       label: "Pedido",
       status:
-        ["pending", "rejected"].includes(req.status) || !quotation
+        ["pending", "rejected", "cancelled"].includes(req.status) || !quotation
           ? "pending"
           : orders.length === 0
             ? "pending"
@@ -438,10 +441,9 @@ export default function SolicitanteDetailPage({
 
     await supabase
       .from("requisitions")
-      .update({ status: "rejected", rejection_reason: "Cancelado pelo solicitante" })
+      .update({ status: "cancelled", rejection_reason: "Cancelado pelo solicitante" })
       .eq("id", requisition.id)
       .eq("requester_id", user.id)
-      .eq("status", "pending")
 
     setCancelOpen(false)
     setCancelling(false)
@@ -491,18 +493,28 @@ export default function SolicitanteDetailPage({
                 Editar e Resubmeter
               </Button>
             )}
-            {requisition.status === "pending" && (
-              <Button
-                variant="outline"
-                className="text-destructive border-destructive/30 hover:bg-destructive/5"
-                onClick={() => setCancelOpen(true)}
-              >
-                <XCircle className="w-4 h-4 mr-2" />
-                Cancelar
-              </Button>
-            )}
+            {requisition.status === "pending" &&
+              !requisition.quotation_id &&
+              orders.length === 0 && (
+                <Button
+                  variant="outline"
+                  className="w-full text-destructive border-destructive/30 hover:bg-destructive/5"
+                  onClick={() => setCancelOpen(true)}
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  Cancelar Requisição
+                </Button>
+              )}
           </div>
         </div>
+
+        {requisition.status === "pending" &&
+          (requisition.quotation_id || orders.length > 0) && (
+            <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground text-center">
+              Esta requisição já possui cotação ou pedido vinculado e não pode ser cancelada.
+              Entre em contato com o comprador para encerrar o processo.
+            </div>
+          )}
 
         {requisition.status === "rejected" && requisition.rejection_reason && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">

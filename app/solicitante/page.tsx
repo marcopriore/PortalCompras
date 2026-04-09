@@ -35,6 +35,7 @@ type RequisitionStatus =
   | "rejected"
   | "in_quotation"
   | "completed"
+  | "cancelled"
 
 type Requisition = {
   id: string
@@ -80,6 +81,12 @@ function getStatusMeta(status: RequisitionStatus) {
         color: "bg-gray-100 text-gray-700",
         icon: CheckCircle2,
       }
+    case "cancelled":
+      return {
+        label: "Cancelada",
+        color: "bg-gray-100 text-gray-700",
+        icon: XCircle,
+      }
   }
 }
 
@@ -111,6 +118,7 @@ export default function SolicitantePage() {
     "approved",
     "rejected",
     "in_quotation",
+    "cancelled",
   ])
   const [dateFrom, setDateFrom] = React.useState("")
   const [dateTo, setDateTo] = React.useState("")
@@ -161,7 +169,7 @@ export default function SolicitantePage() {
 
   const hasActiveFilters =
     search.trim() !== "" ||
-    statusFilter.length !== 4 ||
+    statusFilter.length !== 5 ||
     dateFrom !== "" ||
     dateTo !== ""
 
@@ -328,6 +336,11 @@ export default function SolicitantePage() {
                 color: "bg-blue-100 text-blue-800 border-blue-200",
               },
               {
+                value: "cancelled",
+                label: "Cancelada",
+                color: "bg-gray-100 text-gray-700 border-gray-200",
+              },
+              {
                 value: "completed",
                 label: "Concluída",
                 color: "bg-gray-100 text-gray-700 border-gray-200",
@@ -367,6 +380,7 @@ export default function SolicitantePage() {
                     "approved",
                     "rejected",
                     "in_quotation",
+                    "cancelled",
                   ])
                   setDateFrom("")
                   setDateTo("")
