@@ -2,9 +2,15 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { createNotification } from '@/lib/notify'
 
+function resolveProfileType(roles: string[]): string {
+  if (roles.includes('requester')) return 'requester'
+  if (roles.includes('admin')) return 'buyer' // admin é buyer com permissão elevada
+  return 'buyer' // todos os outros roles são buyers
+}
+
 export async function POST(request: Request) {
   try {
-    const { email, password, fullName, role, roles, companyId } =
+    const { email, password, fullName, role, roles, companyId, profileType } =
       await request.json()
 
     const rolesArray = Array.isArray(roles) ? roles : role ? [role] : []
@@ -56,6 +62,7 @@ export async function POST(request: Request) {
         roles: rolesArray,
         status: 'active',
         is_superadmin: false,
+        profile_type: profileType ?? resolveProfileType(rolesArray),
       })
       .eq('id', authData.user.id)
 

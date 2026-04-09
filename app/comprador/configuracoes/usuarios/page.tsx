@@ -41,6 +41,8 @@ import {
   Upload,
   Download,
   ChevronDown,
+  KeyRound,
+  CheckCircle2,
 } from 'lucide-react'
 
 const ROLES = [
@@ -109,6 +111,12 @@ function getAvatarColor(name: string): string {
 
 function getRoleLabel(role: string): string {
   return ROLES.find((r) => r.value === role)?.label ?? role
+}
+
+function resolveProfileType(roles: string[]): string {
+  if (roles.includes('requester')) return 'requester'
+  if (roles.includes('admin')) return 'buyer' // admin é buyer com permissão elevada
+  return 'buyer' // todos os outros roles são buyers
 }
 
 function RolesMultiSelect({
@@ -251,6 +259,16 @@ export default function TenantUsersPage() {
   const [importErrors, setImportErrors] = useState<
     { email: string; reason: string }[]
   >([])
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetUser, setResetUser] = useState<{
+    id: string
+    full_name: string
+    email?: string
+  } | null>(null)
+  const [resetPassword, setResetPassword] = useState("")
+  const [resetSendEmail, setResetSendEmail] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
+  const [resetDone, setResetDone] = useState(false)
 
   useEffect(() => {
     if (!companyId) return
@@ -305,6 +323,7 @@ export default function TenantUsersPage() {
           roles: form.roles,
           role: form.roles[0],
           companyId,
+          profileType: resolveProfileType(form.roles),
         }),
       })
       const data = await res.json()
@@ -396,6 +415,39 @@ export default function TenantUsersPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function handleResetPassword() {
+    if (!resetUser || !resetPassword) return
+    setResetLoading(true)
+
+    // Buscar e-mail do usuário via service route
+    let userEmail: string | undefined
+    try {
+      const res = await fetch('/api/get-user-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: resetUser.id }),
+      })
+      const data = await res.json()
+      userEmail = data.email
+    } catch { /* ignorar */ }
+
+    await fetch('/api/admin/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: resetUser.id,
+        userEmail,
+        userName: resetUser.full_name,
+        newPassword: resetPassword,
+        sendByEmail: resetSendEmail,
+        companyId,
+      }),
+    })
+
+    setResetLoading(false)
+    setResetDone(true)
   }
 
   const handleDownloadTemplate = async () => {
@@ -936,24 +988,40 @@ export default function TenantUsersPage() {
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top text-right">
                     {currentIsAdmin && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="gap-1.5"
-                        onClick={() => {
-                          setSelectedProfile(profile)
-                          setEditForm({
-                            roles:
-                              profile.roles ?? (profile.role ? [profile.role] : ['buyer']),
-                            status: profile.status,
-                          })
-                          setEditOpen(true)
-                        }}
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        Editar
-                      </Button>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setResetUser({ id: profile.id, full_name: profile.full_name })
+                            setResetPassword(generatePassword())
+                            setResetSendEmail(false)
+                            setResetDone(false)
+                            setResetOpen(true)
+                          }}
+                        >
+                          <KeyRound className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => {
+                            setSelectedProfile(profile)
+                            setEditForm({
+                              roles:
+                                profile.roles ??
+                                (profile.role ? [profile.role] : ['buyer']),
+                              status: profile.status,
+                            })
+                            setEditOpen(true)
+                          }}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Editar
+                        </Button>
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>
@@ -1123,6 +1191,103 @@ export default function TenantUsersPage() {
               {submitting ? 'Salvando...' : 'Salvar'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={resetOpen}
+        onOpenChange={(open) => {
+          setResetOpen(open)
+          if (!open) {
+            setResetUser(null)
+            setResetDone(false)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Redefinir Senha</DialogTitle>
+            <DialogDescription>
+              {resetUser?.full_name}
+            </DialogDescription>
+          </DialogHeader>
+
+          {!resetDone ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Nova senha gerada</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    className="font-mono"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => setResetPassword(generatePassword())}
+                  >
+                    Gerar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => void navigator.clipboard.writeText(resetPassword)}
+                  >
+                    Copiar
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Anote a senha antes de confirmar — ela não será exibida novamente.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="sendEmail"
+                  checked={resetSendEmail}
+                  onChange={(e) => setResetSendEmail(e.target.checked)}
+                  className="rounded"
+                />
+                <Label htmlFor="sendEmail" className="text-sm cursor-pointer">
+                  Enviar nova senha por e-mail ao usuário
+                </Label>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setResetOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={() => void handleResetPassword()}
+                  disabled={resetLoading || !resetPassword}
+                >
+                  {resetLoading ? "Redefinindo..." : "Confirmar"}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <div className="space-y-4 text-center py-2">
+              <div className="flex justify-center">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                  <CheckCircle2 className="w-6 h-6 text-green-600" />
+                </div>
+              </div>
+              <p className="text-sm font-medium">Senha redefinida com sucesso!</p>
+              <div className="rounded-lg bg-muted p-3 font-mono text-sm text-center select-all">
+                {resetPassword}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Copie a senha acima e compartilhe com o usuário.
+              </p>
+              <DialogFooter className="justify-center">
+                <Button onClick={() => setResetOpen(false)}>Fechar</Button>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
