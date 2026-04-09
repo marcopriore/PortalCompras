@@ -30,6 +30,7 @@ import {
   Package,
   Circle,
   Loader2,
+  Pencil,
 } from "lucide-react"
 
 type RequisitionStatus =
@@ -454,6 +455,16 @@ export default function SolicitanteDetailPage({
             ))}
           </CardContent>
         </Card>
+
+        {requisition.status === "rejected" && (
+          <Button
+            className="w-full"
+            onClick={() => router.push(`/solicitante/${id}/editar`)}
+          >
+            <Pencil className="w-4 h-4 mr-2" />
+            Editar e Resubmeter
+          </Button>
+        )}
 
         {/* Ação: cancelar (só pending) */}
         {requisition.status === "pending" && (
