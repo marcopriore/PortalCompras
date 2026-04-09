@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.18.11
+- Versão atual: v2.19.13
 
 ---
 
@@ -31,6 +31,31 @@
 - INSERT em `proposal_items` SEMPRE com `round_id`
 - INSERT em `quotation_proposals` em nova rodada com status `'invited'`
 - `purchase_orders` criados com status `'draft'`
+
+### ExcelJS
+- SEMPRE importar via dynamic import: `const ExcelJS = (await import("exceljs")).default`
+- NUNCA importar no topo do arquivo (aumenta bundle desnecessariamente)
+- Cabeçalho padrão: fundo `#4F3EF5`, texto branco bold
+- Download: criar Blob, URL.createObjectURL, simular clique em `<a>`, revogar URL
+
+### Supabase Storage
+- Buckets disponíveis: `company-logos` (público), `profile-avatars` (público), `proposal-attachments` (privado)
+- Upload: `supabase.storage.from(bucket).upload(path, file, { upsert: true })`
+- URL pública: `supabase.storage.from(bucket).getPublicUrl(path)` + `?t=${Date.now()}` para cache bust
+- Persistir URL em `companies.logo_url` ou `profiles.avatar_url`
+- Validar: tipo de arquivo (`file.type.startsWith("image/")`) e tamanho (máx 2MB) antes do upload
+
+### Supabase MFA (2FA)
+- Enroll: `supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: "Valore 2FA" })`
+- Challenge + Verify: sempre em sequência — `mfa.challenge({ factorId })` depois `mfa.verify({ factorId, challengeId, code })`
+- Unenroll: `supabase.auth.mfa.unenroll({ factorId })`
+- Listar fatores: `supabase.auth.mfa.listFactors()` — verificar `status === "verified"`
+- TOTP já habilitado no painel Supabase do projeto
+
+### company_settings
+- Tabela genérica de configurações por tenant: `company_id`, `key`, `value` (text)
+- Upsert: `onConflict: "company_id,key"`
+- Exemplo: `lead_time_target_days` (meta de lead time em dias, editável pelo comprador)
 
 ### Qualidade de código
 
@@ -94,6 +119,13 @@
 | approval_requests | flow, entity_id, approver_id, status: pending/approved/rejected |
 | tenant_features | feature_keys liberados por tenant |
 | role_permissions | permission_keys por role |
+| company_settings | company_id, key, value — configurações por tenant |
+| item_import_logs | log de importações Excel de itens |
+| audit_logs | id, company_id, user_id, user_name, event_type, entity, entity_id, description, metadata, created_at |
+| companies | inclui: logo_url (Storage URL) |
+| profiles | inclui: avatar_url (Storage URL) |
+| items | inclui: source (manual/erp/excel), sync_at |
+| suppliers | índice único (company_id, code) |
 
 ---
 
@@ -112,6 +144,13 @@
 - **Polling ativo:** fornecedor pedidos (30s), fornecedor cotações (60s), equalização (30s), aprovações (30s), comprador pedidos (60s).
 - **Auditoria fornecedor:** `supplier.login`, `supplier.logout`, `proposal.saved`, `proposal.submitted`, `proposal.imported`, `purchase_order.accepted`, `purchase_order.refused`, `purchase_order.delivery_updated`.
 - **Logout do fornecedor:** `signOut` + `window.location.href = "/fornecedor/login"`.
+- **Importação Excel (Itens/Fornecedores):** upsert com `onConflict: "company_id,code"`; registrar em `item_import_logs`; disponível apenas para Master Admin.
+- **Exportação Excel:** sempre usar ExcelJS via dynamic import; cabeçalho índigo; nome do arquivo com timestamp `yyyyMMdd_HHmm`.
+- **Notificações implementadas:** pedido enviado ao fornecedor, requisição criada (→ aprovadores), requisição aprovada/rejeitada (→ solicitante), cotação cancelada/concluída (→ fornecedores), novo usuário criado (→ admins).
+- **Paginação server-side:** audit logs usam `count: "exact"` + `.range(from, to)` + filtros via `.ilike`/`.eq` no Supabase. PAGE_SIZE = 25.
+- **Lead Time Fluxo Compras:** calculado como média de dias entre `requisitions.created_at` → `purchase_orders.created_at`, join por `requisition_code`. Não usar `estimated_delivery_date` para este cálculo.
+- **Meta de Lead Time:** lida de `company_settings` com key `lead_time_target_days`; editável inline no gráfico de relatórios.
+- **Sidebar ativa:** rotas raiz `/comprador` e `/fornecedor` usam comparação exata (`pathname === item.href`), não `startsWith`.
 
 ---
 
@@ -169,11 +208,13 @@
 
 ---
 
-## FUNÇÕES SQL (referência)
+## FUNÇÕES SQL
 
-- **`close_expired_rounds`** — RPC invocada por `proxy.ts`; body não versionado neste repositório.
-- **`get_my_supplier_id()`** — definida em `008_payment_conditions.sql`.
-- **`check_round_completion()`** — referenciada na operação da instância Supabase (não versionada em migrations locais).
+### Funções SQL versionadas (migration 017)
+- `get_my_supplier_id()` — SECURITY DEFINER, STABLE — RLS portal fornecedor
+- `close_expired_rounds()` — SECURITY DEFINER, VOLATILE — fecha rodadas vencidas via proxy.ts
+- `check_round_completion()` — SECURITY DEFINER, VOLATILE — trigger em quotation_proposals
+- Trigger: `trg_check_round_completion` AFTER UPDATE ON quotation_proposals
 
 ---
 
@@ -182,15 +223,21 @@
 | Rota | Status |
 |------|--------|
 | / | ✅ Landing page dark theme |
-| /comprador | ⚠️ cards parcialmente mockados |
+| /comprador | ✅ todos os cards e gráficos com dados reais |
 | /comprador/requisicoes/** | ✅ |
 | /comprador/aprovacoes | ✅ |
 | /comprador/cotacoes/** | ✅ |
 | /comprador/cotacoes/[id]/equalizacao | ✅ complexo |
 | /comprador/pedidos | ✅ |
 | /comprador/pedidos/[id] | ✅ |
+| /comprador/itens | ✅ somente leitura, expansível, import/export Excel, sync ERP |
+| /comprador/fornecedores | ✅ modal detalhes, contagem pedidos, import/export Excel |
+| /comprador/relatorios | ✅ dados reais, Lead Time vs Meta editável, Spend por Categoria, Volume por Mês |
 | /comprador/configuracoes/** | ✅ |
+| /comprador/configuracoes/seguranca | ✅ 2FA TOTP real, layout side-by-side |
 | /admin/tenants/** | ✅ |
+| /admin/tenants/[id] | ✅ layout 3 blocos, métricas com período, funcionalidades inline |
+| /admin/logs | ✅ paginação server-side, filtros combinados |
 | /fornecedor | ✅ Dashboard com gráficos (donut + barras) |
 | /fornecedor/cotacoes | ✅ Listagem completa com filtros |
 | /fornecedor/cotacoes/[id] | ✅ Resposta proposta + wizard Excel |
