@@ -2,6 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 import {
   Plus,
   Eye,
@@ -15,6 +17,8 @@ import {
   FileText,
   Clock,
   CheckCircle,
+  Copy,
+  Loader2,
 } from "lucide-react"
 import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import { Button } from "@/components/ui/button"
@@ -70,8 +74,10 @@ function getStatusLabel(
 }
 
 export default function CotacoesPage() {
+  const router = useRouter()
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [loadingData, setLoadingData] = useState(true)
+  const [cloningId, setCloningId] = useState<string | null>(null)
 
   const { companyId, loading: userLoading } = useUser()
   const { hasFeature, hasPermission } = usePermissions()
@@ -86,6 +92,101 @@ export default function CotacoesPage() {
   const [dateTo, setDateTo] = useState<string>("")
   const [supplierFilter, setSupplierFilter] = useState<string>("")
   const [materialFilter, setMaterialFilter] = useState<string>("")
+
+  async function handleClone(quotation: Quotation) {
+    if (cloningId) return
+    if (!companyId) return
+    setCloningId(quotation.id)
+
+    try {
+      const supabase = createClient()
+
+      const [itemsRes, suppliersRes] = await Promise.all([
+        supabase
+          .from("quotation_items")
+          .select(
+            "material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec",
+          )
+          .eq("quotation_id", quotation.id)
+          .eq("company_id", companyId),
+        supabase
+          .from("quotation_suppliers")
+          .select("supplier_id, supplier_name, supplier_cnpj")
+          .eq("quotation_id", quotation.id)
+          .eq("company_id", companyId),
+      ])
+
+      if (itemsRes.error || suppliersRes.error) {
+        toast.error("Erro ao clonar cotação.")
+        return
+      }
+
+      const { data: newQuotation, error: quotationError } = await supabase
+        .from("quotations")
+        .insert({
+          company_id: companyId,
+          description: `${quotation.description} (Cópia)`,
+          status: "draft",
+          category: quotation.category ?? null,
+          response_deadline: null,
+          payment_condition: quotation.payment_condition ?? null,
+        })
+        .select("id, code")
+        .single()
+
+      if (quotationError || !newQuotation) {
+        toast.error("Erro ao clonar cotação.")
+        return
+      }
+
+      const newId = newQuotation.id as string
+
+      if (itemsRes.data && itemsRes.data.length > 0) {
+        const { error: itemsInsertError } = await supabase.from("quotation_items").insert(
+          itemsRes.data.map((item) => ({
+            quotation_id: newId,
+            company_id: companyId,
+            material_code: item.material_code ?? "",
+            material_description: item.material_description ?? "",
+            long_description: item.long_description ?? null,
+            unit_of_measure: item.unit_of_measure,
+            quantity: item.quantity,
+            complementary_spec: item.complementary_spec ?? null,
+          })),
+        )
+        if (itemsInsertError) {
+          toast.error("Erro ao clonar cotação.")
+          return
+        }
+      }
+
+      if (suppliersRes.data && suppliersRes.data.length > 0) {
+        const { error: suppliersInsertError } = await supabase
+          .from("quotation_suppliers")
+          .insert(
+            suppliersRes.data.map((s, index) => ({
+              quotation_id: newId,
+              company_id: companyId,
+              supplier_id: s.supplier_id,
+              supplier_name: s.supplier_name,
+              supplier_cnpj: s.supplier_cnpj ?? null,
+              position: index + 1,
+            })),
+          )
+        if (suppliersInsertError) {
+          toast.error("Erro ao clonar cotação.")
+          return
+        }
+      }
+
+      toast.success(`Cotação clonada como ${newQuotation.code}!`)
+      router.push(`/comprador/cotacoes/${newId}/editar`)
+    } catch {
+      toast.error("Erro ao clonar cotação.")
+    } finally {
+      setCloningId(null)
+    }
+  }
 
   const columns: Column<Quotation>[] = [
     { key: "code", header: "ID", className: "font-medium" },
@@ -128,6 +229,23 @@ export default function CotacoesPage() {
             <Eye className="mr-2 h-4 w-4" />
             Ver Detalhes
           </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => void handleClone(item)}
+          disabled={!!cloningId}
+          className="cursor-pointer"
+        >
+          {cloningId === item.id ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Clonando...
+            </>
+          ) : (
+            <>
+              <Copy className="mr-2 h-4 w-4" />
+              Clonar Cotação
+            </>
+          )}
         </DropdownMenuItem>
         {(item.status === "waiting" || item.status === "analysis") && (
           <DropdownMenuItem

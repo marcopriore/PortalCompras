@@ -16,15 +16,24 @@ import { Label } from '@/components/ui/label'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
   Building2,
   CalendarIcon,
   ChevronDown,
   ChevronLeft,
+  ClipboardList,
   FileText,
+  Loader2,
   Package,
   Search,
   Trash2,
-  ClipboardList,
 } from 'lucide-react'
 
 type QuotationItem = {
@@ -33,12 +42,28 @@ type QuotationItem = {
   unit_of_measure: string
   long_description?: string | null
 }
-type SelectedItem = QuotationItem & { quantity: number }
+type SelectedItem = QuotationItem & {
+  quantity: number
+  requisition_code?: string | null
+}
 type Supplier = {
   id: string
   name: string
   cnpj: string | null
   category: string | null
+}
+
+type RequisitionOption = {
+  id: string
+  code: string
+  title: string
+  created_at: string
+  items: {
+    material_code: string | null
+    material_description: string
+    unit_of_measure: string | null
+    quantity: number
+  }[]
 }
 
 const SUPPLIER_SEARCH_DEBOUNCE_MS = 300
@@ -112,6 +137,10 @@ function NovaCotacaoContent() {
   const [open, setOpen] = useState({ general: true, items: true, suppliers: true })
   const [loading, setLoading] = useState(false)
   const [loadingAction, setLoadingAction] = useState<'draft' | 'submit' | null>(null)
+  const [reqDialogOpen, setReqDialogOpen] = useState(false)
+  const [requisitions, setRequisitions] = useState<RequisitionOption[]>([])
+  const [requisitionsLoading, setRequisitionsLoading] = useState(false)
+  const [selectedReqIds, setSelectedReqIds] = useState<string[]>([])
 
   const { userId, companyId, loading: userLoading } = useUser()
 
@@ -139,6 +168,7 @@ function NovaCotacaoContent() {
       }
 
       if (itemsRes.data && itemsRes.data.length > 0) {
+        const reqCode = (reqRes.data as { code?: string } | null)?.code ?? null
         setSelectedItems(
           itemsRes.data.map((ri: any) => ({
             code: ri.material_code ?? '',
@@ -146,6 +176,7 @@ function NovaCotacaoContent() {
             long_description: ri.long_description ?? null,
             quantity: ri.quantity ?? 1,
             unit_of_measure: ri.unit_of_measure ?? '',
+            requisition_code: reqCode,
           })),
         )
       }
@@ -231,7 +262,11 @@ function NovaCotacaoContent() {
   const toggle = (key: string) => setOpen(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))
 
   const addItem = (item: QuotationItem) => {
-    setSelectedItems(prev => prev.some(i => i.code === item.code) ? prev : [...prev, { ...item, quantity: 1 }])
+    setSelectedItems((prev) =>
+      prev.some((i) => i.code === item.code)
+        ? prev
+        : [...prev, { ...item, quantity: 1, requisition_code: null }],
+    )
     setItemSearch('')
   }
 
@@ -248,6 +283,104 @@ function NovaCotacaoContent() {
   const addSupplier = (s: Supplier) => {
     setSelectedSuppliers(prev => prev.some(x => x.id === s.id) ? prev : [...prev, s])
     setSupplierSearch('')
+  }
+
+  async function loadAvailableRequisitions() {
+    if (!companyId) return
+    setRequisitionsLoading(true)
+    try {
+      const supabase = createClient()
+      const { data: reqs } = await supabase
+        .from('requisitions')
+        .select('id, code, title, created_at')
+        .eq('company_id', companyId)
+        .eq('status', 'approved')
+        .is('quotation_id', null)
+        .order('created_at', { ascending: false })
+
+      if (!reqs || reqs.length === 0) {
+        setRequisitions([])
+        return
+      }
+
+      const { data: allItems } = await supabase
+        .from('requisition_items')
+        .select('requisition_id, material_code, material_description, unit_of_measure, quantity')
+        .in(
+          'requisition_id',
+          reqs.map((r) => r.id),
+        )
+
+      type ReqItemRow = {
+        requisition_id: string
+        material_code: string | null
+        material_description: string
+        unit_of_measure: string | null
+        quantity: number
+      }
+
+      const itemsByReq: Record<string, ReqItemRow[]> = {}
+      for (const row of (allItems ?? []) as ReqItemRow[]) {
+        if (!itemsByReq[row.requisition_id]) itemsByReq[row.requisition_id] = []
+        itemsByReq[row.requisition_id].push(row)
+      }
+
+      setRequisitions(
+        reqs.map((r) => ({
+          id: r.id,
+          code: r.code,
+          title: r.title,
+          created_at: r.created_at,
+          items: (itemsByReq[r.id] ?? []).map((i) => ({
+            material_code: i.material_code,
+            material_description: i.material_description,
+            unit_of_measure: i.unit_of_measure,
+            quantity: i.quantity,
+          })),
+        })),
+      )
+    } finally {
+      setRequisitionsLoading(false)
+    }
+  }
+
+  function handleImportRequisitions() {
+    const selected = requisitions.filter((r) => selectedReqIds.includes(r.id))
+    setSelectedItems((prev) => {
+      const newItems: SelectedItem[] = []
+      for (const req of selected) {
+        for (const item of req.items) {
+          const code = item.material_code ?? ''
+          if (
+            prev.some((i) => i.code === code) ||
+            newItems.some((i) => i.code === code)
+          ) {
+            continue
+          }
+          newItems.push({
+            code,
+            description: item.material_description ?? '',
+            unit_of_measure: item.unit_of_measure ?? '',
+            long_description: null,
+            quantity: item.quantity ?? 1,
+            requisition_code: req.code,
+          })
+        }
+      }
+      if (newItems.length > 0) {
+        const added = newItems.length
+        const reqCount = selected.length
+        queueMicrotask(() =>
+          toast.success(
+            `${added} item(s) importado(s) de ${reqCount} requisição(ões).`,
+          ),
+        )
+      }
+      return [...prev, ...newItems]
+    })
+
+    setReqDialogOpen(false)
+    setSelectedReqIds([])
   }
 
   const saveQuotation = async (status: 'draft' | 'waiting') => {
@@ -292,6 +425,7 @@ function NovaCotacaoContent() {
             unit_of_measure: item.unit_of_measure,
             quantity: item.quantity,
             complementary_spec: null,
+            source_requisition_code: item.requisition_code ?? null,
           })),
         )
 
@@ -511,6 +645,24 @@ function NovaCotacaoContent() {
       {/* Seção Itens */}
       <Section title="Itens" icon={<Package className="h-4 w-4 text-primary" />} sectionKey="items" open={open.items} onToggle={toggle}>
         <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+            <p className="text-xs text-muted-foreground">
+              Busque itens do catálogo ou importe de requisições aprovadas.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSelectedReqIds([])
+                setReqDialogOpen(true)
+                void loadAvailableRequisitions()
+              }}
+            >
+              <ClipboardList className="h-4 w-4 mr-2" />
+              Importar de Requisição
+            </Button>
+          </div>
           <div className="relative">
             <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
               <Search className="h-4 w-4 text-muted-foreground" />
@@ -560,6 +712,7 @@ function NovaCotacaoContent() {
                 <tr>
                   <th className="px-2 py-2 text-left">Código</th>
                   <th className="px-2 py-2 text-left">Descrição Curta</th>
+                  <th className="px-2 py-2 text-left">Requisição</th>
                   <th className="px-2 py-2 text-left">UN</th>
                   <th className="px-2 py-2 text-left">Qtd</th>
                   <th className="px-2 py-2 text-right">Ação</th>
@@ -570,6 +723,15 @@ function NovaCotacaoContent() {
                   <tr key={item.code} className="border-b border-border last:border-0">
                     <td className="px-2 py-2 align-top font-medium">{item.code}</td>
                     <td className="px-2 py-2 align-top">{item.description}</td>
+                    <td className="px-2 py-2 align-top">
+                      {item.requisition_code ? (
+                        <span className="text-xs font-mono text-blue-600 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5">
+                          {item.requisition_code}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
                     <td className="px-2 py-2 align-top">{item.unit_of_measure}</td>
                     <td className="px-2 py-2 align-top">
                       <Input type="number" min={1} value={item.quantity} onChange={e => updateItemQuantity(item.code, e.target.value)} className="w-20" />
@@ -661,6 +823,113 @@ function NovaCotacaoContent() {
           )}
         </div>
       </Section>
+
+      <Dialog open={reqDialogOpen} onOpenChange={setReqDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Importar Itens de Requisições</DialogTitle>
+          </DialogHeader>
+
+          {requisitionsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : requisitions.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              Nenhuma requisição aprovada disponível para importação.
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+              {requisitions.map((req) => (
+                <div
+                  key={req.id}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelectedReqIds((prev) =>
+                        prev.includes(req.id)
+                          ? prev.filter((x) => x !== req.id)
+                          : [...prev, req.id],
+                      )
+                    }
+                  }}
+                  className={`rounded-lg border p-4 cursor-pointer transition-colors ${
+                    selectedReqIds.includes(req.id)
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:bg-muted/30'
+                  }`}
+                  onClick={() =>
+                    setSelectedReqIds((prev) =>
+                      prev.includes(req.id)
+                        ? prev.filter((x) => x !== req.id)
+                        : [...prev, req.id],
+                    )
+                  }
+                >
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      checked={selectedReqIds.includes(req.id)}
+                      onCheckedChange={(checked) => {
+                        setSelectedReqIds((prev) =>
+                          checked === true
+                            ? prev.includes(req.id)
+                              ? prev
+                              : [...prev, req.id]
+                            : prev.filter((x) => x !== req.id),
+                        )
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium font-mono text-primary">
+                          {req.code}
+                        </span>
+                        <span className="text-sm text-foreground truncate">
+                          {req.title}
+                        </span>
+                        <span className="text-xs text-muted-foreground ml-auto flex-shrink-0">
+                          {format(new Date(req.created_at), 'dd/MM/yyyy', { locale: ptBR })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {req.items.length} item(s):{' '}
+                        {req.items
+                          .slice(0, 3)
+                          .map((i) => i.material_description)
+                          .join(', ')}
+                        {req.items.length > 3 && ` +${req.items.length - 3} mais`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <div className="flex items-center gap-3 w-full flex-wrap">
+              <span className="text-sm text-muted-foreground flex-1 min-w-[12rem]">
+                {selectedReqIds.length > 0
+                  ? `${selectedReqIds.length} requisição(ões) selecionada(s)`
+                  : 'Selecione as requisições para importar'}
+              </span>
+              <Button type="button" variant="outline" onClick={() => setReqDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={handleImportRequisitions}
+                disabled={selectedReqIds.length === 0}
+              >
+                Importar {selectedReqIds.length > 0 ? `(${selectedReqIds.length})` : ''}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   )
