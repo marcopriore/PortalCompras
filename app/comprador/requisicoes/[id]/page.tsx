@@ -28,7 +28,18 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { AlertCircle, ChevronLeft, FileText, Pencil } from "lucide-react"
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronLeft,
+  Circle,
+  ClipboardList,
+  Clock,
+  FileText,
+  Loader2,
+  Pencil,
+  XCircle,
+} from "lucide-react"
 
 type Priority = "normal" | "urgent" | "critical"
 type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
@@ -62,6 +73,246 @@ type Requisition = {
   erp_code?: string | null
   quotation_id?: string | null
   requisition_items?: RequisitionItem[]
+}
+
+type QuotationInfo = {
+  id: string
+  code: string
+  status: string
+  created_at: string
+}
+
+type PurchaseOrderInfo = {
+  id: string
+  code: string
+  status: string
+  supplier_name: string
+  total_price: number | null
+  created_at: string
+  estimated_delivery_date: string | null
+}
+
+type ApprovalHistory = {
+  id: string
+  status: string
+  approver_name: string | null
+  rejection_reason: string | null
+  decided_at: string | null
+  created_at: string
+}
+
+function HorizontalTimeline({
+  req,
+  quotation,
+  orders,
+}: {
+  req: Requisition
+  quotation: QuotationInfo | null
+  orders: PurchaseOrderInfo[]
+}) {
+  type StepStatus = "completed" | "active" | "pending" | "rejected"
+
+  const steps: {
+    key: string
+    label: string
+    status: StepStatus
+    date?: string | null
+  }[] = [
+    {
+      key: "created",
+      label: "Criada",
+      status: "completed",
+      date: req.created_at,
+    },
+    {
+      key: "approval",
+      label: "Aprovação",
+      status:
+        req.status === "rejected"
+          ? "rejected"
+          : req.status === "pending"
+            ? "active"
+            : "completed",
+      date: req.approved_at ?? null,
+    },
+    {
+      key: "quotation",
+      label: "Cotação",
+      status: ["pending", "rejected"].includes(req.status)
+        ? "pending"
+        : quotation
+          ? ["completed", "cancelled"].includes(quotation.status)
+            ? "completed"
+            : "active"
+          : "active",
+      date: quotation?.created_at,
+    },
+    {
+      key: "order",
+      label: "Pedido",
+      status:
+        ["pending", "rejected"].includes(req.status) || !quotation
+          ? "pending"
+          : orders.length === 0
+            ? "pending"
+            : orders.some((o) => o.status === "completed")
+              ? "completed"
+              : "active",
+      date: orders[0]?.created_at,
+    },
+    {
+      key: "delivery",
+      label: "Entrega",
+      status:
+        req.status === "completed"
+          ? "completed"
+          : orders.some((o) => o.status === "completed")
+            ? "active"
+            : "pending",
+      date: orders.find((o) => o.status === "completed")?.estimated_delivery_date,
+    },
+  ]
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-4 overflow-x-auto">
+      <div className="flex items-center justify-between relative min-w-[320px]">
+        <div className="absolute top-5 left-0 right-0 h-0.5 bg-border mx-8" />
+
+        {steps.map((step) => {
+          const colorMap = {
+            completed: {
+              circle: "bg-blue-500 border-blue-500",
+              text: "text-blue-700",
+            },
+            active: {
+              circle: "bg-blue-500 border-blue-500 animate-pulse",
+              text: "text-blue-700",
+            },
+            pending: {
+              circle: "bg-background border-border",
+              text: "text-muted-foreground",
+            },
+            rejected: {
+              circle: "bg-blue-500 border-blue-500",
+              text: "text-blue-700",
+            },
+          }[step.status]
+
+          return (
+            <div key={step.key} className="flex flex-col items-center gap-2 z-10 flex-1 min-w-0">
+              <div
+                className={`w-10 h-10 rounded-full border-2 flex items-center justify-center shrink-0 ${colorMap.circle}`}
+              >
+                {step.status === "completed" && (
+                  <CheckCircle2 className="w-5 h-5 text-white" />
+                )}
+                {step.status === "active" && (
+                  <Loader2 className="w-4 h-4 text-white animate-spin" />
+                )}
+                {step.status === "rejected" && (
+                  <XCircle className="w-5 h-5 text-white" />
+                )}
+                {step.status === "pending" && (
+                  <Circle className="w-4 h-4 text-muted-foreground" />
+                )}
+              </div>
+              <div className="text-center px-0.5">
+                <p className={`text-xs font-medium ${colorMap.text}`}>{step.label}</p>
+                {step.date && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    {format(new Date(step.date), "dd/MM HH:mm", { locale: ptBR })}
+                  </p>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function HistorySection({
+  history,
+  req,
+}: {
+  history: ApprovalHistory[]
+  req: Requisition
+}) {
+  return (
+    <div className="bg-card border border-border rounded-xl p-4">
+      <h3 className="text-sm font-semibold text-foreground mb-4">Histórico</h3>
+      <div className="space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5">
+            <ClipboardList className="w-3.5 h-3.5 text-muted-foreground" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground">Requisição criada</p>
+            <p className="text-xs text-muted-foreground">
+              Por {req.requester_name ?? "solicitante"} ·{" "}
+              {format(new Date(req.created_at), "dd/MM/yyyy 'às' HH:mm", {
+                locale: ptBR,
+              })}
+            </p>
+          </div>
+        </div>
+
+        {history.map((h) => {
+          const isApproved = h.status === "approved"
+          const isRejected = h.status === "rejected"
+          const isPending = h.status === "pending"
+
+          return (
+            <div key={h.id} className="flex items-start gap-3">
+              <div
+                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                  isApproved
+                    ? "bg-green-100"
+                    : isRejected
+                      ? "bg-red-100"
+                      : "bg-yellow-100"
+                }`}
+              >
+                {isApproved && (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                )}
+                {isRejected && <XCircle className="w-3.5 h-3.5 text-red-600" />}
+                {isPending && <Clock className="w-3.5 h-3.5 text-yellow-600" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p
+                  className={`text-sm font-medium ${
+                    isApproved
+                      ? "text-green-700"
+                      : isRejected
+                        ? "text-red-700"
+                        : "text-yellow-700"
+                  }`}
+                >
+                  {isPending
+                    ? "Enviada para aprovação"
+                    : isApproved
+                      ? `Aprovada${h.approver_name ? ` por ${h.approver_name}` : ""}`
+                      : `Reprovada${h.approver_name ? ` por ${h.approver_name}` : ""}`}
+                </p>
+                {h.rejection_reason && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Motivo: {h.rejection_reason}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {format(new Date(h.decided_at ?? h.created_at), "dd/MM/yyyy 'às' HH:mm", {
+                    locale: ptBR,
+                  })}
+                </p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 function getStatusMeta(status: RequisitionStatus): { label: string; className: string } {
@@ -104,6 +355,9 @@ export default function RequisicaoDetailPage({
 
   const [quotationOpen, setQuotationOpen] = React.useState(false)
   const [linkedQuotation, setLinkedQuotation] = React.useState<{ id: string; code: string } | null>(null)
+  const [quotationData, setQuotationData] = React.useState<QuotationInfo | null>(null)
+  const [orders, setOrders] = React.useState<PurchaseOrderInfo[]>([])
+  const [history, setHistory] = React.useState<ApprovalHistory[]>([])
 
   React.useEffect(() => {
     if (!id) return
@@ -125,21 +379,49 @@ export default function RequisicaoDetailPage({
       const reqData = ((rRes.data as any) ?? null) as Requisition | null
 
       let linked: { id: string; code: string } | null = null
+      let quotationInfo: QuotationInfo | null = null
       const quotationId = reqData?.quotation_id
       if (quotationId) {
-        const { data: qData } = await supabase
+        const { data: qFull } = await supabase
           .from("quotations")
-          .select("id, code")
+          .select("id, code, status, created_at")
           .eq("id", quotationId)
           .single()
 
-        if (qData?.id && qData?.code) {
-          linked = { id: qData.id as string, code: qData.code as string }
+        if (qFull?.id && qFull?.code) {
+          linked = { id: qFull.id as string, code: qFull.code as string }
+          quotationInfo = qFull as QuotationInfo
         }
       }
 
-      setRequisition(reqData)
       setLinkedQuotation(linked)
+      setQuotationData(quotationInfo)
+
+      if (reqData?.code) {
+        const { data: ordersData } = await supabase
+          .from("purchase_orders")
+          .select(
+            "id, code, status, supplier_name, total_price, created_at, estimated_delivery_date",
+          )
+          .eq("requisition_code", reqData.code)
+          .order("created_at")
+        if (!alive) return
+        setOrders((ordersData as PurchaseOrderInfo[]) ?? [])
+      } else {
+        setOrders([])
+      }
+
+      const { data: historyData } = await supabase
+        .from("approval_requests")
+        .select("id, status, approver_name, rejection_reason, decided_at, created_at")
+        .eq("entity_id", id)
+        .eq("flow", "requisition")
+        .order("created_at", { ascending: true })
+
+      if (!alive) return
+      setHistory((historyData as ApprovalHistory[]) ?? [])
+
+      setRequisition(reqData)
       setItems(((iRes.data as unknown) as RequisitionItem[]) ?? [])
       setLoading(false)
     }
@@ -253,6 +535,12 @@ export default function RequisicaoDetailPage({
         </div>
       )}
 
+      <HorizontalTimeline
+        req={requisition}
+        quotation={quotationData}
+        orders={orders}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle>Informações Gerais</CardTitle>
@@ -305,25 +593,6 @@ export default function RequisicaoDetailPage({
         </CardContent>
       </Card>
 
-      <Dialog open={quotationOpen} onOpenChange={setQuotationOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Gerar Cotação</DialogTitle>
-            <DialogDescription>
-              Confirmar a criação de uma cotação a partir da requisição {requisition.code}?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setQuotationOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleGerarCotacao}>
-              Confirmar
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -362,6 +631,27 @@ export default function RequisicaoDetailPage({
           </div>
         </CardContent>
       </Card>
+
+      <HistorySection history={history} req={requisition} />
+
+      <Dialog open={quotationOpen} onOpenChange={setQuotationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Gerar Cotação</DialogTitle>
+            <DialogDescription>
+              Confirmar a criação de uma cotação a partir da requisição {requisition.code}?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuotationOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleGerarCotacao}>
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

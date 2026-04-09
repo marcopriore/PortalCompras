@@ -233,8 +233,8 @@ function HorizontalTimeline({
               <div className="text-center px-0.5">
                 <p className={`text-xs font-medium ${colorMap.text}`}>{step.label}</p>
                 {step.date && (
-                  <p className="text-xs text-muted-foreground">
-                    {format(new Date(step.date), "dd/MM", { locale: ptBR })}
+                  <p className="text-xs text-muted-foreground text-center">
+                    {format(new Date(step.date), "dd/MM HH:mm", { locale: ptBR })}
                   </p>
                 )}
               </div>
