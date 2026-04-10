@@ -245,6 +245,21 @@ export default function NovaRequisicaoPage() {
       const requisitionId = (requisitionRes as { id: string }).id
       const requisitionCode = (requisitionRes as { code: string }).code
 
+      void logAudit({
+        eventType: "requisition.created",
+        description: `Requisição ${requisitionCode} criada por ${requesterName || "comprador"}`,
+        companyId,
+        userId,
+        userName: requesterName || null,
+        entity: "requisitions",
+        entityId: requisitionId,
+        metadata: {
+          code: requisitionCode,
+          priority: form.priority,
+          cost_center: costCenterForInsert,
+        },
+      })
+
       const payloadItems = items.map((it) => ({
         requisition_id: requisitionId,
         company_id: companyId,
@@ -264,16 +279,6 @@ export default function NovaRequisicaoPage() {
         setError("Não foi possível salvar os itens da requisição.")
         return
       }
-
-      logAudit({
-        eventType: "quotation.created",
-        description: `Requisição ${requisitionCode} criada`,
-        companyId,
-        userId,
-        userName: requesterName,
-        entity: "requisitions",
-        entityId: requisitionId,
-      }).catch(() => {})
 
       try {
         const costCenterForRpc = costCenterTrimmed || ""

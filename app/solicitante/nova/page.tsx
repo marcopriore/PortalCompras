@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { logAudit } from "@/lib/audit"
 import { notifyWithEmail } from "@/lib/notify-with-email"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -229,6 +230,21 @@ export default function SolicitanteNovaPage() {
 
     const requisitionId = reqData.id
     const requisitionCode = reqData.code
+
+    void logAudit({
+      eventType: "requisition.created",
+      description: `Requisição ${reqData.code} criada por ${userName || "solicitante"}`,
+      companyId,
+      userId,
+      userName: userName || null,
+      entity: "requisitions",
+      entityId: reqData.id,
+      metadata: {
+        code: reqData.code,
+        priority,
+        cost_center: costCenter || null,
+      },
+    })
 
     // Inserir itens
     const { error: itemsErr } = await supabase.from("requisition_items").insert(
