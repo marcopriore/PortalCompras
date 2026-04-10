@@ -35,6 +35,7 @@ import {
   XCircle,
   Clock,
   Circle,
+  FileText,
   Loader2,
   Pencil,
 } from "lucide-react"
@@ -87,6 +88,15 @@ type ApprovalHistory = {
   rejection_reason: string | null
   decided_at: string | null
   created_at: string
+}
+
+type AuditLog = {
+  id: string
+  event_type: string
+  description: string
+  created_at: string
+  user_name: string | null
+  metadata: Record<string, unknown> | null
 }
 
 type RequisitionItem = {
@@ -252,9 +262,11 @@ function HorizontalTimeline({
 function HistorySection({
   history,
   req,
+  auditLogs,
 }: {
   history: ApprovalHistory[]
   req: Requisition
+  auditLogs: AuditLog[]
 }) {
   return (
     <div className="bg-card border border-border rounded-xl p-4">
@@ -327,6 +339,44 @@ function HistorySection({
             </div>
           )
         })}
+
+        {auditLogs.map((log) => {
+          const isInQuotation = log.event_type === "requisition.in_quotation"
+          const isApprovedRelease = log.event_type === "requisition.approved"
+          if (!isInQuotation && !isApprovedRelease) return null
+
+          return (
+            <div key={log.id} className="flex items-start gap-3">
+              <div
+                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                  isInQuotation ? "bg-blue-100" : "bg-green-100"
+                }`}
+              >
+                {isInQuotation ? (
+                  <FileText className="w-3.5 h-3.5 text-blue-600" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p
+                  className={`text-sm font-medium ${
+                    isInQuotation ? "text-blue-700" : "text-green-700"
+                  }`}
+                >
+                  {isInQuotation
+                    ? `Vinculada à cotação ${(log.metadata?.quotation_code as string) ?? ""}`
+                    : `Liberada — cotação ${(log.metadata?.quotation_code as string) ?? ""} cancelada`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {format(new Date(log.created_at), "dd/MM/yyyy 'às' HH:mm", {
+                    locale: ptBR,
+                  })}
+                </p>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -344,6 +394,7 @@ export default function SolicitanteDetailPage({
   const [quotation, setQuotation] = React.useState<QuotationInfo | null>(null)
   const [orders, setOrders] = React.useState<PurchaseOrderInfo[]>([])
   const [history, setHistory] = React.useState<ApprovalHistory[]>([])
+  const [auditLogs, setAuditLogs] = React.useState<AuditLog[]>([])
   const [items, setItems] = React.useState<RequisitionItem[]>([])
   const [loading, setLoading] = React.useState(true)
   const [cancelOpen, setCancelOpen] = React.useState(false)
@@ -375,7 +426,7 @@ export default function SolicitanteDetailPage({
     const req = reqData as Requisition
     setRequisition(req)
 
-    const [historyResult, itemsResult, ordersResult] = await Promise.all([
+    const [historyResult, itemsResult, ordersResult, auditResult] = await Promise.all([
       supabase
         .from("approval_requests")
         .select("id, status, approver_name, rejection_reason, decided_at, created_at")
@@ -396,9 +447,16 @@ export default function SolicitanteDetailPage({
         )
         .eq("requisition_code", req.code)
         .order("created_at"),
+      supabase
+        .from("audit_logs")
+        .select("id, event_type, description, created_at, user_name, metadata")
+        .eq("entity", "requisitions")
+        .eq("entity_id", id)
+        .order("created_at", { ascending: true }),
     ])
 
     setHistory((historyResult.data as ApprovalHistory[]) ?? [])
+    setAuditLogs((auditResult.data ?? []) as AuditLog[])
     setItems((itemsResult.data as RequisitionItem[]) ?? [])
     setOrders((ordersResult.data as PurchaseOrderInfo[]) ?? [])
 
@@ -633,7 +691,7 @@ export default function SolicitanteDetailPage({
           </CardContent>
         </Card>
 
-        <HistorySection history={history} req={requisition} />
+        <HistorySection history={history} req={requisition} auditLogs={auditLogs} />
       </main>
 
       <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>

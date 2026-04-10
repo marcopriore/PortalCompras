@@ -101,6 +101,15 @@ type ApprovalHistory = {
   created_at: string
 }
 
+type AuditLog = {
+  id: string
+  event_type: string
+  description: string
+  created_at: string
+  user_name: string | null
+  metadata: Record<string, unknown> | null
+}
+
 function HorizontalTimeline({
   req,
   quotation,
@@ -235,9 +244,11 @@ function HorizontalTimeline({
 function HistorySection({
   history,
   req,
+  auditLogs,
 }: {
   history: ApprovalHistory[]
   req: Requisition
+  auditLogs: AuditLog[]
 }) {
   return (
     <div className="bg-card border border-border rounded-xl p-4">
@@ -310,6 +321,44 @@ function HistorySection({
             </div>
           )
         })}
+
+        {auditLogs.map((log) => {
+          const isInQuotation = log.event_type === "requisition.in_quotation"
+          const isApprovedRelease = log.event_type === "requisition.approved"
+          if (!isInQuotation && !isApprovedRelease) return null
+
+          return (
+            <div key={log.id} className="flex items-start gap-3">
+              <div
+                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                  isInQuotation ? "bg-blue-100" : "bg-green-100"
+                }`}
+              >
+                {isInQuotation ? (
+                  <FileText className="w-3.5 h-3.5 text-blue-600" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p
+                  className={`text-sm font-medium ${
+                    isInQuotation ? "text-blue-700" : "text-green-700"
+                  }`}
+                >
+                  {isInQuotation
+                    ? `Vinculada à cotação ${(log.metadata?.quotation_code as string) ?? ""}`
+                    : `Liberada — cotação ${(log.metadata?.quotation_code as string) ?? ""} cancelada`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {format(new Date(log.created_at), "dd/MM/yyyy 'às' HH:mm", {
+                    locale: ptBR,
+                  })}
+                </p>
+              </div>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -358,6 +407,7 @@ export default function RequisicaoDetailPage({
   const [quotationData, setQuotationData] = React.useState<QuotationInfo | null>(null)
   const [orders, setOrders] = React.useState<PurchaseOrderInfo[]>([])
   const [history, setHistory] = React.useState<ApprovalHistory[]>([])
+  const [auditLogs, setAuditLogs] = React.useState<AuditLog[]>([])
 
   React.useEffect(() => {
     if (!id) return
@@ -418,8 +468,16 @@ export default function RequisicaoDetailPage({
         .eq("flow", "requisition")
         .order("created_at", { ascending: true })
 
+      const { data: auditData } = await supabase
+        .from("audit_logs")
+        .select("id, event_type, description, created_at, user_name, metadata")
+        .eq("entity", "requisitions")
+        .eq("entity_id", id)
+        .order("created_at", { ascending: true })
+
       if (!alive) return
       setHistory((historyData as ApprovalHistory[]) ?? [])
+      setAuditLogs((auditData ?? []) as AuditLog[])
 
       setRequisition(reqData)
       setItems(((iRes.data as unknown) as RequisitionItem[]) ?? [])
@@ -632,7 +690,7 @@ export default function RequisicaoDetailPage({
         </CardContent>
       </Card>
 
-      <HistorySection history={history} req={requisition} />
+      <HistorySection history={history} req={requisition} auditLogs={auditLogs} />
 
       <Dialog open={quotationOpen} onOpenChange={setQuotationOpen}>
         <DialogContent>

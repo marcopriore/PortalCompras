@@ -7,6 +7,7 @@ import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
+import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -123,7 +124,7 @@ export default function EditarCotacaoPage({
 }) {
   const router = useRouter()
   const { id } = use(params)
-  const { companyId, loading: userLoading } = useUser()
+  const { companyId, userId, loading: userLoading } = useUser()
 
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -574,6 +575,21 @@ export default function EditarCotacaoPage({
                 quotation_id: id,
               })
               .eq("id", req.id)
+          }
+        }
+
+        for (const req of reqsToUpdate ?? []) {
+          if (!req.quotation_id || req.quotation_id === id) {
+            void logAudit({
+              eventType: "requisition.in_quotation",
+              description: `Requisição ${req.code} vinculada à cotação ${quotationCode ?? id}`,
+              companyId: companyId ?? null,
+              userId: userId ?? null,
+              userName: userId ?? null,
+              entity: "requisitions",
+              entityId: req.id,
+              metadata: { quotation_id: id, quotation_code: quotationCode },
+            })
           }
         }
       }

@@ -22,6 +22,9 @@ type AuditEventType =
   | 'purchase_order.accepted'
   | 'purchase_order.refused'
   | 'purchase_order.delivery_updated'
+  | 'requisition.in_quotation'
+  | 'requisition.approved'
+  | 'requisition.created'
 
 type LogAuditParams = {
   eventType: AuditEventType

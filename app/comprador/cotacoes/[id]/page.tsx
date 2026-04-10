@@ -343,6 +343,22 @@ export default function QuotationDetailsPage({
                 'id',
                 reqs.map((r) => r.id),
               )
+
+            for (const req of reqs) {
+              void logAudit({
+                eventType: 'requisition.approved',
+                description: `Requisição liberada após cancelamento da cotação ${quotation.code}`,
+                companyId: companyId ?? null,
+                userId: userId ?? null,
+                userName: userId ?? null,
+                entity: 'requisitions',
+                entityId: req.id,
+                metadata: {
+                  quotation_id: quotation.id,
+                  quotation_code: quotation.code,
+                },
+              })
+            }
           }
         }
 
