@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.18.11
+## Versão atual: v2.19.36
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -8,9 +8,10 @@ Documento de referência alinhado ao código e às migrations versionadas no rep
 
 ## 1. Visão Geral
 
-Valore é um SaaS de procurement multi-tenant com dois portais:
+Valore é um SaaS de procurement multi-tenant com três experiências principais:
 
-- **Comprador (`/comprador`)**: requisitações, cotações, equalização, pedidos, aprovações e configurações.
+- **Comprador (`/comprador`)**: requisições, cotações, equalização, pedidos, aprovações e configurações.
+- **Solicitante (`/solicitante`)**: criação e acompanhamento de requisições (perfil `requester`).
 - **Fornecedor (`/fornecedor`)**: dashboard, resposta de cotações, pedidos e histórico de atividades.
 
 Stack principal: Next.js 16, TypeScript, Tailwind/shadcn, Supabase (Auth + RLS), Resend para e-mails transacionais.
@@ -30,9 +31,31 @@ Stack principal: Next.js 16, TypeScript, Tailwind/shadcn, Supabase (Auth + RLS),
 
 ---
 
-## 3. Sistema de Notificações
+## 3. Portal do Solicitante (estado atual)
 
-### 3.1 In-app (`notifications`)
+| Rota | Status | Observações |
+|------|--------|-------------|
+| `/login` | ✅ | Tela dividida comprador (azul) / solicitante (laranja); redirecionamento por `profile_type` |
+| `/solicitante` | ✅ | Listagem com filtros por status, data, busca, paginação 20/pág |
+| `/solicitante/nova` | ✅ | Busca no catálogo, tabela de itens, select prioridade, anexos |
+| `/solicitante/[id]` | ✅ | Timeline horizontal 5 etapas, informações gerais, itens, histórico |
+| `/solicitante/[id]/editar` | ✅ | Editar e resubmeter após rejeição, mesmo fluxo de aprovação |
+
+---
+
+## 4. Cotações — Funcionalidades (v2.19.x)
+
+- **Clonar cotação:** dropdown de ações na listagem; copia itens e fornecedores; nova cotação em `draft`.
+- **Importar de requisição:** dialog com multiseleção; importa itens com `source_requisition_code`.
+- **Coluna Requisição:** exibida na grade de itens (edição, nova e visualização).
+- **Vinculação automática:** ao salvar cotação (edição) ou enviar (`waiting`), requisições referenciadas nos itens → `in_quotation` + `quotation_id`.
+- **Liberação automática:** ao cancelar cotação, requisições vinculadas a essa cotação → `approved` + `quotation_id` null.
+
+---
+
+## 5. Sistema de Notificações
+
+### 5.1 In-app (`notifications`)
 
 Tabela `notifications` (migration `013_notifications.sql`) com colunas:
 
@@ -47,7 +70,7 @@ Tabela `notifications` (migration `013_notifications.sql`) com colunas:
 - `read`
 - `created_at`
 
-### 3.2 Preferências (`notification_preferences`)
+### 5.2 Preferências (`notification_preferences`)
 
 Campos legados:
 
@@ -67,7 +90,7 @@ Campos por canal (migration `014_notification_preferences_channels.sql`):
 - `delivery_done_bell`, `delivery_done_email`
 - `daily_summary_bell`, `daily_summary_email`
 
-### 3.3 Componentes e serviços
+### 5.3 Componentes e serviços
 
 - `components/ui/notification-bell.tsx`
 - `lib/hooks/use-notifications.ts`
@@ -78,7 +101,7 @@ Campos por canal (migration `014_notification_preferences_channels.sql`):
 - `lib/email/send-email.ts` (Resend)
 - `lib/email/templates/base.ts` e `lib/email/templates/index.ts`
 
-### 3.4 Gatilhos implementados (app atual)
+### 5.4 Gatilhos implementados (app atual)
 
 - `proposal.submitted` (fornecedor envia proposta -> comprador)
 - `order.accepted` (fornecedor aceita pedido -> comprador)
@@ -88,7 +111,7 @@ Campos por canal (migration `014_notification_preferences_channels.sql`):
 
 ---
 
-## 4. Auto-refresh (Polling)
+## 6. Auto-refresh (Polling)
 
 Hook padrão: `lib/hooks/use-auto-refresh.ts`.
 
@@ -108,9 +131,9 @@ Regras:
 
 ---
 
-## 5. Auditoria
+## 7. Auditoria
 
-Eventos relevantes de fornecedor:
+### Fornecedor
 
 - `supplier.login`
 - `supplier.logout`
@@ -121,28 +144,53 @@ Eventos relevantes de fornecedor:
 - `purchase_order.refused`
 - `purchase_order.delivery_updated`
 
+### Requisição (comprador / solicitante)
+
+- `requisition.created`
+- `requisition.in_quotation`
+- `requisition.approved`
+
 ---
 
-## 6. Banco (resumo objetivo)
+## 8. Banco (resumo objetivo)
 
+- `requisitions.status`: `pending`, `approved`, `rejected`, `in_quotation`, `completed`, **`cancelled`**
+- `quotation_items`: `long_description`, **`source_requisition_code`** (text, opcional)
+- `profiles.profile_type`: `'buyer' | 'supplier' | 'requester'`
 - `purchase_orders`: `supplier_id`, `accepted_at`, `accepted_by_supplier`, `estimated_delivery_date`, `cancellation_reason`, `delivery_date_change_reason`, `created_by`, `quotation_id`.
-- Status válidos: `draft`, `sent`, `processing`, `completed`, `cancelled`, `refused`, `error`.
+- Status PO válidos: `draft`, `sent`, `processing`, `completed`, `cancelled`, `refused`, `error`.
 - `purchase_order_items`: `delivery_days`.
 - `items`: `long_description`.
-- `quotation_items`: `long_description`.
 - `payment_conditions`: `id`, `company_id`, `code`, `description`, `active`.
 - `notifications` e `notification_preferences` com canais por tipo.
+- Migrations de referência: `020_requisitions_cancelled_status.sql`, `021_quotation_items_source_requisition.sql`, `022_requisitions_buyer_update_policy.sql`.
 
 ---
 
-## 7. Backlog (estado atual)
+## 9. Backlog (estado atual — v2.19.36)
 
-1. Dashboard do comprador ainda com parte dos cards mockados.
-2. Relatórios com seções parcialmente estáticas.
-3. Versionar no repositório funções SQL que hoje existem só na instância (ex.: `close_expired_rounds`, `check_round_completion`).
-4. Evoluir política de preferências para fornecedores (hoje `notification_preferences` focado no comprador).
-5. Cobertura automatizada para notificações + e-mail transacional.
+### Produto
+
+- Módulo de Contratos
+- PDF do Pedido de Compra
+- Saving — `target_price` em items, calcular vs. preço pago
+- Navegação ao clicar em notificação (redirecionar para entidade)
+- Extração de relatórios via Excel (Saving e Lead Time)
+- Módulo de Negociação por IA
+- API Store / gestão de acesso por módulo e tenant
+- Timeline da requisição: ao cancelar cotação, regredir etapa Cotação → Aprovação
+
+### Técnico
+
+- Permissões por perfil mais granulares (Master admin module)
+- Aumentar cobertura de testes
+- Política de segurança de senhas (complexidade, expiração, histórico 5 senhas)
+
+### Go-to-market / Documentação
+
+- Migrar documentação de implantação para Notion
+- Rotina de atualização das documentações
 
 ---
 
-*Última revisão: v2.18.11.*
+*Última revisão: v2.19.36.*

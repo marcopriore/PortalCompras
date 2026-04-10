@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.13
+- Versão atual: v2.19.36
 
 ---
 
@@ -100,7 +100,7 @@
 
 | Tabela | Campos-chave |
 |--------|-------------|
-| profiles | role, roles text[], profile_type ('buyer'\|'supplier'), supplier_id |
+| profiles | role, roles text[], profile_type ('buyer'\|'supplier'\|'requester'), supplier_id, avatar_url (Storage) |
 | suppliers | por tenant |
 | payment_conditions | id, company_id, code, description, active, created_at — UNIQUE (company_id, code), RLS ativo |
 | quotations | status: draft/waiting/analysis/completed/cancelled; created_by |
@@ -110,20 +110,19 @@
 | proposal_items | round_id FK quotation_rounds (OBRIGATÓRIO); delivery_days por item |
 | notifications | id, company_id, user_id, type, title, body, entity, entity_id, read, created_at |
 | notification_preferences | user_id, company_id, campos legados + `*_bell` e `*_email` por tipo |
-| requisitions | status: pending/approved/rejected/in_quotation/completed |
+| requisitions | status: pending/approved/rejected/in_quotation/completed/cancelled |
 | purchase_orders | status: draft/sent/processing/completed/cancelled/refused/error; supplier_id, accepted_at, accepted_by_supplier, estimated_delivery_date, cancellation_reason, delivery_date_change_reason, created_by, quotation_id |
 | purchase_order_items | delivery_days por item |
 | items | long_description |
-| quotation_items | long_description |
+| quotation_items | long_description, **source_requisition_code** (text, opcional — requisição de origem) |
 | approval_levels | flow ('requisition'\|'order'), cost_center, category |
-| approval_requests | flow, entity_id, approver_id, status: pending/approved/rejected |
+| approval_requests | flow, entity_id, approver_id, status: pending/approved/rejected; **decided_at**, **rejection_reason** |
 | tenant_features | feature_keys liberados por tenant |
 | role_permissions | permission_keys por role |
 | company_settings | company_id, key, value — configurações por tenant |
 | item_import_logs | log de importações Excel de itens |
 | audit_logs | id, company_id, user_id, user_name, event_type, entity, entity_id, description, metadata, created_at |
 | companies | inclui: logo_url (Storage URL) |
-| profiles | inclui: avatar_url (Storage URL) |
 | items | inclui: source (manual/erp/excel), sync_at |
 | suppliers | índice único (company_id, code) |
 
@@ -151,6 +150,11 @@
 - **Lead Time Fluxo Compras:** calculado como média de dias entre `requisitions.created_at` → `purchase_orders.created_at`, join por `requisition_code`. Não usar `estimated_delivery_date` para este cálculo.
 - **Meta de Lead Time:** lida de `company_settings` com key `lead_time_target_days`; editável inline no gráfico de relatórios.
 - **Sidebar ativa:** rotas raiz `/comprador` e `/fornecedor` usam comparação exata (`pathname === item.href`), não `startsWith`.
+- **Login unificado (`/login`):** tela dividida comprador (azul) / solicitante (laranja); redirecionamento por `profile_type`; fornecedor (`supplier`) bloqueado em ambos os lados.
+- **Cancelamento pelo solicitante:** status `cancelled` (não `rejected`). RLS `requisitions: requester cancela proprias`: `USING` só `pending`, `WITH CHECK` só `cancelled` (transição explícita pending → cancelled).
+- **Cotações e requisições:** ao salvar/editar cotação ou enviar (`waiting`), requisições identificadas por `source_requisition_code` nos itens passam a `in_quotation` com `quotation_id`. Ao **cancelar** cotação, requisições vinculadas a essa cotação voltam a `approved` com `quotation_id` null (filtro por `quotation_id` da cotação).
+- **Busca catálogo (itens/fornecedores) em cotações:** `.or(\`campo.ilike.${termo}\`)` — termo no formato `%texto%`, **sem** aspas duplas extras na string do filtro.
+- **Audit log (requisição):** registrar `requisition.created` (criação), `requisition.in_quotation` (vínculo à cotação), `requisition.approved` (liberação após cancelamento da cotação — evento no `audit_logs`, não confundir com fluxo de aprovação manual).
 
 ---
 
@@ -205,6 +209,26 @@
 | v2.18.9 | Ajustes incrementais pós-release |
 | v2.18.10 | Ajustes incrementais pós-release |
 | v2.18.11 | Notificações por canal + e-mail transacional + documentação |
+| v2.19.17 | Tela de login unificada comprador e solicitante |
+| v2.19.18 | Formulário nova requisição solicitante com catálogo e anexos |
+| v2.19.19 | Fix company_id em requisition_items e fluxo de aprovação solicitante |
+| v2.19.20 | Listagem solicitante com tabela, filtros e paginação |
+| v2.19.21 | Fix largura máxima e coluna ações solicitante |
+| v2.19.22 | Fluxo de rejeição e resubmit no portal solicitante |
+| v2.19.23 | Timeline horizontal, histórico e layout melhorado solicitante |
+| v2.19.24 | Portal solicitante completo com timeline azul e merge layout comprador |
+| v2.19.25 | Timeline horizontal e histórico na tela de requisição do comprador |
+| v2.19.26 | Fix mocks cotacoes nova e editar, remoção módulo oportunidades |
+| v2.19.27 | Remover quotation-form.tsx órfão e menu oportunidades |
+| v2.19.28 | Fix formato ilike buscas itens e fornecedores cotacoes |
+| v2.19.29 | Status cancelled requisições e lógica botão cancelar solicitante |
+| v2.19.30 | Migration 020 status cancelled e RLS policy restrita |
+| v2.19.31 | Vincular requisições à cotação com importação de itens e coluna requisição |
+| v2.19.32 | Fix deduplicação ao importar itens de requisição |
+| v2.19.33 | Coluna requisição na visualização de cotação e update in_quotation |
+| v2.19.34 | Update status requisição in_quotation ao salvar e liberar ao cancelar |
+| v2.19.35 | Audit log vincular e liberar requisição, histórico atualizado |
+| v2.19.36 | Audit log requisition.created no portal solicitante e comprador |
 
 ---
 
@@ -216,6 +240,15 @@
 - `check_round_completion()` — SECURITY DEFINER, VOLATILE — trigger em quotation_proposals
 - Trigger: `trg_check_round_completion` AFTER UPDATE ON quotation_proposals
 
+### Migrations recentes (requisição / cotação)
+- `020_requisitions_cancelled_status.sql` — constraint `requisitions.status` inclui `cancelled`; policy **requisitions: requester cancela proprias** com `WITH CHECK` explícito (apenas pending → cancelled).
+- `021_quotation_items_source_requisition.sql` — coluna `quotation_items.source_requisition_code`.
+- `022_requisitions_buyer_update_policy.sql` — policy **requisitions: buyer atualiza status** (comprador atualiza requisições do tenant).
+
+### RLS (referência)
+- **requisitions: requester cancela proprias** — UPDATE: `USING (requester_id = auth.uid() AND status = 'pending')` + `WITH CHECK (status = 'cancelled' …)`.
+- **requisitions: buyer atualiza status** — UPDATE para compradores do mesmo `company_id`.
+
 ---
 
 ## STATUS DAS TELAS
@@ -223,6 +256,11 @@
 | Rota | Status |
 |------|--------|
 | / | ✅ Landing page dark theme |
+| /login | ✅ Tela dividida comprador/solicitante |
+| /solicitante | ✅ Listagem com filtros, tabela, paginação, métricas |
+| /solicitante/nova | ✅ Formulário com catálogo, itens, anexos |
+| /solicitante/[id] | ✅ Timeline horizontal, informações gerais, itens, histórico |
+| /solicitante/[id]/editar | ✅ Editar e resubmeter após rejeição |
 | /comprador | ✅ todos os cards e gráficos com dados reais |
 | /comprador/requisicoes/** | ✅ |
 | /comprador/aprovacoes | ✅ |
