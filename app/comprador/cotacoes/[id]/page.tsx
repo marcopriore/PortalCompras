@@ -310,6 +310,42 @@ export default function QuotationDetailsPage({
         router.push('/comprador/cotacoes')
         return
       } else if (newStatus === 'cancelled') {
+        const { data: quotationItems } = await supabase
+          .from('quotation_items')
+          .select('source_requisition_code')
+          .eq('quotation_id', quotation.id)
+          .not('source_requisition_code', 'is', null)
+
+        const reqCodes = [
+          ...new Set(
+            (quotationItems ?? [])
+              .map((i) => i.source_requisition_code)
+              .filter((c): c is string => Boolean(c)),
+          ),
+        ]
+
+        if (reqCodes.length > 0 && companyId) {
+          const { data: reqs } = await supabase
+            .from('requisitions')
+            .select('id')
+            .eq('company_id', companyId)
+            .eq('quotation_id', quotation.id)
+            .in('code', reqCodes)
+
+          if (reqs && reqs.length > 0) {
+            await supabase
+              .from('requisitions')
+              .update({
+                status: 'approved',
+                quotation_id: null,
+              })
+              .in(
+                'id',
+                reqs.map((r) => r.id),
+              )
+          }
+        }
+
         toast.success('Cotação cancelada.')
         if (companyId) {
           void notifySuppliersQuotationStatus(
