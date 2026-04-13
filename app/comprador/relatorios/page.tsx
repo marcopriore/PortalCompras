@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { format, subMonths } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -45,6 +45,7 @@ import {
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { cn } from "@/lib/utils"
 
 const relatoriosDisponiveis = [
   {
@@ -168,6 +169,10 @@ export default function RelatoriosPage() {
 
   const [categoryLoading, setCategoryLoading] = useState(false)
   const [supplierLoading, setSupplierLoading] = useState(false)
+  const [savingTotal, setSavingTotal] = useState<number | null>(null)
+  const [savingPorMes, setSavingPorMes] = useState<{ month: string; saving: number }[]>([])
+  const [savingPorCategoria, setSavingPorCategoria] = useState<{ name: string; value: number }[]>([])
+  const [savingLoading, setSavingLoading] = useState(false)
 
   const periodStartIso = useMemo(() => {
     const months = getMonthsBack(periodo)
@@ -514,6 +519,125 @@ export default function RelatoriosPage() {
     return { from, to }
   }
 
+  const fetchSavingData = useCallback(async () => {
+    if (!companyId) return
+    setSavingLoading(true)
+    try {
+      const supabase = createClient()
+
+      const range = getIsoRange(savingDateFrom, savingDateTo)
+      let query = supabase
+        .from("purchase_order_items")
+        .select(
+          "unit_price, quantity, quotation_item_id, purchase_orders!inner(company_id, status, created_at, quotation_id)",
+        )
+        .eq("purchase_orders.company_id", companyId)
+        .in("purchase_orders.status", ["sent", "processing", "completed"])
+        .not("quotation_item_id", "is", null)
+
+      if (range?.from) query = query.gte("purchase_orders.created_at", range.from)
+      if (range?.to) query = query.lte("purchase_orders.created_at", range.to)
+
+      const { data: poItems } = await query
+
+      const items = (poItems ?? []) as {
+        unit_price: number | null
+        quantity: number | null
+        quotation_item_id: string | null
+        purchase_orders:
+          | { created_at: string; quotation_id: string | null }
+          | { created_at: string; quotation_id: string | null }[]
+          | null
+      }[]
+
+      const qtItemIds = [
+        ...new Set(items.map((i) => i.quotation_item_id).filter((id): id is string => Boolean(id))),
+      ]
+
+      if (qtItemIds.length === 0) {
+        setSavingTotal(null)
+        setSavingPorMes([])
+        setSavingPorCategoria([])
+        return
+      }
+
+      const { data: qtItems } = await supabase
+        .from("quotation_items")
+        .select("id, target_price, quotation_id")
+        .in("id", qtItemIds)
+        .not("target_price", "is", null)
+
+      const targetMap = new Map(
+        ((qtItems ?? []) as { id: string; target_price: number; quotation_id: string }[]).map(
+          (i) => [i.id, { target: Number(i.target_price), quotationId: i.quotation_id }],
+        ),
+      )
+
+      const quotationIds = [
+        ...new Set(
+          Array.from(targetMap.values())
+            .map((v) => v.quotationId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ]
+      let categoryMap = new Map<string, string>()
+      if (quotationIds.length > 0) {
+        const { data: qts } = await supabase
+          .from("quotations")
+          .select("id, category")
+          .in("id", quotationIds)
+        categoryMap = new Map(
+          ((qts ?? []) as { id: string; category: string | null }[]).map((q) => [
+            q.id,
+            q.category?.trim() || "Sem Categoria",
+          ]),
+        )
+      }
+
+      let total = 0
+      let hasAny = false
+      const monthMap = new Map<string, number>()
+      const catMap = new Map<string, number>()
+
+      items.forEach((item) => {
+        if (!item.quotation_item_id || item.unit_price == null || item.quantity == null) return
+        const info = targetMap.get(item.quotation_item_id)
+        if (!info) return
+
+        const saving = (info.target - Number(item.unit_price)) * Number(item.quantity)
+        total += saving
+        hasAny = true
+
+        const po = Array.isArray(item.purchase_orders)
+          ? item.purchase_orders[0]
+          : item.purchase_orders
+        if (po?.created_at) {
+          const month = format(new Date(po.created_at), "MMM/yy", { locale: ptBR })
+          monthMap.set(month, (monthMap.get(month) ?? 0) + saving)
+        }
+
+        const category = categoryMap.get(info.quotationId) ?? "Sem Categoria"
+        catMap.set(category, (catMap.get(category) ?? 0) + saving)
+      })
+
+      setSavingTotal(hasAny ? total : null)
+      setSavingPorMes(Array.from(monthMap.entries()).map(([month, saving]) => ({ month, saving })))
+      setSavingPorCategoria(
+        Array.from(catMap.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6)
+          .map(([name, value]) => ({ name, value })),
+      )
+    } finally {
+      setSavingLoading(false)
+    }
+  }, [companyId, savingDateFrom, savingDateTo])
+
+  useEffect(() => {
+    if (userLoading || !companyId) return
+    void fetchSavingData()
+  }, [companyId, userLoading, fetchSavingData])
+
   const showUnavailableData = (message: string) => {
     try {
       toast({ title: "Relatório indisponível", description: message })
@@ -656,10 +780,145 @@ export default function RelatoriosPage() {
     }
   }
 
-  const handleExportSaving = () => {
-    showUnavailableData(
-      "O relatório de Saving estará disponível após configuração de preços de referência por item.",
-    )
+  const handleExportSaving = async () => {
+    if (!companyId) return
+    setSavingLoading(true)
+    try {
+      const supabase = createClient()
+      const range = getIsoRange(savingDateFrom, savingDateTo)
+
+      let query = supabase
+        .from("purchase_order_items")
+        .select(
+          "unit_price, quantity, material_code, material_description, quotation_item_id, purchase_orders!inner(code, status, created_at, supplier_name, quotation_id, company_id)",
+        )
+        .eq("purchase_orders.company_id", companyId)
+        .in("purchase_orders.status", ["sent", "processing", "completed"])
+        .not("quotation_item_id", "is", null)
+
+      if (range?.from) query = query.gte("purchase_orders.created_at", range.from)
+      if (range?.to) query = query.lte("purchase_orders.created_at", range.to)
+
+      const { data: poItems } = await query
+      const items = (poItems ?? []) as {
+        unit_price: number | null
+        quantity: number | null
+        material_code: string | null
+        material_description: string | null
+        quotation_item_id: string | null
+        purchase_orders:
+          | {
+              code: string
+              created_at: string
+              supplier_name: string | null
+              quotation_id: string | null
+            }
+          | {
+              code: string
+              created_at: string
+              supplier_name: string | null
+              quotation_id: string | null
+            }[]
+          | null
+      }[]
+
+      const qtItemIds = [
+        ...new Set(items.map((i) => i.quotation_item_id).filter((id): id is string => Boolean(id))),
+      ]
+
+      if (qtItemIds.length === 0) {
+        showUnavailableData("Nenhum item com preço alvo definido encontrado no período.")
+        return
+      }
+
+      const { data: qtItems } = await supabase
+        .from("quotation_items")
+        .select("id, target_price")
+        .in("id", qtItemIds)
+        .not("target_price", "is", null)
+
+      const targetMap = new Map(
+        ((qtItems ?? []) as { id: string; target_price: number }[]).map((i) => [
+          i.id,
+          Number(i.target_price),
+        ]),
+      )
+
+      const ExcelJS = (await import("exceljs")).default
+      const workbook = new ExcelJS.Workbook()
+      const ws = workbook.addWorksheet("Saving Realizado")
+      ws.columns = [
+        { header: "Pedido", key: "pedido", width: 18 },
+        { header: "Data", key: "data", width: 14 },
+        { header: "Fornecedor", key: "fornecedor", width: 30 },
+        { header: "Código", key: "codigo", width: 14 },
+        { header: "Descrição", key: "descricao", width: 35 },
+        { header: "Qtd", key: "qtd", width: 8 },
+        { header: "Preço Alvo", key: "alvo", width: 14 },
+        { header: "Preço Pago", key: "pago", width: 14 },
+        { header: "Saving Unit.", key: "savingUnit", width: 14 },
+        { header: "Saving Total", key: "savingTotal", width: 16 },
+      ]
+
+      const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F46E5" } } as any
+      const headerFont = { color: { argb: "FFFFFFFF" }, bold: true }
+      ws.getRow(1).eachCell((cell: any) => {
+        cell.fill = headerFill
+        cell.font = headerFont
+        cell.alignment = { horizontal: "center", vertical: "middle" }
+      })
+
+      let grandTotal = 0
+      items.forEach((item) => {
+        if (!item.quotation_item_id || item.unit_price == null || item.quantity == null) return
+        const target = targetMap.get(item.quotation_item_id)
+        if (target == null) return
+
+        const po = Array.isArray(item.purchase_orders) ? item.purchase_orders[0] : item.purchase_orders
+
+        const savingUnit = target - Number(item.unit_price)
+        const savingTotalItem = savingUnit * Number(item.quantity)
+        grandTotal += savingTotalItem
+
+        const row = ws.addRow({
+          pedido: po?.code ?? "—",
+          data: po?.created_at ? new Date(po.created_at).toLocaleDateString("pt-BR") : "—",
+          fornecedor: po?.supplier_name ?? "—",
+          codigo: item.material_code ?? "—",
+          descricao: item.material_description ?? "—",
+          qtd: item.quantity,
+          alvo: target,
+          pago: item.unit_price,
+          savingUnit,
+          savingTotal: savingTotalItem,
+        })
+
+        const isPositive = savingTotalItem >= 0
+        row.getCell("savingTotal").fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: isPositive ? "FFD1FAE5" : "FFFEE2E2" },
+        } as any
+        ;["alvo", "pago", "savingUnit", "savingTotal"].forEach((key) => {
+          row.getCell(key).numFmt = '"R$" #,##0.00'
+        })
+      })
+
+      const totalRow = ws.addRow({
+        pedido: "TOTAL",
+        qtd: "",
+        savingTotal: grandTotal,
+      })
+      totalRow.eachCell({ includeEmpty: true }, (cell: any) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } } as any
+        cell.font = { bold: true }
+      })
+      totalRow.getCell("savingTotal").numFmt = '"R$" #,##0.00'
+
+      await downloadExcel(workbook, `relatorio_saving_${getTodayDDMMYYYY()}.xlsx`)
+    } finally {
+      setSavingLoading(false)
+    }
   }
 
   const handleExportLeadTime = () => {
@@ -741,19 +1000,56 @@ export default function RelatoriosPage() {
             <p className="text-xs text-muted-foreground">cotações registradas</p>
           </CardContent>
         </Card>
-        <Card className="relative border-2 border-border rounded-lg">
-          <span className="absolute top-3 right-3 text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium">
-            Indisponível
-          </span>
+        <Card
+          className={cn(
+            "relative border-2",
+            savingTotal == null
+              ? "border-border"
+              : savingTotal >= 0
+                ? "border-green-200 bg-green-50"
+                : "border-red-200 bg-red-50",
+          )}
+        >
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Saving Total
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-success" />
+            <CardTitle className="text-sm font-medium text-muted-foreground">Saving Total</CardTitle>
+            <TrendingUp
+              className={cn(
+                "h-4 w-4",
+                savingTotal == null
+                  ? "text-muted-foreground"
+                  : savingTotal >= 0
+                    ? "text-green-600"
+                    : "text-red-600",
+              )}
+            />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-muted-foreground">—</div>
-            <p className="text-xs text-muted-foreground">Sem dados de referência</p>
+            <div
+              className={cn(
+                "text-2xl font-bold",
+                savingTotal == null
+                  ? "text-muted-foreground"
+                  : savingTotal >= 0
+                    ? "text-green-700"
+                    : "text-red-700",
+              )}
+            >
+              {savingLoading
+                ? "..."
+                : savingTotal == null
+                  ? "—"
+                  : `${savingTotal >= 0 ? "+" : ""}${savingTotal.toLocaleString("pt-BR", {
+                      style: "currency",
+                      currency: "BRL",
+                    })}`}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {savingTotal == null
+                ? "Defina preços alvo nos itens do catálogo"
+                : savingTotal >= 0
+                  ? "Economia realizada vs. preço alvo"
+                  : "Acima do preço alvo"}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -1117,6 +1413,97 @@ export default function RelatoriosPage() {
                           }}
                         />
                         <Bar dataKey="total" fill="var(--color-chart-2)" radius={4} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Saving Realizado por Mês</CardTitle>
+                <CardDescription>Economia vs. preço alvo em pedidos emitidos</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {savingPorMes.length === 0 ? (
+                  <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
+                    {savingLoading
+                      ? "Carregando..."
+                      : "Nenhum dado disponível — defina preços alvo nos itens"}
+                  </div>
+                ) : (
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={savingPorMes}>
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                        <XAxis dataKey="month" className="text-xs" />
+                        <YAxis
+                          className="text-xs"
+                          tickFormatter={(value) =>
+                            value >= 1000 ? `R$ ${(value / 1000).toFixed(0)}k` : `R$ ${value}`
+                          }
+                        />
+                        <Tooltip
+                          formatter={(value: number) =>
+                            `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            })}`
+                          }
+                          contentStyle={{
+                            backgroundColor: "var(--popover)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "var(--radius)",
+                          }}
+                        />
+                        <Bar dataKey="saving" name="Saving" radius={4} fill="#16a34a" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Saving por Categoria</CardTitle>
+                <CardDescription>Economia acumulada por categoria de compra</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {savingPorCategoria.length === 0 ? (
+                  <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
+                    {savingLoading
+                      ? "Carregando..."
+                      : "Nenhum dado disponível — defina preços alvo nos itens"}
+                  </div>
+                ) : (
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={savingPorCategoria} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                        <XAxis
+                          type="number"
+                          className="text-xs"
+                          tickFormatter={(value) =>
+                            value >= 1000 ? `R$ ${(value / 1000).toFixed(0)}k` : `R$ ${value}`
+                          }
+                        />
+                        <YAxis type="category" dataKey="name" className="text-xs" width={120} />
+                        <Tooltip
+                          formatter={(value: number) =>
+                            `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            })}`
+                          }
+                          contentStyle={{
+                            backgroundColor: "var(--popover)",
+                            border: "1px solid var(--border)",
+                            borderRadius: "var(--radius)",
+                          }}
+                        />
+                        <Bar dataKey="value" name="Saving" fill="#16a34a" radius={4} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>

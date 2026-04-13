@@ -46,6 +46,8 @@ export default function CompradorDashboard() {
   const [quotationsChange, setQuotationsChange] = useState<number>(0)
   const [ordersChange, setOrdersChange] = useState<number>(0)
   const [leadTimeChange, setLeadTimeChange] = useState<number>(0)
+  const [savingAcumulado, setSavingAcumulado] = useState<number | null>(null)
+  const [savingChange, setSavingChange] = useState<number | null>(null)
 
   type OrderWithReq = {
     created_at: string
@@ -84,6 +86,8 @@ export default function CompradorDashboard() {
     setQuotationsChange(0)
     setOrdersChange(0)
     setLeadTimeChange(0)
+    setSavingAcumulado(null)
+    setSavingChange(null)
 
     const fetchDashboard = async () => {
       setDashLoading(true)
@@ -109,6 +113,8 @@ export default function CompradorDashboard() {
         poItemsRes,
         quotationsForSpendRes,
         ltMonthlyRes,
+        savingItemsCurrentRes,
+        savingItemsPrevRes,
       ] = await Promise.all([
         supabase.from("quotations").select("status").eq("company_id", companyId),
         supabase
@@ -190,6 +196,25 @@ export default function CompradorDashboard() {
           .not("requisition_code", "is", null)
           .neq("requisition_code", "")
           .gte("created_at", sixMonthsAgo),
+        supabase
+          .from("purchase_order_items")
+          .select(
+            "unit_price, quantity, quotation_item_id, purchase_orders!inner(company_id, status, created_at)",
+          )
+          .eq("purchase_orders.company_id", companyId)
+          .in("purchase_orders.status", ["sent", "processing", "completed"])
+          .gte("purchase_orders.created_at", currentMonthStart)
+          .not("quotation_item_id", "is", null),
+        supabase
+          .from("purchase_order_items")
+          .select(
+            "unit_price, quantity, quotation_item_id, purchase_orders!inner(company_id, status, created_at)",
+          )
+          .eq("purchase_orders.company_id", companyId)
+          .in("purchase_orders.status", ["sent", "processing", "completed"])
+          .gte("purchase_orders.created_at", prevMonthStart)
+          .lte("purchase_orders.created_at", prevMonthEnd)
+          .not("quotation_item_id", "is", null),
       ])
 
       if (quotationsRes.data) {
@@ -380,6 +405,82 @@ export default function CompradorDashboard() {
         })),
       )
 
+      const allSavingItems = [
+        ...((savingItemsCurrentRes.data ?? []) as {
+          unit_price: number | null
+          quantity: number | null
+          quotation_item_id: string | null
+        }[]),
+        ...((savingItemsPrevRes.data ?? []) as {
+          unit_price: number | null
+          quantity: number | null
+          quotation_item_id: string | null
+        }[]),
+      ]
+
+      const quotationItemIds = [
+        ...new Set(
+          allSavingItems.map((i) => i.quotation_item_id).filter((id): id is string => Boolean(id)),
+        ),
+      ]
+
+      let targetPriceMap = new Map<string, number>()
+      if (quotationItemIds.length > 0) {
+        const { data: qtItems } = await supabase
+          .from("quotation_items")
+          .select("id, target_price")
+          .in("id", quotationItemIds)
+          .not("target_price", "is", null)
+
+        targetPriceMap = new Map(
+          ((qtItems ?? []) as { id: string; target_price: number }[]).map((i) => [
+            i.id,
+            Number(i.target_price),
+          ]),
+        )
+      }
+
+      const calcSaving = (
+        items: {
+          unit_price: number | null
+          quantity: number | null
+          quotation_item_id: string | null
+        }[],
+      ): number | null => {
+        let total = 0
+        let hasAny = false
+        items.forEach((item) => {
+          if (!item.quotation_item_id || !item.unit_price || !item.quantity) return
+          const target = targetPriceMap.get(item.quotation_item_id)
+          if (target == null) return
+          total += (target - Number(item.unit_price)) * Number(item.quantity)
+          hasAny = true
+        })
+        return hasAny ? total : null
+      }
+
+      const savingCurrent = calcSaving(
+        (savingItemsCurrentRes.data ?? []) as {
+          unit_price: number | null
+          quantity: number | null
+          quotation_item_id: string | null
+        }[],
+      )
+      const savingPrev = calcSaving(
+        (savingItemsPrevRes.data ?? []) as {
+          unit_price: number | null
+          quantity: number | null
+          quotation_item_id: string | null
+        }[],
+      )
+
+      setSavingAcumulado(savingCurrent)
+      setSavingChange(
+        savingCurrent != null && savingPrev != null && savingPrev !== 0
+          ? Math.round(((savingCurrent - savingPrev) / Math.abs(savingPrev)) * 100)
+          : null,
+      )
+
       setDashLoading(false)
     }
 
@@ -446,8 +547,22 @@ export default function CompradorDashboard() {
         />
         <MetricsCard
           title="Saving Acumulado"
-          value="—"
-          changeLabel="Sem dados de referência"
+          value={
+            savingAcumulado == null
+              ? "—"
+              : savingAcumulado.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })
+          }
+          change={savingChange ?? 0}
+          changeLabel={
+            savingAcumulado == null
+              ? "Defina preços alvo nos itens"
+              : savingAcumulado >= 0
+                ? "Economia vs. preço alvo"
+                : "Acima do preço alvo"
+          }
           icon={TrendingDown}
         />
         <div className="space-y-1">
