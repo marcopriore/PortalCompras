@@ -460,6 +460,7 @@ export default function EqualizacaoPage({
   const [rounds, setRounds] = React.useState<Round[]>([])
   const [selectedRoundId, setSelectedRoundId] = React.useState<string | null>(null)
   const [selectedRound, setSelectedRound] = React.useState<Round | null>(null)
+  const [benchmarkThreshold] = React.useState(10)
   const [finalizeRoundOpen, setFinalizeRoundOpen] = React.useState(false)
   const [novaRoundOpen, setNovaRoundOpen] = React.useState(false)
   const [closingRound, setClosingRound] = React.useState(false)
@@ -1450,6 +1451,49 @@ export default function EqualizacaoPage({
     return Math.min(...totals)
   }, [proposals, selectedRoundId, quotationItems])
 
+  const benchmarkAlertas = React.useMemo(() => {
+    if (!selectedRoundId) return []
+    const alertas: {
+      quotationItemId: string
+      materialDescription: string
+      avgPrice: number
+      worstPrice: number
+      worstSupplier: string
+      diffPercent: number
+    }[] = []
+
+    quotationItems.forEach((qi) => {
+      const avg = qi.average_price
+      if (avg == null || avg <= 0) return
+
+      proposals.forEach((p) => {
+        const pi = proposalItemsForSelectedRound(p, selectedRoundId).find(
+          (i) => i.quotation_item_id === qi.id && i.unit_price > 0,
+        )
+        if (!pi) return
+        const diff = ((pi.unit_price - avg) / avg) * 100
+        if (diff > benchmarkThreshold) {
+          const existing = alertas.find((a) => a.quotationItemId === qi.id)
+          if (!existing || pi.unit_price > existing.worstPrice) {
+            const idx = alertas.findIndex((a) => a.quotationItemId === qi.id)
+            const entry = {
+              quotationItemId: qi.id,
+              materialDescription: qi.material_description,
+              avgPrice: avg,
+              worstPrice: pi.unit_price,
+              worstSupplier: p.supplier_name,
+              diffPercent: Math.round(diff),
+            }
+            if (idx >= 0) alertas[idx] = entry
+            else alertas.push(entry)
+          }
+        }
+      })
+    })
+
+    return alertas
+  }, [quotationItems, proposals, selectedRoundId, benchmarkThreshold])
+
   const handleFinalize = async () => {
     if (!quotation || !companyId || !userId) return
     if (!selectedRoundId) return
@@ -2314,6 +2358,36 @@ export default function EqualizacaoPage({
           </p>
         </CardHeader>
         <CardContent>
+          {benchmarkAlertas.length > 0 && (
+            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-amber-800">
+                    {benchmarkAlertas.length} item(s) com preço acima da média histórica (
+                    {benchmarkThreshold}% threshold)
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
+                    {benchmarkAlertas.slice(0, 5).map((a) => (
+                      <p key={a.quotationItemId} className="text-xs text-amber-700">
+                        <span className="font-medium">{a.materialDescription}</span>
+                        {" — "}
+                        {a.worstSupplier}: {formatCurrency(a.worstPrice)}{" "}
+                        <span className="font-semibold">
+                          +{a.diffPercent}% vs média {formatCurrency(a.avgPrice)}
+                        </span>
+                      </p>
+                    ))}
+                    {benchmarkAlertas.length > 5 && (
+                      <p className="text-xs text-amber-600">
+                        ...e mais {benchmarkAlertas.length - 5} item(s)
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {proposals.length === 0 ? (
             <>
               {roundSelectControl ? (
@@ -3051,6 +3125,28 @@ export default function EqualizacaoPage({
                                           >
                                             {isAbove ? "+" : ""}
                                             {diff.toFixed(1)}% vs alvo
+                                          </span>
+                                        )
+                                      })()}
+                                      {(() => {
+                                        const avg = qi.average_price
+                                        if (avg == null || avg <= 0 || !hasQuotablePrice) return null
+                                        const diff = ((pi!.unit_price - avg) / avg) * 100
+                                        const isSignificant = Math.abs(diff) > 2
+                                        if (!isSignificant) return null
+                                        return (
+                                          <span
+                                            className={cn(
+                                              "text-[10px] font-medium leading-none",
+                                              diff > benchmarkThreshold
+                                                ? "text-amber-600 font-bold"
+                                                : diff > 0
+                                                  ? "text-orange-500"
+                                                  : "text-blue-600",
+                                            )}
+                                          >
+                                            {diff > 0 ? "+" : ""}
+                                            {diff.toFixed(1)}% vs média
                                           </span>
                                         )
                                       })()}
