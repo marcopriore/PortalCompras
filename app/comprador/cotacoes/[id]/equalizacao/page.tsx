@@ -71,7 +71,9 @@ import { logAudit } from "@/lib/audit"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { LastUpdated } from "@/components/ui/last-updated"
+import { SupplierScoreBadge } from "@/components/ui/supplier-score-badge"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { useSupplierScores } from "@/lib/hooks/use-supplier-score"
 import { toast } from "sonner"
 
 type QuotationItem = {
@@ -430,7 +432,7 @@ export default function EqualizacaoPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
-  const { companyId, userId, loading: userLoading } = useUser()
+  const { companyId, userId, loading: userLoading, profileType } = useUser()
   const { hasFeature, hasPermission } = usePermissions()
   void hasFeature
 
@@ -515,6 +517,21 @@ export default function EqualizacaoPage({
   const [countdownTick, setCountdownTick] = React.useState(0)
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
+
+  const equalizacaoSupplierIds = React.useMemo(
+    () =>
+      [
+        ...new Set(
+          proposals.map((p) => p.supplier_id).filter((sid): sid is string => Boolean(sid)),
+        ),
+      ],
+    [proposals],
+  )
+
+  const { scores: equalizacaoScores, loading: equalizacaoScoresLoading } = useSupplierScores(
+    companyId,
+    equalizacaoSupplierIds,
+  )
 
   const structureSnapshotRef = React.useRef({ items: 0, suppliers: 0 })
   const quotationSuppliersSnapshotRef = React.useRef<QuotationSupplier[]>([])
@@ -1186,40 +1203,6 @@ export default function EqualizacaoPage({
     })
     return best
   }, [quotationItems, proposals, selectedRoundId])
-
-  const commonItems = React.useMemo(() => {
-    if (!selectedRoundId) return []
-    return quotationItems.filter((qi) =>
-      proposals.every((p) =>
-        proposalItemsForSelectedRound(p, selectedRoundId).some(
-          (i) =>
-            i.quotation_item_id === qi.id &&
-            i.item_status === "accepted" &&
-            i.unit_price > 0,
-        ),
-      ),
-    )
-  }, [quotationItems, proposals, selectedRoundId])
-
-  const weightedPriceByProposal = React.useMemo(() => {
-    const map: Record<string, number> = {}
-    if (!selectedRoundId) {
-      proposals.forEach((p) => {
-        map[p.id] = 0
-      })
-      return map
-    }
-    proposals.forEach((p) => {
-      const total = commonItems.reduce((sum, qi) => {
-        const pi = proposalItemsForSelectedRound(p, selectedRoundId).find(
-          (i) => i.quotation_item_id === qi.id,
-        )
-        return sum + (pi ? pi.unit_price * qi.quantity : 0)
-      }, 0)
-      map[p.id] = total
-    })
-    return map
-  }, [proposals, commonItems, selectedRoundId])
 
   const proposalItemsByProposal = React.useMemo(() => {
     const map = new Map<string, Map<string, ProposalItem>>()
@@ -2910,16 +2893,18 @@ export default function EqualizacaoPage({
                                 ? "—"
                                 : formatCurrency(supplierTotalByProposal[p.id]!)}
                             </span>
-                            <span className="text-xs text-muted-foreground">
-                              Ponderado:{" "}
-                              {proposalItemsForSelectedRound(p, selectedRoundId).length === 0 ||
-                              commonItems.length === 0
-                                ? "—"
-                                : formatCurrency(weightedPriceByProposal[p.id] ?? 0)}
-                            </span>
                             <p className="text-xs text-muted-foreground mt-1">
                               Cond. Pgto: {p.payment_condition ?? "—"}
                             </p>
+                            {profileType !== "supplier" && p.supplier_id && (
+                              <div className="mt-2">
+                                <SupplierScoreBadge
+                                  scoreData={equalizacaoScores[p.supplier_id]}
+                                  loading={equalizacaoScoresLoading}
+                                  size="sm"
+                                />
+                              </div>
+                            )}
                             {!isReadOnly && (
                               <Button
                                 variant="outline"

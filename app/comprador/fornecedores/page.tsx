@@ -5,6 +5,9 @@ import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
+import { useSupplierScores } from '@/lib/hooks/use-supplier-score'
+import { SupplierScoreBadge } from '@/components/ui/supplier-score-badge'
+import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import MultiSelectFilter from '@/components/ui/multi-select-filter'
@@ -103,6 +106,7 @@ export default function FornecedoresPage() {
   const [categoryFilter, setCategoryFilter] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
+  const [priceWeight, setPriceWeight] = useState(40)
 
   const [erpSyncOpen, setErpSyncOpen] = useState(false)
 
@@ -162,6 +166,31 @@ export default function FornecedoresPage() {
   useEffect(() => {
     void loadSuppliers()
   }, [loadSuppliers])
+
+  useEffect(() => {
+    if (!companyId) return
+    const supabase = createClient()
+    void supabase
+      .from('company_settings')
+      .select('value')
+      .eq('company_id', companyId)
+      .eq('key', 'score_weight_price')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.value) {
+          const n = Number(data.value)
+          if (n >= 0 && n <= 100) setPriceWeight(n)
+        }
+      })
+  }, [companyId])
+
+  const supplierIds = useMemo(() => suppliers.map((s) => s.id), [suppliers])
+
+  const { scores: supplierScores, loading: scoresLoading } = useSupplierScores(
+    companyId,
+    supplierIds,
+    priceWeight,
+  )
 
   const categories = useMemo(() => {
     const set = new Set<string>()
@@ -527,6 +556,7 @@ export default function FornecedoresPage() {
                 <TableHead className="px-3 py-2">Localização</TableHead>
                 <TableHead className="px-3 py-2">Status</TableHead>
                 <TableHead className="px-3 py-2 text-center">Pedidos</TableHead>
+                <TableHead className="px-3 py-2 text-center">Score</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -575,6 +605,13 @@ export default function FornecedoresPage() {
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top text-center text-sm text-muted-foreground">
                     {orderCounts[s.id] ?? 0}
+                  </TableCell>
+                  <TableCell className="px-3 py-2 align-top text-center">
+                    <SupplierScoreBadge
+                      scoreData={supplierScores[s.id]}
+                      loading={scoresLoading}
+                      size="sm"
+                    />
                   </TableCell>
                 </TableRow>
               ))}
@@ -637,6 +674,54 @@ export default function FornecedoresPage() {
                   <p className="text-sm">{orderCounts[selectedSupplier.id] ?? 0}</p>
                 </div>
               </div>
+              {supplierScores[selectedSupplier.id] && (
+                <div className="space-y-3 border-t border-border pt-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Score de Performance
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <SupplierScoreBadge
+                      scoreData={supplierScores[selectedSupplier.id]}
+                      size="md"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(
+                      [
+                        { label: 'Preço vs Mercado', value: supplierScores[selectedSupplier.id]?.priceScore },
+                        { label: 'Cobertura', value: supplierScores[selectedSupplier.id]?.coverageScore },
+                        { label: 'Lead Time', value: supplierScores[selectedSupplier.id]?.leadTimeScore },
+                        {
+                          label: 'Confiabilidade',
+                          value: supplierScores[selectedSupplier.id]?.reliabilityScore,
+                        },
+                      ] as const
+                    ).map(({ label, value }) => (
+                      <div key={label} className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">{label}</span>
+                          <span className="font-medium">{value ?? '—'}/100</span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-muted">
+                          <div
+                            className={cn(
+                              'h-1.5 rounded-full transition-all',
+                              (value ?? 0) >= 75
+                                ? 'bg-green-500'
+                                : (value ?? 0) >= 50
+                                  ? 'bg-yellow-500'
+                                  : (value ?? 0) >= 25
+                                    ? 'bg-orange-500'
+                                    : 'bg-red-500',
+                            )}
+                            style={{ width: `${value ?? 0}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>
