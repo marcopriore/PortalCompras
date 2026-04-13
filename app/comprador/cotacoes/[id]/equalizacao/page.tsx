@@ -214,6 +214,34 @@ const money = new Intl.NumberFormat("pt-BR", {
 
 const formatCurrency = (value: number) => money.format(value)
 
+/** Converte valor vindo do Supabase (string/number) para número finito ou null. */
+function toDisplayableMoney(v: unknown): number | null {
+  if (v == null) return null
+  if (typeof v === "string" && v.trim() === "") return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+/** Interpreta texto de preço (pt-BR com vírgula decimal ou ponto). */
+function parseTargetPriceInput(s: string): number | null {
+  let t = s.trim().replace(/[R$\s]/gi, "")
+  if (!t) return null
+  const lastComma = t.lastIndexOf(",")
+  const lastDot = t.lastIndexOf(".")
+  if (lastComma > -1 && (lastDot === -1 || lastComma > lastDot)) {
+    t = t.replace(/\./g, "").replace(",", ".")
+  } else {
+    t = t.replace(/,/g, "")
+  }
+  const n = Number(t)
+  return Number.isFinite(n) ? n : null
+}
+
+function formatMoneyOrDash(v: unknown) {
+  const n = toDisplayableMoney(v)
+  return n != null ? formatCurrency(n) : "—"
+}
+
 async function notifySuppliersQuotationStatus(
   quotationId: string,
   quotationCode: string,
@@ -404,6 +432,8 @@ export default function EqualizacaoPage({
   const [finishingQuotation, setFinishingQuotation] = React.useState(false)
   const [targetPrices, setTargetPrices] = React.useState<Record<string, number | null>>({})
   const [savingTargetPrices, setSavingTargetPrices] = React.useState<Record<string, boolean>>({})
+  const [targetPriceFocusId, setTargetPriceFocusId] = React.useState<string | null>(null)
+  const [targetPriceDraft, setTargetPriceDraft] = React.useState<Record<string, string>>({})
   const [columnVisibility, setColumnVisibility] = React.useState<Record<string, boolean>>({
     // colunas de itens (tabela esquerda)
     col_unit: true,
@@ -569,7 +599,14 @@ export default function EqualizacaoPage({
         if (allProposalsRawRes.error) throw allProposalsRawRes.error
 
         const q = (qRes.data as Quotation) ?? null
-        const items = ((itemsRes.data as unknown) as QuotationItem[]) ?? []
+        const items = (
+          ((itemsRes.data as unknown) as QuotationItem[] | null | undefined) ?? []
+        ).map((i) => ({
+          ...i,
+          target_price: i.target_price != null ? Number(i.target_price) : null,
+          last_purchase_price: i.last_purchase_price != null ? Number(i.last_purchase_price) : null,
+          average_price: i.average_price != null ? Number(i.average_price) : null,
+        }))
         const quotationSuppliersOrdered = (qsRes.data ?? []) as QuotationSupplier[]
 
         structureSnapshotRef.current = {
@@ -643,7 +680,10 @@ export default function EqualizacaoPage({
         setQuotationItems(items)
         setTargetPrices(
           Object.fromEntries(
-            (items as QuotationItem[]).map((i) => [i.id, i.target_price ?? null]),
+            items.map((i) => [
+              i.id,
+              i.target_price != null ? Number(i.target_price) : null,
+            ]),
           ),
         )
         setProposals(probs)
@@ -1199,7 +1239,7 @@ export default function EqualizacaoPage({
     if (columnVisibility.col_unit) w += 48
     if (columnVisibility.col_last_price) w += 90
     if (columnVisibility.col_avg_price) w += 90
-    if (columnVisibility.col_target_price) w += 110
+    if (columnVisibility.col_target_price) w += 128
     return w
   }, [columnVisibility])
 
@@ -2599,7 +2639,7 @@ export default function EqualizacaoPage({
                             </TableHead>
                           )}
                           {columnVisibility.col_target_price && (
-                            <TableHead className="min-w-[110px] w-[110px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                            <TableHead className="min-w-[128px] w-[128px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
                               Preço Alvo
                             </TableHead>
                           )}
@@ -2679,7 +2719,7 @@ export default function EqualizacaoPage({
                               rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             )}
                           >
-                            {qi.last_purchase_price != null ? formatCurrency(qi.last_purchase_price) : "—"}
+                            {formatMoneyOrDash(qi.last_purchase_price)}
                           </TableCell>
                         )}
                         {columnVisibility.col_avg_price && (
@@ -2690,44 +2730,88 @@ export default function EqualizacaoPage({
                               rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             )}
                           >
-                            {qi.average_price != null ? formatCurrency(qi.average_price) : "—"}
+                            {formatMoneyOrDash(qi.average_price)}
                           </TableCell>
                         )}
                         {columnVisibility.col_target_price && (
                           <TableCell
                             className={cn(
-                              "min-w-[110px] w-[110px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[60px] p-0.5",
+                              "min-w-[128px] w-[128px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[60px] p-0.5",
                               isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                               rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             )}
                           >
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.01}
-                              value={targetPrices[qi.id] ?? ""}
-                              placeholder="—"
-                              disabled={isReadOnly || savingTargetPrices[qi.id]}
-                              onChange={(e) => {
-                                const val = e.target.value === "" ? null : Number(e.target.value)
-                                setTargetPrices((prev) => ({ ...prev, [qi.id]: val }))
-                                setQuotationItems((prev) =>
-                                  prev.map((item) =>
-                                    item.id === qi.id ? { ...item, target_price: val } : item,
-                                  ),
-                                )
-                              }}
-                              onBlur={(e) => {
-                                const val = e.target.value === "" ? null : Number(e.target.value)
-                                void handleSaveTargetPrice(qi.id, val)
-                              }}
-                              className={cn(
-                                "w-full h-8 px-1.5 text-xs text-center rounded border border-transparent",
-                                "bg-transparent focus:bg-white focus:border-primary focus:outline-none",
-                                "disabled:opacity-50 disabled:cursor-not-allowed",
-                                savingTargetPrices[qi.id] && "opacity-60",
-                              )}
-                            />
+                            {isReadOnly || savingTargetPrices[qi.id] ? (
+                              <span
+                                className={cn(
+                                  "inline-block min-h-8 px-1.5 py-1.5 text-xs text-center w-full text-muted-foreground",
+                                  savingTargetPrices[qi.id] && "opacity-60",
+                                )}
+                              >
+                                {formatMoneyOrDash(targetPrices[qi.id])}
+                              </span>
+                            ) : (
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                value={
+                                  targetPriceFocusId === qi.id
+                                    ? (targetPriceDraft[qi.id] ?? "")
+                                    : (() => {
+                                        const n = toDisplayableMoney(targetPrices[qi.id])
+                                        return n != null ? formatCurrency(n) : ""
+                                      })()
+                                }
+                                placeholder="R$ —"
+                                onFocus={() => {
+                                  setTargetPriceFocusId(qi.id)
+                                  const n = toDisplayableMoney(targetPrices[qi.id])
+                                  setTargetPriceDraft((d) => ({
+                                    ...d,
+                                    [qi.id]:
+                                      n != null
+                                        ? new Intl.NumberFormat("pt-BR", {
+                                            minimumFractionDigits: 0,
+                                            maximumFractionDigits: 6,
+                                            useGrouping: false,
+                                          }).format(n)
+                                        : "",
+                                  }))
+                                }}
+                                onChange={(e) => {
+                                  if (targetPriceFocusId !== qi.id) return
+                                  setTargetPriceDraft((d) => ({
+                                    ...d,
+                                    [qi.id]: e.target.value,
+                                  }))
+                                }}
+                                onBlur={() => {
+                                  const parsed = parseTargetPriceInput(
+                                    targetPriceDraft[qi.id] ?? "",
+                                  )
+                                  const val = parsed != null && parsed >= 0 ? parsed : null
+                                  setTargetPriceFocusId((id) => (id === qi.id ? null : id))
+                                  setTargetPriceDraft((d) => {
+                                    const next = { ...d }
+                                    delete next[qi.id]
+                                    return next
+                                  })
+                                  setTargetPrices((prev) => ({ ...prev, [qi.id]: val }))
+                                  setQuotationItems((prev) =>
+                                    prev.map((item) =>
+                                      item.id === qi.id ? { ...item, target_price: val } : item,
+                                    ),
+                                  )
+                                  void handleSaveTargetPrice(qi.id, val)
+                                }}
+                                className={cn(
+                                  "w-full h-8 px-1.5 text-xs text-center rounded border border-transparent",
+                                  "bg-transparent focus:bg-white focus:border-primary focus:outline-none",
+                                  savingTargetPrices[qi.id] && "opacity-60",
+                                )}
+                              />
+                            )}
                           </TableCell>
                         )}
                       </TableRow>
