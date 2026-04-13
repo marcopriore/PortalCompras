@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { FileText, ShoppingCart, TrendingDown, Clock, Eye } from "lucide-react"
+import { FileText, ShoppingCart, TrendingDown, TrendingUp, Clock, Eye } from "lucide-react"
 import { endOfMonth, format, startOfMonth, subMonths } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
@@ -24,6 +24,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts"
+import { cn } from "@/lib/utils"
 
 type QuotationStatus = "draft" | "waiting" | "analysis" | "completed" | "cancelled"
 
@@ -48,6 +58,12 @@ export default function CompradorDashboard() {
   const [leadTimeChange, setLeadTimeChange] = useState<number>(0)
   const [savingAcumulado, setSavingAcumulado] = useState<number | null>(null)
   const [savingChange, setSavingChange] = useState<number | null>(null)
+  const [savingHistorico, setSavingHistorico] = useState<number | null>(null)
+  const [savingPorFornecedor, setSavingPorFornecedor] = useState<{ name: string; saving: number }[]>(
+    [],
+  )
+  const [savingPorMesDash, setSavingPorMesDash] = useState<{ month: string; saving: number }[]>([])
+  const [coberturaPrecoAlvo, setCoberturaPrecoAlvo] = useState<number | null>(null)
 
   type OrderWithReq = {
     created_at: string
@@ -88,6 +104,10 @@ export default function CompradorDashboard() {
     setLeadTimeChange(0)
     setSavingAcumulado(null)
     setSavingChange(null)
+    setSavingHistorico(null)
+    setSavingPorFornecedor([])
+    setSavingPorMesDash([])
+    setCoberturaPrecoAlvo(null)
 
     const fetchDashboard = async () => {
       setDashLoading(true)
@@ -115,6 +135,8 @@ export default function CompradorDashboard() {
         ltMonthlyRes,
         savingItemsCurrentRes,
         savingItemsPrevRes,
+        savingHistoricoRes,
+        itensCobertura,
       ] = await Promise.all([
         supabase.from("quotations").select("status").eq("company_id", companyId),
         supabase
@@ -215,6 +237,15 @@ export default function CompradorDashboard() {
           .gte("purchase_orders.created_at", prevMonthStart)
           .lte("purchase_orders.created_at", prevMonthEnd)
           .not("quotation_item_id", "is", null),
+        supabase
+          .from("purchase_order_items")
+          .select(
+            "unit_price, quantity, quotation_item_id, purchase_orders!inner(company_id, status, created_at, supplier_name)",
+          )
+          .eq("purchase_orders.company_id", companyId)
+          .in("purchase_orders.status", ["sent", "processing", "completed"])
+          .not("quotation_item_id", "is", null),
+        supabase.from("items").select("id, target_price").eq("company_id", companyId).eq("status", "active"),
       ])
 
       if (quotationsRes.data) {
@@ -481,6 +512,93 @@ export default function CompradorDashboard() {
           : null,
       )
 
+      const allHistItems = (savingHistoricoRes.data ?? []) as {
+        unit_price: number | null
+        quantity: number | null
+        quotation_item_id: string | null
+        purchase_orders:
+          | { created_at: string; supplier_name: string | null }
+          | { created_at: string; supplier_name: string | null }[]
+          | null
+      }[]
+
+      const histQtItemIds = [
+        ...new Set(
+          allHistItems.map((i) => i.quotation_item_id).filter((id): id is string => Boolean(id)),
+        ),
+      ]
+
+      let histTargetMap = new Map<string, number>()
+      if (histQtItemIds.length > 0) {
+        const { data: histQtItems } = await supabase
+          .from("quotation_items")
+          .select("id, target_price")
+          .in("id", histQtItemIds)
+          .not("target_price", "is", null)
+
+        histTargetMap = new Map(
+          ((histQtItems ?? []) as { id: string; target_price: number }[]).map((i) => [
+            i.id,
+            Number(i.target_price),
+          ]),
+        )
+      }
+
+      let savingTotalHist = 0
+      let hasSavingHist = false
+      const fornecedorMap = new Map<string, number>()
+      const mesMap = new Map<string, number>()
+
+      allHistItems.forEach((item) => {
+        if (!item.quotation_item_id || item.unit_price == null || item.quantity == null) return
+        const target = histTargetMap.get(item.quotation_item_id)
+        if (target == null) return
+
+        const saving = (target - Number(item.unit_price)) * Number(item.quantity)
+        savingTotalHist += saving
+        hasSavingHist = true
+
+        const po = Array.isArray(item.purchase_orders) ? item.purchase_orders[0] : item.purchase_orders
+
+        const supplier = po?.supplier_name?.trim() || "Outros"
+        fornecedorMap.set(supplier, (fornecedorMap.get(supplier) ?? 0) + saving)
+
+        if (po?.created_at) {
+          const d = new Date(po.created_at)
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+          const bucket = bucketByKey.get(key)
+          if (bucket) {
+            mesMap.set(bucket.month, (mesMap.get(bucket.month) ?? 0) + saving)
+          }
+        }
+      })
+
+      setSavingHistorico(hasSavingHist ? savingTotalHist : null)
+
+      setSavingPorFornecedor(
+        Array.from(fornecedorMap.entries())
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([name, saving]) => ({ name, saving })),
+      )
+
+      setSavingPorMesDash(
+        monthBuckets.map((b) => ({
+          month: b.month,
+          saving: mesMap.get(b.month) ?? 0,
+        })),
+      )
+
+      const itensAtivos = (itensCobertura.data ?? []) as {
+        id: string
+        target_price: number | null
+      }[]
+      const totalAtivos = itensAtivos.length
+      const comTarget = itensAtivos.filter(
+        (i) => i.target_price != null && Number(i.target_price) > 0,
+      ).length
+      setCoberturaPrecoAlvo(totalAtivos > 0 ? Math.round((comTarget / totalAtivos) * 100) : null)
+
       setDashLoading(false)
     }
 
@@ -656,6 +774,195 @@ export default function CompradorDashboard() {
           </Card>
         </div>
         <LeadTimeChart data={leadTimeChartData} />
+      </div>
+
+      {/* ── Painel de ROI ─────────────────────────────────────── */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Painel de ROI</h2>
+          <p className="text-sm text-muted-foreground">
+            Economia gerada vs. preços alvo do catálogo
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card
+            className={cn(
+              "border-2",
+              savingHistorico == null
+                ? "border-border"
+                : savingHistorico >= 0
+                  ? "border-green-200 bg-green-50"
+                  : "border-red-200 bg-red-50",
+            )}
+          >
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-3 mb-2">
+                <TrendingUp
+                  className={cn(
+                    "h-5 w-5 shrink-0",
+                    savingHistorico == null
+                      ? "text-muted-foreground"
+                      : savingHistorico >= 0
+                        ? "text-green-600"
+                        : "text-red-600",
+                  )}
+                />
+                <p className="text-sm text-muted-foreground">Saving Total Histórico</p>
+              </div>
+              <p
+                className={cn(
+                  "text-2xl font-bold",
+                  savingHistorico == null
+                    ? "text-muted-foreground"
+                    : savingHistorico >= 0
+                      ? "text-green-700"
+                      : "text-red-700",
+                )}
+              >
+                {dashLoading
+                  ? "—"
+                  : savingHistorico == null
+                    ? "—"
+                    : `${savingHistorico >= 0 ? "+" : ""}${savingHistorico.toLocaleString("pt-BR", {
+                        style: "currency",
+                        currency: "BRL",
+                      })}`}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {savingHistorico == null
+                  ? "Defina preços alvo nos itens"
+                  : "Todos os pedidos vs. preço alvo"}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground mb-2">Cobertura de Preço Alvo</p>
+              <p className="text-2xl font-bold">
+                {dashLoading || coberturaPrecoAlvo == null ? "—" : `${coberturaPrecoAlvo}%`}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Itens do catálogo com preço alvo definido
+              </p>
+              {coberturaPrecoAlvo != null && (
+                <div className="mt-2 w-full bg-border rounded-full h-1.5">
+                  <div
+                    className={cn(
+                      "h-1.5 rounded-full transition-all",
+                      coberturaPrecoAlvo >= 80
+                        ? "bg-green-500"
+                        : coberturaPrecoAlvo >= 50
+                          ? "bg-yellow-500"
+                          : "bg-red-500",
+                    )}
+                    style={{ width: `${coberturaPrecoAlvo}%` }}
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Saving por Fornecedor</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Top 5 fornecedores por economia gerada
+              </p>
+            </CardHeader>
+            <CardContent>
+              {savingPorFornecedor.length === 0 ? (
+                <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
+                  {dashLoading ? "Carregando..." : "Nenhum dado — defina preços alvo nos itens"}
+                </div>
+              ) : (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={savingPorFornecedor} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                      <XAxis
+                        type="number"
+                        className="text-xs"
+                        tickFormatter={(value) =>
+                          value >= 1000 ? `R$ ${(value / 1000).toFixed(0)}k` : `R$ ${value}`
+                        }
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        className="text-xs"
+                        width={100}
+                        tickFormatter={(v: string) => (v.length > 14 ? `${v.slice(0, 14)}…` : v)}
+                      />
+                      <Tooltip
+                        formatter={(value: number) =>
+                          `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          })}`
+                        }
+                        contentStyle={{
+                          backgroundColor: "var(--popover)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "var(--radius)",
+                        }}
+                      />
+                      <Bar dataKey="saving" name="Saving" fill="#16a34a" radius={4} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Saving por Mês</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Economia realizada nos últimos 6 meses
+              </p>
+            </CardHeader>
+            <CardContent>
+              {savingPorMesDash.every((d) => d.saving === 0) ? (
+                <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
+                  {dashLoading ? "Carregando..." : "Nenhum dado — defina preços alvo nos itens"}
+                </div>
+              ) : (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={savingPorMesDash}>
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                      <XAxis dataKey="month" className="text-xs" />
+                      <YAxis
+                        className="text-xs"
+                        tickFormatter={(value) =>
+                          value >= 1000 ? `R$ ${(value / 1000).toFixed(0)}k` : `R$ ${value}`
+                        }
+                      />
+                      <Tooltip
+                        formatter={(value: number) =>
+                          `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          })}`
+                        }
+                        contentStyle={{
+                          backgroundColor: "var(--popover)",
+                          border: "1px solid var(--border)",
+                          borderRadius: "var(--radius)",
+                        }}
+                      />
+                      <Bar dataKey="saving" name="Saving" fill="#16a34a" radius={4} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )
