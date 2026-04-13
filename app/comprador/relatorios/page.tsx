@@ -147,8 +147,12 @@ export default function RelatoriosPage() {
   const [dashLoading, setDashLoading] = useState(true)
   const [completedOrdersCount, setCompletedOrdersCount] = useState<number | null>(null)
   const [avgLeadTime, setAvgLeadTime] = useState<number | null>(null)
-  const [leadTimeMonthlyData, setLeadTimeMonthlyData] = useState<
+  const [leadTimeProcessoMensal, setLeadTimeProcessoMensal] = useState<
     { month: string; media: number | null; meta: number }[]
+  >([])
+  const [leadTimeFornecedorMedio, setLeadTimeFornecedorMedio] = useState<number | null>(null)
+  const [leadTimeFornecedorPorFornecedor, setLeadTimeFornecedorPorFornecedor] = useState<
+    { name: string; media: number }[]
   >([])
   const [pedidosPorStatus, setPedidosPorStatus] = useState<
     { name: string; value: number; color: string }[]
@@ -194,8 +198,6 @@ export default function RelatoriosPage() {
       const [
         quotationsRes,
         completedOrdersCountRes,
-        ltOrdersRes,
-        ltMonthlyRes,
         ordersByStatusRes,
         ordersBySupplierRes,
         ltSettingRes,
@@ -203,6 +205,8 @@ export default function RelatoriosPage() {
         quotationsForSpendRes,
         monthlySpendOrdersRes,
         itensCobertura,
+        processoOrdersRes,
+        fornecedorLeadTimeRes,
       ] = await Promise.all([
         supabase
           .from("quotations")
@@ -216,20 +220,6 @@ export default function RelatoriosPage() {
           .eq("company_id", companyId)
           .eq("status", "completed")
           .gte("created_at", periodStartIso),
-        supabase
-          .from("purchase_orders")
-          .select("created_at, estimated_delivery_date")
-          .eq("company_id", companyId)
-          .eq("status", "completed")
-          .not("estimated_delivery_date", "is", null)
-          .gte("created_at", periodStartIso),
-        supabase
-          .from("purchase_orders")
-          .select("created_at, estimated_delivery_date")
-          .eq("company_id", companyId)
-          .eq("status", "completed")
-          .not("estimated_delivery_date", "is", null)
-          .gte("created_at", subMonths(new Date(), 6).toISOString()),
         supabase
           .from("purchase_orders")
           .select("status")
@@ -272,61 +262,28 @@ export default function RelatoriosPage() {
           .select("id, target_price")
           .eq("company_id", companyId)
           .eq("status", "active"),
+        supabase
+          .from("purchase_orders")
+          .select("created_at, requisition_code, supplier_name")
+          .eq("company_id", companyId)
+          .in("status", ["sent", "processing", "completed"])
+          .not("requisition_code", "is", null)
+          .neq("requisition_code", "")
+          .gte("created_at", periodStartIso),
+        supabase
+          .from("purchase_order_items")
+          .select(
+            "delivery_days, purchase_orders!inner(company_id, status, supplier_name, created_at)",
+          )
+          .eq("purchase_orders.company_id", companyId)
+          .in("purchase_orders.status", ["sent", "processing", "completed"])
+          .not("delivery_days", "is", null)
+          .gt("delivery_days", 0)
+          .gte("purchase_orders.created_at", periodStartIso),
       ])
 
       setQuotations((quotationsRes.data as Quotation[]) ?? [])
 
-      const completedCount = completedOrdersCountRes.count ?? 0
-      setCompletedOrdersCount(completedCount)
-
-      const ltOrders =
-        (ltOrdersRes.data as { created_at: string; estimated_delivery_date: string }[] | null) ?? []
-      const avgLt =
-        ltOrders.length > 0
-          ? Math.round(
-              ltOrders.reduce((acc, po) => {
-                const days = Math.max(
-                  0,
-                  Math.round(
-                    (new Date(po.estimated_delivery_date).getTime() -
-                      new Date(po.created_at).getTime()) /
-                      (1000 * 60 * 60 * 24),
-                  ),
-                )
-                return acc + days
-              }, 0) / ltOrders.length,
-            )
-          : null
-      setAvgLeadTime(avgLt)
-
-      const now = new Date()
-      const buckets: { key: string; month: string; values: number[] }[] = []
-      for (let i = 5; i >= 0; i--) {
-        const d = subMonths(now, i)
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-        const m = format(d, "MMM", { locale: ptBR }).replace(".", "")
-        buckets.push({ key, month: m.charAt(0).toUpperCase() + m.slice(1), values: [] })
-      }
-      const byKey = new Map(buckets.map((b) => [b.key, b]))
-      ;(
-        (ltMonthlyRes.data as {
-          created_at: string
-          estimated_delivery_date: string
-        }[] | null) ?? []
-      ).forEach((po) => {
-        const d = new Date(po.created_at)
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-        const b = byKey.get(key)
-        if (!b) return
-        const days = Math.max(
-          0,
-          Math.round(
-            (new Date(po.estimated_delivery_date).getTime() - new Date(po.created_at).getTime()) /
-              (1000 * 60 * 60 * 24),
-          ),
-        )
-        b.values.push(days)
-      })
       const parsedTarget = ltSettingRes.data?.value
         ? Number.parseInt(String(ltSettingRes.data.value), 10)
         : 10
@@ -334,15 +291,8 @@ export default function RelatoriosPage() {
       setLeadTimeTarget(safeTarget)
       setEditingTarget(null)
 
-      setLeadTimeMonthlyData(
-        buckets.map((b) => ({
-          month: b.month,
-          media: b.values.length
-            ? Math.round(b.values.reduce((acc, v) => acc + v, 0) / b.values.length)
-            : null,
-          meta: safeTarget,
-        })),
-      )
+      const completedCount = completedOrdersCountRes.count ?? 0
+      setCompletedOrdersCount(completedCount)
 
       const statusLabels: Record<string, string> = {
         draft: "Rascunho",
@@ -457,6 +407,127 @@ export default function RelatoriosPage() {
       ).length
       setCoberturaPrecoAlvo(
         totalAtivos > 0 ? Math.round((comTarget / totalAtivos) * 100) : null,
+      )
+
+      const processoOrders = ((processoOrdersRes.data ?? []) as {
+        created_at: string
+        requisition_code: string | null
+        supplier_name: string | null
+      }[]).filter((o) => {
+        if (fornecedorFilter.length === 0) return true
+        const sn = o.supplier_name?.trim() ?? ""
+        return fornecedorFilter.includes(sn)
+      })
+
+      const processoReqCodes = [
+        ...new Set(processoOrders.map((o) => o.requisition_code).filter(Boolean)),
+      ] as string[]
+
+      let processoReqMap = new Map<string, string>()
+      if (processoReqCodes.length > 0) {
+        const { data: processoReqs } = await supabase
+          .from("requisitions")
+          .select("code, created_at")
+          .eq("company_id", companyId)
+          .in("code", processoReqCodes)
+        processoReqMap = new Map(
+          ((processoReqs ?? []) as { code: string; created_at: string }[]).map((r) => [
+            r.code,
+            r.created_at,
+          ]),
+        )
+      }
+
+      const processoBuckets: { key: string; month: string; values: number[] }[] = []
+      for (let i = 5; i >= 0; i--) {
+        const d = subMonths(new Date(), i)
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+        const m = format(d, "MMM", { locale: ptBR }).replace(".", "")
+        processoBuckets.push({
+          key,
+          month: m.charAt(0).toUpperCase() + m.slice(1),
+          values: [],
+        })
+      }
+      const processoBucketByKey = new Map(processoBuckets.map((b) => [b.key, b]))
+
+      const processoDiasPedido: number[] = []
+      processoOrders.forEach((po) => {
+        if (!po.requisition_code || !processoReqMap.has(po.requisition_code)) return
+        const reqDate = new Date(processoReqMap.get(po.requisition_code) as string)
+        const poDate = new Date(po.created_at)
+        const days = Math.max(
+          0,
+          Math.round((poDate.getTime() - reqDate.getTime()) / (1000 * 60 * 60 * 24)),
+        )
+        processoDiasPedido.push(days)
+        const d = new Date(po.created_at)
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+        const bucket = processoBucketByKey.get(key)
+        if (bucket) bucket.values.push(days)
+      })
+
+      setAvgLeadTime(
+        processoDiasPedido.length > 0
+          ? Math.round(
+              processoDiasPedido.reduce((a, v) => a + v, 0) / processoDiasPedido.length,
+            )
+          : null,
+      )
+
+      setLeadTimeProcessoMensal(
+        processoBuckets.map((b) => ({
+          month: b.month,
+          media: b.values.length
+            ? Math.round(b.values.reduce((a, v) => a + v, 0) / b.values.length)
+            : null,
+          meta: safeTarget,
+        })),
+      )
+
+      const fornecedorItems = ((fornecedorLeadTimeRes.data ?? []) as {
+        delivery_days: number | null
+        purchase_orders:
+          | { supplier_name: string | null; created_at: string }
+          | { supplier_name: string | null; created_at: string }[]
+          | null
+      }[]).filter((item) => {
+        if (fornecedorFilter.length === 0) return true
+        const po = Array.isArray(item.purchase_orders)
+          ? item.purchase_orders[0]
+          : item.purchase_orders
+        const sn = po?.supplier_name?.trim() ?? ""
+        return fornecedorFilter.includes(sn)
+      })
+
+      const fornecedorDaysMap = new Map<string, number[]>()
+      const allDays: number[] = []
+
+      fornecedorItems.forEach((item) => {
+        if (!item.delivery_days || item.delivery_days <= 0) return
+        const po = Array.isArray(item.purchase_orders)
+          ? item.purchase_orders[0]
+          : item.purchase_orders
+        const supplier = po?.supplier_name?.trim() || "Outros"
+        if (!fornecedorDaysMap.has(supplier)) fornecedorDaysMap.set(supplier, [])
+        fornecedorDaysMap.get(supplier)!.push(item.delivery_days)
+        allDays.push(item.delivery_days)
+      })
+
+      const mediaGeralForn =
+        allDays.length > 0
+          ? Math.round(allDays.reduce((a, b) => a + b, 0) / allDays.length)
+          : null
+      setLeadTimeFornecedorMedio(mediaGeralForn)
+
+      setLeadTimeFornecedorPorFornecedor(
+        Array.from(fornecedorDaysMap.entries())
+          .map(([name, days]) => ({
+            name,
+            media: Math.round(days.reduce((a, b) => a + b, 0) / days.length),
+          }))
+          .sort((a, b) => a.media - b.media)
+          .slice(0, 8),
       )
 
       setDashLoading(false)
@@ -992,10 +1063,226 @@ export default function RelatoriosPage() {
     }
   }
 
-  const handleExportLeadTime = () => {
-    showUnavailableData(
-      "O relatório de Lead Time exportará dados reais assim que houver pedidos concluídos com data de entrega estimada.",
-    )
+  const handleExportLeadTime = async () => {
+    if (!companyId) return
+    setSavingLoading(true)
+    try {
+      const supabase = createClient()
+      const range = getIsoRange(leadtimeDateFrom, leadtimeDateTo)
+
+      let processoQuery = supabase
+        .from("purchase_orders")
+        .select("code, created_at, requisition_code, supplier_name, total_price, status")
+        .eq("company_id", companyId)
+        .in("status", ["sent", "processing", "completed"])
+        .not("requisition_code", "is", null)
+        .neq("requisition_code", "")
+
+      if (range?.from) processoQuery = processoQuery.gte("created_at", range.from)
+      if (range?.to) processoQuery = processoQuery.lte("created_at", range.to)
+
+      const { data: processoData } = await processoQuery
+      const processoOrders = (processoData ?? []) as {
+        code: string
+        created_at: string
+        requisition_code: string | null
+        supplier_name: string | null
+        total_price: number | null
+        status: string
+      }[]
+
+      const reqCodes = [
+        ...new Set(processoOrders.map((o) => o.requisition_code).filter(Boolean)),
+      ] as string[]
+
+      let reqMap = new Map<string, string>()
+      if (reqCodes.length > 0) {
+        const { data: reqs } = await supabase
+          .from("requisitions")
+          .select("code, created_at")
+          .eq("company_id", companyId)
+          .in("code", reqCodes)
+        reqMap = new Map(
+          ((reqs ?? []) as { code: string; created_at: string }[]).map((r) => [
+            r.code,
+            r.created_at,
+          ]),
+        )
+      }
+
+      let fornQuery = supabase
+        .from("purchase_order_items")
+        .select(
+          "delivery_days, material_code, material_description, quantity, unit_price, purchase_orders!inner(code, company_id, status, supplier_name, created_at)",
+        )
+        .eq("purchase_orders.company_id", companyId)
+        .in("purchase_orders.status", ["sent", "processing", "completed"])
+        .not("delivery_days", "is", null)
+        .gt("delivery_days", 0)
+
+      if (range?.from) fornQuery = fornQuery.gte("purchase_orders.created_at", range.from)
+      if (range?.to) fornQuery = fornQuery.lte("purchase_orders.created_at", range.to)
+
+      const { data: fornData } = await fornQuery
+      const fornItems = (fornData ?? []) as {
+        delivery_days: number | null
+        material_code: string | null
+        material_description: string | null
+        quantity: number | null
+        unit_price: number | null
+        purchase_orders:
+          | { code: string; supplier_name: string | null; created_at: string }
+          | { code: string; supplier_name: string | null; created_at: string }[]
+          | null
+      }[]
+
+      const ExcelJS = (await import("exceljs")).default
+      const workbook = new ExcelJS.Workbook()
+
+      const headerFill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF4F46E5" },
+      } as any
+      const headerFont = { color: { argb: "FFFFFFFF" }, bold: true }
+      const borderStyle = {
+        top: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+        bottom: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+        left: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+        right: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+      }
+
+      const ws1 = workbook.addWorksheet("Tempo do Processo")
+      ws1.views = [{ showGridLines: false }]
+      ws1.columns = [
+        { header: "Pedido", key: "pedido", width: 18 },
+        { header: "Data Pedido", key: "dataPedido", width: 14 },
+        { header: "Requisição", key: "requisicao", width: 18 },
+        { header: "Data Requisição", key: "dataReq", width: 16 },
+        { header: "Dias (Req → Pedido)", key: "dias", width: 20 },
+        { header: "Fornecedor", key: "fornecedor", width: 30 },
+        { header: "Valor Total", key: "valor", width: 16 },
+        { header: "Status", key: "status", width: 16 },
+      ]
+
+      ws1.getRow(1).eachCell((cell: any) => {
+        cell.fill = headerFill
+        cell.font = headerFont
+        cell.alignment = { horizontal: "center", vertical: "middle" }
+        cell.border = borderStyle
+      })
+
+      let totalDiasProcesso = 0
+      let countProcesso = 0
+
+      processoOrders.forEach((po) => {
+        const reqDate = po.requisition_code ? reqMap.get(po.requisition_code) : null
+        const dias = reqDate
+          ? Math.max(
+              0,
+              Math.round(
+                (new Date(po.created_at).getTime() - new Date(reqDate).getTime()) /
+                  (1000 * 60 * 60 * 24),
+              ),
+            )
+          : null
+
+        if (dias != null) {
+          totalDiasProcesso += dias
+          countProcesso++
+        }
+
+        const row = ws1.addRow({
+          pedido: po.code,
+          dataPedido: new Date(po.created_at).toLocaleDateString("pt-BR"),
+          requisicao: po.requisition_code ?? "—",
+          dataReq: reqDate ? new Date(reqDate).toLocaleDateString("pt-BR") : "—",
+          dias: dias ?? "—",
+          fornecedor: po.supplier_name ?? "—",
+          valor: po.total_price ?? 0,
+          status: po.status,
+        })
+
+        row.eachCell({ includeEmpty: true }, (cell: any) => {
+          cell.border = borderStyle
+        })
+        row.getCell("valor").numFmt = '"R$" #,##0.00'
+      })
+
+      const mediaRow1 = ws1.addRow({
+        pedido: "MÉDIA",
+        dias: countProcesso > 0 ? Math.round(totalDiasProcesso / countProcesso) : "—",
+        valor: "",
+      })
+      mediaRow1.eachCell({ includeEmpty: true }, (cell: any) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } } as any
+        cell.font = { bold: true }
+        cell.border = borderStyle
+      })
+
+      const ws2 = workbook.addWorksheet("Lead Time Fornecedor")
+      ws2.views = [{ showGridLines: false }]
+      ws2.columns = [
+        { header: "Pedido", key: "pedido", width: 18 },
+        { header: "Data", key: "data", width: 14 },
+        { header: "Fornecedor", key: "fornecedor", width: 30 },
+        { header: "Código", key: "codigo", width: 14 },
+        { header: "Descrição", key: "descricao", width: 35 },
+        { header: "Qtd", key: "qtd", width: 8 },
+        { header: "Preço Unit.", key: "preco", width: 14 },
+        { header: "Lead Time (dias)", key: "leadTime", width: 18 },
+      ]
+
+      ws2.getRow(1).eachCell((cell: any) => {
+        cell.fill = headerFill
+        cell.font = headerFont
+        cell.alignment = { horizontal: "center", vertical: "middle" }
+        cell.border = borderStyle
+      })
+
+      let totalDiasForn = 0
+      let countForn = 0
+
+      fornItems.forEach((item) => {
+        if (!item.delivery_days) return
+        const po = Array.isArray(item.purchase_orders)
+          ? item.purchase_orders[0]
+          : item.purchase_orders
+
+        totalDiasForn += item.delivery_days
+        countForn++
+
+        const row = ws2.addRow({
+          pedido: po?.code ?? "—",
+          data: po?.created_at ? new Date(po.created_at).toLocaleDateString("pt-BR") : "—",
+          fornecedor: po?.supplier_name ?? "—",
+          codigo: item.material_code ?? "—",
+          descricao: item.material_description ?? "—",
+          qtd: item.quantity ?? "—",
+          preco: item.unit_price ?? 0,
+          leadTime: item.delivery_days,
+        })
+
+        row.eachCell({ includeEmpty: true }, (cell: any) => {
+          cell.border = borderStyle
+        })
+        row.getCell("preco").numFmt = '"R$" #,##0.00'
+      })
+
+      const mediaRow2 = ws2.addRow({
+        pedido: "MÉDIA GERAL",
+        leadTime: countForn > 0 ? Math.round(totalDiasForn / countForn) : "—",
+      })
+      mediaRow2.eachCell({ includeEmpty: true }, (cell: any) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } } as any
+        cell.font = { bold: true }
+        cell.border = borderStyle
+      })
+
+      await downloadExcel(workbook, `relatorio_lead_time_${getTodayDDMMYYYY()}.xlsx`)
+    } finally {
+      setSavingLoading(false)
+    }
   }
 
   const handleSaveTarget = async () => {
@@ -1012,7 +1299,7 @@ export default function RelatoriosPage() {
         { onConflict: "company_id,key" },
       )
     setLeadTimeTarget(editingTarget)
-    setLeadTimeMonthlyData((prev) => prev.map((row) => ({ ...row, meta: editingTarget })))
+    setLeadTimeProcessoMensal((prev) => prev.map((row) => ({ ...row, meta: editingTarget })))
     setEditingTarget(null)
   }
 
@@ -1414,7 +1701,7 @@ export default function RelatoriosPage() {
               <span className="text-xs text-muted-foreground">Desempenho operacional</span>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <Card>
                 <CardContent className="pt-5">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -1432,7 +1719,7 @@ export default function RelatoriosPage() {
               <Card>
                 <CardContent className="pt-5">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    Lead Time Médio
+                    Tempo Médio do Processo
                   </p>
                   <p className="text-2xl font-bold mt-1">
                     {dashLoading ? "—" : avgLeadTime != null ? `${avgLeadTime} dias` : "—"}
@@ -1442,15 +1729,30 @@ export default function RelatoriosPage() {
                   </p>
                 </CardContent>
               </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Lead Time Médio Fornecedor
+                  </p>
+                  <p className="text-2xl font-bold mt-1">
+                    {dashLoading || leadTimeFornecedorMedio == null
+                      ? "—"
+                      : `${leadTimeFornecedorMedio} dias`}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Prazo médio prometido nas propostas
+                  </p>
+                </CardContent>
+              </Card>
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm">Lead Time vs Meta</CardTitle>
+                  <CardTitle className="text-sm">Tempo do Processo de Compras</CardTitle>
                   <CardDescription>
-                    <span>Tempo médio em dias · </span>
-                    <span>Meta: </span>
+                    <span>Req → Pedido em dias · Meta: </span>
                     <input
                       type="number"
                       min={1}
@@ -1464,17 +1766,17 @@ export default function RelatoriosPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {!leadTimeMonthlyData.some((d) => d.media !== null) ? (
+                  {!leadTimeProcessoMensal.some((d) => d.media !== null) ? (
                     <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
                       Nenhum dado disponível
                     </div>
                   ) : (
                     <div className="h-56">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={leadTimeMonthlyData}>
+                        <LineChart data={leadTimeProcessoMensal}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                           <XAxis dataKey="month" className="text-xs" />
-                          <YAxis className="text-xs" domain={[0, 15]} />
+                          <YAxis className="text-xs" />
                           <Tooltip
                             formatter={(v: number) => `${v} dias`}
                             contentStyle={{
@@ -1487,7 +1789,7 @@ export default function RelatoriosPage() {
                           <Line
                             type="monotone"
                             dataKey="media"
-                            name="Lead Time"
+                            name="Processo"
                             stroke="var(--color-chart-1)"
                             strokeWidth={2}
                             dot={{ fill: "var(--color-chart-1)" }}
@@ -1510,46 +1812,85 @@ export default function RelatoriosPage() {
 
               <Card>
                 <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Lead Time por Fornecedor</CardTitle>
+                  <CardDescription>Prazo médio prometido nas propostas (dias)</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {leadTimeFornecedorPorFornecedor.length === 0 ? (
+                    <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+                      {dashLoading ? "Carregando..." : "Nenhum dado disponível"}
+                    </div>
+                  ) : (
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={leadTimeFornecedorPorFornecedor} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis type="number" className="text-xs" unit=" dias" />
+                          <YAxis
+                            type="category"
+                            dataKey="name"
+                            className="text-xs"
+                            width={110}
+                            tickFormatter={(v: string) =>
+                              v.length > 14 ? v.slice(0, 14) + "…" : v
+                            }
+                          />
+                          <Tooltip
+                            formatter={(v: number) => `${v} dias`}
+                            contentStyle={{
+                              backgroundColor: "var(--popover)",
+                              border: "1px solid var(--border)",
+                              borderRadius: "var(--radius)",
+                            }}
+                          />
+                          <Bar dataKey="media" name="Lead Time" fill="var(--color-chart-3)" radius={4} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card className="lg:col-span-2">
+                <CardHeader className="pb-2">
                   <CardTitle className="text-sm">Pedidos por Status</CardTitle>
                   <CardDescription>Distribuição por status no período</CardDescription>
                 </CardHeader>
                 <CardContent className="p-4">
                   {pedidosPorStatus.length === 0 ? (
-                    <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+                    <div className="h-48 flex items-center justify-center text-sm text-muted-foreground">
                       Nenhum dado disponível
                     </div>
                   ) : (
                     <div
-                      className="grid w-full items-center gap-2 h-56"
+                      className="grid w-full items-center gap-2 h-48"
                       style={{ gridTemplateColumns: "minmax(0,1fr) 11rem" }}
                     >
-                      <div className="h-full min-w-0">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={pedidosPorStatus}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius="55%"
-                              outerRadius="90%"
-                              paddingAngle={2}
-                              dataKey="value"
-                            >
-                              {pedidosPorStatus.map((entry, i) => (
-                                <Cell key={`po-pie-${i}`} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip
-                              formatter={(v: number) => `${v} pedidos`}
-                              contentStyle={{
-                                backgroundColor: "var(--popover)",
-                                border: "1px solid var(--border)",
-                                borderRadius: "var(--radius)",
-                              }}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={pedidosPorStatus}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius="55%"
+                            outerRadius="90%"
+                            paddingAngle={2}
+                            dataKey="value"
+                          >
+                            {pedidosPorStatus.map((entry, i) => (
+                              <Cell key={`po-pie-${i}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            formatter={(v: number) => `${v} pedidos`}
+                            contentStyle={{
+                              backgroundColor: "var(--popover)",
+                              border: "1px solid var(--border)",
+                              borderRadius: "var(--radius)",
+                            }}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
                       <div className="flex flex-col gap-1.5">
                         {pedidosPorStatus.map((entry) => {
                           const total = pedidosPorStatus.reduce((a, d) => a + d.value, 0)
@@ -1767,18 +2108,20 @@ export default function RelatoriosPage() {
                       disabled={
                         (relatorio.id === 1 && categoryLoading) ||
                         (relatorio.id === 2 && supplierLoading) ||
-                        (relatorio.id === 3 && savingLoading)
+                        (relatorio.id === 3 && savingLoading) ||
+                        (relatorio.id === 4 && savingLoading)
                       }
                       onClick={() => {
-                        if (relatorio.id === 1) return handleExportCategory(categoryDateFrom, categoryDateTo)
-                        if (relatorio.id === 2) return handleExportSuppliers(supplierDateFrom, supplierDateTo)
-                        if (relatorio.id === 3) return handleExportSaving()
-                        return handleExportLeadTime()
+                        if (relatorio.id === 1) return void handleExportCategory(categoryDateFrom, categoryDateTo)
+                        if (relatorio.id === 2) return void handleExportSuppliers(supplierDateFrom, supplierDateTo)
+                        if (relatorio.id === 3) return void handleExportSaving()
+                        return void handleExportLeadTime()
                       }}
                     >
                       {(relatorio.id === 1 && categoryLoading) ||
                       (relatorio.id === 2 && supplierLoading) ||
-                      (relatorio.id === 3 && savingLoading) ? (
+                      (relatorio.id === 3 && savingLoading) ||
+                      (relatorio.id === 4 && savingLoading) ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           Gerando...
