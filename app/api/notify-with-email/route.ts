@@ -38,13 +38,11 @@ export async function POST(request: Request) {
       .eq("id", params.userId)
       .single()
 
-    if (
-      meErr ||
-      recErr ||
-      !me?.company_id ||
-      me.company_id !== recipient?.company_id ||
-      me.company_id !== params.companyId
-    ) {
+    const sameCompany =
+      !meErr && !recErr && me?.company_id === recipient?.company_id
+    const isValidSupplier = !meErr && me?.company_id != null
+
+    if (!sameCompany && !isValidSupplier) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 

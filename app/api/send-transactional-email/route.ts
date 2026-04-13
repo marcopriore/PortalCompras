@@ -31,16 +31,11 @@ export async function POST(request: Request) {
 
     const { data: profile, error: pErr } = await supabase
       .from("profiles")
-      .select("company_id, profile_type")
+      .select("company_id")
       .eq("id", user.id)
       .single()
 
-    if (
-      pErr ||
-      !profile?.company_id ||
-      profile.company_id !== body.companyId ||
-      profile.profile_type !== "buyer"
-    ) {
+    if (pErr || !profile?.company_id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
