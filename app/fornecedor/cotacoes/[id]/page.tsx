@@ -14,9 +14,6 @@ import {
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
-import { notifyWithEmail } from "@/lib/notify-with-email"
-import { getUserEmail } from "@/lib/email/get-user-email"
-import { templateProposalSubmitted } from "@/lib/email/templates"
 import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
 import { cn } from "@/lib/utils"
@@ -858,40 +855,17 @@ export default function FornecedorCotacaoPropostaPage({
           })
         }
         try {
-          const { data: quotationCreator } = await supabase
-            .from("quotations")
-            .select("created_by")
-            .eq("id", quotationId)
-            .single()
-          if (quotationCreator?.created_by) {
-            const buyerId = quotationCreator.created_by
-            const { data: buyerProfile } = await supabase
-              .from("profiles")
-              .select("full_name")
-              .eq("id", buyerId)
-              .maybeSingle()
-            const buyerEmail = await getUserEmail(buyerId)
-            const { subject, html } = templateProposalSubmitted({
-              buyerName: buyerProfile?.full_name ?? "Comprador",
-              supplierName: supplierInfo?.name ?? "Fornecedor",
+          await fetch("/api/notify-proposal-submitted", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              quotationId: quotation.id,
               quotationCode: quotation.code,
               roundNumber: activeRound.round_number,
+              supplierName: supplierInfo?.name ?? "Fornecedor",
               totalPrice: total,
-            })
-            await notifyWithEmail({
-              userId: buyerId,
-              companyId: quotation.company_id,
-              type: "proposal.submitted",
-              title: "Nova proposta recebida",
-              body: `${supplierInfo?.name ?? "Fornecedor"} enviou proposta para ${quotation.code}`,
-              entity: "quotation_proposals",
-              entityId: newId,
-              toEmail: buyerEmail ?? undefined,
-              subject,
-              html,
-              emailPrefKey: "quotation_received_email",
-            })
-          }
+            }),
+          })
         } catch (e) {
           console.error("notify proposal.submitted:", e)
         }
