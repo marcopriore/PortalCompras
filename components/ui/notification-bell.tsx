@@ -21,7 +21,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
-import { useNotifications } from "@/lib/hooks/use-notifications"
+import { createClient } from "@/lib/supabase/client"
+import { useNotifications, type Notification } from "@/lib/hooks/use-notifications"
 import { formatDateTimeBR } from "@/lib/utils/date-helpers"
 
 function resolveNotificationRoute(
@@ -90,6 +91,42 @@ export function NotificationBell() {
   const { notifications, unreadCount, markAsRead, markAllAsRead } =
     useNotifications()
 
+  const handleNotificationClick = React.useCallback(
+    async (n: Notification) => {
+      if (!n.read) void markAsRead(n.id)
+
+      if (n.entity === "quotation_rounds" && n.entity_id) {
+        try {
+          const supabase = createClient()
+          const { data } = await supabase
+            .from("quotation_rounds")
+            .select("quotation_id")
+            .eq("id", n.entity_id)
+            .single()
+          if (data?.quotation_id) {
+            const base =
+              profileType === "supplier"
+                ? "/fornecedor/cotacoes"
+                : "/comprador/cotacoes"
+            router.push(`${base}/${data.quotation_id}`)
+            return
+          }
+        } catch {
+          // fallback para rota padrão
+        }
+      }
+
+      const route = resolveNotificationRoute(
+        n.type,
+        n.entity,
+        n.entity_id,
+        profileType,
+      )
+      if (route) router.push(route)
+    },
+    [markAsRead, profileType, router],
+  )
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -136,15 +173,11 @@ export function NotificationBell() {
                   key={n.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => {
-                    if (!n.read) void markAsRead(n.id)
-                    if (route) router.push(route)
-                  }}
+                  onClick={() => void handleNotificationClick(n)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault()
-                      if (!n.read) void markAsRead(n.id)
-                      if (route) router.push(route)
+                      void handleNotificationClick(n)
                     }
                   }}
                   className={`flex items-start gap-3 border-b border-border px-3 py-3 transition-colors last:border-0 hover:bg-muted/50 ${

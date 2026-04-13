@@ -27,22 +27,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { data: me, error: meErr } = await supabase
-      .from("profiles")
-      .select("company_id")
-      .eq("id", user.id)
-      .single()
     const { data: recipient, error: recErr } = await supabase
       .from("profiles")
       .select("company_id")
       .eq("id", params.userId)
       .single()
 
-    const sameCompany =
-      !meErr && !recErr && me?.company_id === recipient?.company_id
-    const isValidSupplier = !meErr && me?.company_id != null
-
-    if (!sameCompany && !isValidSupplier) {
+    if (
+      recErr ||
+      !recipient?.company_id ||
+      recipient.company_id !== params.companyId
+    ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
