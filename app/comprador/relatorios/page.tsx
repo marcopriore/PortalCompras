@@ -31,6 +31,7 @@ import {
   Pie,
   Cell,
   Legend,
+  ReferenceLine,
 } from "recharts"
 import {
   Download,
@@ -138,6 +139,8 @@ function getMonthsBack(periodo: string): number {
 export default function RelatoriosPage() {
   const [periodo, setPeriodo] = useState("6m")
   const [categoria, setCategoria] = useState<string[]>([])
+  const [fornecedorFilter, setFornecedorFilter] = useState<string[]>([])
+  const [coberturaPrecoAlvo, setCoberturaPrecoAlvo] = useState<number | null>(null)
 
   const { companyId, loading: userLoading } = useUser()
   const [quotations, setQuotations] = useState<Quotation[]>([])
@@ -199,6 +202,7 @@ export default function RelatoriosPage() {
         spendItemsRes,
         quotationsForSpendRes,
         monthlySpendOrdersRes,
+        itensCobertura,
       ] = await Promise.all([
         supabase
           .from("quotations")
@@ -246,7 +250,9 @@ export default function RelatoriosPage() {
           .single(),
         supabase
           .from("purchase_order_items")
-          .select("total_price, purchase_orders!inner(company_id, status, quotation_id, created_at)")
+          .select(
+            "total_price, purchase_orders!inner(company_id, status, quotation_id, created_at, supplier_name)",
+          )
           .eq("purchase_orders.company_id", companyId)
           .eq("purchase_orders.status", "completed")
           .gte("purchase_orders.created_at", periodStartIso),
@@ -256,11 +262,16 @@ export default function RelatoriosPage() {
           .eq("company_id", companyId),
         supabase
           .from("purchase_orders")
-          .select("created_at, total_price")
+          .select("created_at, total_price, supplier_name")
           .eq("company_id", companyId)
           .eq("status", "completed")
           .gte("created_at", periodStartIso)
           .not("total_price", "is", null),
+        supabase
+          .from("items")
+          .select("id, target_price")
+          .eq("company_id", companyId)
+          .eq("status", "active"),
       ])
 
       setQuotations((quotationsRes.data as Quotation[]) ?? [])
@@ -389,14 +400,18 @@ export default function RelatoriosPage() {
             (spendItemsRes.data as {
               total_price: number | null
               purchase_orders:
-                | { quotation_id: string | null }
-                | { quotation_id: string | null }[]
+                | { quotation_id: string | null; supplier_name: string | null }
+                | { quotation_id: string | null; supplier_name: string | null }[]
                 | null
             }[] | null) ?? []
           ).reduce((acc, item) => {
             const po = Array.isArray(item.purchase_orders)
               ? item.purchase_orders[0]
               : item.purchase_orders
+            const supplierName = po?.supplier_name?.trim() ?? ""
+            if (fornecedorFilter.length > 0 && !fornecedorFilter.includes(supplierName)) {
+              return acc
+            }
             const quotationId = po?.quotation_id ?? null
             const category = quotationId
               ? (quotationCategoryMap.get(quotationId) ?? "Sem Categoria")
@@ -412,24 +427,44 @@ export default function RelatoriosPage() {
       setSpendPorCategoria(spendCat)
 
       const spendMonthMap = (
-        (monthlySpendOrdersRes.data as { created_at: string; total_price: number | null }[] | null) ??
-        []
-      ).reduce((acc, po) => {
-        const month = format(new Date(po.created_at), "MMM/yy", { locale: ptBR })
-        acc[month] = (acc[month] ?? 0) + Number(po.total_price ?? 0)
-        return acc
-      }, {} as Record<string, number>)
+        (monthlySpendOrdersRes.data as {
+          created_at: string
+          total_price: number | null
+          supplier_name: string | null
+        }[] | null) ?? []
+      )
+        .filter((po) => {
+          if (fornecedorFilter.length === 0) return true
+          const sn = po.supplier_name?.trim() ?? ""
+          return fornecedorFilter.includes(sn)
+        })
+        .reduce((acc, po) => {
+          const month = format(new Date(po.created_at), "MMM/yy", { locale: ptBR })
+          acc[month] = (acc[month] ?? 0) + Number(po.total_price ?? 0)
+          return acc
+        }, {} as Record<string, number>)
       setSpendPorMes(
         Object.entries(spendMonthMap).map(([month, total]) => ({ month, total })),
+      )
+
+      const itensAtivos = ((itensCobertura.data ?? []) as {
+        id: string
+        target_price: number | null
+      }[])
+      const totalAtivos = itensAtivos.length
+      const comTarget = itensAtivos.filter(
+        (i) => i.target_price != null && Number(i.target_price) > 0,
+      ).length
+      setCoberturaPrecoAlvo(
+        totalAtivos > 0 ? Math.round((comTarget / totalAtivos) * 100) : null,
       )
 
       setDashLoading(false)
     }
 
     fetchRealData()
-  }, [companyId, periodStartIso, userLoading])
+  }, [companyId, periodStartIso, userLoading, fornecedorFilter])
 
-  const totalQuotations = quotations.length
   const monthsInPeriod = getMonthsBack(periodo)
   const ordersPerMonth =
     completedOrdersCount != null && monthsInPeriod > 0
@@ -448,6 +483,33 @@ export default function RelatoriosPage() {
     return cats
   }, [quotations])
 
+  const quotationsFiltered = useMemo(() => {
+    if (categoria.length === 0) return quotations
+    return quotations.filter((q) => {
+      const cat = q.category?.trim() || "Sem Categoria"
+      return categoria.includes(cat)
+    })
+  }, [quotations, categoria])
+
+  const fornecedorOptions = useMemo(() => {
+    const names = new Set<string>()
+    topSuppliersByOrders.forEach((s) => names.add(s.name))
+    return Array.from(names).sort()
+  }, [topSuppliersByOrders])
+
+  const topSuppliersByOrdersFiltered = useMemo(() => {
+    if (fornecedorFilter.length === 0) return topSuppliersByOrders
+    return topSuppliersByOrders.filter((s) => fornecedorFilter.includes(s.name))
+  }, [topSuppliersByOrders, fornecedorFilter])
+
+  const spendPorMesFiltrado = useMemo(() => {
+    return spendPorMes
+  }, [spendPorMes])
+
+  const spendPorCategoriaFiltrada = useMemo(() => {
+    return spendPorCategoria
+  }, [spendPorCategoria])
+
   const statusDonutData = useMemo(() => {
     const counts: Record<Quotation["status"], number> = {
       draft: 0,
@@ -456,7 +518,7 @@ export default function RelatoriosPage() {
       completed: 0,
       cancelled: 0,
     }
-    quotations.forEach((q) => {
+    quotationsFiltered.forEach((q) => {
       counts[q.status] += 1
     })
     return (Object.keys(counts) as Quotation["status"][]).map((key) => ({
@@ -464,7 +526,7 @@ export default function RelatoriosPage() {
       value: counts[key],
       color: getStatusColor(key),
     }))
-  }, [quotations])
+  }, [quotationsFiltered])
 
   const monthlyEvolution = useMemo(() => {
     const monthsBack = Math.min(getMonthsBack(periodo), 12)
@@ -480,14 +542,16 @@ export default function RelatoriosPage() {
       buckets.push({ key, label, total: 0 })
     }
     const index = new Map(buckets.map((b) => [b.key, b]))
-    quotations.forEach((q) => {
+    quotationsFiltered.forEach((q) => {
       const d = new Date(q.created_at)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
       const bucket = index.get(key)
       if (bucket) bucket.total += 1
     })
     return buckets.map((b) => ({ mes: b.label, total: b.total }))
-  }, [quotations, periodo])
+  }, [quotationsFiltered, periodo])
+
+  const totalQuotations = quotationsFiltered.length
 
   const downloadExcel = async (workbook: any, filename: string) => {
     const buffer = await workbook.xlsx.writeBuffer()
@@ -529,11 +593,15 @@ export default function RelatoriosPage() {
       let query = supabase
         .from("purchase_order_items")
         .select(
-          "unit_price, quantity, quotation_item_id, purchase_orders!inner(company_id, status, created_at, quotation_id)",
+          "unit_price, quantity, quotation_item_id, purchase_orders!inner(company_id, status, created_at, quotation_id, supplier_name)",
         )
         .eq("purchase_orders.company_id", companyId)
         .in("purchase_orders.status", ["sent", "processing", "completed"])
         .not("quotation_item_id", "is", null)
+
+      if (fornecedorFilter.length > 0) {
+        query = query.in("purchase_orders.supplier_name", fornecedorFilter)
+      }
 
       if (range?.from) query = query.gte("purchase_orders.created_at", range.from)
       if (range?.to) query = query.lte("purchase_orders.created_at", range.to)
@@ -545,8 +613,8 @@ export default function RelatoriosPage() {
         quantity: number | null
         quotation_item_id: string | null
         purchase_orders:
-          | { created_at: string; quotation_id: string | null }
-          | { created_at: string; quotation_id: string | null }[]
+          | { created_at: string; quotation_id: string | null; supplier_name: string | null }
+          | { created_at: string; quotation_id: string | null; supplier_name: string | null }[]
           | null
       }[]
 
@@ -604,19 +672,22 @@ export default function RelatoriosPage() {
         const info = targetMap.get(item.quotation_item_id)
         if (!info) return
 
+        const po = Array.isArray(item.purchase_orders)
+          ? item.purchase_orders[0]
+          : item.purchase_orders
+
+        const category = categoryMap.get(info.quotationId) ?? "Sem Categoria"
+        if (categoria.length > 0 && !categoria.includes(category)) return
+
         const saving = (info.target - Number(item.unit_price)) * Number(item.quantity)
         total += saving
         hasAny = true
 
-        const po = Array.isArray(item.purchase_orders)
-          ? item.purchase_orders[0]
-          : item.purchase_orders
         if (po?.created_at) {
           const month = format(new Date(po.created_at), "MMM/yy", { locale: ptBR })
           monthMap.set(month, (monthMap.get(month) ?? 0) + saving)
         }
 
-        const category = categoryMap.get(info.quotationId) ?? "Sem Categoria"
         catMap.set(category, (catMap.get(category) ?? 0) + saving)
       })
 
@@ -631,7 +702,7 @@ export default function RelatoriosPage() {
     } finally {
       setSavingLoading(false)
     }
-  }, [companyId, savingDateFrom, savingDateTo])
+  }, [companyId, savingDateFrom, savingDateTo, categoria, fornecedorFilter])
 
   useEffect(() => {
     if (userLoading || !companyId) return
@@ -958,128 +1029,51 @@ export default function RelatoriosPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Relatórios</h1>
-          <p className="text-muted-foreground">
-            Análises e indicadores de compras
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Select value={periodo} onValueChange={setPeriodo}>
-            <SelectTrigger className="w-full sm:w-36">
-              <Calendar className="mr-2 h-4 w-4" />
-              <SelectValue placeholder="Período" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1m">Último mês</SelectItem>
-              <SelectItem value="3m">Últimos 3 meses</SelectItem>
-              <SelectItem value="6m">Últimos 6 meses</SelectItem>
-              <SelectItem value="12m">Último ano</SelectItem>
-            </SelectContent>
-          </Select>
-          <MultiSelectFilter
-            label="Categoria"
-            options={categoryOptions.map((c) => ({ value: c, label: c }))}
-            selected={categoria}
-            onChange={setCategoria}
-            width="w-40"
-          />
+          <p className="text-muted-foreground">Painel de indicadores de compras</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total de Cotações
-            </CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {dashLoading ? "—" : totalQuotations}
-            </div>
-            <p className="text-xs text-muted-foreground">cotações registradas</p>
-          </CardContent>
-        </Card>
-        <Card
-          className={cn(
-            "relative border-2",
-            savingTotal == null
-              ? "border-border"
-              : savingTotal >= 0
-                ? "border-green-200 bg-green-50"
-                : "border-red-200 bg-red-50",
-          )}
-        >
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Saving Total</CardTitle>
-            <TrendingUp
-              className={cn(
-                "h-4 w-4",
-                savingTotal == null
-                  ? "text-muted-foreground"
-                  : savingTotal >= 0
-                    ? "text-green-600"
-                    : "text-red-600",
-              )}
-            />
-          </CardHeader>
-          <CardContent>
-            <div
-              className={cn(
-                "text-2xl font-bold",
-                savingTotal == null
-                  ? "text-muted-foreground"
-                  : savingTotal >= 0
-                    ? "text-green-700"
-                    : "text-red-700",
-              )}
-            >
-              {savingLoading
-                ? "..."
-                : savingTotal == null
-                  ? "—"
-                  : `${savingTotal >= 0 ? "+" : ""}${savingTotal.toLocaleString("pt-BR", {
-                      style: "currency",
-                      currency: "BRL",
-                    })}`}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {savingTotal == null
-                ? "Defina preços alvo nos itens do catálogo"
-                : savingTotal >= 0
-                  ? "Economia realizada vs. preço alvo"
-                  : "Acima do preço alvo"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Pedidos Realizados
-            </CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{dashLoading ? "—" : (completedOrdersCount ?? "—")}</div>
-            <p className="text-xs text-muted-foreground">
-              {ordersPerMonth ? `${ordersPerMonth} pedidos/mês` : ""}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Lead Time Médio
-            </CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {dashLoading ? "—" : avgLeadTime !== null ? `${avgLeadTime} dias` : "—"}
-            </div>
-            <p className="text-xs text-muted-foreground"></p>
-          </CardContent>
-        </Card>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
+        <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
+        <span className="text-sm font-medium text-muted-foreground">Filtros:</span>
+        <Select value={periodo} onValueChange={setPeriodo}>
+          <SelectTrigger className="w-36">
+            <Calendar className="mr-2 h-4 w-4" />
+            <SelectValue placeholder="Período" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="1m">Último mês</SelectItem>
+            <SelectItem value="3m">Últimos 3 meses</SelectItem>
+            <SelectItem value="6m">Últimos 6 meses</SelectItem>
+            <SelectItem value="12m">Último ano</SelectItem>
+          </SelectContent>
+        </Select>
+        <MultiSelectFilter
+          label="Categoria"
+          options={categoryOptions.map((c) => ({ value: c, label: c }))}
+          selected={categoria}
+          onChange={setCategoria}
+          width="w-40"
+        />
+        <MultiSelectFilter
+          label="Fornecedor"
+          options={fornecedorOptions.map((f) => ({ value: f, label: f }))}
+          selected={fornecedorFilter}
+          onChange={setFornecedorFilter}
+          width="w-44"
+        />
+        {(categoria.length > 0 || fornecedorFilter.length > 0) && (
+          <button
+            type="button"
+            onClick={() => {
+              setCategoria([])
+              setFornecedorFilter([])
+            }}
+            className="text-xs text-muted-foreground hover:text-foreground underline"
+          >
+            Limpar filtros
+          </button>
+        )}
       </div>
 
       <Tabs defaultValue="dashboards" className="w-full">
@@ -1088,429 +1082,617 @@ export default function RelatoriosPage() {
           <TabsTrigger value="exportar">Exportar Relatórios</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="dashboards" className="mt-4">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Evolução de Cotações por Mês</CardTitle>
-                <CardDescription>Total de cotações criadas</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={monthlyEvolution}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                      <XAxis dataKey="mes" className="text-xs" />
-                      <YAxis className="text-xs" />
-                      <Tooltip
-                        formatter={(value: number) => `${value} cotações`}
-                        contentStyle={{
-                          backgroundColor: "var(--popover)",
-                          border: "1px solid var(--border)",
-                          borderRadius: "var(--radius)",
-                        }}
-                      />
-                      <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="total"
-                        name="Cotações"
-                        stroke="var(--color-chart-1)"
-                        strokeWidth={2}
-                        dot={{ fill: "var(--color-chart-1)" }}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </CardContent>
-            </Card>
+        <TabsContent value="dashboards" className="mt-6 space-y-10">
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-border pb-2">
+              <TrendingUp className="h-5 w-5 text-green-600" />
+              <h2 className="text-base font-semibold">Saving</h2>
+              <span className="text-xs text-muted-foreground">Economia gerada vs. preço alvo</span>
+            </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Cotações por Status</CardTitle>
-                <CardDescription>Distribuição de cotações por status</CardDescription>
-              </CardHeader>
-              <CardContent className="p-4">
-                <div
-                  className="grid w-full items-center gap-2"
-                  style={{ gridTemplateColumns: "minmax(0,1fr) 13rem", height: 240 }}
-                >
-                  <div className="h-full min-w-0 flex-1">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={statusDonutData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius="60%"
-                          outerRadius="96%"
-                          paddingAngle={2}
-                          dataKey="value"
-                        >
-                          {statusDonutData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value: number) => `${value} cotações`}
-                          contentStyle={{
-                            backgroundColor: "var(--popover)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "var(--radius)",
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div className="flex w-full flex-shrink-0 flex-col justify-center gap-2 pl-1">
-                    {statusDonutData.map((entry) => {
-                      const total = statusDonutData.reduce((acc, d) => acc + d.value, 0)
-                      const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
-                      return (
-                        <div key={entry.name} className="flex items-center gap-2 whitespace-nowrap">
-                          <div
-                            className="w-3 h-3 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: entry.color }}
-                          />
-                          <span className="text-sm text-muted-foreground">{entry.name}</span>
-                          <span className="text-sm font-medium text-foreground">{entry.value}</span>
-                          <span className="text-xs text-muted-foreground">({pct}%)</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Pedidos por Status</CardTitle>
-                <CardDescription>Distribuição de pedidos por status</CardDescription>
-              </CardHeader>
-              <CardContent className="p-4">
-                {pedidosPorStatus.length === 0 ? (
-                  <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
-                    Nenhum dado disponível
-                  </div>
-                ) : (
-                  <div
-                    className="grid w-full items-center gap-2"
-                    style={{ gridTemplateColumns: "minmax(0,1fr) 13rem", height: 240 }}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Card
+                className={cn(
+                  "border-2",
+                  savingTotal == null
+                    ? "border-border"
+                    : savingTotal <= 0
+                      ? "border-green-200 bg-green-50"
+                      : "border-red-200 bg-red-50",
+                )}
+              >
+                <CardContent className="pt-5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Saving Total
+                  </p>
+                  <p
+                    className={cn(
+                      "text-2xl font-bold mt-1",
+                      savingTotal == null
+                        ? "text-muted-foreground"
+                        : savingTotal <= 0
+                          ? "text-green-700"
+                          : "text-red-700",
+                    )}
                   >
-                    <div className="h-full min-w-0 flex-1">
+                    {savingLoading
+                      ? "..."
+                      : savingTotal == null
+                        ? "—"
+                        : savingTotal.toLocaleString("pt-BR", {
+                            style: "currency",
+                            currency: "BRL",
+                          })}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {savingTotal == null
+                      ? "Defina preços alvo"
+                      : savingTotal <= 0
+                        ? "Economia vs. preço alvo"
+                        : "Acima do preço alvo"}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Saving por Cotação
+                  </p>
+                  <p className="text-2xl font-bold mt-1">
+                    {savingLoading || savingTotal == null || totalQuotations === 0
+                      ? "—"
+                      : (savingTotal / totalQuotations).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Média por cotação no período</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Cobertura Preço Alvo
+                  </p>
+                  <p className="text-2xl font-bold mt-1">
+                    {dashLoading || coberturaPrecoAlvo == null ? "—" : `${coberturaPrecoAlvo}%`}
+                  </p>
+                  {coberturaPrecoAlvo != null && (
+                    <div className="mt-2 w-full bg-border rounded-full h-1.5">
+                      <div
+                        className={cn(
+                          "h-1.5 rounded-full transition-all",
+                          coberturaPrecoAlvo >= 80
+                            ? "bg-green-500"
+                            : coberturaPrecoAlvo >= 50
+                              ? "bg-yellow-500"
+                              : "bg-red-500",
+                        )}
+                        style={{ width: `${coberturaPrecoAlvo}%` }}
+                      />
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Itens ativos com preço alvo definido
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Saving por Mês</CardTitle>
+                  <CardDescription>Economia realizada no período</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {savingPorMes.length === 0 ? (
+                    <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+                      {savingLoading ? "Carregando..." : "Sem dados — defina preços alvo"}
+                    </div>
+                  ) : (
+                    <div className="h-56">
                       <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={pedidosPorStatus}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius="60%"
-                            outerRadius="96%"
-                            paddingAngle={2}
-                            dataKey="value"
-                          >
-                            {pedidosPorStatus.map((entry, index) => (
-                              <Cell key={`cell-po-status-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
+                        <BarChart data={savingPorMes}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis dataKey="month" className="text-xs" />
+                          <YAxis
+                            className="text-xs"
+                            tickFormatter={(v) =>
+                              v >= 1000 ? `R$${(v / 1000).toFixed(0)}k` : `R$${v}`
+                            }
+                          />
+                          <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1.5} />
                           <Tooltip
-                            formatter={(value: number) => `${value} pedidos`}
+                            formatter={(v: number) =>
+                              v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            }
                             contentStyle={{
                               backgroundColor: "var(--popover)",
                               border: "1px solid var(--border)",
                               borderRadius: "var(--radius)",
                             }}
                           />
-                        </PieChart>
+                          <Bar dataKey="saving" name="Saving" radius={4}>
+                            {savingPorMes.map((entry, i) => (
+                              <Cell
+                                key={`saving-mes-${i}`}
+                                fill={entry.saving <= 0 ? "#16a34a" : "#dc2626"}
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
                       </ResponsiveContainer>
                     </div>
-                    <div className="flex w-full flex-shrink-0 flex-col justify-center gap-2 pl-1">
-                      {pedidosPorStatus.map((entry) => {
-                        const total = pedidosPorStatus.reduce((acc, d) => acc + d.value, 0)
-                        const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
-                        return (
-                          <div key={entry.name} className="flex items-center gap-2 whitespace-nowrap">
-                            <div
-                              className="w-3 h-3 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: entry.color }}
-                            />
-                            <span className="text-sm text-muted-foreground">{entry.name}</span>
-                            <span className="text-sm font-medium text-foreground">{entry.value}</span>
-                            <span className="text-xs text-muted-foreground">({pct}%)</span>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Top 5 Fornecedores por Pedidos</CardTitle>
-                <CardDescription>Fornecedores com mais pedidos emitidos</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {topSuppliersByOrders.length === 0 ? (
-                  <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
-                    Nenhum dado disponível
-                  </div>
-                ) : (
-                  <div className="h-80">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Saving por Categoria</CardTitle>
+                  <CardDescription>Economia acumulada por categoria</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {savingPorCategoria.length === 0 ? (
+                    <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+                      {savingLoading ? "Carregando..." : "Sem dados — defina preços alvo"}
+                    </div>
+                  ) : (
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={savingPorCategoria} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis
+                            type="number"
+                            className="text-xs"
+                            tickFormatter={(v) =>
+                              v >= 1000 ? `R$${(v / 1000).toFixed(0)}k` : `R$${v}`
+                            }
+                          />
+                          <YAxis type="category" dataKey="name" className="text-xs" width={100} />
+                          <ReferenceLine x={0} stroke="var(--border)" strokeWidth={1.5} />
+                          <Tooltip
+                            formatter={(v: number) =>
+                              v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            }
+                            contentStyle={{
+                              backgroundColor: "var(--popover)",
+                              border: "1px solid var(--border)",
+                              borderRadius: "var(--radius)",
+                            }}
+                          />
+                          <Bar dataKey="value" name="Saving" radius={4}>
+                            {savingPorCategoria.map((entry, i) => (
+                              <Cell
+                                key={`saving-cat-${i}`}
+                                fill={entry.value <= 0 ? "#16a34a" : "#dc2626"}
+                              />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-border pb-2">
+              <DollarSign className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-semibold">Spend</h2>
+              <span className="text-xs text-muted-foreground">Volume financeiro de compras</span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Spend Total
+                  </p>
+                  <p className="text-2xl font-bold mt-1">
+                    {dashLoading
+                      ? "—"
+                      : spendPorMesFiltrado.reduce((a, b) => a + b.total, 0).toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Pedidos concluídos no período</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Ticket Médio por Pedido
+                  </p>
+                  <p className="text-2xl font-bold mt-1">
+                    {dashLoading || completedOrdersCount == null || completedOrdersCount === 0
+                      ? "—"
+                      : (
+                          spendPorMesFiltrado.reduce((a, b) => a + b.total, 0) / completedOrdersCount
+                        ).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Valor médio por pedido concluído</p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Volume de Spend por Mês</CardTitle>
+                  <CardDescription>Valor em R$ de pedidos concluídos</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {spendPorMesFiltrado.length === 0 ? (
+                    <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+                      Nenhum dado disponível
+                    </div>
+                  ) : (
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={spendPorMesFiltrado}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis dataKey="month" className="text-xs" />
+                          <YAxis
+                            className="text-xs"
+                            tickFormatter={(v) =>
+                              v >= 1000 ? `R$${(v / 1000).toFixed(0)}k` : `R$${v}`
+                            }
+                          />
+                          <Tooltip
+                            formatter={(v: number) =>
+                              v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            }
+                            contentStyle={{
+                              backgroundColor: "var(--popover)",
+                              border: "1px solid var(--border)",
+                              borderRadius: "var(--radius)",
+                            }}
+                          />
+                          <Bar dataKey="total" fill="var(--color-chart-1)" radius={4} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Spend por Categoria</CardTitle>
+                  <CardDescription>Distribuição do gasto por categoria</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {spendPorCategoriaFiltrada.length === 0 ? (
+                    <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+                      Nenhum dado disponível
+                    </div>
+                  ) : (
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={spendPorCategoriaFiltrada} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis
+                            type="number"
+                            className="text-xs"
+                            tickFormatter={(v) =>
+                              v >= 1000 ? `R$${(v / 1000).toFixed(0)}k` : `R$${v}`
+                            }
+                          />
+                          <YAxis type="category" dataKey="name" className="text-xs" width={100} />
+                          <Tooltip
+                            formatter={(v: number) =>
+                              v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                            }
+                            contentStyle={{
+                              backgroundColor: "var(--popover)",
+                              border: "1px solid var(--border)",
+                              borderRadius: "var(--radius)",
+                            }}
+                          />
+                          <Bar dataKey="value" fill="var(--color-chart-2)" radius={4} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-border pb-2">
+              <Package className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-semibold">Pedidos</h2>
+              <span className="text-xs text-muted-foreground">Desempenho operacional</span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Pedidos Realizados
+                  </p>
+                  <p className="text-2xl font-bold mt-1">
+                    {dashLoading ? "—" : (completedOrdersCount ?? "—")}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {ordersPerMonth ? `${ordersPerMonth} pedidos/mês` : "No período selecionado"}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Lead Time Médio
+                  </p>
+                  <p className="text-2xl font-bold mt-1">
+                    {dashLoading ? "—" : avgLeadTime != null ? `${avgLeadTime} dias` : "—"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Da requisição ao pedido emitido
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Lead Time vs Meta</CardTitle>
+                  <CardDescription>
+                    <span>Tempo médio em dias · </span>
+                    <span>Meta: </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={editingTarget ?? leadTimeTarget}
+                      onChange={(e) => setEditingTarget(Number(e.target.value))}
+                      onBlur={() => void handleSaveTarget()}
+                      className="w-12 border rounded px-1 py-0.5 text-xs text-foreground inline-block"
+                    />
+                    <span> dias</span>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!leadTimeMonthlyData.some((d) => d.media !== null) ? (
+                    <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+                      Nenhum dado disponível
+                    </div>
+                  ) : (
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={leadTimeMonthlyData}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis dataKey="month" className="text-xs" />
+                          <YAxis className="text-xs" domain={[0, 15]} />
+                          <Tooltip
+                            formatter={(v: number) => `${v} dias`}
+                            contentStyle={{
+                              backgroundColor: "var(--popover)",
+                              border: "1px solid var(--border)",
+                              borderRadius: "var(--radius)",
+                            }}
+                          />
+                          <Legend />
+                          <Line
+                            type="monotone"
+                            dataKey="media"
+                            name="Lead Time"
+                            stroke="var(--color-chart-1)"
+                            strokeWidth={2}
+                            dot={{ fill: "var(--color-chart-1)" }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="meta"
+                            name="Meta"
+                            stroke="var(--color-destructive)"
+                            strokeWidth={2}
+                            strokeDasharray="5 5"
+                            dot={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Pedidos por Status</CardTitle>
+                  <CardDescription>Distribuição por status no período</CardDescription>
+                </CardHeader>
+                <CardContent className="p-4">
+                  {pedidosPorStatus.length === 0 ? (
+                    <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+                      Nenhum dado disponível
+                    </div>
+                  ) : (
+                    <div
+                      className="grid w-full items-center gap-2 h-56"
+                      style={{ gridTemplateColumns: "minmax(0,1fr) 11rem" }}
+                    >
+                      <div className="h-full min-w-0">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={pedidosPorStatus}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius="55%"
+                              outerRadius="90%"
+                              paddingAngle={2}
+                              dataKey="value"
+                            >
+                              {pedidosPorStatus.map((entry, i) => (
+                                <Cell key={`po-pie-${i}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              formatter={(v: number) => `${v} pedidos`}
+                              contentStyle={{
+                                backgroundColor: "var(--popover)",
+                                border: "1px solid var(--border)",
+                                borderRadius: "var(--radius)",
+                              }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        {pedidosPorStatus.map((entry) => {
+                          const total = pedidosPorStatus.reduce((a, d) => a + d.value, 0)
+                          const pct = total > 0 ? Math.round((entry.value / total) * 100) : 0
+                          return (
+                            <div
+                              key={entry.name}
+                              className="flex items-center gap-1.5 text-xs whitespace-nowrap"
+                            >
+                              <div
+                                className="w-2.5 h-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: entry.color }}
+                              />
+                              <span className="text-muted-foreground">{entry.name}</span>
+                              <span className="font-medium">{entry.value}</span>
+                              <span className="text-muted-foreground">({pct}%)</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center gap-2 border-b border-border pb-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-semibold">Cotações & Fornecedores</h2>
+              <span className="text-xs text-muted-foreground">Atividade e participação</span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Total de Cotações
+                  </p>
+                  <p className="text-2xl font-bold mt-1">{dashLoading ? "—" : totalQuotations}</p>
+                  <p className="text-xs text-muted-foreground mt-1">No período selecionado</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="pt-5">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Taxa de Conclusão
+                  </p>
+                  <p className="text-2xl font-bold mt-1">
+                    {dashLoading || totalQuotations === 0
+                      ? "—"
+                      : `${Math.round(
+                          ((statusDonutData.find((s) => s.name === "Concluída")?.value ?? 0) /
+                            totalQuotations) *
+                            100,
+                        )}%`}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Cotações concluídas vs. total
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Evolução de Cotações por Mês</CardTitle>
+                  <CardDescription>Total de cotações criadas</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-56">
                     <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={topSuppliersByOrders} layout="vertical">
+                      <LineChart data={monthlyEvolution}>
                         <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis type="number" className="text-xs" />
-                        <YAxis type="category" dataKey="name" className="text-xs" width={120} />
+                        <XAxis dataKey="mes" className="text-xs" />
+                        <YAxis className="text-xs" />
                         <Tooltip
-                          formatter={(value: number) => `${value} pedidos`}
+                          formatter={(v: number) => `${v} cotações`}
                           contentStyle={{
                             backgroundColor: "var(--popover)",
                             border: "1px solid var(--border)",
                             borderRadius: "var(--radius)",
                           }}
                         />
-                        <Bar dataKey="value" fill="var(--color-chart-1)" radius={4} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Lead Time vs Meta</CardTitle>
-                <CardDescription>Tempo médio de ciclo de compras em dias</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                  <span>Meta:</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={365}
-                    value={editingTarget ?? leadTimeTarget}
-                    onChange={(e) => setEditingTarget(Number(e.target.value))}
-                    onBlur={() => void handleSaveTarget()}
-                    className="w-16 border rounded px-2 py-0.5 text-sm text-foreground"
-                  />
-                  <span>dias</span>
-                </div>
-                {!leadTimeMonthlyData.some((d) => d.media !== null) ? (
-                  <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
-                    Nenhum dado disponível
-                  </div>
-                ) : (
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={leadTimeMonthlyData}>
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                      <XAxis dataKey="month" className="text-xs" />
-                      <YAxis className="text-xs" domain={[0, 15]} />
-                      <Tooltip
-                        formatter={(value: number) => `${value} dias`}
-                        contentStyle={{
-                          backgroundColor: "var(--popover)",
-                          border: "1px solid var(--border)",
-                          borderRadius: "var(--radius)",
-                        }}
-                      />
-                      <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="media"
-                        name="Lead Time Médio"
-                        stroke="var(--color-chart-1)"
-                        strokeWidth={2}
-                        dot={{ fill: "var(--color-chart-1)" }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="meta"
-                        name="Meta"
-                        stroke="var(--color-destructive)"
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                        dot={false}
-                      />
+                        <Line
+                          type="monotone"
+                          dataKey="total"
+                          name="Cotações"
+                          stroke="var(--color-chart-1)"
+                          strokeWidth={2}
+                          dot={{ fill: "var(--color-chart-1)" }}
+                        />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Spend por Categoria</CardTitle>
-                <CardDescription>Valor total de pedidos concluídos por categoria</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {spendPorCategoria.length === 0 ? (
-                  <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
-                    Nenhum dado disponível
-                  </div>
-                ) : (
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={spendPorCategoria} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis
-                          type="number"
-                          className="text-xs"
-                          tickFormatter={(value) =>
-                            value >= 1000 ? `R$ ${(value / 1000).toFixed(0)}k` : `R$ ${value}`
-                          }
-                        />
-                        <YAxis type="category" dataKey="name" className="text-xs" width={120} />
-                        <Tooltip
-                          formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR")}`}
-                          contentStyle={{
-                            backgroundColor: "var(--popover)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "var(--radius)",
-                          }}
-                        />
-                        <Bar dataKey="value" fill="var(--color-chart-1)" radius={4} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Volume de Spend por Mês</CardTitle>
-                <CardDescription>Valor em R$ de pedidos concluídos no período</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {spendPorMes.length === 0 ? (
-                  <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
-                    Nenhum dado disponível
-                  </div>
-                ) : (
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={spendPorMes}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis dataKey="month" className="text-xs" />
-                        <YAxis
-                          className="text-xs"
-                          tickFormatter={(value) =>
-                            value >= 1000 ? `R$ ${(value / 1000).toFixed(0)}k` : `R$ ${value}`
-                          }
-                        />
-                        <Tooltip
-                          formatter={(value: number) => `R$ ${value.toLocaleString("pt-BR")}`}
-                          contentStyle={{
-                            backgroundColor: "var(--popover)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "var(--radius)",
-                          }}
-                        />
-                        <Bar dataKey="total" fill="var(--color-chart-2)" radius={4} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Saving Realizado por Mês</CardTitle>
-                <CardDescription>Economia vs. preço alvo em pedidos emitidos</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {savingPorMes.length === 0 ? (
-                  <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
-                    {savingLoading
-                      ? "Carregando..."
-                      : "Nenhum dado disponível — defina preços alvo nos itens"}
-                  </div>
-                ) : (
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={savingPorMes}>
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis dataKey="month" className="text-xs" />
-                        <YAxis
-                          className="text-xs"
-                          tickFormatter={(value) =>
-                            value >= 1000 ? `R$ ${(value / 1000).toFixed(0)}k` : `R$ ${value}`
-                          }
-                        />
-                        <Tooltip
-                          formatter={(value: number) =>
-                            `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            })}`
-                          }
-                          contentStyle={{
-                            backgroundColor: "var(--popover)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "var(--radius)",
-                          }}
-                        />
-                        <Bar dataKey="saving" name="Saving" radius={4} fill="#16a34a" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Saving por Categoria</CardTitle>
-                <CardDescription>Economia acumulada por categoria de compra</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {savingPorCategoria.length === 0 ? (
-                  <div className="h-80 flex items-center justify-center text-sm text-muted-foreground">
-                    {savingLoading
-                      ? "Carregando..."
-                      : "Nenhum dado disponível — defina preços alvo nos itens"}
-                  </div>
-                ) : (
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={savingPorCategoria} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                        <XAxis
-                          type="number"
-                          className="text-xs"
-                          tickFormatter={(value) =>
-                            value >= 1000 ? `R$ ${(value / 1000).toFixed(0)}k` : `R$ ${value}`
-                          }
-                        />
-                        <YAxis type="category" dataKey="name" className="text-xs" width={120} />
-                        <Tooltip
-                          formatter={(value: number) =>
-                            `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", {
-                              style: "currency",
-                              currency: "BRL",
-                            })}`
-                          }
-                          contentStyle={{
-                            backgroundColor: "var(--popover)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "var(--radius)",
-                          }}
-                        />
-                        <Bar dataKey="value" name="Saving" fill="#16a34a" radius={4} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Top 5 Fornecedores por Pedidos</CardTitle>
+                  <CardDescription>Fornecedores com mais pedidos emitidos</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {topSuppliersByOrdersFiltered.length === 0 ? (
+                    <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">
+                      Nenhum dado disponível
+                    </div>
+                  ) : (
+                    <div className="h-56">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={topSuppliersByOrdersFiltered} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                          <XAxis type="number" className="text-xs" />
+                          <YAxis
+                            type="category"
+                            dataKey="name"
+                            className="text-xs"
+                            width={110}
+                            tickFormatter={(v: string) =>
+                              v.length > 14 ? `${v.slice(0, 14)}…` : v
+                            }
+                          />
+                          <Tooltip
+                            formatter={(v: number) => `${v} pedidos`}
+                            contentStyle={{
+                              backgroundColor: "var(--popover)",
+                              border: "1px solid var(--border)",
+                              borderRadius: "var(--radius)",
+                            }}
+                          />
+                          <Bar dataKey="value" fill="var(--color-chart-1)" radius={4} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </section>
         </TabsContent>
 
         <TabsContent value="exportar" className="mt-4">
@@ -1578,36 +1760,36 @@ export default function RelatoriosPage() {
                         />
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        className="flex-1"
-                        type="button"
-                        disabled={
-                          (relatorio.id === 1 && categoryLoading) ||
-                          (relatorio.id === 2 && supplierLoading)
-                        }
-                        onClick={() => {
-                          if (relatorio.id === 1) return handleExportCategory(categoryDateFrom, categoryDateTo)
-                          if (relatorio.id === 2) return handleExportSuppliers(supplierDateFrom, supplierDateTo)
-                          if (relatorio.id === 3) return handleExportSaving()
-                          return handleExportLeadTime()
-                        }}
-                      >
-                        {((relatorio.id === 1 && categoryLoading) ||
-                          (relatorio.id === 2 && supplierLoading)) ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Gerando...
-                          </>
-                        ) : (
-                          <>
-                            <Download className="mr-2 h-4 w-4" />
-                            Excel
-                          </>
-                        )}
-                      </Button>
-                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      type="button"
+                      disabled={
+                        (relatorio.id === 1 && categoryLoading) ||
+                        (relatorio.id === 2 && supplierLoading) ||
+                        (relatorio.id === 3 && savingLoading)
+                      }
+                      onClick={() => {
+                        if (relatorio.id === 1) return handleExportCategory(categoryDateFrom, categoryDateTo)
+                        if (relatorio.id === 2) return handleExportSuppliers(supplierDateFrom, supplierDateTo)
+                        if (relatorio.id === 3) return handleExportSaving()
+                        return handleExportLeadTime()
+                      }}
+                    >
+                      {(relatorio.id === 1 && categoryLoading) ||
+                      (relatorio.id === 2 && supplierLoading) ||
+                      (relatorio.id === 3 && savingLoading) ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Gerando...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="mr-2 h-4 w-4" />
+                          Excel
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
