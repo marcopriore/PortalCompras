@@ -1139,13 +1139,14 @@ export default function PurchaseOrderDetailPage({
             </>
           )}
           <Button
-            variant="outline"
+            variant="default"
             size="sm"
+            className="bg-blue-600 hover:bg-blue-700 text-white"
             onClick={() => void handleDownloadPDF()}
             disabled={generatingPdf}
           >
             <FileText className="mr-2 h-4 w-4" />
-            {generatingPdf ? "Gerando PDF..." : "PDF"}
+            {generatingPdf ? "Gerando PDF..." : "PDF Pedido"}
           </Button>
           <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
             <Download className="mr-2 h-4 w-4" />

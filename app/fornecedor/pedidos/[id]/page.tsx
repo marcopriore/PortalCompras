@@ -598,13 +598,14 @@ export default function FornecedorPedidoDetalhePage({
             {["completed", "cancelled", "refused"].includes(order.status) ? (
               <Button
                 type="button"
-                variant="outline"
+                variant="default"
                 size="sm"
+                className="bg-blue-600 hover:bg-blue-700 text-white"
                 disabled={generatingPdf}
                 onClick={() => void handleDownloadPDF()}
               >
                 <Download className="mr-2 h-4 w-4" />
-                {generatingPdf ? "Gerando..." : "PDF"}
+                {generatingPdf ? "Gerando..." : "PDF Pedido"}
               </Button>
             ) : null}
           </div>
@@ -646,13 +647,14 @@ export default function FornecedorPedidoDetalhePage({
                 </Button>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="default"
                   size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
                   disabled={generatingPdf}
                   onClick={() => void handleDownloadPDF()}
                 >
                   <Download className="mr-2 h-4 w-4" />
-                  {generatingPdf ? "Gerando..." : "PDF"}
+                  {generatingPdf ? "Gerando..." : "PDF Pedido"}
                 </Button>
               </div>
             </div>
@@ -686,14 +688,14 @@ export default function FornecedorPedidoDetalhePage({
               </Button>
               <Button
                 type="button"
-                variant="outline"
+                variant="default"
                 size="sm"
-                className="mt-4"
+                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white"
                 disabled={generatingPdf}
                 onClick={() => void handleDownloadPDF()}
               >
                 <Download className="mr-2 h-4 w-4" />
-                {generatingPdf ? "Gerando..." : "PDF"}
+                {generatingPdf ? "Gerando..." : "PDF Pedido"}
               </Button>
             </div>
           ) : null}
