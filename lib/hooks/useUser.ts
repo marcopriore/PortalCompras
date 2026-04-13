@@ -20,7 +20,7 @@ export function useUser() {
   const [userId, setUserId] = useState<string | null>(null)
   const [supplierId, setSupplierId] = useState<string | null>(null)
   const [companyName, setCompanyName] = useState<string | null>(null)
-  const [profileType, setProfileType] = useState<'buyer' | 'supplier' | null>(null)
+  const [profileType, setProfileType] = useState<'buyer' | 'supplier' | 'requester' | null>(null)
   const [fullName, setFullName] = useState<string | null>(null)
   const [roles, setRoles] = useState<string[]>([])
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
@@ -54,7 +54,12 @@ export function useUser() {
         .single()
       const p = profile as ProfileRow | null
       const rawType = p?.profile_type ?? 'buyer'
-      const pt = rawType === 'supplier' ? 'supplier' : 'buyer'
+      const pt =
+        rawType === 'supplier'
+          ? 'supplier'
+          : rawType === 'requester'
+            ? 'requester'
+            : 'buyer'
       setProfileType(pt)
       setSupplierId(p?.supplier_id ?? null)
       setFullName(p?.full_name ?? null)

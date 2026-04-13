@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
+import { useUser } from "@/lib/hooks/useUser"
 import {
   Bell,
   Check,
@@ -22,6 +24,51 @@ import {
 import { useNotifications } from "@/lib/hooks/use-notifications"
 import { formatDateTimeBR } from "@/lib/utils/date-helpers"
 
+function resolveNotificationRoute(
+  type: string,
+  entity: string | null,
+  entityId: string | null,
+  profileType?: string | null,
+): string | null {
+  if (!entityId) return null
+
+  const buyerRoutes: Record<string, string> = {
+    quotation: `/comprador/cotacoes/${entityId}`,
+    quotation_rounds: `/comprador/cotacoes/${entityId}`,
+    purchase_order: `/comprador/pedidos/${entityId}`,
+    requisition: `/comprador/requisicoes/${entityId}`,
+  }
+
+  const supplierRoutes: Record<string, string> = {
+    quotation: `/fornecedor/cotacoes/${entityId}`,
+    quotation_rounds: `/fornecedor/cotacoes/${entityId}`,
+    purchase_order: `/fornecedor/pedidos/${entityId}`,
+  }
+
+  const requesterRoutes: Record<string, string> = {
+    requisition: `/solicitante/${entityId}`,
+  }
+
+  if (type.startsWith("quotation") || type.startsWith("proposal")) {
+    if (profileType === "supplier") return supplierRoutes[entity ?? ""] ?? null
+    return buyerRoutes[entity ?? ""] ?? null
+  }
+
+  if (type.startsWith("order")) {
+    if (profileType === "supplier") return supplierRoutes[entity ?? ""] ?? null
+    return buyerRoutes[entity ?? ""] ?? null
+  }
+
+  if (type.startsWith("approval") || type.startsWith("requisition")) {
+    if (profileType === "requester") return requesterRoutes[entity ?? ""] ?? null
+    return buyerRoutes[entity ?? ""] ?? null
+  }
+
+  if (profileType === "supplier") return supplierRoutes[entity ?? ""] ?? null
+  if (profileType === "requester") return requesterRoutes[entity ?? ""] ?? null
+  return buyerRoutes[entity ?? ""] ?? null
+}
+
 function getNotificationIcon(type: string) {
   const map: Record<string, { icon: React.ElementType; color: string }> = {
     "proposal.submitted": { icon: FileText, color: "text-blue-500" },
@@ -38,6 +85,8 @@ function getNotificationIcon(type: string) {
 }
 
 export function NotificationBell() {
+  const router = useRouter()
+  const { profileType } = useUser()
   const { notifications, unreadCount, markAsRead, markAllAsRead } =
     useNotifications()
 
@@ -76,6 +125,12 @@ export function NotificationBell() {
           ) : (
             notifications.map((n) => {
               const { icon: Icon, color } = getNotificationIcon(n.type)
+              const route = resolveNotificationRoute(
+                n.type,
+                n.entity,
+                n.entity_id,
+                profileType,
+              )
               return (
                 <div
                   key={n.id}
@@ -83,16 +138,18 @@ export function NotificationBell() {
                   tabIndex={0}
                   onClick={() => {
                     if (!n.read) void markAsRead(n.id)
+                    if (route) router.push(route)
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault()
                       if (!n.read) void markAsRead(n.id)
+                      if (route) router.push(route)
                     }
                   }}
-                  className={`flex cursor-pointer items-start gap-3 border-b border-border px-3 py-3 transition-colors last:border-0 hover:bg-muted/50 ${
+                  className={`flex items-start gap-3 border-b border-border px-3 py-3 transition-colors last:border-0 hover:bg-muted/50 ${
                     !n.read ? "bg-primary/5" : ""
-                  }`}
+                  } ${route ? "cursor-pointer" : "cursor-default"}`}
                 >
                   <div className={`mt-0.5 flex-shrink-0 ${color}`}>
                     <Icon className="h-4 w-4" />
