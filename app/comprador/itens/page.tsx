@@ -38,6 +38,9 @@ type Item = {
   unit_of_measure: string | null
   ncm: string | null
   commodity_group: string | null
+  target_price: number | null
+  last_purchase_price: number | null
+  average_price: number | null
   created_at: string
   source?: string | null
   sync_at?: string | null
@@ -51,6 +54,7 @@ type ImportPreviewRow = {
   ncm: string
   commodity_group: string
   status: string
+  target_price: number | null
 }
 
 export default function ItensPage() {
@@ -126,7 +130,7 @@ export default function ItensPage() {
       const { data, error } = await supabase
         .from('items')
         .select(
-          'id, company_id, code, short_description, long_description, status, unit_of_measure, ncm, commodity_group, source, sync_at, created_at',
+          'id, company_id, code, short_description, long_description, status, unit_of_measure, ncm, commodity_group, target_price, last_purchase_price, average_price, source, sync_at, created_at',
         )
         .eq('company_id', companyId)
         .order('created_at', { ascending: false })
@@ -152,7 +156,7 @@ export default function ItensPage() {
     const wb = new ExcelJS.Workbook()
     const ws = wb.addWorksheet('Itens')
 
-    ws.columns = [
+    const columns = [
       { header: 'codigo', key: 'codigo', width: 15 },
       { header: 'descricao_curta', key: 'descricao_curta', width: 40 },
       { header: 'descricao_detalhada', key: 'descricao_detalhada', width: 60 },
@@ -160,7 +164,9 @@ export default function ItensPage() {
       { header: 'ncm', key: 'ncm', width: 15 },
       { header: 'grupo_mercadoria', key: 'grupo_mercadoria', width: 25 },
       { header: 'status', key: 'status', width: 10 },
+      { header: 'preco_alvo', key: 'preco_alvo', width: 14 },
     ]
+    ws.columns = columns
 
     ws.addRow({
       codigo: 'MAT-001',
@@ -170,15 +176,35 @@ export default function ItensPage() {
       ncm: '73181500',
       grupo_mercadoria: 'Mecânica',
       status: 'ativo',
+      preco_alvo: 12.5,
     })
 
     const headerRow = ws.getRow(1)
-    headerRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF4F3EF5' },
+    const borderStyle = {
+      top: { style: 'thin' as const, color: { argb: 'FFDDDDDD' } },
+      bottom: { style: 'thin' as const, color: { argb: 'FFDDDDDD' } },
+      left: { style: 'thin' as const, color: { argb: 'FFDDDDDD' } },
+      right: { style: 'thin' as const, color: { argb: 'FFDDDDDD' } },
     }
-    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+
+    for (let col = 1; col <= columns.length; col++) {
+      const cell = headerRow.getCell(col)
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F3EF5' } }
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+      cell.alignment = { horizontal: 'center', vertical: 'middle' }
+      cell.border = borderStyle
+    }
+
+    ws.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return
+      for (let col = 1; col <= columns.length; col++) {
+        row.getCell(col).border = borderStyle
+      }
+    })
+
+    ws.getColumn('preco_alvo').numFmt = '#,##0.00'
+
+    ws.views = [{ showGridLines: false }]
 
     const buffer = await wb.xlsx.writeBuffer()
     const blob = new Blob([buffer], {
@@ -197,7 +223,7 @@ export default function ItensPage() {
     const wb = new ExcelJS.Workbook()
     const ws = wb.addWorksheet('Itens')
 
-    ws.columns = [
+    const columns = [
       { header: 'codigo', key: 'codigo', width: 15 },
       { header: 'descricao_curta', key: 'descricao_curta', width: 40 },
       { header: 'descricao_detalhada', key: 'descricao_detalhada', width: 60 },
@@ -205,19 +231,32 @@ export default function ItensPage() {
       { header: 'ncm', key: 'ncm', width: 15 },
       { header: 'grupo_mercadoria', key: 'grupo_mercadoria', width: 25 },
       { header: 'status', key: 'status', width: 10 },
+      { header: 'preco_alvo', key: 'preco_alvo', width: 14 },
+      { header: 'ultimo_preco_compra', key: 'ultimo_preco', width: 20 },
+      { header: 'preco_medio', key: 'preco_medio', width: 14 },
       { header: 'origem', key: 'origem', width: 15 },
       { header: 'ultima_sincronizacao', key: 'ultima_sincronizacao', width: 25 },
     ]
+    ws.columns = columns
 
-    ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
-    ws.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF4F3EF5' },
+    const borderStyle = {
+      top: { style: 'thin' as const, color: { argb: 'FFDDDDDD' } },
+      bottom: { style: 'thin' as const, color: { argb: 'FFDDDDDD' } },
+      left: { style: 'thin' as const, color: { argb: 'FFDDDDDD' } },
+      right: { style: 'thin' as const, color: { argb: 'FFDDDDDD' } },
+    }
+
+    const headerRow = ws.getRow(1)
+    for (let col = 1; col <= columns.length; col++) {
+      const cell = headerRow.getCell(col)
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F3EF5' } }
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+      cell.alignment = { horizontal: 'center', vertical: 'middle' }
+      cell.border = borderStyle
     }
 
     for (const item of items) {
-      ws.addRow({
+      const row = ws.addRow({
         codigo: item.code,
         descricao_curta: item.short_description,
         descricao_detalhada: item.long_description ?? '',
@@ -225,6 +264,9 @@ export default function ItensPage() {
         ncm: item.ncm ?? '',
         grupo_mercadoria: item.commodity_group ?? '',
         status: item.status === 'active' ? 'ativo' : 'inativo',
+        preco_alvo: item.target_price ?? '',
+        ultimo_preco: item.last_purchase_price ?? '',
+        preco_medio: item.average_price ?? '',
         origem:
           item.source === 'erp'
             ? 'Integração ERP'
@@ -235,7 +277,17 @@ export default function ItensPage() {
           ? format(new Date(item.sync_at), 'dd/MM/yyyy HH:mm', { locale: ptBR })
           : '',
       })
+
+      for (let col = 1; col <= columns.length; col++) {
+        row.getCell(col).border = borderStyle
+      }
     }
+
+    ;['preco_alvo', 'ultimo_preco', 'preco_medio'].forEach((key) => {
+      ws.getColumn(key).numFmt = '#,##0.00'
+    })
+
+    ws.views = [{ showGridLines: false }]
 
     const buffer = await wb.xlsx.writeBuffer()
     const blob = new Blob([buffer], {
@@ -266,6 +318,12 @@ export default function ItensPage() {
     ws.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return
       const values = row.values as (string | number | undefined)[]
+      const rawTargetPrice = values[8]
+      const parsedTargetPrice =
+        rawTargetPrice != null && rawTargetPrice !== ''
+          ? Number(String(rawTargetPrice).replace(',', '.'))
+          : null
+
       const obj: ImportPreviewRow = {
         code: String(values[1] ?? '').trim(),
         short_description: String(values[2] ?? '').trim(),
@@ -276,6 +334,10 @@ export default function ItensPage() {
         status: String(values[7] ?? '')
           .trim()
           .toLowerCase(),
+        target_price:
+          parsedTargetPrice != null && !Number.isNaN(parsedTargetPrice) && parsedTargetPrice > 0
+            ? parsedTargetPrice
+            : null,
       }
 
       const isEmptyRow =
@@ -320,23 +382,26 @@ export default function ItensPage() {
     const errorDetails: string[] = []
 
     for (const row of importPreview) {
-      const { error } = await supabase
-        .from('items')
-        .upsert(
-          {
-            company_id: companyId,
-            code: row.code,
-            short_description: row.short_description,
-            long_description: row.long_description || null,
-            unit_of_measure: row.unit_of_measure,
-            ncm: row.ncm || null,
-            commodity_group: row.commodity_group || null,
-            status: row.status === 'ativo' ? 'active' : 'inactive',
-            source: 'excel',
-            sync_at: new Date().toISOString(),
-          },
-          { onConflict: 'company_id,code' },
-        )
+      const upsertPayload: Record<string, unknown> = {
+        company_id: companyId,
+        code: row.code,
+        short_description: row.short_description,
+        long_description: row.long_description || null,
+        unit_of_measure: row.unit_of_measure,
+        ncm: row.ncm || null,
+        commodity_group: row.commodity_group || null,
+        status: row.status === 'ativo' ? 'active' : 'inactive',
+        source: 'excel',
+        sync_at: new Date().toISOString(),
+      }
+
+      if (row.target_price != null) {
+        upsertPayload.target_price = row.target_price
+      }
+
+      const { error } = await supabase.from('items').upsert(upsertPayload, {
+        onConflict: 'company_id,code',
+      })
 
       if (error) {
         errorCount++
@@ -483,6 +548,9 @@ export default function ItensPage() {
                 <th className="px-3 py-2 text-left">Unidade</th>
                 <th className="px-3 py-2 text-left">NCM</th>
                 <th className="px-3 py-2 text-left">Grupo de Mercadoria</th>
+                <th className="px-3 py-2 text-right">Preço Alvo</th>
+                <th className="px-3 py-2 text-right">Últ. Compra</th>
+                <th className="px-3 py-2 text-right">Preço Médio</th>
               </tr>
             </thead>
             <tbody>
@@ -517,17 +585,84 @@ export default function ItensPage() {
                     <td className="px-3 py-2 align-top">
                       {item.commodity_group ?? '-'}
                     </td>
+                    <td className="px-3 py-2 align-top text-right text-sm">
+                      {item.target_price != null
+                        ? item.target_price.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })
+                        : '—'}
+                    </td>
+                    <td className="px-3 py-2 align-top text-right text-sm text-muted-foreground">
+                      {item.last_purchase_price != null
+                        ? item.last_purchase_price.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })
+                        : '—'}
+                    </td>
+                    <td className="px-3 py-2 align-top text-right text-sm text-muted-foreground">
+                      {item.average_price != null
+                        ? item.average_price.toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })
+                        : '—'}
+                    </td>
                   </tr>
                   {expandedItemId === item.id && (
                     <tr className="bg-muted/30">
-                      <td colSpan={6} className="px-6 py-3">
-                        <div className="flex gap-2">
-                          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                            Descrição Detalhada:
-                          </span>
-                          <span className="text-sm text-muted-foreground">
-                            {item.long_description || 'Sem descrição detalhada cadastrada.'}
-                          </span>
+                      <td colSpan={9} className="px-6 py-3">
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap gap-4">
+                            <div>
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-0.5">
+                                Preço alvo
+                              </span>
+                              <span className="text-sm text-foreground">
+                                {item.target_price != null
+                                  ? item.target_price.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })
+                                  : '—'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-0.5">
+                                Última compra
+                              </span>
+                              <span className="text-sm text-muted-foreground">
+                                {item.last_purchase_price != null
+                                  ? item.last_purchase_price.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })
+                                  : '—'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-0.5">
+                                Preço médio
+                              </span>
+                              <span className="text-sm text-muted-foreground">
+                                {item.average_price != null
+                                  ? item.average_price.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })
+                                  : '—'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                              Descrição Detalhada:
+                            </span>
+                            <span className="text-sm text-muted-foreground">
+                              {item.long_description || 'Sem descrição detalhada cadastrada.'}
+                            </span>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -653,6 +788,7 @@ export default function ItensPage() {
                       <th className="px-2 py-1 text-left">Descrição</th>
                       <th className="px-2 py-1 text-left">Unidade</th>
                       <th className="px-2 py-1 text-left">Status</th>
+                      <th className="px-2 py-1 text-right">Preço Alvo</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -662,11 +798,19 @@ export default function ItensPage() {
                         <td className="px-2 py-1">{row.short_description}</td>
                         <td className="px-2 py-1">{row.unit_of_measure}</td>
                         <td className="px-2 py-1">{row.status}</td>
+                        <td className="px-2 py-1 text-right">
+                          {row.target_price != null
+                            ? row.target_price.toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })
+                            : '—'}
+                        </td>
                       </tr>
                     ))}
                     {importPreview.length > 10 && (
                       <tr className="border-t">
-                        <td colSpan={4} className="px-2 py-1 text-muted-foreground">
+                        <td colSpan={5} className="px-2 py-1 text-muted-foreground">
                           ...e mais {importPreview.length - 10} item(s)
                         </td>
                       </tr>
