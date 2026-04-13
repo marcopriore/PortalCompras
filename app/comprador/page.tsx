@@ -32,6 +32,8 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Cell,
+  ReferenceLine,
 } from "recharts"
 import { cn } from "@/lib/utils"
 
@@ -910,7 +912,14 @@ export default function CompradorDashboard() {
                           borderRadius: "var(--radius)",
                         }}
                       />
-                      <Bar dataKey="saving" name="Saving" fill="#16a34a" radius={4} />
+                      <Bar dataKey="saving" name="Saving" radius={4}>
+                        {savingPorFornecedor.map((entry, index) => (
+                          <Cell
+                            key={`cell-fornecedor-${index}`}
+                            fill={entry.saving <= 0 ? "#16a34a" : "#dc2626"}
+                          />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -942,6 +951,7 @@ export default function CompradorDashboard() {
                           value >= 1000 ? `R$ ${(value / 1000).toFixed(0)}k` : `R$ ${value}`
                         }
                       />
+                      <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1.5} />
                       <Tooltip
                         formatter={(value: number) =>
                           `${value >= 0 ? "+" : ""}${value.toLocaleString("pt-BR", {
@@ -955,7 +965,14 @@ export default function CompradorDashboard() {
                           borderRadius: "var(--radius)",
                         }}
                       />
-                      <Bar dataKey="saving" name="Saving" fill="#16a34a" radius={4} />
+                      <Bar dataKey="saving" name="Saving" radius={4}>
+                        {savingPorMesDash.map((entry, index) => (
+                          <Cell
+                            key={`cell-mes-${index}`}
+                            fill={entry.saving <= 0 ? "#16a34a" : "#dc2626"}
+                          />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
