@@ -5,8 +5,6 @@ import { format, subMonths } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { toast } from "@/components/ui/use-toast"
 import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import {
@@ -51,14 +49,16 @@ import { cn } from "@/lib/utils"
 const relatoriosDisponiveis = [
   {
     id: 1,
-    titulo: "Análise de Gastos por Categoria",
-    descricao: "Relatório detalhado de gastos segmentado por categoria de compras",
+    titulo: "Spend por Categoria",
+    descricao:
+      "Valor total gasto por categoria, comparativo com período anterior e % do spend total",
     icon: DollarSign,
   },
   {
     id: 2,
     titulo: "Performance de Fornecedores",
-    descricao: "Avaliação de desempenho dos fornecedores com métricas de qualidade",
+    descricao:
+      "Scorecard completo: volume comprado, pedidos, lead time e cobertura por fornecedor",
     icon: Users,
   },
   {
@@ -69,8 +69,8 @@ const relatoriosDisponiveis = [
   },
   {
     id: 4,
-    titulo: "Lead Time de Compras",
-    descricao: "Tempo médio do ciclo de compras da requisição à entrega",
+    titulo: "Tempo do Processo de Compras",
+    descricao: "Eficiência do time: dias entre requisição e pedido, por comprador e por categoria",
     icon: Package,
   },
 ]
@@ -128,16 +128,11 @@ function getStatusColor(status: Quotation["status"]): string {
   return map[status]
 }
 
-function getMonthsBack(periodo: string): number {
-  if (periodo === "1m") return 1
-  if (periodo === "3m") return 3
-  if (periodo === "6m") return 6
-  if (periodo === "12m") return 12
-  return 6
-}
-
 export default function RelatoriosPage() {
-  const [periodo, setPeriodo] = useState("6m")
+  const [periodo, setPeriodo] = useState("mes_atual")
+  const [customDateFrom, setCustomDateFrom] = useState("")
+  const [customDateTo, setCustomDateTo] = useState("")
+  const [customDateError, setCustomDateError] = useState("")
   const [categoria, setCategoria] = useState<string[]>([])
   const [fornecedorFilter, setFornecedorFilter] = useState<string[]>([])
   const [coberturaPrecoAlvo, setCoberturaPrecoAlvo] = useState<number | null>(null)
@@ -165,15 +160,6 @@ export default function RelatoriosPage() {
   const [spendPorCategoria, setSpendPorCategoria] = useState<{ name: string; value: number }[]>([])
   const [spendPorMes, setSpendPorMes] = useState<{ month: string; total: number }[]>([])
 
-  const [categoryDateFrom, setCategoryDateFrom] = useState("")
-  const [categoryDateTo, setCategoryDateTo] = useState("")
-  const [supplierDateFrom, setSupplierDateFrom] = useState("")
-  const [supplierDateTo, setSupplierDateTo] = useState("")
-  const [savingDateFrom, setSavingDateFrom] = useState("")
-  const [savingDateTo, setSavingDateTo] = useState("")
-  const [leadtimeDateFrom, setLeadtimeDateFrom] = useState("")
-  const [leadtimeDateTo, setLeadtimeDateTo] = useState("")
-
   const [categoryLoading, setCategoryLoading] = useState(false)
   const [supplierLoading, setSupplierLoading] = useState(false)
   const [savingTotal, setSavingTotal] = useState<number | null>(null)
@@ -181,12 +167,43 @@ export default function RelatoriosPage() {
   const [savingPorCategoria, setSavingPorCategoria] = useState<{ name: string; value: number }[]>([])
   const [savingLoading, setSavingLoading] = useState(false)
 
-  const periodStartIso = useMemo(() => {
-    const months = getMonthsBack(periodo)
-    const start = new Date()
-    start.setMonth(start.getMonth() - months)
-    return start.toISOString()
-  }, [periodo])
+  const periodoRange = useMemo(() => {
+    const now = new Date()
+
+    if (periodo === "mes_atual") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1)
+      return {
+        from: start.toISOString(),
+        to: now.toISOString(),
+      }
+    }
+    if (periodo === "30d") {
+      const start = new Date(now)
+      start.setDate(start.getDate() - 30)
+      return { from: start.toISOString(), to: now.toISOString() }
+    }
+    if (periodo === "60d") {
+      const start = new Date(now)
+      start.setDate(start.getDate() - 60)
+      return { from: start.toISOString(), to: now.toISOString() }
+    }
+    if (periodo === "90d") {
+      const start = new Date(now)
+      start.setDate(start.getDate() - 90)
+      return { from: start.toISOString(), to: now.toISOString() }
+    }
+    if (periodo === "personalizado" && customDateFrom && customDateTo) {
+      return {
+        from: new Date(`${customDateFrom}T00:00:00.000Z`).toISOString(),
+        to: new Date(`${customDateTo}T23:59:59.999Z`).toISOString(),
+      }
+    }
+    const start = new Date(now.getFullYear(), now.getMonth(), 1)
+    return { from: start.toISOString(), to: now.toISOString() }
+  }, [periodo, customDateFrom, customDateTo])
+
+  /** Compat: início do intervalo (equivalente ao antigo periodStartIso) */
+  const periodStartIso = periodoRange.from
 
   useEffect(() => {
     if (userLoading || !companyId) return
@@ -212,24 +229,28 @@ export default function RelatoriosPage() {
           .from("quotations")
           .select("id, code, description, status, category, created_at")
           .eq("company_id", companyId)
-          .gte("created_at", periodStartIso)
+          .gte("created_at", periodoRange.from)
+          .lte("created_at", periodoRange.to)
           .order("created_at", { ascending: false }),
         supabase
           .from("purchase_orders")
           .select("*", { count: "exact", head: true })
           .eq("company_id", companyId)
           .eq("status", "completed")
-          .gte("created_at", periodStartIso),
+          .gte("created_at", periodoRange.from)
+          .lte("created_at", periodoRange.to),
         supabase
           .from("purchase_orders")
           .select("status")
           .eq("company_id", companyId)
-          .gte("created_at", periodStartIso),
+          .gte("created_at", periodoRange.from)
+          .lte("created_at", periodoRange.to),
         supabase
           .from("purchase_orders")
           .select("supplier_name")
           .eq("company_id", companyId)
-          .gte("created_at", periodStartIso)
+          .gte("created_at", periodoRange.from)
+          .lte("created_at", periodoRange.to)
           .not("supplier_name", "is", null)
           .neq("supplier_name", ""),
         supabase
@@ -245,7 +266,8 @@ export default function RelatoriosPage() {
           )
           .eq("purchase_orders.company_id", companyId)
           .eq("purchase_orders.status", "completed")
-          .gte("purchase_orders.created_at", periodStartIso),
+          .gte("purchase_orders.created_at", periodoRange.from)
+          .lte("purchase_orders.created_at", periodoRange.to),
         supabase
           .from("quotations")
           .select("id, category")
@@ -255,7 +277,8 @@ export default function RelatoriosPage() {
           .select("created_at, total_price, supplier_name")
           .eq("company_id", companyId)
           .eq("status", "completed")
-          .gte("created_at", periodStartIso)
+          .gte("created_at", periodoRange.from)
+          .lte("created_at", periodoRange.to)
           .not("total_price", "is", null),
         supabase
           .from("items")
@@ -269,7 +292,8 @@ export default function RelatoriosPage() {
           .in("status", ["sent", "processing", "completed"])
           .not("requisition_code", "is", null)
           .neq("requisition_code", "")
-          .gte("created_at", periodStartIso),
+          .gte("created_at", periodoRange.from)
+          .lte("created_at", periodoRange.to),
         supabase
           .from("purchase_order_items")
           .select(
@@ -279,7 +303,8 @@ export default function RelatoriosPage() {
           .in("purchase_orders.status", ["sent", "processing", "completed"])
           .not("delivery_days", "is", null)
           .gt("delivery_days", 0)
-          .gte("purchase_orders.created_at", periodStartIso),
+          .gte("purchase_orders.created_at", periodoRange.from)
+          .lte("purchase_orders.created_at", periodoRange.to),
       ])
 
       setQuotations((quotationsRes.data as Quotation[]) ?? [])
@@ -534,12 +559,16 @@ export default function RelatoriosPage() {
     }
 
     fetchRealData()
-  }, [companyId, periodStartIso, userLoading, fornecedorFilter])
+  }, [companyId, periodoRange, userLoading, fornecedorFilter])
 
-  const monthsInPeriod = getMonthsBack(periodo)
+  const diasNoPeriodo = useMemo(() => {
+    const diff = new Date(periodoRange.to).getTime() - new Date(periodoRange.from).getTime()
+    return Math.max(1, Math.round(diff / (1000 * 60 * 60 * 24)))
+  }, [periodoRange])
+
   const ordersPerMonth =
-    completedOrdersCount != null && monthsInPeriod > 0
-      ? (completedOrdersCount / monthsInPeriod).toFixed(1)
+    completedOrdersCount != null && diasNoPeriodo > 0
+      ? ((completedOrdersCount / diasNoPeriodo) * 30).toFixed(1)
       : null
 
   const categoryOptions = useMemo(() => {
@@ -600,7 +629,7 @@ export default function RelatoriosPage() {
   }, [quotationsFiltered])
 
   const monthlyEvolution = useMemo(() => {
-    const monthsBack = Math.min(getMonthsBack(periodo), 12)
+    const monthsBack = 6
     const now = new Date()
     const buckets: { key: string; label: string; total: number }[] = []
     for (let i = monthsBack - 1; i >= 0; i--) {
@@ -620,7 +649,7 @@ export default function RelatoriosPage() {
       if (bucket) bucket.total += 1
     })
     return buckets.map((b) => ({ mes: b.label, total: b.total }))
-  }, [quotationsFiltered, periodo])
+  }, [quotationsFiltered])
 
   const totalQuotations = quotationsFiltered.length
 
@@ -647,20 +676,13 @@ export default function RelatoriosPage() {
     return `${dd}${mm}${yyyy}`
   }
 
-  const getIsoRange = (dateFrom?: string, dateTo?: string) => {
-    const from = dateFrom?.trim() ? new Date(`${dateFrom}T00:00:00.000Z`).toISOString() : null
-    const to = dateTo?.trim() ? new Date(`${dateTo}T23:59:59.999Z`).toISOString() : null
-    if (!from && !to) return null
-    return { from, to }
-  }
-
   const fetchSavingData = useCallback(async () => {
     if (!companyId) return
     setSavingLoading(true)
     try {
       const supabase = createClient()
 
-      const range = getIsoRange(savingDateFrom, savingDateTo)
+      const range = { from: periodoRange.from, to: periodoRange.to }
       let query = supabase
         .from("purchase_order_items")
         .select(
@@ -674,8 +696,7 @@ export default function RelatoriosPage() {
         query = query.in("purchase_orders.supplier_name", fornecedorFilter)
       }
 
-      if (range?.from) query = query.gte("purchase_orders.created_at", range.from)
-      if (range?.to) query = query.lte("purchase_orders.created_at", range.to)
+      query = query.gte("purchase_orders.created_at", range.from).lte("purchase_orders.created_at", range.to)
 
       const { data: poItems } = await query
 
@@ -773,7 +794,7 @@ export default function RelatoriosPage() {
     } finally {
       setSavingLoading(false)
     }
-  }, [companyId, savingDateFrom, savingDateTo, categoria, fornecedorFilter])
+  }, [companyId, periodoRange, categoria, fornecedorFilter])
 
   useEffect(() => {
     if (userLoading || !companyId) return
@@ -788,135 +809,322 @@ export default function RelatoriosPage() {
     }
   }
 
-  const handleExportCategory = async (dateFrom?: string, dateTo?: string) => {
+  const handleExportSpend = async () => {
     if (!companyId) return
     setCategoryLoading(true)
     try {
       const supabase = createClient()
-      let query = supabase
-        .from("quotations")
-        .select("id, category, created_at")
-        .eq("company_id", companyId)
+      const range = { from: periodoRange.from, to: periodoRange.to }
 
-      const range = getIsoRange(dateFrom, dateTo)
-      if (range?.from) query = query.gte("created_at", range.from)
-      if (range?.to) query = query.lte("created_at", range.to)
+      let queryAtual = supabase
+        .from("purchase_order_items")
+        .select(
+          "total_price, purchase_orders!inner(company_id, status, created_at, quotation_id)",
+        )
+        .eq("purchase_orders.company_id", companyId)
+        .in("purchase_orders.status", ["sent", "processing", "completed"])
 
-      const res = await query
-      const rows = (res.data as { id: string; category: string | null }[]) ?? []
+      queryAtual = queryAtual
+        .gte("purchase_orders.created_at", range.from)
+        .lte("purchase_orders.created_at", range.to)
 
-      const total = rows.length
-      const map = new Map<string, number>()
-      rows.forEach((r) => {
-        const label = r.category?.trim() ? r.category : "Sem Categoria"
-        map.set(label, (map.get(label) ?? 0) + 1)
-      })
+      const msRange = new Date(range.to).getTime() - new Date(range.from).getTime()
+      const prevFrom = new Date(new Date(range.from).getTime() - msRange).toISOString()
+      const prevTo = range.from
 
-      const sorted = Array.from(map.entries())
-        .map(([category, count]) => ({ category, count }))
-        .sort((a, b) => b.count - a.count)
+      let queryAnterior = supabase
+        .from("purchase_order_items")
+        .select(
+          "total_price, purchase_orders!inner(company_id, status, created_at, quotation_id)",
+        )
+        .eq("purchase_orders.company_id", companyId)
+        .in("purchase_orders.status", ["sent", "processing", "completed"])
+
+      queryAnterior = queryAnterior
+        .gte("purchase_orders.created_at", prevFrom)
+        .lte("purchase_orders.created_at", prevTo)
+
+      const [{ data: itemsAtual }, { data: itemsAnterior }, { data: quotations }] =
+        await Promise.all([
+          queryAtual,
+          queryAnterior,
+          supabase.from("quotations").select("id, category").eq("company_id", companyId),
+        ])
+
+      const catMap = new Map(
+        ((quotations ?? []) as { id: string; category: string | null }[]).map((q) => [
+          q.id,
+          q.category?.trim() || "Sem Categoria",
+        ]),
+      )
+
+      const buildSpendMap = (items: any[]) => {
+        const map = new Map<string, number>()
+        items.forEach((item: any) => {
+          const po = Array.isArray(item.purchase_orders)
+            ? item.purchase_orders[0]
+            : item.purchase_orders
+          const cat = catMap.get(po?.quotation_id ?? "") ?? "Sem Categoria"
+          map.set(cat, (map.get(cat) ?? 0) + Number(item.total_price ?? 0))
+        })
+        return map
+      }
+
+      const spendAtual = buildSpendMap(itemsAtual ?? [])
+      const spendAnterior = buildSpendMap(itemsAnterior ?? [])
+      const totalAtual = Array.from(spendAtual.values()).reduce((a, b) => a + b, 0)
+
+      const sorted = Array.from(spendAtual.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([cat, valor]) => ({
+          categoria: cat,
+          valorAtual: valor,
+          valorAnterior: spendAnterior.get(cat) ?? 0,
+          percentTotal: totalAtual > 0 ? valor / totalAtual : 0,
+          variacao:
+            (spendAnterior.get(cat) ?? 0) > 0
+              ? (valor - (spendAnterior.get(cat) ?? 0)) / (spendAnterior.get(cat) ?? 0)
+              : null,
+        }))
 
       const ExcelJS = (await import("exceljs")).default
-      const workbook = new ExcelJS.Workbook()
-      const ws = workbook.addWorksheet("Categorias")
+      const wb = new ExcelJS.Workbook()
+      const ws = wb.addWorksheet("Spend por Categoria")
+      ws.views = [{ showGridLines: false }]
+
+      const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F46E5" } } as any
+      const headerFont = { color: { argb: "FFFFFFFF" }, bold: true }
+      const border = {
+        top: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+        bottom: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+        left: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+        right: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+      }
+
       ws.columns = [
-        { header: "Categoria", key: "categoria", width: 30 },
-        { header: "Total de Cotações", key: "total", width: 20 },
-        { header: "% do Total", key: "percent", width: 15 },
+        { header: "Categoria", key: "categoria", width: 28 },
+        { header: "Spend Atual (R$)", key: "valorAtual", width: 18 },
+        { header: "Spend Anterior (R$)", key: "valorAnterior", width: 20 },
+        { header: "Variação %", key: "variacao", width: 14 },
+        { header: "% do Total", key: "percentTotal", width: 14 },
       ]
 
-      const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F46E5" } }
-      const headerFont = { color: { argb: "FFFFFFFF" }, bold: true }
-      const headerRow = ws.getRow(1)
-      headerRow.eachCell((cell: any) => {
+      ws.getRow(1).eachCell((cell: any) => {
         cell.fill = headerFill
         cell.font = headerFont
         cell.alignment = { horizontal: "center", vertical: "middle" }
+        cell.border = border
       })
 
-      sorted.forEach((item) => {
-        const percent = total > 0 ? item.count / total : 0
-        ws.addRow({ categoria: item.category, total: item.count, percent })
-      })
+      sorted.forEach((row) => {
+        const r = ws.addRow({
+          categoria: row.categoria,
+          valorAtual: row.valorAtual,
+          valorAnterior: row.valorAnterior,
+          variacao: row.variacao,
+          percentTotal: row.percentTotal,
+        })
+        r.getCell("valorAtual").numFmt = '"R$" #,##0.00'
+        r.getCell("valorAnterior").numFmt = '"R$" #,##0.00'
+        r.getCell("variacao").numFmt = "+0.00%;-0.00%;0.00%"
+        r.getCell("percentTotal").numFmt = "0.00%"
+        r.eachCell({ includeEmpty: true }, (cell: any) => {
+          cell.border = border
+        })
 
-      ws.getColumn("percent").numFmt = "0.00%"
+        if (row.variacao != null) {
+          r.getCell("variacao").fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: row.variacao <= 0 ? "FFD1FAE5" : "FFFEE2E2" },
+          } as any
+        }
+      })
 
       const totalRow = ws.addRow({
         categoria: "TOTAL",
-        total,
-        percent: total > 0 ? 1 : 0,
+        valorAtual: totalAtual,
+        valorAnterior: Array.from(spendAnterior.values()).reduce((a, b) => a + b, 0),
+        variacao: null,
+        percentTotal: 1,
       })
-      totalRow.eachCell((cell: any) => {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } }
+      totalRow.eachCell({ includeEmpty: true }, (cell: any) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } } as any
         cell.font = { bold: true }
+        cell.border = border
       })
-      totalRow.getCell("percent").numFmt = "0.00%"
+      totalRow.getCell("valorAtual").numFmt = '"R$" #,##0.00'
+      totalRow.getCell("valorAnterior").numFmt = '"R$" #,##0.00'
+      totalRow.getCell("percentTotal").numFmt = "0.00%"
 
-      const filename = `relatorio_categorias_${getTodayDDMMYYYY()}.xlsx`
-      await downloadExcel(workbook, filename)
+      await downloadExcel(wb, `spend_categoria_${getTodayDDMMYYYY()}.xlsx`)
     } finally {
       setCategoryLoading(false)
     }
   }
 
-  const handleExportSuppliers = async (dateFrom?: string, dateTo?: string) => {
+  const handleExportSuppliers = async () => {
     if (!companyId) return
     setSupplierLoading(true)
     try {
       const supabase = createClient()
-      const range = getIsoRange(dateFrom, dateTo)
+      const range = { from: periodoRange.from, to: periodoRange.to }
 
       let query = supabase
-        .from("quotation_suppliers")
-        .select("quotation_id, supplier_name, quotations!inner(created_at)")
+        .from("purchase_orders")
+        .select("id, supplier_name, supplier_id, total_price, status, created_at, proposal_id")
         .eq("company_id", companyId)
+        .in("status", ["sent", "processing", "completed"])
+        .not("supplier_name", "is", null)
 
-      if (range?.from) query = query.gte("quotations.created_at", range.from)
-      if (range?.to) query = query.lte("quotations.created_at", range.to)
+      query = query.gte("created_at", range.from).lte("created_at", range.to)
 
-      const res = await query
-      const rows =
-        ((res.data as unknown) as { quotation_id: string; supplier_name: string | null }[]) ?? []
+      const { data: orders } = await query
+      const orderList = (orders ?? []) as {
+        id: string
+        supplier_name: string
+        supplier_id: string | null
+        total_price: number | null
+        status: string
+        created_at: string
+        proposal_id: string | null
+      }[]
 
-      const map = new Map<string, Set<string>>()
-      rows.forEach((r) => {
-        const name = r.supplier_name?.trim() || "—"
-        if (!map.has(name)) map.set(name, new Set())
-        map.get(name)!.add(r.quotation_id)
-      })
+      const orderIds = orderList.map((o) => o.id)
 
-      const sorted = Array.from(map.entries())
-        .map(([name, set]) => ({ name, count: set.size }))
-        .sort((a, b) => b.count - a.count)
+      const itemsByOrder = new Map<
+        string,
+        { delivery_days: number | null; quantity: number; unit_price: number }[]
+      >()
+      if (orderIds.length > 0) {
+        const { data: orderItems } = await supabase
+          .from("purchase_order_items")
+          .select("purchase_order_id, delivery_days, quantity, unit_price")
+          .in("purchase_order_id", orderIds)
+        ;((orderItems ?? []) as {
+          purchase_order_id: string
+          delivery_days: number | null
+          quantity: number | null
+          unit_price: number | null
+        }[]).forEach((item) => {
+          if (!itemsByOrder.has(item.purchase_order_id)) {
+            itemsByOrder.set(item.purchase_order_id, [])
+          }
+          itemsByOrder.get(item.purchase_order_id)!.push({
+            delivery_days: item.delivery_days,
+            quantity: Number(item.quantity ?? 0),
+            unit_price: Number(item.unit_price ?? 0),
+          })
+        })
+      }
 
-      const ExcelJS = (await import("exceljs")).default
-      const workbook = new ExcelJS.Workbook()
-      const ws = workbook.addWorksheet("Fornecedores")
-      ws.columns = [
-        { header: "Fornecedor", key: "fornecedor", width: 40 },
-        { header: "Cotações Participadas", key: "count", width: 22 },
-        { header: "Ranking", key: "ranking", width: 15 },
-      ]
+      const supplierMap = new Map<
+        string,
+        { totalPedidos: number; totalSpend: number; leadTimeDays: number[]; totalItens: number }
+      >()
 
-      const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F46E5" } }
-      const headerFont = { color: { argb: "FFFFFFFF" }, bold: true }
-      const headerRow = ws.getRow(1)
-      headerRow.eachCell((cell: any) => {
-        cell.fill = headerFill
-        cell.font = headerFont
-        cell.alignment = { horizontal: "center", vertical: "middle" }
-      })
+      orderList.forEach((po) => {
+        const name = po.supplier_name?.trim() || "—"
+        if (!supplierMap.has(name)) {
+          supplierMap.set(name, { totalPedidos: 0, totalSpend: 0, leadTimeDays: [], totalItens: 0 })
+        }
+        const s = supplierMap.get(name)!
+        s.totalPedidos++
+        s.totalSpend += Number(po.total_price ?? 0)
 
-      sorted.forEach((item, idx) => {
-        ws.addRow({
-          fornecedor: item.name,
-          count: item.count,
-          ranking: `${idx + 1}º`,
+        const items = itemsByOrder.get(po.id) ?? []
+        items.forEach((item) => {
+          s.totalItens++
+          if (item.delivery_days != null && item.delivery_days > 0) {
+            s.leadTimeDays.push(item.delivery_days)
+          }
         })
       })
 
-      const filename = `relatorio_fornecedores_${getTodayDDMMYYYY()}.xlsx`
-      await downloadExcel(workbook, filename)
+      const totalSpendGeral = Array.from(supplierMap.values()).reduce((a, s) => a + s.totalSpend, 0)
+
+      const sorted = Array.from(supplierMap.entries())
+        .map(([name, s]) => ({
+          fornecedor: name,
+          pedidos: s.totalPedidos,
+          spend: s.totalSpend,
+          percentSpend: totalSpendGeral > 0 ? s.totalSpend / totalSpendGeral : 0,
+          ticketMedio: s.totalPedidos > 0 ? s.totalSpend / s.totalPedidos : 0,
+          leadTimeMedio:
+            s.leadTimeDays.length > 0
+              ? Math.round(s.leadTimeDays.reduce((a, b) => a + b, 0) / s.leadTimeDays.length)
+              : null,
+          totalItens: s.totalItens,
+        }))
+        .sort((a, b) => b.spend - a.spend)
+
+      const ExcelJS = (await import("exceljs")).default
+      const wb = new ExcelJS.Workbook()
+      const ws = wb.addWorksheet("Performance Fornecedores")
+      ws.views = [{ showGridLines: false }]
+
+      const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F46E5" } } as any
+      const headerFont = { color: { argb: "FFFFFFFF" }, bold: true }
+      const border = {
+        top: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+        bottom: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+        left: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+        right: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
+      }
+
+      ws.columns = [
+        { header: "Fornecedor", key: "fornecedor", width: 32 },
+        { header: "Pedidos", key: "pedidos", width: 10 },
+        { header: "Spend Total (R$)", key: "spend", width: 18 },
+        { header: "% do Spend", key: "percentSpend", width: 14 },
+        { header: "Ticket Médio (R$)", key: "ticketMedio", width: 18 },
+        { header: "Lead Time Médio (dias)", key: "leadTimeMedio", width: 22 },
+        { header: "Total de Itens", key: "totalItens", width: 15 },
+      ]
+
+      ws.getRow(1).eachCell((cell: any) => {
+        cell.fill = headerFill
+        cell.font = headerFont
+        cell.alignment = { horizontal: "center", vertical: "middle" }
+        cell.border = border
+      })
+
+      sorted.forEach((row) => {
+        const r = ws.addRow({
+          fornecedor: row.fornecedor,
+          pedidos: row.pedidos,
+          spend: row.spend,
+          percentSpend: row.percentSpend,
+          ticketMedio: row.ticketMedio,
+          leadTimeMedio: row.leadTimeMedio,
+          totalItens: row.totalItens,
+        })
+        r.getCell("spend").numFmt = '"R$" #,##0.00'
+        r.getCell("percentSpend").numFmt = "0.00%"
+        r.getCell("ticketMedio").numFmt = '"R$" #,##0.00'
+        r.eachCell({ includeEmpty: true }, (cell: any) => {
+          cell.border = border
+        })
+      })
+
+      const totalRow = ws.addRow({
+        fornecedor: "TOTAL",
+        pedidos: sorted.reduce((a, s) => a + s.pedidos, 0),
+        spend: totalSpendGeral,
+        percentSpend: 1,
+        ticketMedio: null,
+        leadTimeMedio: null,
+        totalItens: sorted.reduce((a, s) => a + s.totalItens, 0),
+      })
+      totalRow.eachCell({ includeEmpty: true }, (cell: any) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } } as any
+        cell.font = { bold: true }
+        cell.border = border
+      })
+      totalRow.getCell("spend").numFmt = '"R$" #,##0.00'
+      totalRow.getCell("percentSpend").numFmt = "0.00%"
+
+      await downloadExcel(wb, `performance_fornecedores_${getTodayDDMMYYYY()}.xlsx`)
     } finally {
       setSupplierLoading(false)
     }
@@ -927,7 +1135,7 @@ export default function RelatoriosPage() {
     setSavingLoading(true)
     try {
       const supabase = createClient()
-      const range = getIsoRange(savingDateFrom, savingDateTo)
+      const range = { from: periodoRange.from, to: periodoRange.to }
 
       let query = supabase
         .from("purchase_order_items")
@@ -938,8 +1146,7 @@ export default function RelatoriosPage() {
         .in("purchase_orders.status", ["sent", "processing", "completed"])
         .not("quotation_item_id", "is", null)
 
-      if (range?.from) query = query.gte("purchase_orders.created_at", range.from)
-      if (range?.to) query = query.lte("purchase_orders.created_at", range.to)
+      query = query.gte("purchase_orders.created_at", range.from).lte("purchase_orders.created_at", range.to)
 
       const { data: poItems } = await query
       const items = (poItems ?? []) as {
@@ -1068,33 +1275,34 @@ export default function RelatoriosPage() {
     setSavingLoading(true)
     try {
       const supabase = createClient()
-      const range = getIsoRange(leadtimeDateFrom, leadtimeDateTo)
+      const range = { from: periodoRange.from, to: periodoRange.to }
 
-      let processoQuery = supabase
+      let query = supabase
         .from("purchase_orders")
-        .select("code, created_at, requisition_code, supplier_name, total_price, status")
+        .select(
+          "id, code, created_at, requisition_code, supplier_name, total_price, status, created_by, quotation_id",
+        )
         .eq("company_id", companyId)
         .in("status", ["sent", "processing", "completed"])
         .not("requisition_code", "is", null)
         .neq("requisition_code", "")
 
-      if (range?.from) processoQuery = processoQuery.gte("created_at", range.from)
-      if (range?.to) processoQuery = processoQuery.lte("created_at", range.to)
+      query = query.gte("created_at", range.from).lte("created_at", range.to)
 
-      const { data: processoData } = await processoQuery
-      const processoOrders = (processoData ?? []) as {
+      const { data: orders } = await query
+      const orderList = (orders ?? []) as {
+        id: string
         code: string
         created_at: string
         requisition_code: string | null
         supplier_name: string | null
         total_price: number | null
         status: string
+        created_by: string | null
+        quotation_id: string | null
       }[]
 
-      const reqCodes = [
-        ...new Set(processoOrders.map((o) => o.requisition_code).filter(Boolean)),
-      ] as string[]
-
+      const reqCodes = [...new Set(orderList.map((o) => o.requisition_code).filter(Boolean))] as string[]
       let reqMap = new Map<string, string>()
       if (reqCodes.length > 0) {
         const { data: reqs } = await supabase
@@ -1103,56 +1311,91 @@ export default function RelatoriosPage() {
           .eq("company_id", companyId)
           .in("code", reqCodes)
         reqMap = new Map(
-          ((reqs ?? []) as { code: string; created_at: string }[]).map((r) => [
-            r.code,
-            r.created_at,
+          ((reqs ?? []) as { code: string; created_at: string }[]).map((r) => [r.code, r.created_at]),
+        )
+      }
+
+      const buyerIds = [...new Set(orderList.map((o) => o.created_by).filter(Boolean))] as string[]
+      let buyerMap = new Map<string, string>()
+      if (buyerIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", buyerIds)
+        buyerMap = new Map(
+          ((profiles ?? []) as { id: string; full_name: string | null }[]).map((p) => [
+            p.id,
+            p.full_name ?? "—",
           ]),
         )
       }
 
-      let fornQuery = supabase
-        .from("purchase_order_items")
-        .select(
-          "delivery_days, material_code, material_description, quantity, unit_price, purchase_orders!inner(code, company_id, status, supplier_name, created_at)",
+      const quotationIds = [...new Set(orderList.map((o) => o.quotation_id).filter(Boolean))] as string[]
+      let categoryMap = new Map<string, string>()
+      if (quotationIds.length > 0) {
+        const { data: qts } = await supabase
+          .from("quotations")
+          .select("id, category")
+          .in("id", quotationIds)
+        categoryMap = new Map(
+          ((qts ?? []) as { id: string; category: string | null }[]).map((q) => [
+            q.id,
+            q.category?.trim() || "Sem Categoria",
+          ]),
         )
-        .eq("purchase_orders.company_id", companyId)
-        .in("purchase_orders.status", ["sent", "processing", "completed"])
-        .not("delivery_days", "is", null)
-        .gt("delivery_days", 0)
+      }
 
-      if (range?.from) fornQuery = fornQuery.gte("purchase_orders.created_at", range.from)
-      if (range?.to) fornQuery = fornQuery.lte("purchase_orders.created_at", range.to)
+      const rows = orderList
+        .map((po) => {
+          const reqDate = po.requisition_code ? reqMap.get(po.requisition_code) : null
+          const dias = reqDate
+            ? Math.max(
+                0,
+                Math.round(
+                  (new Date(po.created_at).getTime() - new Date(reqDate).getTime()) /
+                    (1000 * 60 * 60 * 24),
+                ),
+              )
+            : null
+          return {
+            pedido: po.code,
+            dataPedido: new Date(po.created_at).toLocaleDateString("pt-BR"),
+            requisicao: po.requisition_code ?? "—",
+            dataReq: reqDate ? new Date(reqDate).toLocaleDateString("pt-BR") : "—",
+            dias,
+            comprador: po.created_by ? (buyerMap.get(po.created_by) ?? "—") : "—",
+            fornecedor: po.supplier_name ?? "—",
+            categoria: po.quotation_id ? (categoryMap.get(po.quotation_id) ?? "Sem Categoria") : "—",
+            valor: po.total_price ?? 0,
+          }
+        })
+        .filter((r) => r.dias != null)
 
-      const { data: fornData } = await fornQuery
-      const fornItems = (fornData ?? []) as {
-        delivery_days: number | null
-        material_code: string | null
-        material_description: string | null
-        quantity: number | null
-        unit_price: number | null
-        purchase_orders:
-          | { code: string; supplier_name: string | null; created_at: string }
-          | { code: string; supplier_name: string | null; created_at: string }[]
-          | null
-      }[]
+      const compradorMap = new Map<string, number[]>()
+      rows.forEach((r) => {
+        if (!compradorMap.has(r.comprador)) compradorMap.set(r.comprador, [])
+        compradorMap.get(r.comprador)!.push(r.dias!)
+      })
+
+      const categoriaMapAgg = new Map<string, number[]>()
+      rows.forEach((r) => {
+        if (!categoriaMapAgg.has(r.categoria)) categoriaMapAgg.set(r.categoria, [])
+        categoriaMapAgg.get(r.categoria)!.push(r.dias!)
+      })
 
       const ExcelJS = (await import("exceljs")).default
-      const workbook = new ExcelJS.Workbook()
+      const wb = new ExcelJS.Workbook()
 
-      const headerFill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FF4F46E5" },
-      } as any
+      const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F46E5" } } as any
       const headerFont = { color: { argb: "FFFFFFFF" }, bold: true }
-      const borderStyle = {
+      const border = {
         top: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
         bottom: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
         left: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
         right: { style: "thin" as const, color: { argb: "FFDDDDDD" } },
       }
 
-      const ws1 = workbook.addWorksheet("Tempo do Processo")
+      const ws1 = wb.addWorksheet("Por Pedido")
       ws1.views = [{ showGridLines: false }]
       ws1.columns = [
         { header: "Pedido", key: "pedido", width: 18 },
@@ -1160,126 +1403,107 @@ export default function RelatoriosPage() {
         { header: "Requisição", key: "requisicao", width: 18 },
         { header: "Data Requisição", key: "dataReq", width: 16 },
         { header: "Dias (Req → Pedido)", key: "dias", width: 20 },
-        { header: "Fornecedor", key: "fornecedor", width: 30 },
-        { header: "Valor Total", key: "valor", width: 16 },
-        { header: "Status", key: "status", width: 16 },
+        { header: "Comprador", key: "comprador", width: 24 },
+        { header: "Fornecedor", key: "fornecedor", width: 28 },
+        { header: "Categoria", key: "categoria", width: 20 },
+        { header: "Valor Total (R$)", key: "valor", width: 16 },
       ]
-
       ws1.getRow(1).eachCell((cell: any) => {
         cell.fill = headerFill
         cell.font = headerFont
         cell.alignment = { horizontal: "center", vertical: "middle" }
-        cell.border = borderStyle
+        cell.border = border
       })
-
-      let totalDiasProcesso = 0
-      let countProcesso = 0
-
-      processoOrders.forEach((po) => {
-        const reqDate = po.requisition_code ? reqMap.get(po.requisition_code) : null
-        const dias = reqDate
-          ? Math.max(
-              0,
-              Math.round(
-                (new Date(po.created_at).getTime() - new Date(reqDate).getTime()) /
-                  (1000 * 60 * 60 * 24),
-              ),
-            )
-          : null
-
-        if (dias != null) {
-          totalDiasProcesso += dias
-          countProcesso++
-        }
-
-        const row = ws1.addRow({
-          pedido: po.code,
-          dataPedido: new Date(po.created_at).toLocaleDateString("pt-BR"),
-          requisicao: po.requisition_code ?? "—",
-          dataReq: reqDate ? new Date(reqDate).toLocaleDateString("pt-BR") : "—",
-          dias: dias ?? "—",
-          fornecedor: po.supplier_name ?? "—",
-          valor: po.total_price ?? 0,
-          status: po.status,
+      rows.forEach((row) => {
+        const r = ws1.addRow(row)
+        r.getCell("valor").numFmt = '"R$" #,##0.00'
+        r.eachCell({ includeEmpty: true }, (cell: any) => {
+          cell.border = border
         })
-
-        row.eachCell({ includeEmpty: true }, (cell: any) => {
-          cell.border = borderStyle
-        })
-        row.getCell("valor").numFmt = '"R$" #,##0.00'
       })
-
-      const mediaRow1 = ws1.addRow({
-        pedido: "MÉDIA",
-        dias: countProcesso > 0 ? Math.round(totalDiasProcesso / countProcesso) : "—",
-        valor: "",
+      const mediaGeral =
+        rows.length > 0 ? Math.round(rows.reduce((a, r) => a + r.dias!, 0) / rows.length) : null
+      const totalRow1 = ws1.addRow({
+        pedido: "MÉDIA GERAL",
+        dias: mediaGeral ?? "—",
+        valor: rows.reduce((a, r) => a + r.valor, 0),
       })
-      mediaRow1.eachCell({ includeEmpty: true }, (cell: any) => {
+      totalRow1.eachCell({ includeEmpty: true }, (cell: any) => {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } } as any
         cell.font = { bold: true }
-        cell.border = borderStyle
+        cell.border = border
       })
+      totalRow1.getCell("valor").numFmt = '"R$" #,##0.00'
 
-      const ws2 = workbook.addWorksheet("Lead Time Fornecedor")
+      const ws2 = wb.addWorksheet("Por Comprador")
       ws2.views = [{ showGridLines: false }]
       ws2.columns = [
-        { header: "Pedido", key: "pedido", width: 18 },
-        { header: "Data", key: "data", width: 14 },
-        { header: "Fornecedor", key: "fornecedor", width: 30 },
-        { header: "Código", key: "codigo", width: 14 },
-        { header: "Descrição", key: "descricao", width: 35 },
-        { header: "Qtd", key: "qtd", width: 8 },
-        { header: "Preço Unit.", key: "preco", width: 14 },
-        { header: "Lead Time (dias)", key: "leadTime", width: 18 },
+        { header: "Comprador", key: "comprador", width: 28 },
+        { header: "Total de Pedidos", key: "pedidos", width: 18 },
+        { header: "Média de Dias", key: "media", width: 16 },
+        { header: "Menor Prazo (dias)", key: "menor", width: 18 },
+        { header: "Maior Prazo (dias)", key: "maior", width: 18 },
       ]
-
       ws2.getRow(1).eachCell((cell: any) => {
         cell.fill = headerFill
         cell.font = headerFont
         cell.alignment = { horizontal: "center", vertical: "middle" }
-        cell.border = borderStyle
+        cell.border = border
       })
-
-      let totalDiasForn = 0
-      let countForn = 0
-
-      fornItems.forEach((item) => {
-        if (!item.delivery_days) return
-        const po = Array.isArray(item.purchase_orders)
-          ? item.purchase_orders[0]
-          : item.purchase_orders
-
-        totalDiasForn += item.delivery_days
-        countForn++
-
-        const row = ws2.addRow({
-          pedido: po?.code ?? "—",
-          data: po?.created_at ? new Date(po.created_at).toLocaleDateString("pt-BR") : "—",
-          fornecedor: po?.supplier_name ?? "—",
-          codigo: item.material_code ?? "—",
-          descricao: item.material_description ?? "—",
-          qtd: item.quantity ?? "—",
-          preco: item.unit_price ?? 0,
-          leadTime: item.delivery_days,
+      Array.from(compradorMap.entries())
+        .sort(
+          (a, b) =>
+            a[1].reduce((x, y) => x + y, 0) / a[1].length -
+            b[1].reduce((x, y) => x + y, 0) / b[1].length,
+        )
+        .forEach(([comprador, dias]) => {
+          const r = ws2.addRow({
+            comprador,
+            pedidos: dias.length,
+            media: Math.round(dias.reduce((a, b) => a + b, 0) / dias.length),
+            menor: Math.min(...dias),
+            maior: Math.max(...dias),
+          })
+          r.eachCell({ includeEmpty: true }, (cell: any) => {
+            cell.border = border
+          })
         })
 
-        row.eachCell({ includeEmpty: true }, (cell: any) => {
-          cell.border = borderStyle
+      const ws3 = wb.addWorksheet("Por Categoria")
+      ws3.views = [{ showGridLines: false }]
+      ws3.columns = [
+        { header: "Categoria", key: "categoria", width: 28 },
+        { header: "Total de Pedidos", key: "pedidos", width: 18 },
+        { header: "Média de Dias", key: "media", width: 16 },
+        { header: "Menor Prazo (dias)", key: "menor", width: 18 },
+        { header: "Maior Prazo (dias)", key: "maior", width: 18 },
+      ]
+      ws3.getRow(1).eachCell((cell: any) => {
+        cell.fill = headerFill
+        cell.font = headerFont
+        cell.alignment = { horizontal: "center", vertical: "middle" }
+        cell.border = border
+      })
+      Array.from(categoriaMapAgg.entries())
+        .sort(
+          (a, b) =>
+            a[1].reduce((x, y) => x + y, 0) / a[1].length -
+            b[1].reduce((x, y) => x + y, 0) / b[1].length,
+        )
+        .forEach(([categoria, dias]) => {
+          const r = ws3.addRow({
+            categoria,
+            pedidos: dias.length,
+            media: Math.round(dias.reduce((a, b) => a + b, 0) / dias.length),
+            menor: Math.min(...dias),
+            maior: Math.max(...dias),
+          })
+          r.eachCell({ includeEmpty: true }, (cell: any) => {
+            cell.border = border
+          })
         })
-        row.getCell("preco").numFmt = '"R$" #,##0.00'
-      })
 
-      const mediaRow2 = ws2.addRow({
-        pedido: "MÉDIA GERAL",
-        leadTime: countForn > 0 ? Math.round(totalDiasForn / countForn) : "—",
-      })
-      mediaRow2.eachCell({ includeEmpty: true }, (cell: any) => {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } } as any
-        cell.font = { bold: true }
-        cell.border = borderStyle
-      })
-
-      await downloadExcel(workbook, `relatorio_lead_time_${getTodayDDMMYYYY()}.xlsx`)
+      await downloadExcel(wb, `tempo_processo_compras_${getTodayDDMMYYYY()}.xlsx`)
     } finally {
       setSavingLoading(false)
     }
@@ -1323,18 +1547,76 @@ export default function RelatoriosPage() {
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
         <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
         <span className="text-sm font-medium text-muted-foreground">Filtros:</span>
-        <Select value={periodo} onValueChange={setPeriodo}>
-          <SelectTrigger className="w-36">
+        <Select
+          value={periodo}
+          onValueChange={(val) => {
+            setPeriodo(val)
+            setCustomDateError("")
+            if (val !== "personalizado") {
+              setCustomDateFrom("")
+              setCustomDateTo("")
+            }
+          }}
+        >
+          <SelectTrigger className="w-44">
             <Calendar className="mr-2 h-4 w-4" />
             <SelectValue placeholder="Período" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="1m">Último mês</SelectItem>
-            <SelectItem value="3m">Últimos 3 meses</SelectItem>
-            <SelectItem value="6m">Últimos 6 meses</SelectItem>
-            <SelectItem value="12m">Último ano</SelectItem>
+            <SelectItem value="mes_atual">Mês atual</SelectItem>
+            <SelectItem value="30d">Últimos 30 dias</SelectItem>
+            <SelectItem value="60d">Últimos 60 dias</SelectItem>
+            <SelectItem value="90d">Últimos 90 dias</SelectItem>
+            <SelectItem value="personalizado">Personalizado</SelectItem>
           </SelectContent>
         </Select>
+
+        {periodo === "personalizado" && (
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              value={customDateFrom}
+              max={customDateTo || undefined}
+              onChange={(e) => {
+                setCustomDateFrom(e.target.value)
+                setCustomDateError("")
+                if (customDateTo && e.target.value) {
+                  const diff = Math.round(
+                    (new Date(customDateTo).getTime() - new Date(e.target.value).getTime()) /
+                      (1000 * 60 * 60 * 24),
+                  )
+                  if (diff > 90) {
+                    setCustomDateError("Intervalo máximo de 90 dias")
+                  }
+                }
+              }}
+              className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+            />
+            <span className="text-muted-foreground text-sm">até</span>
+            <input
+              type="date"
+              value={customDateTo}
+              min={customDateFrom || undefined}
+              onChange={(e) => {
+                setCustomDateTo(e.target.value)
+                setCustomDateError("")
+                if (customDateFrom && e.target.value) {
+                  const diff = Math.round(
+                    (new Date(e.target.value).getTime() - new Date(customDateFrom).getTime()) /
+                      (1000 * 60 * 60 * 24),
+                  )
+                  if (diff > 90) {
+                    setCustomDateError("Intervalo máximo de 90 dias")
+                  }
+                }
+              }}
+              className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+            />
+            {customDateError ? (
+              <span className="text-xs text-destructive">{customDateError}</span>
+            ) : null}
+          </div>
+        )}
         <MultiSelectFilter
           label="Categoria"
           options={categoryOptions.map((c) => ({ value: c, label: c }))}
@@ -2037,6 +2319,9 @@ export default function RelatoriosPage() {
         </TabsContent>
 
         <TabsContent value="exportar" className="mt-4">
+          <p className="text-sm text-muted-foreground mb-4">
+            Os relatórios abaixo usam os filtros de período, categoria e fornecedor selecionados acima.
+          </p>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {relatoriosDisponiveis.map((relatorio) => (
               <Card key={relatorio.id}>
@@ -2052,88 +2337,37 @@ export default function RelatoriosPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex flex-col gap-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-2">
-                        <Label htmlFor={`inicio-${relatorio.id}`}>Data Início</Label>
-                        <Input
-                          type="date"
-                          id={`inicio-${relatorio.id}`}
-                          value={
-                            relatorio.id === 1
-                              ? categoryDateFrom
-                              : relatorio.id === 2
-                                ? supplierDateFrom
-                                : relatorio.id === 3
-                                  ? savingDateFrom
-                                  : leadtimeDateFrom
-                          }
-                          onChange={(e) => {
-                            const v = e.target.value
-                            if (relatorio.id === 1) setCategoryDateFrom(v)
-                            else if (relatorio.id === 2) setSupplierDateFrom(v)
-                            else if (relatorio.id === 3) setSavingDateFrom(v)
-                            else setLeadtimeDateFrom(v)
-                          }}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <Label htmlFor={`fim-${relatorio.id}`}>Data Fim</Label>
-                        <Input
-                          type="date"
-                          id={`fim-${relatorio.id}`}
-                          value={
-                            relatorio.id === 1
-                              ? categoryDateTo
-                              : relatorio.id === 2
-                                ? supplierDateTo
-                                : relatorio.id === 3
-                                  ? savingDateTo
-                                  : leadtimeDateTo
-                          }
-                          onChange={(e) => {
-                            const v = e.target.value
-                            if (relatorio.id === 1) setCategoryDateTo(v)
-                            else if (relatorio.id === 2) setSupplierDateTo(v)
-                            else if (relatorio.id === 3) setSavingDateTo(v)
-                            else setLeadtimeDateTo(v)
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      className="w-full"
-                      type="button"
-                      disabled={
-                        (relatorio.id === 1 && categoryLoading) ||
-                        (relatorio.id === 2 && supplierLoading) ||
-                        (relatorio.id === 3 && savingLoading) ||
-                        (relatorio.id === 4 && savingLoading)
-                      }
-                      onClick={() => {
-                        if (relatorio.id === 1) return void handleExportCategory(categoryDateFrom, categoryDateTo)
-                        if (relatorio.id === 2) return void handleExportSuppliers(supplierDateFrom, supplierDateTo)
-                        if (relatorio.id === 3) return void handleExportSaving()
-                        return void handleExportLeadTime()
-                      }}
-                    >
-                      {(relatorio.id === 1 && categoryLoading) ||
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    type="button"
+                    disabled={
+                      (relatorio.id === 1 && categoryLoading) ||
                       (relatorio.id === 2 && supplierLoading) ||
                       (relatorio.id === 3 && savingLoading) ||
-                      (relatorio.id === 4 && savingLoading) ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Gerando...
-                        </>
-                      ) : (
-                        <>
-                          <Download className="mr-2 h-4 w-4" />
-                          Excel
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                      (relatorio.id === 4 && savingLoading)
+                    }
+                    onClick={() => {
+                      if (relatorio.id === 1) return void handleExportSpend()
+                      if (relatorio.id === 2) return void handleExportSuppliers()
+                      if (relatorio.id === 3) return void handleExportSaving()
+                      return void handleExportLeadTime()
+                    }}
+                  >
+                    {(relatorio.id === 1 && categoryLoading) ||
+                    (relatorio.id === 2 && supplierLoading) ||
+                    ((relatorio.id === 3 || relatorio.id === 4) && savingLoading) ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Gerando...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="mr-2 h-4 w-4" />
+                        Exportar Excel
+                      </>
+                    )}
+                  </Button>
                 </CardContent>
               </Card>
             ))}
