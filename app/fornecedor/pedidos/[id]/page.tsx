@@ -4,7 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { CheckCircle, ChevronLeft, Clock, Package, XCircle } from "lucide-react"
+import { CheckCircle, ChevronLeft, Clock, Download, Package, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { notifyWithEmail } from "@/lib/notify-with-email"
@@ -173,6 +173,30 @@ export default function FornecedorPedidoDetalhePage({
   const [dateChangeDialog, setDateChangeDialog] = React.useState(false)
   const [dateChangeReason, setDateChangeReason] = React.useState("")
   const [saving, setSaving] = React.useState(false)
+  const [generatingPdf, setGeneratingPdf] = React.useState(false)
+
+  const handleDownloadPDF = async () => {
+    if (!order) return
+    setGeneratingPdf(true)
+    try {
+      const response = await fetch(`/api/purchase-order-pdf?id=${order.id}`)
+      if (!response.ok) throw new Error("Erro ao gerar PDF")
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `pedido_${order.code}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error(e)
+      toast.error("Não foi possível gerar o PDF.")
+    } finally {
+      setGeneratingPdf(false)
+    }
+  }
 
   const fetchAll = React.useCallback(async () => {
     if (!supplierId || !orderId) return
@@ -571,6 +595,18 @@ export default function FornecedorPedidoDetalhePage({
                 {statusMeta.label}
               </Badge>
             ) : null}
+            {["completed", "cancelled", "refused"].includes(order.status) ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={generatingPdf}
+                onClick={() => void handleDownloadPDF()}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                {generatingPdf ? "Gerando..." : "PDF"}
+              </Button>
+            ) : null}
           </div>
 
           {order.status === "sent" ? (
@@ -608,6 +644,16 @@ export default function FornecedorPedidoDetalhePage({
                 >
                   Aceitar Pedido
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={generatingPdf}
+                  onClick={() => void handleDownloadPDF()}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  {generatingPdf ? "Gerando..." : "PDF"}
+                </Button>
               </div>
             </div>
           ) : null}
@@ -637,6 +683,17 @@ export default function FornecedorPedidoDetalhePage({
                 }}
               >
                 Atualizar Data
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-4"
+                disabled={generatingPdf}
+                onClick={() => void handleDownloadPDF()}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                {generatingPdf ? "Gerando..." : "PDF"}
               </Button>
             </div>
           ) : null}

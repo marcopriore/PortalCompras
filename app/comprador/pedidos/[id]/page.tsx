@@ -439,6 +439,7 @@ export default function PurchaseOrderDetailPage({
   const [paymentOptions, setPaymentOptions] = React.useState<PaymentConditionOption[]>([])
   const [loading, setLoading] = React.useState(true)
   const [exporting, setExporting] = React.useState(false)
+  const [generatingPdf, setGeneratingPdf] = React.useState(false)
   const [confirmingPedido, setConfirmingPedido] = React.useState(false)
   const [cancellingPedido, setCancellingPedido] = React.useState(false)
   const [cancelRefusedOpen, setCancelRefusedOpen] = React.useState(false)
@@ -896,6 +897,29 @@ export default function PurchaseOrderDetailPage({
     }
   }
 
+  const handleDownloadPDF = async () => {
+    if (!order) return
+    setGeneratingPdf(true)
+    try {
+      const response = await fetch(`/api/purchase-order-pdf?id=${order.id}`)
+      if (!response.ok) throw new Error("Erro ao gerar PDF")
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `pedido_${order.code}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error(e)
+      toast.error("Não foi possível gerar o PDF.")
+    } finally {
+      setGeneratingPdf(false)
+    }
+  }
+
   if (userLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
@@ -1114,6 +1138,15 @@ export default function PurchaseOrderDetailPage({
               )}
             </>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleDownloadPDF()}
+            disabled={generatingPdf}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            {generatingPdf ? "Gerando PDF..." : "PDF"}
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
             <Download className="mr-2 h-4 w-4" />
             {exporting ? "Exportando..." : "Exportar"}
