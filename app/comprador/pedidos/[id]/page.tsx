@@ -436,9 +436,6 @@ export default function PurchaseOrderDetailPage({
   const [order, setOrder] = React.useState<PurchaseOrder | null>(null)
   const [orderLogs, setOrderLogs] = React.useState<AuditLog[]>([])
   const [items, setItems] = React.useState<PurchaseOrderItem[]>([])
-  const [itemAverageByCode, setItemAverageByCode] = React.useState<Map<string, number>>(
-    () => new Map(),
-  )
   const [paymentOptions, setPaymentOptions] = React.useState<PaymentConditionOption[]>([])
   const [loading, setLoading] = React.useState(true)
   const [exporting, setExporting] = React.useState(false)
@@ -498,22 +495,6 @@ export default function PurchaseOrderDetailPage({
         setOrder((orderRes.data as PurchaseOrder) ?? null)
         const poItems = ((itemsRes.data as unknown) as PurchaseOrderItem[]) ?? []
         setItems(poItems)
-        const codes = [...new Set(poItems.map((i) => i.material_code).filter(Boolean))]
-        if (codes.length > 0) {
-          const { data: catRows } = await supabase
-            .from("items")
-            .select("code, average_price")
-            .eq("company_id", companyId)
-            .in("code", codes)
-          const m = new Map<string, number>()
-          ;((catRows ?? []) as { code: string; average_price: number | null }[]).forEach((r) => {
-            const ap = r.average_price != null ? Number(r.average_price) : null
-            if (ap != null && ap > 0) m.set(r.code, ap)
-          })
-          setItemAverageByCode(m)
-        } else {
-          setItemAverageByCode(new Map())
-        }
         setPaymentOptions(((paymentsRes.data as PaymentConditionOption[]) ?? []) as PaymentConditionOption[])
         if (logsRes.error) {
           setOrderLogs([])
@@ -540,16 +521,6 @@ export default function PurchaseOrderDetailPage({
     () => (order ? buildTimeline(order, orderLogs) : []),
     [order, orderLogs],
   )
-
-  const itensBenchmarkAlerta = React.useMemo(() => {
-    if (!items.length) return 0
-    return items.filter((poi) => {
-      const avg = itemAverageByCode.get(poi.material_code)
-      if (!avg || avg <= 0) return false
-      const diff = ((poi.unit_price - avg) / avg) * 100
-      return diff > 10
-    }).length
-  }, [items, itemAverageByCode])
 
   const handleConfirmOrder = async () => {
     if (!order || !companyId) return
@@ -1000,12 +971,6 @@ export default function PurchaseOrderDetailPage({
             ) : null}
             {statusDisplay.label}
           </span>
-          {itensBenchmarkAlerta > 0 && (
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm text-amber-700">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              {itensBenchmarkAlerta} item(s) acima da média histórica
-            </div>
-          )}
           {order.status === "draft" && (
             <>
               <Button

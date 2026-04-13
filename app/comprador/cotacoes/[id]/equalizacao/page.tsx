@@ -409,6 +409,21 @@ async function downloadExcel(workbook: any, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+const COLUMN_VISIBILITY_KEY = "valore:equalizacao:column_visibility"
+
+const defaultColumnVisibility: Record<string, boolean> = {
+  col_unit: true,
+  col_last_price: true,
+  col_avg_price: true,
+  col_target_price: true,
+  prazo: true,
+  preco_unit: true,
+  show_vs_alvo: true,
+  show_vs_media: true,
+  imposto: true,
+  total_item: true,
+}
+
 export default function EqualizacaoPage({
   params,
 }: {
@@ -434,18 +449,49 @@ export default function EqualizacaoPage({
   const [savingTargetPrices, setSavingTargetPrices] = React.useState<Record<string, boolean>>({})
   const [targetPriceFocusId, setTargetPriceFocusId] = React.useState<string | null>(null)
   const [targetPriceDraft, setTargetPriceDraft] = React.useState<Record<string, string>>({})
-  const [columnVisibility, setColumnVisibility] = React.useState<Record<string, boolean>>({
-    // colunas de itens (tabela esquerda)
-    col_unit: true,
-    col_last_price: true,
-    col_avg_price: true,
-    col_target_price: true,
-    // colunas de fornecedores (tabela direita)
-    prazo: true,
-    preco_unit: true,
-    imposto: true,
-    total_item: true,
+  const [columnVisibility, setColumnVisibilityRaw] = React.useState<Record<string, boolean>>(() => {
+    try {
+      const stored = localStorage.getItem(COLUMN_VISIBILITY_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, boolean>
+        return { ...defaultColumnVisibility, ...parsed }
+      }
+    } catch {
+      // ignorar erros de parse / localStorage indisponível (SSR)
+    }
+    return defaultColumnVisibility
   })
+
+  React.useLayoutEffect(() => {
+    try {
+      const stored = localStorage.getItem(COLUMN_VISIBILITY_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, boolean>
+        setColumnVisibilityRaw({ ...defaultColumnVisibility, ...parsed })
+      }
+    } catch {
+      // ignorar erros de parse
+    }
+  }, [])
+
+  const setColumnVisibility = React.useCallback(
+    (
+      updater:
+        | Record<string, boolean>
+        | ((prev: Record<string, boolean>) => Record<string, boolean>),
+    ) => {
+      setColumnVisibilityRaw((prev) => {
+        const next = typeof updater === "function" ? updater(prev) : updater
+        try {
+          localStorage.setItem(COLUMN_VISIBILITY_KEY, JSON.stringify(next))
+        } catch {
+          // ignorar erros de storage
+        }
+        return next
+      })
+    },
+    [],
+  )
   const [columnsOpen, setColumnsOpen] = React.useState(false)
   const [splitExpanded, setSplitExpanded] = React.useState(false)
   const columnsRef = React.useRef<HTMLDivElement>(null)
@@ -1451,49 +1497,6 @@ export default function EqualizacaoPage({
     return Math.min(...totals)
   }, [proposals, selectedRoundId, quotationItems])
 
-  const benchmarkAlertas = React.useMemo(() => {
-    if (!selectedRoundId) return []
-    const alertas: {
-      quotationItemId: string
-      materialDescription: string
-      avgPrice: number
-      worstPrice: number
-      worstSupplier: string
-      diffPercent: number
-    }[] = []
-
-    quotationItems.forEach((qi) => {
-      const avg = qi.average_price
-      if (avg == null || avg <= 0) return
-
-      proposals.forEach((p) => {
-        const pi = proposalItemsForSelectedRound(p, selectedRoundId).find(
-          (i) => i.quotation_item_id === qi.id && i.unit_price > 0,
-        )
-        if (!pi) return
-        const diff = ((pi.unit_price - avg) / avg) * 100
-        if (diff > benchmarkThreshold) {
-          const existing = alertas.find((a) => a.quotationItemId === qi.id)
-          if (!existing || pi.unit_price > existing.worstPrice) {
-            const idx = alertas.findIndex((a) => a.quotationItemId === qi.id)
-            const entry = {
-              quotationItemId: qi.id,
-              materialDescription: qi.material_description,
-              avgPrice: avg,
-              worstPrice: pi.unit_price,
-              worstSupplier: p.supplier_name,
-              diffPercent: Math.round(diff),
-            }
-            if (idx >= 0) alertas[idx] = entry
-            else alertas.push(entry)
-          }
-        }
-      })
-    })
-
-    return alertas
-  }, [quotationItems, proposals, selectedRoundId, benchmarkThreshold])
-
   const handleFinalize = async () => {
     if (!quotation || !companyId || !userId) return
     if (!selectedRoundId) return
@@ -2358,36 +2361,6 @@ export default function EqualizacaoPage({
           </p>
         </CardHeader>
         <CardContent>
-          {benchmarkAlertas.length > 0 && (
-            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-amber-800">
-                    {benchmarkAlertas.length} item(s) com preço acima da média histórica (
-                    {benchmarkThreshold}% threshold)
-                  </p>
-                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
-                    {benchmarkAlertas.slice(0, 5).map((a) => (
-                      <p key={a.quotationItemId} className="text-xs text-amber-700">
-                        <span className="font-medium">{a.materialDescription}</span>
-                        {" — "}
-                        {a.worstSupplier}: {formatCurrency(a.worstPrice)}{" "}
-                        <span className="font-semibold">
-                          +{a.diffPercent}% vs média {formatCurrency(a.avgPrice)}
-                        </span>
-                      </p>
-                    ))}
-                    {benchmarkAlertas.length > 5 && (
-                      <p className="text-xs text-amber-600">
-                        ...e mais {benchmarkAlertas.length - 5} item(s)
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
           {proposals.length === 0 ? (
             <>
               {roundSelectControl ? (
@@ -2456,18 +2429,21 @@ export default function EqualizacaoPage({
                         <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-zinc-900 border border-border rounded-xl shadow-lg min-w-[180px] py-2">
                           {(
                             [
-                              { key: "col_unit", label: "Unidade (itens)", section: "Itens" },
-                              { key: "col_last_price", label: "Último Preço (itens)", section: "Itens" },
-                              { key: "col_avg_price", label: "Preço Médio (itens)", section: "Itens" },
-                              { key: "col_target_price", label: "Preço Alvo (itens)", section: "Itens" },
-                              { key: "prazo", label: "Prazo (dias)", section: "Fornecedores" },
-                              { key: "preco_unit", label: "Preço Unit.", section: "Fornecedores" },
-                              { key: "imposto", label: "Imposto %", section: "Fornecedores" },
-                              { key: "total_item", label: "Total Item", section: "Fornecedores" },
+                              { key: "col_unit", label: "Unidade (itens)", section: "Itens", indent: false },
+                              { key: "col_last_price", label: "Último Preço (itens)", section: "Itens", indent: false },
+                              { key: "col_avg_price", label: "Preço Médio (itens)", section: "Itens", indent: false },
+                              { key: "col_target_price", label: "Preço Alvo (itens)", section: "Itens", indent: false },
+                              { key: "prazo", label: "Prazo (dias)", section: "Fornecedores", indent: false },
+                              { key: "preco_unit", label: "Preço Unit.", section: "Fornecedores", indent: false },
+                              { key: "show_vs_alvo", label: "% vs Preço Alvo", section: "Fornecedores", indent: true },
+                              { key: "show_vs_media", label: "% vs Média Histórica", section: "Fornecedores", indent: true },
+                              { key: "imposto", label: "Imposto %", section: "Fornecedores", indent: false },
+                              { key: "total_item", label: "Total Item", section: "Fornecedores", indent: false },
                             ] as const
-                          ).map(({ key, label, section }, idx, arr) => {
+                          ).map(({ key, label, section, indent }, idx, arr) => {
                             const prevSection = idx > 0 ? arr[idx - 1].section : null
                             const showSectionHeader = section !== prevSection
+                            const isDisabled = indent && !columnVisibility.preco_unit
                             return (
                               <React.Fragment key={key}>
                                 {showSectionHeader && (
@@ -2477,21 +2453,24 @@ export default function EqualizacaoPage({
                                 )}
                                 <button
                                   type="button"
+                                  disabled={isDisabled}
                                   onClick={() =>
                                     setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }))
                                   }
                                   className={cn(
-                                    "flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted/60 text-left",
-                                    columnVisibility[key] && "bg-primary/5",
+                                    "flex w-full items-center gap-2 py-2 text-sm hover:bg-muted/60 text-left",
+                                    indent ? "pl-7 pr-3" : "px-3",
+                                    columnVisibility[key] && !isDisabled && "bg-primary/5",
+                                    isDisabled && "opacity-40 cursor-not-allowed",
                                   )}
                                 >
                                   <span
                                     className={cn(
                                       "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border",
-                                      columnVisibility[key] && "bg-primary",
+                                      columnVisibility[key] && !isDisabled && "bg-primary",
                                     )}
                                   >
-                                    {columnVisibility[key] ? (
+                                    {columnVisibility[key] && !isDisabled ? (
                                       <Check className="h-3 w-3 text-primary-foreground" />
                                     ) : null}
                                   </span>
@@ -2687,33 +2666,33 @@ export default function EqualizacaoPage({
                             style={{ minWidth: FIXED_WIDTH, width: FIXED_WIDTH }}
                           />
                         </TableRow>
-                        <TableRow style={{ height: 60 }}>
-                          <TableHead className="min-w-[90px] w-[90px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
+                        <TableRow style={{ height: 72 }}>
+                          <TableHead className="min-w-[90px] w-[90px] h-[72px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
                             Código
                           </TableHead>
-                          <TableHead className="min-w-[220px] w-[220px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
+                          <TableHead className="min-w-[220px] w-[220px] h-[72px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
                             Descrição Curta
                           </TableHead>
-                          <TableHead className="min-w-[48px] w-[48px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                          <TableHead className="min-w-[48px] w-[48px] h-[72px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
                             Qtd
                           </TableHead>
                           {columnVisibility.col_unit && (
-                            <TableHead className="min-w-[48px] w-[48px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                            <TableHead className="min-w-[48px] w-[48px] h-[72px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
                               UN
                             </TableHead>
                           )}
                           {columnVisibility.col_last_price && (
-                            <TableHead className="min-w-[90px] w-[90px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                            <TableHead className="min-w-[90px] w-[90px] h-[72px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
                               Últ. Preço
                             </TableHead>
                           )}
                           {columnVisibility.col_avg_price && (
-                            <TableHead className="min-w-[90px] w-[90px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                            <TableHead className="min-w-[90px] w-[90px] h-[72px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
                               Preço Médio
                             </TableHead>
                           )}
                           {columnVisibility.col_target_price && (
-                            <TableHead className="min-w-[128px] w-[128px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                            <TableHead className="min-w-[128px] w-[128px] h-[72px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
                               Preço Alvo
                             </TableHead>
                           )}
@@ -2726,7 +2705,7 @@ export default function EqualizacaoPage({
                       return (
                       <TableRow
                         key={qi.id}
-                        style={{ height: 60 }}
+                        style={{ height: 72 }}
                         title={
                           isOrdered && orderedInfo?.roundNumber != null
                             ? `Pedido criado na Rodada ${orderedInfo.roundNumber}`
@@ -2740,7 +2719,7 @@ export default function EqualizacaoPage({
                       >
                         <TableCell
                           className={cn(
-                            "min-w-[90px] w-[90px] font-mono text-xs whitespace-nowrap overflow-hidden max-h-[60px]",
+                            "min-w-[90px] w-[90px] font-mono text-xs whitespace-nowrap overflow-hidden max-h-[72px]",
                             isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                             rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
@@ -2750,7 +2729,7 @@ export default function EqualizacaoPage({
                         </TableCell>
                         <TableCell
                           className={cn(
-                            "min-w-[220px] w-[220px] whitespace-nowrap overflow-hidden max-h-[60px]",
+                            "min-w-[220px] w-[220px] whitespace-nowrap overflow-hidden max-h-[72px]",
                             isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                             rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
@@ -2765,7 +2744,7 @@ export default function EqualizacaoPage({
                         </TableCell>
                         <TableCell
                           className={cn(
-                            "min-w-[48px] w-[48px] text-center whitespace-nowrap overflow-hidden max-h-[60px]",
+                            "min-w-[48px] w-[48px] text-center whitespace-nowrap overflow-hidden max-h-[72px]",
                             isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                             rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
@@ -2776,7 +2755,7 @@ export default function EqualizacaoPage({
                         {columnVisibility.col_unit && (
                           <TableCell
                             className={cn(
-                              "min-w-[48px] w-[48px] text-center whitespace-nowrap border-r border-border overflow-hidden max-h-[60px]",
+                              "min-w-[48px] w-[48px] text-center whitespace-nowrap border-r border-border overflow-hidden max-h-[72px]",
                               isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                               rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                               itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
@@ -2788,7 +2767,7 @@ export default function EqualizacaoPage({
                         {columnVisibility.col_last_price && (
                           <TableCell
                             className={cn(
-                              "min-w-[90px] w-[90px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[60px] text-muted-foreground",
+                              "min-w-[90px] w-[90px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[72px] text-muted-foreground",
                               isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                               rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             )}
@@ -2799,7 +2778,7 @@ export default function EqualizacaoPage({
                         {columnVisibility.col_avg_price && (
                           <TableCell
                             className={cn(
-                              "min-w-[90px] w-[90px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[60px] text-muted-foreground",
+                              "min-w-[90px] w-[90px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[72px] text-muted-foreground",
                               isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                               rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             )}
@@ -2810,7 +2789,7 @@ export default function EqualizacaoPage({
                         {columnVisibility.col_target_price && (
                           <TableCell
                             className={cn(
-                              "min-w-[128px] w-[128px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[60px] p-0.5",
+                              "min-w-[128px] w-[128px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[72px] p-0.5",
                               isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                               rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             )}
@@ -2956,7 +2935,7 @@ export default function EqualizacaoPage({
                         </TableHead>
                       ))}
                     </TableRow>
-                    <TableRow style={{ height: 60 }}>
+                    <TableRow style={{ height: 72 }}>
                       {proposals.map((p) => (
                         <React.Fragment key={p.id}>
                           <TableHead
@@ -3018,7 +2997,7 @@ export default function EqualizacaoPage({
                           rowIdx % 2 === 1 && "bg-muted/30",
                           itemSelections[qi.id] != null && "bg-primary/5",
                         )}
-                        style={{ height: 60 }}
+                        style={{ height: 72 }}
                       >
                         {proposals.map((p) => {
                           const itemRid = getItemRoundId(qi.id)
@@ -3046,7 +3025,7 @@ export default function EqualizacaoPage({
                               <TableCell
                                 key={`${p.id}-sel`}
                                 className={cn(
-                                  "min-w-[40px] w-[40px] border-l text-center whitespace-nowrap overflow-hidden max-h-[60px]",
+                                  "min-w-[40px] w-[40px] border-l text-center whitespace-nowrap overflow-hidden max-h-[72px]",
                                   isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                   itemSelections[qi.id] != null && "bg-primary/5",
                                 )}
@@ -3084,7 +3063,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-prazo`}
                                   className={cn(
-                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[60px]",
+                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[72px]",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !hasQuotablePrice && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
@@ -3099,7 +3078,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-preco`}
                                   className={cn(
-                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[60px]",
+                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[72px]",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !hasQuotablePrice && "text-muted-foreground",
                                     hasQuotablePrice &&
@@ -3111,7 +3090,7 @@ export default function EqualizacaoPage({
                                   {hasQuotablePrice ? (
                                     <div className="flex flex-col items-center gap-0.5">
                                       <span>{formatCurrency(pi!.unit_price)}</span>
-                                      {(() => {
+                                      {columnVisibility.show_vs_alvo && (() => {
                                         const target = targetPrices[qi.id]
                                         if (target == null || target <= 0 || !hasQuotablePrice) return null
                                         const diff = ((pi!.unit_price - target) / target) * 100
@@ -3128,7 +3107,7 @@ export default function EqualizacaoPage({
                                           </span>
                                         )
                                       })()}
-                                      {(() => {
+                                      {columnVisibility.show_vs_media && (() => {
                                         const avg = qi.average_price
                                         if (avg == null || avg <= 0 || !hasQuotablePrice) return null
                                         const diff = ((pi!.unit_price - avg) / avg) * 100
@@ -3158,7 +3137,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-imposto`}
                                   className={cn(
-                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[60px]",
+                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[72px]",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !hasQuotablePrice && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
@@ -3173,7 +3152,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-total`}
                                   className={cn(
-                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[60px]",
+                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[72px]",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !hasQuotablePrice && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
