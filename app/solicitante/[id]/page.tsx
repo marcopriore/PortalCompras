@@ -171,7 +171,9 @@ function HorizontalTimeline({
           ? ["completed", "cancelled"].includes(quotation.status)
             ? "completed"
             : "active"
-          : "active",
+          : req.status === "approved"
+            ? "pending"
+            : "active",
       date: quotation?.created_at,
     },
     {

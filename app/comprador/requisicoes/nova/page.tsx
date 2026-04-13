@@ -93,7 +93,7 @@ function useDebounce<T>(value: T, delay: number): T {
 
 export default function NovaRequisicaoPage() {
   const router = useRouter()
-  const { companyId, userId } = useUser()
+  const { companyId, userId, loading: userLoading } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
 
   const [loading, setLoading] = React.useState(false)
@@ -116,10 +116,10 @@ export default function NovaRequisicaoPage() {
   const [attachments, setAttachments] = React.useState<AttachedFile[]>([])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
-  const canCreate = hasPermission("requisition.create")
+  const canCreate = hasPermission("requisition.create.buyer")
 
   React.useEffect(() => {
-    if (!companyId || debouncedSearch.length < 2) {
+    if (userLoading || !companyId || debouncedSearch.length < 2) {
       setSearchResults([])
       return
     }
@@ -143,7 +143,7 @@ export default function NovaRequisicaoPage() {
       setSearchResults((data as CatalogItem[]) ?? [])
     }
     run()
-  }, [companyId, debouncedSearch])
+  }, [companyId, debouncedSearch, userLoading])
 
   const addItem = (item: CatalogItem) => {
     if (items.some((i) => i.itemId === item.id)) return
@@ -407,6 +407,14 @@ export default function NovaRequisicaoPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
   }
 
   if (permissionsLoading) {

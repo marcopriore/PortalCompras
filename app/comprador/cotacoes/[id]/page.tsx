@@ -175,7 +175,7 @@ export default function QuotationDetailsPage({
   const { id } = use(params)
   const from = searchParams.get('from')
   const requisicaoId = searchParams.get('requisicaoId')
-  const { companyId, userId } = useUser()
+  const { companyId, userId, loading: userLoading } = useUser()
   const { hasFeature, hasPermission } = usePermissions()
   void hasFeature
 
@@ -197,7 +197,7 @@ export default function QuotationDetailsPage({
   }
 
   useEffect(() => {
-    if (!companyId) return
+    if (userLoading || !companyId) return
 
     const fetchData = async () => {
       setLoading(true)
@@ -247,7 +247,7 @@ export default function QuotationDetailsPage({
     }
 
     fetchData()
-  }, [id, companyId])
+  }, [id, companyId, userLoading])
 
   const handleStatusUpdate = async (newStatus: QuotationStatus) => {
     if (!quotation) return
@@ -290,6 +290,7 @@ export default function QuotationDetailsPage({
             .from('requisitions')
             .select('id')
             .eq('company_id', companyId)
+            .is('quotation_id', null)
             .in('code', reqCodes)
 
           if (reqs && reqs.length > 0) {
@@ -299,10 +300,23 @@ export default function QuotationDetailsPage({
                 status: 'in_quotation',
                 quotation_id: quotation.id,
               })
-              .in(
-                'id',
-                reqs.map((r) => r.id),
-              )
+              .in('id', reqs.map((r) => r.id))
+
+            for (const req of reqs) {
+              void logAudit({
+                eventType: 'requisition.in_quotation',
+                description: `Requisição vinculada à cotação ${quotation.code}`,
+                companyId: companyId ?? null,
+                userId: userId ?? null,
+                userName: userId ?? null,
+                entity: 'requisitions',
+                entityId: req.id,
+                metadata: {
+                  quotation_id: quotation.id,
+                  quotation_code: quotation.code,
+                },
+              })
+            }
           }
         }
 
@@ -310,27 +324,12 @@ export default function QuotationDetailsPage({
         router.push('/comprador/cotacoes')
         return
       } else if (newStatus === 'cancelled') {
-        const { data: quotationItems } = await supabase
-          .from('quotation_items')
-          .select('source_requisition_code')
-          .eq('quotation_id', quotation.id)
-          .not('source_requisition_code', 'is', null)
-
-        const reqCodes = [
-          ...new Set(
-            (quotationItems ?? [])
-              .map((i) => i.source_requisition_code)
-              .filter((c): c is string => Boolean(c)),
-          ),
-        ]
-
-        if (reqCodes.length > 0 && companyId) {
+        if (companyId) {
           const { data: reqs } = await supabase
             .from('requisitions')
-            .select('id')
+            .select('id, code')
             .eq('company_id', companyId)
             .eq('quotation_id', quotation.id)
-            .in('code', reqCodes)
 
           if (reqs && reqs.length > 0) {
             await supabase
@@ -400,6 +399,14 @@ export default function QuotationDetailsPage({
   const handleCancel = async () => {
     await handleStatusUpdate('cancelled')
     setCancelDialogOpen(false)
+  }
+
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
   }
 
   return (

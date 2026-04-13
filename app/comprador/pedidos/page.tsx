@@ -70,7 +70,7 @@ const money = new Intl.NumberFormat("pt-BR", {
 
 export default function PedidosPage() {
   const router = useRouter()
-  const { companyId } = useUser()
+  const { companyId, loading: userLoading } = useUser()
 
   const [orders, setOrders] = React.useState<PurchaseOrder[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -88,7 +88,7 @@ export default function PedidosPage() {
 
   const loadOrders = React.useCallback(
     async (silent = false) => {
-      if (!companyId) return
+      if (userLoading || !companyId) return
       const started = companyId
       const stillHere = () => companyIdRef.current === started
 
@@ -107,7 +107,7 @@ export default function PedidosPage() {
       setLastUpdated(new Date())
       if (!silent) setLoading(false)
     },
-    [companyId],
+    [companyId, userLoading],
   )
 
   React.useEffect(() => {
@@ -126,7 +126,7 @@ export default function PedidosPage() {
   useAutoRefresh({
     intervalMs: 60_000,
     onRefresh: refreshPedidos,
-    enabled: Boolean(companyId),
+    enabled: Boolean(companyId) && !userLoading,
   })
 
   const handleFilterChange =
@@ -182,6 +182,14 @@ export default function PedidosPage() {
     filters.status.length > 0 ||
     filters.dateFrom ||
     filters.dateTo
+
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

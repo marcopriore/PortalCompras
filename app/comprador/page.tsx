@@ -29,7 +29,7 @@ type QuotationStatus = "draft" | "waiting" | "analysis" | "completed" | "cancell
 
 export default function CompradorDashboard() {
   const router = useRouter()
-  const { companyId } = useUser()
+  const { companyId, loading: userLoading } = useUser()
 
   const [quotationsPending, setQuotationsPending] = useState<number>(0)
   const [quotationsByStatus, setQuotationsByStatus] = useState<
@@ -71,7 +71,19 @@ export default function CompradorDashboard() {
   }
 
   useEffect(() => {
-    if (!companyId) return
+    if (userLoading || !companyId) return
+
+    // Reset dados ao trocar de tenant
+    setQuotationsPending(0)
+    setQuotationsByStatus([])
+    setRecentQuotations([])
+    setOrdersInProgress(null)
+    setAvgLeadTime(null)
+    setSpendData([])
+    setLeadTimeChartData([])
+    setQuotationsChange(0)
+    setOrdersChange(0)
+    setLeadTimeChange(0)
 
     const fetchDashboard = async () => {
       setDashLoading(true)
@@ -372,7 +384,7 @@ export default function CompradorDashboard() {
     }
 
     fetchDashboard()
-  }, [companyId])
+  }, [companyId, userLoading])
 
   const mapStatusToBadge = (status: QuotationStatus) => {
     switch (status) {
@@ -400,6 +412,14 @@ export default function CompradorDashboard() {
       default:
         return { label: "Cancelada", variant: "destructive" as const, className: "" }
     }
+  }
+
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
   }
 
   return (

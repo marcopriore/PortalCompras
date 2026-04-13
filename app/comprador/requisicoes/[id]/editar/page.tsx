@@ -114,7 +114,7 @@ export default function EditarRequisicaoPage({
 }) {
   const router = useRouter()
   const { id } = React.use(params)
-  const { companyId, userId } = useUser()
+  const { companyId, userId, loading: userLoading } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
 
   const [loading, setLoading] = React.useState(true)
@@ -140,10 +140,10 @@ export default function EditarRequisicaoPage({
   const [attachments, setAttachments] = React.useState<AttachedFile[]>([])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
-  const canCreate = hasPermission("requisition.create")
+  const canCreate = hasPermission("requisition.create.buyer")
 
   React.useEffect(() => {
-    if (!companyId || !id) return
+    if (userLoading || !companyId || !id) return
     const supabase = createClient()
     let alive = true
 
@@ -236,10 +236,10 @@ export default function EditarRequisicaoPage({
     return () => {
       alive = false
     }
-  }, [companyId, id, router])
+  }, [companyId, id, router, userLoading])
 
   React.useEffect(() => {
-    if (!companyId || debouncedSearch.length < 2) {
+    if (userLoading || !companyId || debouncedSearch.length < 2) {
       setSearchResults([])
       return
     }
@@ -263,7 +263,7 @@ export default function EditarRequisicaoPage({
       setSearchResults((data as CatalogItem[]) ?? [])
     }
     run()
-  }, [companyId, debouncedSearch])
+  }, [companyId, debouncedSearch, userLoading])
 
   const addItem = (item: CatalogItem) => {
     if (items.some((i) => i.itemId === item.id)) return
@@ -495,6 +495,14 @@ export default function EditarRequisicaoPage({
 
   const handleCancel = () => {
     router.push(`/comprador/requisicoes/${id}`)
+  }
+
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
   }
 
   if (permissionsLoading || loading) {

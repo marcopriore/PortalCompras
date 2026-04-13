@@ -18,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { Shield, ShieldCheck, Save, LayoutDashboard } from "lucide-react"
+import { ShieldCheck, Save, LayoutDashboard } from "lucide-react"
 
 const PERMISSIONS = [
   { key: "nav.dashboard", label: "Dashboard", group: "Navegação" },
@@ -28,22 +28,39 @@ const PERMISSIONS = [
   { key: "nav.items", label: "Itens", group: "Navegação" },
   { key: "nav.suppliers", label: "Fornecedores", group: "Navegação" },
   { key: "nav.reports", label: "Relatórios", group: "Navegação" },
-  { key: "quotation.create", label: "Criar Cotação", group: "Cotações" },
+  { key: "quotation.create", label: "Criar / Clonar Cotação", group: "Cotações" },
   { key: "quotation.edit", label: "Editar Cotação", group: "Cotações" },
   { key: "quotation.cancel", label: "Cancelar Cotação", group: "Cotações" },
-  { key: "quotation.equalize", label: "Equalizar Proposta", group: "Cotações" },
+  { key: "quotation.equalize.view", label: "Visualizar Equalização", group: "Cotações" },
+  { key: "quotation.equalize.select", label: "Ações na Equalização", group: "Cotações" },
+  { key: "quotation.view_all", label: "Ver Cotações de Todos", group: "Cotações" },
   { key: "order.create", label: "Criar Pedido", group: "Pedidos" },
-  { key: "order.edit", label: "Editar Pedido", group: "Pedidos" },
-  { key: "requisition.create", label: "Criar Requisição", group: "Requisições" },
+  { key: "order.edit", label: "Editar Qualquer Pedido", group: "Pedidos" },
+  { key: "order.edit_own", label: "Editar Próprios Pedidos", group: "Pedidos" },
+  { key: "order.view_all", label: "Ver Pedidos de Todos", group: "Pedidos" },
+  { key: "requisition.create.buyer", label: "Criar Requisição (Comprador)", group: "Requisições" },
+  { key: "requisition.create.requester", label: "Criar Requisição (Solicitante)", group: "Requisições" },
+  { key: "requisition.approve", label: "Aprovar Requisições", group: "Requisições" },
+  { key: "approval.requisition", label: "Fluxo Aprovação Requisição", group: "Aprovações" },
+  { key: "approval.order", label: "Fluxo Aprovação Pedido", group: "Aprovações" },
+  { key: "export.excel", label: "Exportar Excel", group: "Dados" },
+  { key: "import.excel", label: "Importar Excel", group: "Dados" },
+  { key: "supplier.create", label: "Cadastrar Fornecedor", group: "Cadastros" },
+  { key: "supplier.edit", label: "Editar Fornecedor", group: "Cadastros" },
+  { key: "item.create", label: "Cadastrar Item", group: "Cadastros" },
+  { key: "item.edit", label: "Editar Item", group: "Cadastros" },
+  { key: "user.manage", label: "Gerenciar Usuários", group: "Administração" },
+  { key: "settings.manage", label: "Acessar Configurações", group: "Administração" },
+  { key: "portal.solicitante", label: "Acessar Portal Solicitante", group: "Administração" },
   { key: "view_only", label: "Somente Visualização", group: "Geral" },
-  { key: "approval.requisition", label: "Aprovar Requisições", group: "Aprovações" },
-  { key: "approval.order", label: "Aprovar Pedidos de Compra", group: "Aprovações" },
 ] as const
 
 type PermissionKey = (typeof PERMISSIONS)[number]["key"]
 
+// Admin é exibido separadamente com comportamento especial
+const ADMIN_ROLE = { value: "admin", label: "Administrador" } as const
+
 const ROLES = [
-  { value: "admin", label: "Administrador" },
   { value: "buyer", label: "Comprador" },
   { value: "manager", label: "Gestor de Compras" },
   { value: "approver_requisition", label: "Aprov. Requisição" },
@@ -51,16 +68,17 @@ const ROLES = [
   { value: "requester", label: "Requisitante" },
 ] as const
 
-type RoleValue = (typeof ROLES)[number]["value"]
+const ALL_ROLES = [ADMIN_ROLE, ...ROLES] as const
+type RoleValue = (typeof ALL_ROLES)[number]["value"]
 
 type PermissionRowState = Record<RoleValue, Record<PermissionKey, boolean>>
 
 const createInitialPermissionsState = (): PermissionRowState => {
   const state = {} as PermissionRowState
-  ROLES.forEach((r) => {
+  ALL_ROLES.forEach((r) => {
     state[r.value] = {} as Record<PermissionKey, boolean>
     PERMISSIONS.forEach((p) => {
-      state[r.value][p.key as PermissionKey] = r.value === "admin"
+      state[r.value][p.key as PermissionKey] = false
     })
   })
   return state
@@ -132,16 +150,8 @@ export default function PermissionsPage() {
         const permissionKey = row.permission_key as PermissionKey
         const enabled = Boolean(row.enabled)
         if (next[role] && next[role][permissionKey] != null) {
-          if (role === "admin") {
-            next[role][permissionKey] = true
-          } else {
-            next[role][permissionKey] = enabled
-          }
+          next[role][permissionKey] = enabled
         }
-      })
-
-      PERMISSIONS.forEach((p) => {
-        next.admin[p.key] = true
       })
 
       setPermissionsState(next)
@@ -169,8 +179,6 @@ export default function PermissionsPage() {
   }, [])
 
   const handleToggle = (role: RoleValue, key: PermissionKey, enabled: boolean) => {
-    if (role === "admin") return
-
     setPermissionsState((prev) => ({
       ...prev,
       [role]: {
@@ -194,13 +202,13 @@ export default function PermissionsPage() {
         enabled: boolean
       }> = []
 
-      ROLES.forEach((r) => {
+      ALL_ROLES.forEach((r) => {
         PERMISSIONS.forEach((p) => {
           payloads.push({
             company_id: companyId,
             role: r.value,
             permission_key: p.key,
-            enabled: r.value === "admin" ? true : permissionsState[r.value][p.key],
+            enabled: permissionsState[r.value][p.key],
           })
         })
       })
@@ -290,9 +298,16 @@ export default function PermissionsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead> </TableHead>
-                  {ROLES.map((r) => (
+                  {ALL_ROLES.map((r) => (
                     <TableHead key={r.value} className="text-center">
-                      {r.label}
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span>{r.label}</span>
+                        {r.value === "admin" && (
+                          <span className="text-[10px] text-primary font-normal">
+                            (editável pelo Master)
+                          </span>
+                        )}
+                      </div>
                     </TableHead>
                   ))}
                 </TableRow>
@@ -301,7 +316,7 @@ export default function PermissionsPage() {
                 {groups.map(([groupName, groupPermissions]) => (
                   <React.Fragment key={groupName}>
                     <TableRow>
-                      <TableCell colSpan={1 + ROLES.length}>
+                      <TableCell colSpan={1 + ALL_ROLES.length}>
                         <div className="bg-muted/50 font-semibold text-xs uppercase text-muted-foreground rounded-md px-2 py-1 flex items-center gap-1.5">
                           {groupName === "Navegação" && <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />}
                           {groupName === "Aprovações" && <ShieldCheck className="h-3.5 w-3.5 shrink-0" />}
@@ -313,28 +328,20 @@ export default function PermissionsPage() {
                     {(groupPermissions as typeof PERMISSIONS).map((perm) => (
                       <TableRow key={perm.key}>
                         <TableCell className="font-medium">{perm.label}</TableCell>
-                        {ROLES.map((role) => {
-                          if (role.value === "admin") {
-                            return (
-                              <TableCell key={role.value} className="text-center">
-                                <Shield className="mx-auto h-4 w-4 text-primary" />
-                              </TableCell>
-                            )
-                          }
-
+                        {ALL_ROLES.map((role) => {
                           const checked = permissionsState[role.value][perm.key]
+                          const isAdmin = role.value === "admin"
+                          // Admin só pode ser editado pelo SuperAdmin/Master
+                          const isDisabled = saving || (isAdmin && !isSuperAdmin)
                           return (
                             <TableCell key={role.value} className="text-center">
                               <Checkbox
                                 checked={checked}
                                 onCheckedChange={(val) =>
-                                  handleToggle(
-                                    role.value,
-                                    perm.key,
-                                    val === true ? true : false,
-                                  )
+                                  handleToggle(role.value, perm.key, val === true)
                                 }
-                                disabled={saving}
+                                disabled={isDisabled}
+                                className={isAdmin ? "border-primary" : ""}
                               />
                             </TableCell>
                           )

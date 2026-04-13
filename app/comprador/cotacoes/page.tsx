@@ -250,8 +250,16 @@ export default function CotacoesPage() {
         {(item.status === "waiting" || item.status === "analysis") && (
           <DropdownMenuItem
             asChild
-            disabled={!hasPermission("quotation.equalize")}
-            title={!hasPermission("quotation.equalize") ? "Sem permissão" : undefined}
+            disabled={
+              !hasPermission("quotation.equalize.view") &&
+              !hasPermission("quotation.equalize.select")
+            }
+            title={
+              !hasPermission("quotation.equalize.view") &&
+              !hasPermission("quotation.equalize.select")
+                ? "Sem permissão"
+                : undefined
+            }
           >
             <Link href={`/comprador/cotacoes/${item.id}/equalizacao`}>
               <BarChart2 className="mr-2 h-4 w-4" />

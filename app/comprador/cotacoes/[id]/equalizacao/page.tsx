@@ -81,6 +81,9 @@ type QuotationItem = {
   long_description?: string | null
   quantity: number
   unit_of_measure: string
+  target_price?: number | null
+  last_purchase_price?: number | null
+  average_price?: number | null
 }
 
 type OrderedItemInfo = {
@@ -384,7 +387,7 @@ export default function EqualizacaoPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
-  const { companyId, userId } = useUser()
+  const { companyId, userId, loading: userLoading } = useUser()
   const { hasFeature, hasPermission } = usePermissions()
   void hasFeature
 
@@ -399,7 +402,15 @@ export default function EqualizacaoPage({
   const [itemSelections, setItemSelections] = React.useState<Record<string, string | null>>({})
   const [finalizing, setFinalizing] = React.useState(false)
   const [finishingQuotation, setFinishingQuotation] = React.useState(false)
+  const [targetPrices, setTargetPrices] = React.useState<Record<string, number | null>>({})
+  const [savingTargetPrices, setSavingTargetPrices] = React.useState<Record<string, boolean>>({})
   const [columnVisibility, setColumnVisibility] = React.useState<Record<string, boolean>>({
+    // colunas de itens (tabela esquerda)
+    col_unit: true,
+    col_last_price: true,
+    col_avg_price: true,
+    col_target_price: true,
+    // colunas de fornecedores (tabela direita)
     prazo: true,
     preco_unit: true,
     imposto: true,
@@ -537,7 +548,7 @@ export default function EqualizacaoPage({
           supabase
             .from("quotation_items")
             .select(
-              "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, created_at",
+              "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, target_price, last_purchase_price, average_price, created_at",
             )
             .eq("quotation_id", id)
             .order("material_description", { ascending: true }),
@@ -630,6 +641,11 @@ export default function EqualizacaoPage({
 
         setQuotation(q)
         setQuotationItems(items)
+        setTargetPrices(
+          Object.fromEntries(
+            (items as QuotationItem[]).map((i) => [i.id, i.target_price ?? null]),
+          ),
+        )
         setProposals(probs)
         setOrderedItems(orderedMap)
 
@@ -726,18 +742,19 @@ export default function EqualizacaoPage({
   useAutoRefresh({
     intervalMs: 30_000,
     onRefresh: refreshEqualizacao,
-    enabled: Boolean(companyId && id),
+    enabled: Boolean(companyId && id) && !userLoading,
   })
 
   fetchEqualizationDataRef.current = fetchEqualizationData
 
   React.useEffect(() => {
+    if (userLoading || !companyId) return
     const showLoading = isFirstLoadRef.current
     if (isFirstLoadRef.current) {
       isFirstLoadRef.current = false
     }
     void fetchEqualizationData({ showLoading })
-  }, [fetchEqualizationData])
+  }, [fetchEqualizationData, userLoading, companyId])
 
   const supplierRespondStats = React.useMemo(() => {
     const totalSuppliers = proposals.length
@@ -1030,22 +1047,23 @@ export default function EqualizacaoPage({
       string,
       { totalItens: number; itensAceitos: number; coveragePercent: number; coberturaLabel: string }
     > = {}
+    const totalQuotationItems = quotationItems.length
     proposals.forEach((p) => {
       const roundItems = selectedRoundId
         ? proposalItemsForSelectedRound(p, selectedRoundId)
         : []
-      const totalItens = roundItems.length
-      const itensAceitos = roundItems.filter((i) => i.item_status === "accepted").length
-      const coveragePercent = totalItens > 0 ? (itensAceitos / totalItens) * 100 : 0
+      const itensRespondidos = roundItems.filter((i) => i.unit_price > 0).length
+      const coveragePercent =
+        totalQuotationItems > 0 ? (itensRespondidos / totalQuotationItems) * 100 : 0
       map[p.id] = {
-        totalItens,
-        itensAceitos,
+        totalItens: totalQuotationItems,
+        itensAceitos: itensRespondidos,
         coveragePercent,
         coberturaLabel: `${coveragePercent.toFixed(0)}%`,
       }
     })
     return map
-  }, [proposals, selectedRoundId])
+  }, [proposals, selectedRoundId, quotationItems])
 
   const bestCoverage = React.useMemo<
     | { proposal: Proposal; coveragePercent: number; itensAceitos: number; totalItens: number }
@@ -1176,6 +1194,15 @@ export default function EqualizacaoPage({
     return new Set(Object.values(splitSuggestion).map((s) => s.proposalId)).size
   }, [splitSuggestion])
 
+  const FIXED_WIDTH = React.useMemo(() => {
+    let w = 90 + 220 + 48
+    if (columnVisibility.col_unit) w += 48
+    if (columnVisibility.col_last_price) w += 90
+    if (columnVisibility.col_avg_price) w += 90
+    if (columnVisibility.col_target_price) w += 110
+    return w
+  }, [columnVisibility])
+
   const handleToggleItem = (quotationItemId: string, proposalId: string) => {
     if (orderedItems.has(quotationItemId)) return
     setItemSelections((prev) => {
@@ -1245,6 +1272,24 @@ export default function EqualizacaoPage({
     setItemSelections({})
   }
 
+  const handleSaveTargetPrice = React.useCallback(
+    async (quotationItemId: string, value: number | null) => {
+      if (!companyId) return
+      setSavingTargetPrices((prev) => ({ ...prev, [quotationItemId]: true }))
+      try {
+        const supabase = createClient()
+        await supabase
+          .from("quotation_items")
+          .update({ target_price: value })
+          .eq("id", quotationItemId)
+          .eq("company_id", companyId)
+      } finally {
+        setSavingTargetPrices((prev) => ({ ...prev, [quotationItemId]: false }))
+      }
+    },
+    [companyId],
+  )
+
   const selectionSummary = React.useMemo(() => {
     const selectedCount = quotationItems.filter((qi) => itemSelections[qi.id] != null).length
     const totalCount = quotationItems.length
@@ -1288,6 +1333,82 @@ export default function EqualizacaoPage({
     allProposalsCatalog,
     getItemRoundId,
   ])
+
+  const savingEstimado = React.useMemo(() => {
+    if (!selectedRoundId) return null
+    let total = 0
+    let hasAny = false
+    quotationItems.forEach((qi) => {
+      const target = targetPrices[qi.id]
+      if (target == null || target <= 0) return
+      const selectedProposalId = itemSelections[qi.id]
+      if (!selectedProposalId) return
+      const p = proposals.find((pp) => pp.id === selectedProposalId)
+      if (!p) return
+      const pi = proposalItemsForSelectedRound(p, selectedRoundId).find(
+        (i) => i.quotation_item_id === qi.id && i.unit_price > 0,
+      )
+      if (!pi) return
+      total += (target - pi.unit_price) * qi.quantity
+      hasAny = true
+    })
+    return hasAny ? total : null
+  }, [quotationItems, targetPrices, itemSelections, proposals, selectedRoundId])
+
+  const savingRealizado = React.useMemo(() => {
+    if (!selectedRoundId) return null
+    let total = 0
+    let hasAny = false
+
+    orderedItems.forEach((orderInfo, quotationItemId) => {
+      const qi = quotationItems.find((i) => i.id === quotationItemId)
+      if (!qi) return
+      const target = targetPrices[quotationItemId]
+      if (target == null || target <= 0) return
+
+      const orderProposal = allProposalsCatalog.find((p) => p.id === orderInfo.proposalId)
+      if (!orderProposal) return
+
+      const pi = orderProposal.proposal_items.find(
+        (item) => item.quotation_item_id === quotationItemId,
+      )
+      if (!pi || !pi.unit_price || pi.unit_price <= 0) return
+
+      total += (target - pi.unit_price) * qi.quantity
+      hasAny = true
+    })
+
+    return hasAny ? total : null
+  }, [orderedItems, quotationItems, targetPrices, allProposalsCatalog, selectedRoundId])
+
+  const supplierMenorPrazo = React.useMemo(() => {
+    if (!selectedRoundId || menorPrazo === Infinity) return null
+    const p = proposals.find(
+      (p) =>
+        proposalItemsForSelectedRound(p, selectedRoundId).length > 0 &&
+        (p.delivery_days ?? Infinity) === menorPrazo,
+    )
+    return p?.supplier_name ?? null
+  }, [proposals, selectedRoundId, menorPrazo])
+
+  const bestSingleSupplierTotal = React.useMemo(() => {
+    if (!selectedRoundId) return null
+    const candidates = proposals.filter((p) => {
+      const items = proposalItemsForSelectedRound(p, selectedRoundId)
+      return quotationItems.every((qi) =>
+        items.some((pi) => pi.quotation_item_id === qi.id && pi.unit_price > 0),
+      )
+    })
+    if (candidates.length === 0) return null
+    const totals = candidates.map((p) => {
+      const items = proposalItemsForSelectedRound(p, selectedRoundId)
+      return quotationItems.reduce((sum, qi) => {
+        const pi = items.find((i) => i.quotation_item_id === qi.id)
+        return sum + (pi ? pi.unit_price * qi.quantity : 0)
+      }, 0)
+    })
+    return Math.min(...totals)
+  }, [proposals, selectedRoundId, quotationItems])
 
   const handleFinalize = async () => {
     if (!quotation || !companyId || !userId) return
@@ -1877,6 +1998,14 @@ export default function EqualizacaoPage({
       </>
     ) : null
 
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
+  }
+
   if (loading && proposals.length === 0) {
     return (
       <div className="space-y-6">
@@ -1982,86 +2111,157 @@ export default function EqualizacaoPage({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {/* Card 1: Menor Preço Total */}
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Menor Preço Total</p>
-                <p className="text-2xl font-bold">
-                  {!hasProposalResponsesInRound
-                    ? "Aguardando respostas"
-                    : menorPreco === Infinity
-                      ? "—"
-                      : formatCurrency(menorPreco)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  * soma dos itens cotados nesta rodada
-                </p>
-              </div>
+            <p className="text-sm text-muted-foreground">Menor Preço Total</p>
+            <p className="text-2xl font-bold">
+              {!hasProposalResponsesInRound
+                ? "Aguardando respostas"
+                : menorPreco === Infinity
+                  ? "—"
+                  : formatCurrency(menorPreco)}
+            </p>
+            {hasProposalResponsesInRound && menorPreco !== Infinity && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {proposals.find((p) => supplierTotalByProposal[p.id] === menorPreco)?.supplier_name ?? "—"}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground mt-0.5">* soma dos itens cotados nesta rodada</p>
+          </CardContent>
+        </Card>
+
+        {/* Card 2: Menor Prazo */}
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Menor Prazo</p>
+            <p className="text-2xl font-bold">
+              {!hasProposalResponsesInRound
+                ? "Aguardando respostas"
+                : menorPrazo === Infinity
+                  ? "—"
+                  : `${menorPrazo} dias`}
+            </p>
+            {hasProposalResponsesInRound && menorPrazo !== Infinity && supplierMenorPrazo && (
+              <p className="text-xs text-muted-foreground mt-1">{supplierMenorPrazo}</p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Card 3: Maior Cobertura */}
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Maior Cobertura</p>
+            <p className="text-2xl font-bold">
+              {!hasProposalResponsesInRound
+                ? "Aguardando respostas"
+                : bestCoverage
+                  ? `${bestCoverage.coveragePercent.toFixed(0)}%`
+                  : "—"}
+            </p>
+            {hasProposalResponsesInRound && bestCoverage && (
+              <p className="text-xs text-muted-foreground mt-1">{bestCoverage.proposal.supplier_name}</p>
+            )}
+            <p className="text-xs text-muted-foreground mt-0.5">Fornecedor que respondeu mais itens</p>
+          </CardContent>
+        </Card>
+
+        {/* Card 4: Saving — Realizado + Projetado */}
+        <Card
+          className={cn(
+            "border",
+            (savingRealizado != null && savingRealizado !== 0) ||
+              (savingEstimado != null && savingEstimado !== 0)
+              ? savingRealizado != null && savingRealizado < 0
+                ? "bg-red-50 border-red-100"
+                : "bg-green-50 border-green-100"
+              : "bg-card border-border",
+          )}
+        >
+          <CardContent className="pt-6 space-y-2">
+            <p className="text-sm text-muted-foreground">Saving</p>
+
+            <div>
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                Realizado
+              </p>
+              <p
+                className={cn(
+                  "text-xl font-bold",
+                  savingRealizado == null
+                    ? "text-muted-foreground"
+                    : savingRealizado >= 0
+                      ? "text-green-700"
+                      : "text-red-700",
+                )}
+              >
+                {savingRealizado == null
+                  ? "—"
+                  : `${savingRealizado >= 0 ? "+" : ""}${formatCurrency(savingRealizado)}`}
+              </p>
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                {savingRealizado == null
+                  ? "Nenhum pedido com preço alvo"
+                  : "Sobre pedidos criados vs. preço alvo"}
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-2">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                Projetado
+              </p>
+              <p
+                className={cn(
+                  "text-xl font-bold",
+                  savingEstimado == null
+                    ? "text-muted-foreground"
+                    : savingEstimado >= 0
+                      ? "text-green-700"
+                      : "text-red-700",
+                )}
+              >
+                {savingEstimado == null
+                  ? "—"
+                  : `${savingEstimado >= 0 ? "+" : ""}${formatCurrency(savingEstimado)}`}
+              </p>
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                {savingEstimado == null
+                  ? "Selecione itens com preço alvo"
+                  : "Sobre itens selecionados vs. preço alvo"}
+              </p>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Menor Prazo</p>
-                <p className="text-2xl font-bold">
-                  {!hasProposalResponsesInRound
-                    ? "Aguardando respostas"
-                    : menorPrazo === Infinity
-                      ? "—"
-                      : `${menorPrazo} dias`}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Melhor Cobertura</p>
-                <p className="text-2xl font-bold">
-                  {!hasProposalResponsesInRound
-                    ? "Aguardando respostas"
-                    : bestCoverage
-                      ? `${bestCoverage.coveragePercent.toFixed(0)}%`
-                      : "—"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {!hasProposalResponsesInRound
-                    ? "—"
-                    : bestCoverage
-                      ? `${bestCoverage.proposal.supplier_name} (${bestCoverage.itensAceitos} itens)`
-                      : "—"}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+
+        {/* Card 5: Custo Ótimo (Split) */}
         <Card className="bg-purple-50 border border-purple-100">
           <CardContent className="pt-6">
-            <div className="flex items-center gap-3">
-              <Scissors className="h-5 w-5 text-purple-600" />
-              <div>
-                <p className="text-sm text-muted-foreground">Economia no Split</p>
-                <p className="text-2xl font-bold">
-                  {!hasProposalResponsesInRound
-                    ? "Aguardando respostas"
-                    : formatCurrency(splitTotalPrice)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {hasProposalResponsesInRound
-                    ? `Dividindo entre ${splitSuppliers} fornecedores`
-                    : "—"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Menor custo possível combinando melhores preços por item
-                </p>
-              </div>
+            <div className="flex items-center gap-2">
+              <Scissors className="h-4 w-4 text-purple-600 shrink-0" />
+              <p className="text-sm text-muted-foreground">Custo Ótimo (Split)</p>
             </div>
+            <p className="text-2xl font-bold mt-1">
+              {!hasProposalResponsesInRound ? "Aguardando respostas" : formatCurrency(splitTotalPrice)}
+            </p>
+            {hasProposalResponsesInRound && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Dividindo entre {splitSuppliers} fornecedor(es)
+              </p>
+            )}
+            {hasProposalResponsesInRound && bestSingleSupplierTotal != null && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                vs. melhor único: {formatCurrency(bestSingleSupplierTotal)}
+                {splitTotalPrice < bestSingleSupplierTotal && (
+                  <span className="text-green-700 font-medium ml-1">
+                    ({formatCurrency(bestSingleSupplierTotal - splitTotalPrice)} a menos)
+                  </span>
+                )}
+              </p>
+            )}
+            <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
+              Menor custo possível combinando melhores preços por item
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -2110,7 +2310,6 @@ export default function EqualizacaoPage({
             const supplierColWidth =
               toggleableKeys.filter((k) => columnVisibility[k]).reduce((s, k) => s + colWidths[k], 0) +
               colWidths.selecao
-            const FIXED_WIDTH = 406
             const minSupplierTableWidth = proposals.length * supplierColWidth
 
             return (
@@ -2143,34 +2342,50 @@ export default function EqualizacaoPage({
                         <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-zinc-900 border border-border rounded-xl shadow-lg min-w-[180px] py-2">
                           {(
                             [
-                              { key: "prazo", label: "Prazo (dias)" },
-                              { key: "preco_unit", label: "Preço Unit." },
-                              { key: "imposto", label: "Imposto %" },
-                              { key: "total_item", label: "Total Item" },
+                              { key: "col_unit", label: "Unidade (itens)", section: "Itens" },
+                              { key: "col_last_price", label: "Último Preço (itens)", section: "Itens" },
+                              { key: "col_avg_price", label: "Preço Médio (itens)", section: "Itens" },
+                              { key: "col_target_price", label: "Preço Alvo (itens)", section: "Itens" },
+                              { key: "prazo", label: "Prazo (dias)", section: "Fornecedores" },
+                              { key: "preco_unit", label: "Preço Unit.", section: "Fornecedores" },
+                              { key: "imposto", label: "Imposto %", section: "Fornecedores" },
+                              { key: "total_item", label: "Total Item", section: "Fornecedores" },
                             ] as const
-                          ).map(({ key, label }) => (
-                            <button
-                              key={key}
-                              type="button"
-                              onClick={() =>
-                                setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }))
-                              }
-                              className={cn(
-                                "flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted/60 text-left",
-                                columnVisibility[key] && "bg-primary/5",
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border",
-                                  columnVisibility[key] && "bg-primary",
+                          ).map(({ key, label, section }, idx, arr) => {
+                            const prevSection = idx > 0 ? arr[idx - 1].section : null
+                            const showSectionHeader = section !== prevSection
+                            return (
+                              <React.Fragment key={key}>
+                                {showSectionHeader && (
+                                  <p className="px-3 pt-2 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                    {section}
+                                  </p>
                                 )}
-                              >
-                                {columnVisibility[key] ? <Check className="h-3 w-3 text-primary-foreground" /> : null}
-                              </span>
-                              {label}
-                            </button>
-                          ))}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }))
+                                  }
+                                  className={cn(
+                                    "flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted/60 text-left",
+                                    columnVisibility[key] && "bg-primary/5",
+                                  )}
+                                >
+                                  <span
+                                    className={cn(
+                                      "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border",
+                                      columnVisibility[key] && "bg-primary",
+                                    )}
+                                  >
+                                    {columnVisibility[key] ? (
+                                      <Check className="h-3 w-3 text-primary-foreground" />
+                                    ) : null}
+                                  </span>
+                                  {label}
+                                </button>
+                              </React.Fragment>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
@@ -2346,21 +2561,48 @@ export default function EqualizacaoPage({
                     <table ref={leftTableRef} className="caption-bottom text-sm" style={{ width: FIXED_WIDTH }}>
                       <TableHeader className="bg-white dark:bg-[#09090b]">
                         <TableRow style={leftTheadSpacerHeight > 0 ? { height: leftTheadSpacerHeight } : undefined}>
-                          <TableHead colSpan={4} className="min-w-[406px] w-[406px] p-0 border-b border-r border-border" />
+                          <TableHead
+                            colSpan={
+                              3 +
+                              (columnVisibility.col_unit ? 1 : 0) +
+                              (columnVisibility.col_last_price ? 1 : 0) +
+                              (columnVisibility.col_avg_price ? 1 : 0) +
+                              (columnVisibility.col_target_price ? 1 : 0)
+                            }
+                            className="p-0 border-b border-r border-border"
+                            style={{ minWidth: FIXED_WIDTH, width: FIXED_WIDTH }}
+                          />
                         </TableRow>
-                        <TableRow style={{ height: 44 }}>
-                          <TableHead className="min-w-[90px] w-[90px] h-11 bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
+                        <TableRow style={{ height: 60 }}>
+                          <TableHead className="min-w-[90px] w-[90px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
                             Código
                           </TableHead>
-                          <TableHead className="min-w-[220px] w-[220px] h-11 bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
+                          <TableHead className="min-w-[220px] w-[220px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium overflow-hidden">
                             Descrição Curta
                           </TableHead>
-                          <TableHead className="min-w-[48px] w-[48px] h-11 bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                          <TableHead className="min-w-[48px] w-[48px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
                             Qtd
                           </TableHead>
-                          <TableHead className="min-w-[48px] w-[48px] h-11 bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
-                            UN
-                          </TableHead>
+                          {columnVisibility.col_unit && (
+                            <TableHead className="min-w-[48px] w-[48px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                              UN
+                            </TableHead>
+                          )}
+                          {columnVisibility.col_last_price && (
+                            <TableHead className="min-w-[90px] w-[90px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                              Últ. Preço
+                            </TableHead>
+                          )}
+                          {columnVisibility.col_avg_price && (
+                            <TableHead className="min-w-[90px] w-[90px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                              Preço Médio
+                            </TableHead>
+                          )}
+                          {columnVisibility.col_target_price && (
+                            <TableHead className="min-w-[110px] w-[110px] h-[60px] bg-white dark:bg-[#09090b] border-b border-r border-border py-2 text-xs font-medium text-center overflow-hidden">
+                              Preço Alvo
+                            </TableHead>
+                          )}
                         </TableRow>
                       </TableHeader>
                     <TableBody>
@@ -2370,7 +2612,7 @@ export default function EqualizacaoPage({
                       return (
                       <TableRow
                         key={qi.id}
-                        style={{ height: 44 }}
+                        style={{ height: 60 }}
                         title={
                           isOrdered && orderedInfo?.roundNumber != null
                             ? `Pedido criado na Rodada ${orderedInfo.roundNumber}`
@@ -2384,7 +2626,7 @@ export default function EqualizacaoPage({
                       >
                         <TableCell
                           className={cn(
-                            "min-w-[90px] w-[90px] font-mono text-xs whitespace-nowrap overflow-hidden max-h-11",
+                            "min-w-[90px] w-[90px] font-mono text-xs whitespace-nowrap overflow-hidden max-h-[60px]",
                             isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                             rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
@@ -2394,7 +2636,7 @@ export default function EqualizacaoPage({
                         </TableCell>
                         <TableCell
                           className={cn(
-                            "min-w-[220px] w-[220px] whitespace-nowrap overflow-hidden max-h-11",
+                            "min-w-[220px] w-[220px] whitespace-nowrap overflow-hidden max-h-[60px]",
                             isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                             rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
@@ -2409,7 +2651,7 @@ export default function EqualizacaoPage({
                         </TableCell>
                         <TableCell
                           className={cn(
-                            "min-w-[48px] w-[48px] text-center whitespace-nowrap overflow-hidden max-h-11",
+                            "min-w-[48px] w-[48px] text-center whitespace-nowrap overflow-hidden max-h-[60px]",
                             isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                             rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
                             itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
@@ -2417,16 +2659,77 @@ export default function EqualizacaoPage({
                         >
                           {qi.quantity}
                         </TableCell>
-                        <TableCell
-                          className={cn(
-                            "min-w-[48px] w-[48px] text-center whitespace-nowrap border-r border-border overflow-hidden max-h-11",
-                            isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
-                            rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
-                            itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
-                          )}
-                        >
-                          {qi.unit_of_measure}
-                        </TableCell>
+                        {columnVisibility.col_unit && (
+                          <TableCell
+                            className={cn(
+                              "min-w-[48px] w-[48px] text-center whitespace-nowrap border-r border-border overflow-hidden max-h-[60px]",
+                              isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
+                              rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
+                              itemSelections[qi.id] != null && "!bg-blue-50 dark:!bg-blue-950",
+                            )}
+                          >
+                            {qi.unit_of_measure}
+                          </TableCell>
+                        )}
+                        {columnVisibility.col_last_price && (
+                          <TableCell
+                            className={cn(
+                              "min-w-[90px] w-[90px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[60px] text-muted-foreground",
+                              isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
+                              rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
+                            )}
+                          >
+                            {qi.last_purchase_price != null ? formatCurrency(qi.last_purchase_price) : "—"}
+                          </TableCell>
+                        )}
+                        {columnVisibility.col_avg_price && (
+                          <TableCell
+                            className={cn(
+                              "min-w-[90px] w-[90px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[60px] text-muted-foreground",
+                              isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
+                              rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
+                            )}
+                          >
+                            {qi.average_price != null ? formatCurrency(qi.average_price) : "—"}
+                          </TableCell>
+                        )}
+                        {columnVisibility.col_target_price && (
+                          <TableCell
+                            className={cn(
+                              "min-w-[110px] w-[110px] text-center text-xs whitespace-nowrap border-r border-border overflow-hidden max-h-[60px] p-0.5",
+                              isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
+                              rowIdx % 2 === 0 ? "bg-zinc-50 dark:bg-[#18181b]" : "bg-white dark:bg-[#09090b]",
+                            )}
+                          >
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={targetPrices[qi.id] ?? ""}
+                              placeholder="—"
+                              disabled={isReadOnly || savingTargetPrices[qi.id]}
+                              onChange={(e) => {
+                                const val = e.target.value === "" ? null : Number(e.target.value)
+                                setTargetPrices((prev) => ({ ...prev, [qi.id]: val }))
+                                setQuotationItems((prev) =>
+                                  prev.map((item) =>
+                                    item.id === qi.id ? { ...item, target_price: val } : item,
+                                  ),
+                                )
+                              }}
+                              onBlur={(e) => {
+                                const val = e.target.value === "" ? null : Number(e.target.value)
+                                void handleSaveTargetPrice(qi.id, val)
+                              }}
+                              className={cn(
+                                "w-full h-8 px-1.5 text-xs text-center rounded border border-transparent",
+                                "bg-transparent focus:bg-white focus:border-primary focus:outline-none",
+                                "disabled:opacity-50 disabled:cursor-not-allowed",
+                                savingTargetPrices[qi.id] && "opacity-60",
+                              )}
+                            />
+                          </TableCell>
+                        )}
                       </TableRow>
                     )})}
                   </TableBody>
@@ -2495,7 +2798,7 @@ export default function EqualizacaoPage({
                         </TableHead>
                       ))}
                     </TableRow>
-                    <TableRow style={{ height: 44 }}>
+                    <TableRow style={{ height: 60 }}>
                       {proposals.map((p) => (
                         <React.Fragment key={p.id}>
                           <TableHead
@@ -2557,7 +2860,7 @@ export default function EqualizacaoPage({
                           rowIdx % 2 === 1 && "bg-muted/30",
                           itemSelections[qi.id] != null && "bg-primary/5",
                         )}
-                        style={{ height: 44 }}
+                        style={{ height: 60 }}
                       >
                         {proposals.map((p) => {
                           const itemRid = getItemRoundId(qi.id)
@@ -2585,7 +2888,7 @@ export default function EqualizacaoPage({
                               <TableCell
                                 key={`${p.id}-sel`}
                                 className={cn(
-                                  "min-w-[40px] w-[40px] border-l text-center whitespace-nowrap overflow-hidden max-h-11",
+                                  "min-w-[40px] w-[40px] border-l text-center whitespace-nowrap overflow-hidden max-h-[60px]",
                                   isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                   itemSelections[qi.id] != null && "bg-primary/5",
                                 )}
@@ -2623,7 +2926,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-prazo`}
                                   className={cn(
-                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
+                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[60px]",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !hasQuotablePrice && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
@@ -2638,7 +2941,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-preco`}
                                   className={cn(
-                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
+                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[60px]",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !hasQuotablePrice && "text-muted-foreground",
                                     hasQuotablePrice &&
@@ -2647,14 +2950,35 @@ export default function EqualizacaoPage({
                                     itemSelections[qi.id] != null && !isBestPrice && "bg-primary/5",
                                   )}
                                 >
-                                  {hasQuotablePrice ? formatCurrency(pi!.unit_price) : "—"}
+                                  {hasQuotablePrice ? (
+                                    <div className="flex flex-col items-center gap-0.5">
+                                      <span>{formatCurrency(pi!.unit_price)}</span>
+                                      {(() => {
+                                        const target = targetPrices[qi.id]
+                                        if (target == null || target <= 0 || !hasQuotablePrice) return null
+                                        const diff = ((pi!.unit_price - target) / target) * 100
+                                        const isAbove = diff > 0
+                                        return (
+                                          <span
+                                            className={cn(
+                                              "text-[10px] font-medium leading-none",
+                                              isAbove ? "text-red-600" : "text-green-600",
+                                            )}
+                                          >
+                                            {isAbove ? "+" : ""}
+                                            {diff.toFixed(1)}% vs alvo
+                                          </span>
+                                        )
+                                      })()}
+                                    </div>
+                                  ) : "—"}
                                 </TableCell>
                               )}
                               {columnVisibility.imposto && (
                                 <TableCell
                                   key={`${p.id}-imposto`}
                                   className={cn(
-                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
+                                    "min-w-[80px] w-[80px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[60px]",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !hasQuotablePrice && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",
@@ -2669,7 +2993,7 @@ export default function EqualizacaoPage({
                                 <TableCell
                                   key={`${p.id}-total`}
                                   className={cn(
-                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-11",
+                                    "min-w-[100px] w-[100px] border-l text-center text-sm whitespace-nowrap overflow-hidden max-h-[60px]",
                                     isOrdered && "!bg-zinc-100 dark:!bg-zinc-800",
                                     !hasQuotablePrice && "text-muted-foreground",
                                     itemSelections[qi.id] != null && "bg-primary/5",

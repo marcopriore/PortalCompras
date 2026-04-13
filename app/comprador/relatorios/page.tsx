@@ -138,7 +138,7 @@ export default function RelatoriosPage() {
   const [periodo, setPeriodo] = useState("6m")
   const [categoria, setCategoria] = useState<string[]>([])
 
-  const { companyId } = useUser()
+  const { companyId, loading: userLoading } = useUser()
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [dashLoading, setDashLoading] = useState(true)
   const [completedOrdersCount, setCompletedOrdersCount] = useState<number | null>(null)
@@ -177,7 +177,7 @@ export default function RelatoriosPage() {
   }, [periodo])
 
   useEffect(() => {
-    if (!companyId) return
+    if (userLoading || !companyId) return
 
     const fetchRealData = async () => {
       setDashLoading(true)
@@ -422,7 +422,7 @@ export default function RelatoriosPage() {
     }
 
     fetchRealData()
-  }, [companyId, periodStartIso])
+  }, [companyId, periodStartIso, userLoading])
 
   const totalQuotations = quotations.length
   const monthsInPeriod = getMonthsBack(periodo)
@@ -684,6 +684,14 @@ export default function RelatoriosPage() {
     setLeadTimeTarget(editingTarget)
     setLeadTimeMonthlyData((prev) => prev.map((row) => ({ ...row, meta: editingTarget })))
     setEditingTarget(null)
+  }
+
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
   }
 
   return (

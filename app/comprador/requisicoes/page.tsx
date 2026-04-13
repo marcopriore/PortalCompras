@@ -78,7 +78,7 @@ function formatDateBR(iso: string | null): string {
 
 export default function RequisicoesPage() {
   const router = useRouter()
-  const { companyId } = useUser()
+  const { companyId, loading: userLoading } = useUser()
   const { hasPermission } = usePermissions()
 
   const [requisitions, setRequisitions] = React.useState<Requisition[]>([])
@@ -97,7 +97,7 @@ export default function RequisicoesPage() {
   }, [search, status, priority, dateFrom, dateTo])
 
   React.useEffect(() => {
-    if (!companyId) return
+    if (userLoading || !companyId) return
     const supabase = createClient()
 
     const run = async () => {
@@ -113,7 +113,7 @@ export default function RequisicoesPage() {
     }
 
     run()
-  }, [companyId])
+  }, [companyId, userLoading])
 
   const hasActiveFilters =
     !!search.trim() || status.length > 0 || priority.length > 0 || !!dateFrom || !!dateTo
@@ -157,6 +157,14 @@ export default function RequisicoesPage() {
     }
   }, [requisitions])
 
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
@@ -169,8 +177,8 @@ export default function RequisicoesPage() {
 
         <Button
           onClick={() => router.push("/comprador/requisicoes/nova")}
-          disabled={!hasPermission("requisition.create")}
-          title={!hasPermission("requisition.create") ? "Sem permissão" : undefined}
+          disabled={!hasPermission("requisition.create.buyer")}
+          title={!hasPermission("requisition.create.buyer") ? "Sem permissão" : undefined}
         >
           <Plus className="mr-2 h-4 w-4" />
           + Nova Requisição

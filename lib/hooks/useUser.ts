@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useTenant } from '@/contexts/tenant-context'
 
 type ProfileRow = {
   company_id?: string | null
@@ -15,9 +16,9 @@ type ProfileRow = {
 }
 
 export function useUser() {
+  const { companyId: tenantCompanyId } = useTenant()
   const [userId, setUserId] = useState<string | null>(null)
   const [supplierId, setSupplierId] = useState<string | null>(null)
-  const [companyId, setCompanyId] = useState<string | null>(null)
   const [companyName, setCompanyName] = useState<string | null>(null)
   const [profileType, setProfileType] = useState<'buyer' | 'supplier' | null>(null)
   const [fullName, setFullName] = useState<string | null>(null)
@@ -33,7 +34,6 @@ export function useUser() {
       if (!user) {
         setUserId(null)
         setSupplierId(null)
-        setCompanyId(null)
         setCompanyName(null)
         setProfileType(null)
         setFullName(null)
@@ -74,44 +74,8 @@ export function useUser() {
           ? [p.role]
           : []
       setRoles(rolesArray)
-      // Se superadmin, verificar cookie de tenant selecionado
-      let effectiveCompanyId: string | null = p?.company_id ?? null
-      if (p?.is_superadmin && typeof document !== 'undefined') {
-        const cookieValue = document.cookie
-          .split('; ')
-          .find((row) => row.startsWith('selected_company_id='))
-          ?.split('=')[1]
-        if (cookieValue) {
-          try {
-            effectiveCompanyId = decodeURIComponent(cookieValue)
-          } catch {
-            effectiveCompanyId = cookieValue
-          }
-        }
-      }
-      setCompanyId(effectiveCompanyId)
       setLoading(false)
     })
-  }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    const handleFocus = () => {
-      const cookieValue = document.cookie
-        .split('; ')
-        .find((row) => row.startsWith('selected_company_id='))
-        ?.split('=')[1]
-
-      const decoded = cookieValue ? decodeURIComponent(cookieValue) : null
-
-      setCompanyId((prev) => (decoded !== null ? decoded : prev))
-    }
-
-    window.addEventListener('focus', handleFocus)
-    return () => {
-      window.removeEventListener('focus', handleFocus)
-    }
   }, [])
 
   const role = roles[0] ?? ''
@@ -120,7 +84,7 @@ export function useUser() {
   return {
     userId,
     supplierId,
-    companyId,
+    companyId: tenantCompanyId,
     companyName,
     profileType,
     fullName,
@@ -131,4 +95,3 @@ export function useUser() {
     loading,
   }
 }
-

@@ -1,6 +1,7 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import * as React from 'react'
+import { useTenant } from '@/contexts/tenant-context'
 import {
   Select,
   SelectContent,
@@ -18,15 +19,17 @@ export function TenantSelector({
   companies: Company[]
   selectedCompanyId: string | null
 }) {
-  const router = useRouter()
+  const { companyId, setCompanyId } = useTenant()
+
+  // Usa o companyId do context; fallback para a prop inicial
+  const currentValue = companyId ?? selectedCompanyId ?? ''
 
   const handleChange = (value: string) => {
-    document.cookie = `selected_company_id=${encodeURIComponent(value)}; path=/;`
-    window.location.reload()
+    setCompanyId(value)
   }
 
   return (
-    <Select value={selectedCompanyId ?? ''} onValueChange={handleChange}>
+    <Select value={currentValue} onValueChange={handleChange}>
       <SelectTrigger className="w-[220px]">
         <SelectValue placeholder="Selecionar tenant" />
       </SelectTrigger>
@@ -40,4 +43,3 @@ export function TenantSelector({
     </Select>
   )
 }
-

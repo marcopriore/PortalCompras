@@ -167,7 +167,7 @@ function getPriorityMeta(priority: Priority): { label: string; className: string
 
 export default function AprovacoesPage() {
   const router = useRouter()
-  const { companyId, userId, hasRole } = useUser()
+  const { companyId, userId, hasRole, loading: userLoading } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
   const [loading, setLoading] = React.useState(true)
 
@@ -200,7 +200,7 @@ export default function AprovacoesPage() {
   approvalContextRef.current = { companyId, userId }
 
   const loadData = React.useCallback(async (silent = false) => {
-    if (!companyId || !userId) return
+    if (userLoading || !companyId || !userId) return
     const started = { companyId, userId }
     const stillHere = () =>
       approvalContextRef.current.companyId === started.companyId &&
@@ -274,12 +274,12 @@ export default function AprovacoesPage() {
     )
     setLastUpdated(new Date())
     if (!silent) setLoading(false)
-  }, [companyId, userId, hasRole])
+  }, [companyId, userId, hasRole, userLoading])
 
   React.useEffect(() => {
-    if (!companyId || !userId) return
+    if (userLoading || !companyId || !userId) return
     void loadData(false)
-  }, [companyId, userId, loadData])
+  }, [companyId, userId, userLoading, loadData])
 
   const refreshAprovacoes = React.useCallback(async () => {
     setIsRefreshing(true)
@@ -293,7 +293,7 @@ export default function AprovacoesPage() {
   useAutoRefresh({
     intervalMs: 30_000,
     onRefresh: refreshAprovacoes,
-    enabled: Boolean(companyId && userId) && !permissionsLoading,
+    enabled: Boolean(companyId && userId) && !permissionsLoading && !userLoading,
   })
 
   const pendingTotal = React.useMemo(
@@ -521,6 +521,14 @@ export default function AprovacoesPage() {
     } finally {
       setRejectSaving(false)
     }
+  }
+
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
   }
 
   if (!companyId || !userId) {

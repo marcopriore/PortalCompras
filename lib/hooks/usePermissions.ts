@@ -25,16 +25,30 @@ export type PermissionKey =
   | "nav.suppliers"
   | "nav.reports"
   | "quotation.create"
-  | "quotation.cancel"
-  | "quotation.equalize"
   | "quotation.edit"
+  | "quotation.cancel"
+  | "quotation.equalize.view"
+  | "quotation.equalize.select"
+  | "quotation.view_all"
   | "order.create"
   | "order.edit"
-  | "requisition.create"
+  | "order.edit_own"
+  | "order.view_all"
+  | "requisition.create.buyer"
+  | "requisition.create.requester"
   | "requisition.approve"
-  | "view_only"
   | "approval.requisition"
   | "approval.order"
+  | "export.excel"
+  | "import.excel"
+  | "supplier.create"
+  | "supplier.edit"
+  | "item.create"
+  | "item.edit"
+  | "user.manage"
+  | "settings.manage"
+  | "portal.solicitante"
+  | "view_only"
 
 export type UsePermissionsReturn = {
   loading: boolean
@@ -68,16 +82,30 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "nav.suppliers",
   "nav.reports",
   "quotation.create",
-  "quotation.cancel",
-  "quotation.equalize",
   "quotation.edit",
+  "quotation.cancel",
+  "quotation.equalize.view",
+  "quotation.equalize.select",
+  "quotation.view_all",
   "order.create",
   "order.edit",
-  "requisition.create",
+  "order.edit_own",
+  "order.view_all",
+  "requisition.create.buyer",
+  "requisition.create.requester",
   "requisition.approve",
-  "view_only",
   "approval.requisition",
   "approval.order",
+  "export.excel",
+  "import.excel",
+  "supplier.create",
+  "supplier.edit",
+  "item.create",
+  "item.edit",
+  "user.manage",
+  "settings.manage",
+  "portal.solicitante",
+  "view_only",
 ]
 
 export function usePermissions(): UsePermissionsReturn {

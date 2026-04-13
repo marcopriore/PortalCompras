@@ -430,7 +430,7 @@ export default function PurchaseOrderDetailPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
-  const { companyId, userId } = useUser()
+  const { companyId, userId, loading: userLoading } = useUser()
   const { id } = React.use(params)
 
   const [order, setOrder] = React.useState<PurchaseOrder | null>(null)
@@ -458,7 +458,7 @@ export default function PurchaseOrderDetailPage({
 
   const fetchOrderData = React.useCallback(
     async (options?: { silent?: boolean }) => {
-      if (!id || !companyId) return
+      if (userLoading || !id || !companyId) return
       const silent = options?.silent ?? false
       if (!silent) setLoading(true)
       try {
@@ -504,7 +504,7 @@ export default function PurchaseOrderDetailPage({
         if (!silent) setLoading(false)
       }
     },
-    [companyId, id],
+    [companyId, id, userLoading],
   )
 
   React.useEffect(() => {
@@ -893,6 +893,14 @@ export default function PurchaseOrderDetailPage({
     } finally {
       setExporting(false)
     }
+  }
+
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
   }
 
   if (loading) {

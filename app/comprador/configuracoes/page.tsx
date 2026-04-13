@@ -347,7 +347,7 @@ function getAvatarColor(name: string): string {
 
 export default function ConfiguracoesPage() {
   const router = useRouter()
-  const { companyId, userId, isSuperAdmin, hasRole } = useUser()
+  const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
   const [activeTab, setActiveTab] = React.useState<ActiveTab>("empresa")
 
   const canManageCompany = Boolean(isSuperAdmin || hasRole("admin"))
@@ -468,7 +468,7 @@ export default function ConfiguracoesPage() {
 
   React.useEffect(() => {
     const run = async () => {
-      if (!companyId || !userId) return
+      if (userLoading || !companyId || !userId) return
       setLoading(true)
       try {
         const supabase = createClient()
@@ -541,11 +541,11 @@ export default function ConfiguracoesPage() {
       }
     }
     run()
-  }, [companyId, userId])
+  }, [companyId, userId, userLoading])
 
   React.useEffect(() => {
     const loadApprovals = async () => {
-      if (!companyId || !canManageApprovals || activeTab !== "aprovacoes") return
+      if (userLoading || !companyId || !canManageApprovals || activeTab !== "aprovacoes") return
       const supabase = createClient()
       const [tfRes, levelsRes] = await Promise.all([
         supabase
@@ -571,11 +571,11 @@ export default function ConfiguracoesPage() {
       setApprovalOrderRules(levels.filter((l) => l.flow === "order"))
     }
     loadApprovals()
-  }, [activeTab, companyId, canManageApprovals])
+  }, [activeTab, companyId, canManageApprovals, userLoading])
 
   React.useEffect(() => {
     const loadApprovers = async () => {
-      if (!companyId || activeTab !== "aprovacoes") return
+      if (userLoading || !companyId || activeTab !== "aprovacoes") return
       const supabase = createClient()
       const [reqRes, orderRes] = await Promise.all([
         supabase
@@ -593,11 +593,11 @@ export default function ConfiguracoesPage() {
       setApproversOrder(((orderRes.data as unknown) as ApproverProfile[]) ?? [])
     }
     loadApprovers()
-  }, [companyId, activeTab])
+  }, [companyId, activeTab, userLoading])
 
   React.useEffect(() => {
     const loadTenantCategories = async () => {
-      if (!companyId || activeTab !== "aprovacoes") return
+      if (userLoading || !companyId || activeTab !== "aprovacoes") return
       const supabase = createClient()
       const [quotRes, suppRes] = await Promise.all([
         supabase.from("quotations").select("category").eq("company_id", companyId),
@@ -614,10 +614,10 @@ export default function ConfiguracoesPage() {
       setTenantCategories(list)
     }
     loadTenantCategories()
-  }, [companyId, activeTab])
+  }, [companyId, activeTab, userLoading])
 
   React.useEffect(() => {
-    if (activeTab !== "campos" || !companyId || !canManageCompany) return
+    if (userLoading || activeTab !== "campos" || !companyId || !canManageCompany) return
     let cancelled = false
     const supabase = createClient()
     setLoadingConditions(true)
@@ -640,7 +640,7 @@ export default function ConfiguracoesPage() {
     return () => {
       cancelled = true
     }
-  }, [activeTab, companyId, canManageCompany])
+  }, [activeTab, companyId, canManageCompany, userLoading])
 
   const handleSaveCondition = async () => {
     if (!conditionForm.code.trim() || !conditionForm.description.trim()) {
@@ -1527,6 +1527,14 @@ export default function ConfiguracoesPage() {
     const min = rule.min_value ?? 0
     if (rule.max_value == null) return `Acima de ${formatMoneyBR(min)}`
     return `${formatMoneyBR(min)} — ${formatMoneyBR(rule.max_value)}`
+  }
+
+  if (userLoading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
+      </div>
+    )
   }
 
   if (loading) {

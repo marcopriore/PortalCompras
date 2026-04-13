@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { cookies } from "next/headers"
+import { TenantProvider } from "@/contexts/tenant-context"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
 import { TenantSelector } from "@/components/layout/tenant-selector"
@@ -69,27 +70,29 @@ export default async function CompradorLayout({
     null
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar type="comprador" />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header
-          userName={userName}
-          userEmail={userEmail}
-          userInitials={initials}
-          tenantSelector={
-            isSuperAdmin && companies && companies.length > 0 ? (
-              <TenantSelector
-                companies={companies}
-                selectedCompanyId={selectedCompanyId}
-              />
-            ) : null
-          }
-        />
-        <main className="flex-1 overflow-auto p-6 bg-background">
-          <PortalUnauthorizedToast message="Você não tem permissão para acessar o Portal do Fornecedor." />
-          {children}
-        </main>
+    <TenantProvider initialCompanyId={selectedCompanyId}>
+      <div className="flex h-screen overflow-hidden">
+        <Sidebar type="comprador" />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Header
+            userName={userName}
+            userEmail={userEmail}
+            userInitials={initials}
+            tenantSelector={
+              isSuperAdmin && companies && companies.length > 0 ? (
+                <TenantSelector
+                  companies={companies}
+                  selectedCompanyId={selectedCompanyId}
+                />
+              ) : null
+            }
+          />
+          <main className="flex-1 overflow-auto p-6 bg-background">
+            <PortalUnauthorizedToast message="Você não tem permissão para acessar o Portal do Fornecedor." />
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </TenantProvider>
   )
 }

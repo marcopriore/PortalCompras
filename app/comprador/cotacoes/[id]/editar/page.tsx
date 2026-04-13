@@ -562,24 +562,21 @@ export default function EditarCotacaoPage({
       if (reqCodes.length > 0) {
         const { data: reqsToUpdate } = await supabase
           .from("requisitions")
-          .select("id, code, quotation_id")
+          .select("id, code")
           .eq("company_id", companyId!)
+          .is("quotation_id", null)
           .in("code", reqCodes)
 
-        for (const req of reqsToUpdate ?? []) {
-          if (!req.quotation_id || req.quotation_id === id) {
-            await supabase
-              .from("requisitions")
-              .update({
-                status: "in_quotation",
-                quotation_id: id,
-              })
-              .eq("id", req.id)
-          }
-        }
+        if (reqsToUpdate && reqsToUpdate.length > 0) {
+          await supabase
+            .from("requisitions")
+            .update({
+              status: "in_quotation",
+              quotation_id: id,
+            })
+            .in("id", reqsToUpdate.map((r) => r.id))
 
-        for (const req of reqsToUpdate ?? []) {
-          if (!req.quotation_id || req.quotation_id === id) {
+          for (const req of reqsToUpdate) {
             void logAudit({
               eventType: "requisition.in_quotation",
               description: `Requisição ${req.code} vinculada à cotação ${quotationCode ?? id}`,
