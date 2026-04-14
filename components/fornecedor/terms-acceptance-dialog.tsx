@@ -48,15 +48,6 @@ export function TermsAcceptanceDialog({
 
   const termsUrl = companyId ? `/termos/${companyId}` : null
 
-  const versionDate = term
-    ? new Date(term.version_date).toLocaleDateString("pt-BR", {
-        timeZone: "UTC",
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      })
-    : null
-
   return (
     <Dialog
       open={open}
@@ -78,40 +69,43 @@ export function TermsAcceptanceDialog({
           </div>
         ) : term ? (
           <div className="space-y-4">
-            <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-4">
-              <p className="text-sm font-semibold text-foreground">{term.title}</p>
-              <p className="text-xs text-muted-foreground">
-                Versão {term.version} — vigente desde {versionDate}
+            <div className="rounded-lg border border-border bg-muted/30 p-4">
+              <p className="text-sm leading-relaxed text-foreground">
+                Para prosseguir com o aceite deste pedido, é necessário que você leia e concorde com
+                os <span className="font-semibold">{term.title}</span> da empresa contratante. Este
+                documento estabelece as condições gerais de fornecimento, responsabilidades, prazos e
+                obrigações entre as partes.
               </p>
-              {termsUrl && (
-                <a
-                  href={termsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Ler termos completos
-                </a>
-              )}
             </div>
 
-            <div className="flex items-start gap-3 rounded-lg border border-border bg-background p-4">
-              <Checkbox
-                id="accept-terms"
-                checked={accepted}
-                onCheckedChange={(v) => setAccepted(Boolean(v))}
-                className="mt-0.5 shrink-0"
-              />
-              <Label
-                htmlFor="accept-terms"
-                className="cursor-pointer text-sm leading-relaxed text-foreground"
-              >
-                Declaro que li e aceito integralmente os{" "}
-                <span className="font-semibold">{term.title}</span> (Versão {term.version}), e estou
-                ciente de que ao confirmar este aceite fico vinculado às condições neles
-                estabelecidas.
-              </Label>
+            <div className="rounded-lg border border-border bg-background p-4">
+              <div className="flex gap-3">
+                <Checkbox
+                  id="accept-terms"
+                  checked={accepted}
+                  onCheckedChange={(v) => setAccepted(Boolean(v))}
+                  className="mt-0.5 shrink-0"
+                />
+                <div className="min-w-0 flex-1 space-y-3">
+                  <Label
+                    htmlFor="accept-terms"
+                    className="block cursor-pointer text-sm font-normal leading-normal text-foreground"
+                  >
+                    Declaro que li e aceito integralmente os termos e condições de fornecedimento.
+                  </Label>
+                  {termsUrl && (
+                    <a
+                      href={termsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                    >
+                      <ExternalLink className="h-4 w-4 shrink-0" />
+                      Ler os termos completos (Versão {term.version})
+                    </a>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         ) : (
