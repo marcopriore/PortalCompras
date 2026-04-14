@@ -22,16 +22,6 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -39,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+
 import {
   Table,
   TableBody,
@@ -48,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { getPOStatusForSupplier } from "@/lib/po-status"
+import { TermsAcceptanceDialog } from "@/components/fornecedor/terms-acceptance-dialog"
 
 type CompanyEmbed = { name: string; cnpj: string | null } | { name: string; cnpj: string | null }[] | null
 
@@ -118,6 +110,14 @@ type POItem = {
   delivery_days: number | null
 }
 
+type Term = {
+  id: string
+  title: string
+  content: string
+  version: string
+  version_date: string
+}
+
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -167,7 +167,9 @@ export default function FornecedorPedidoDetalhePage({
 
   const [estimatedDate, setEstimatedDate] = React.useState("")
 
-  const [acceptOpen, setAcceptOpen] = React.useState(false)
+  const [termsDialogOpen, setTermsDialogOpen] = React.useState(false)
+  const [activeTerm, setActiveTerm] = React.useState<Term | null>(null)
+  const [termsLoading, setTermsLoading] = React.useState(false)
   const [rejectOpen, setRejectOpen] = React.useState(false)
   const [rejectReason, setRejectReason] = React.useState("")
   const [dateChangeDialog, setDateChangeDialog] = React.useState(false)
@@ -306,11 +308,26 @@ export default function FornecedorPedidoDetalhePage({
   const formatUnitPrice = (it: POItem) =>
     money.format(Number(it.unit_price ?? 0))
 
-  const handleAccept = async () => {
+  const handleAcceptClick = async () => {
     if (!order || !supplierId || !estimatedDate.trim()) {
       toast.error("Informe a data de entrega prevista.")
       return
     }
+    setTermsLoading(true)
+    setTermsDialogOpen(true)
+    try {
+      const res = await fetch(`/api/supplier-terms?company_id=${order.company_id}`)
+      const json = (await res.json()) as { term: Term | null }
+      setActiveTerm(json.term)
+    } catch {
+      setActiveTerm(null)
+    } finally {
+      setTermsLoading(false)
+    }
+  }
+
+  const handleAccept = async () => {
+    if (!order || !supplierId || !estimatedDate.trim()) return
     setSaving(true)
     try {
       const supabase = createClient()
@@ -325,6 +342,24 @@ export default function FornecedorPedidoDetalhePage({
         .eq("id", order.id)
         .eq("supplier_id", supplierId)
       if (error) throw error
+
+      if (activeTerm) {
+        const acceptRes = await fetch("/api/supplier-terms/accept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            termId: activeTerm.id,
+            purchaseOrderId: order.id,
+            supplierId,
+            termVersion: activeTerm.version,
+            termVersionDate: activeTerm.version_date,
+          }),
+        })
+        if (!acceptRes.ok) {
+          console.error("supplier-terms/accept:", await acceptRes.text())
+        }
+      }
+
       if (userId) {
         await logAudit({
           eventType: "purchase_order.accepted",
@@ -337,9 +372,11 @@ export default function FornecedorPedidoDetalhePage({
             order_code: order.code,
             estimated_delivery_date: estimatedDate,
             supplier_name: order.supplier_name,
+            term_version: activeTerm?.version ?? null,
           },
         })
       }
+
       try {
         const buyerId = await getPurchaseOrderBuyerUserId(supabase, order)
         if (buyerId) {
@@ -374,8 +411,10 @@ export default function FornecedorPedidoDetalhePage({
       } catch (e) {
         console.error("notify order.accepted:", e)
       }
+
       toast.success("Pedido aceito com sucesso.")
-      setAcceptOpen(false)
+      setTermsDialogOpen(false)
+      setActiveTerm(null)
       await fetchAll()
     } catch (e) {
       console.error(e)
@@ -641,7 +680,7 @@ export default function FornecedorPedidoDetalhePage({
                 <Button
                   type="button"
                   className="bg-green-600 hover:bg-green-700 text-white"
-                  onClick={() => setAcceptOpen(true)}
+                  onClick={() => void handleAcceptClick()}
                 >
                   Aceitar Pedido
                 </Button>
@@ -866,29 +905,17 @@ export default function FornecedorPedidoDetalhePage({
         </div>
       </div>
 
-      <AlertDialog open={acceptOpen} onOpenChange={setAcceptOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar aceite</AlertDialogTitle>
-            <AlertDialogDescription>
-              Confirmar aceite do pedido {order.code}?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={saving}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-              disabled={saving}
-              onClick={(e) => {
-                e.preventDefault()
-                void handleAccept()
-              }}
-            >
-              {saving ? "Salvando…" : "Confirmar aceite"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <TermsAcceptanceDialog
+        open={termsDialogOpen}
+        term={activeTerm}
+        loading={termsLoading}
+        saving={saving}
+        onAccept={() => void handleAccept()}
+        onCancel={() => {
+          setTermsDialogOpen(false)
+          setActiveTerm(null)
+        }}
+      />
 
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <DialogContent>

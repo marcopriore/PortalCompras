@@ -12,6 +12,7 @@ import * as XLSX from "xlsx"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
@@ -38,6 +39,7 @@ import {
   Building2,
   ClipboardList,
   Download,
+  FileText,
   Loader2,
   Mail,
   Pencil,
@@ -281,6 +283,16 @@ type ActiveTab =
   | "aprovacoes"
   | "seguranca"
   | "campos"
+  | "termos"
+
+type SupplierTerm = {
+  id: string
+  title: string
+  content: string
+  version: string
+  version_date: string
+  active?: boolean
+}
 
 type PaymentCondition = {
   id: string
@@ -466,6 +478,20 @@ export default function ConfiguracoesPage() {
   const [deletingCondition, setDeletingCondition] = React.useState(false)
   const importInputRef = React.useRef<HTMLInputElement>(null)
 
+  const [termForm, setTermForm] = React.useState({
+    title: "Termos e Condições de Fornecimento",
+    content: "",
+    version: "1.0",
+    version_date: new Date().toISOString().slice(0, 10),
+  })
+  const [activeTerm, setActiveTerm] = React.useState<SupplierTerm | null>(null)
+  const [termLoading, setTermLoading] = React.useState(false)
+  const [termSaving, setTermSaving] = React.useState(false)
+  const [termMessage, setTermMessage] = React.useState<{
+    success: string | null
+    error: string | null
+  }>({ success: null, error: null })
+
   React.useEffect(() => {
     const run = async () => {
       if (userLoading || !companyId || !userId) return
@@ -641,6 +667,77 @@ export default function ConfiguracoesPage() {
       cancelled = true
     }
   }, [activeTab, companyId, canManageCompany, userLoading])
+
+  React.useEffect(() => {
+    if (userLoading || activeTab !== "termos" || !companyId) return
+    let cancelled = false
+    setTermLoading(true)
+    fetch(`/api/supplier-terms?company_id=${companyId}`)
+      .then((r) => r.json())
+      .then((json: { term: SupplierTerm | null }) => {
+        if (cancelled) return
+        if (json.term) {
+          setActiveTerm(json.term)
+          setTermForm({
+            title: json.term.title,
+            content: json.term.content,
+            version: json.term.version,
+            version_date: json.term.version_date,
+          })
+        } else {
+          setActiveTerm(null)
+          setTermForm((f) => ({
+            ...f,
+            title: "Termos e Condições de Fornecimento",
+            content: "",
+            version: "1.0",
+            version_date: new Date().toISOString().slice(0, 10),
+          }))
+        }
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (!cancelled) setTermLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, companyId, userLoading])
+
+  const handleSaveTerm = async () => {
+    if (!companyId) return
+    if (!termForm.content.trim()) {
+      setTermMessage({ success: null, error: "O conteúdo dos termos não pode estar vazio." })
+      return
+    }
+    if (!termForm.version.trim()) {
+      setTermMessage({ success: null, error: "Informe a versão dos termos." })
+      return
+    }
+    setTermSaving(true)
+    setTermMessage({ success: null, error: null })
+    try {
+      const res = await fetch("/api/supplier-terms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          title: termForm.title,
+          content: termForm.content,
+          version: termForm.version,
+          version_date: termForm.version_date,
+        }),
+      })
+      const json = (await res.json()) as { term?: SupplierTerm; error?: string }
+      if (!res.ok || json.error) throw new Error(json.error ?? "Erro ao salvar")
+      setActiveTerm(json.term ?? null)
+      setTermMessage({ success: "Termos salvos com sucesso.", error: null })
+    } catch (e) {
+      setTermMessage({ success: null, error: (e as Error).message })
+    } finally {
+      setTermSaving(false)
+    }
+  }
 
   const handleSaveCondition = async () => {
     if (!conditionForm.code.trim() || !conditionForm.description.trim()) {
@@ -1576,6 +1673,7 @@ export default function ConfiguracoesPage() {
             ["aprovacoes", "Aprovações", Workflow],
             ["seguranca", "Segurança", Shield],
             ["campos", "Configuração de Campos", Settings2],
+            ["termos", "Termos de Fornecimento", FileText],
           ] as const
         ).map(([key, label, Icon]) => (
           <button
@@ -2771,6 +2869,118 @@ export default function ConfiguracoesPage() {
                       ))}
                     </TableBody>
                   </Table>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {activeTab === "termos" && (
+        <div className="grid gap-6">
+          {!canManageCompany ? (
+            <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+              Apenas administradores podem gerenciar os termos de fornecimento.
+            </div>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Termos e Condições de Fornecimento</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Este texto será exibido ao fornecedor ao aceitar um pedido de compra. Ao aceitar o
+                  pedido, o fornecedor concorda automaticamente com os termos vigentes.
+                </p>
+                {activeTerm && (
+                  <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs text-green-700">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                    Termos ativos — Versão {activeTerm.version} (
+                    {new Date(activeTerm.version_date).toLocaleDateString("pt-BR", {
+                      timeZone: "UTC",
+                    })}
+                    )
+                  </div>
+                )}
+              </CardHeader>
+              <CardContent className="flex flex-col gap-4">
+                {termLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-10 animate-pulse rounded bg-muted" />
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid gap-2">
+                      <Label htmlFor="term-title">Título</Label>
+                      <Input
+                        id="term-title"
+                        value={termForm.title}
+                        onChange={(e) =>
+                          setTermForm((f) => ({ ...f, title: e.target.value }))
+                        }
+                        placeholder="Termos e Condições de Fornecimento"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="term-version">Versão</Label>
+                        <Input
+                          id="term-version"
+                          value={termForm.version}
+                          onChange={(e) =>
+                            setTermForm((f) => ({ ...f, version: e.target.value }))
+                          }
+                          placeholder="Ex: 1.0, 2.1"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="term-date">Data da Versão</Label>
+                        <Input
+                          id="term-date"
+                          type="date"
+                          value={termForm.version_date}
+                          onChange={(e) =>
+                            setTermForm((f) => ({ ...f, version_date: e.target.value }))
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="term-content">Conteúdo dos Termos</Label>
+                      <Textarea
+                        id="term-content"
+                        value={termForm.content}
+                        onChange={(e) =>
+                          setTermForm((f) => ({ ...f, content: e.target.value }))
+                        }
+                        rows={16}
+                        placeholder="Digite aqui o texto completo dos termos e condições de fornecimento..."
+                        className="font-mono text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Use texto simples. Salvar cria uma nova versão — pedidos anteriores mantêm o
+                        aceite da versão vigente no momento.
+                      </p>
+                    </div>
+
+                    {termMessage.error && (
+                      <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                        {termMessage.error}
+                      </div>
+                    )}
+                    {termMessage.success && (
+                      <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm text-primary">
+                        {termMessage.success}
+                      </div>
+                    )}
+
+                    <div className="flex justify-end">
+                      <Button onClick={() => void handleSaveTerm()} disabled={termSaving}>
+                        <Save className="mr-2 h-4 w-4" />
+                        {termSaving ? "Salvando..." : "Salvar Termos"}
+                      </Button>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
