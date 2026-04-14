@@ -135,6 +135,9 @@
 | supplier_terms | termos por tenant: `title`, `content`, `version`, `version_date`, `active` (um ativo por empresa) |
 | supplier_term_acceptances | aceite por pedido: `term_id`, `purchase_order_id`, `supplier_id`, `user_id`, `ip_address`, snapshot de versão |
 | supplier_categories | `company_id`, `supplier_id`, `category` — categorias atendidas (alinhadas ao `commodity_group` de `items`); UNIQUE (`supplier_id`, `category`) |
+| contracts | `company_id`, `supplier_id`, `code`, `title`, `type`, `status`, `start_date`, `end_date`, `value`, `file_url`, `notes`, `created_by` |
+| contract_status (enum) | `draft`, `active`, `expired`, `cancelled` |
+| contract_type (enum) | `fornecimento`, `servico`, `sla`, `nda`, `outro` |
 | approval_levels | flow ('requisition'\|'order'), cost_center, category |
 | approval_requests | flow, entity_id, approver_id, status: pending/approved/rejected; **decided_at**, **rejection_reason** |
 | tenant_features | feature_keys liberados por tenant |
@@ -208,6 +211,11 @@
 - `components/comprador/supplier-categories.tsx`
 - `app/api/suggest-suppliers/route.ts`
 - `app/api/supplier-categories/route.ts`
+- `types/contracts.ts` (`Contract`, `ContractType`, `ContractStatus`, `CONTRACT_TYPES`, `CONTRACT_STATUSES`)
+- `app/api/contracts/route.ts`
+- `app/api/contracts/[id]/route.ts`
+- `app/api/contracts/[id]/upload/route.ts`
+- Storage bucket: `contract-files` (público)
 
 ---
 

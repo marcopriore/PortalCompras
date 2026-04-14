@@ -94,6 +94,7 @@ type FeatureKey =
   | 'approval_requisition'
   | 'approval_order'
   | 'ai_analytics'
+  | 'contracts'
 
 const CORE_FEATURES: Array<{
   key: FeatureKey
@@ -197,6 +198,12 @@ const PREMIUM_FEATURES: Array<{
     description:
       'Análise de spend, insights automáticos e sugestões por inteligência artificial',
     icon: <Sparkles className="h-5 w-5 text-violet-500" />,
+  },
+  {
+    key: 'contracts',
+    label: 'Contratos',
+    description: 'Gestão de contratos com fornecedores, vigência e documentos PDF',
+    icon: <FileText className="h-5 w-5 text-violet-500" />,
   },
 ]
 

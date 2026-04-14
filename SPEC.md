@@ -73,6 +73,9 @@ Stack principal: Next.js 16, TypeScript, Tailwind/shadcn, Supabase (Auth + RLS),
 | Rota | Status |
 |------|--------|
 | `/comprador` | ✅ dashboard + painel ROI/Saving + Análise de Spend por IA (cache 1h, countdown, markdown) |
+| `/comprador/contratos` | ✅ listagem, métricas, filtros |
+| `/comprador/contratos/novo` | ✅ formulário completo |
+| `/comprador/contratos/[id]` | ✅ detalhe, edição inline, upload PDF |
 
 ### Relatórios BI
 
@@ -224,11 +227,11 @@ Regras:
 
 ### Produto
 
-- Módulo de Contratos
 - Negociação assistida por IA
 
 ### Módulos Premium
 
+- **contracts:** Gestão de contratos (feature key: `contracts`).
 - **Sugestão automática de fornecedor:** botão "Sugerir Fornecedores" na cotação (nova e edição); busca por `supplier_categories` (cadastro) + histórico em `quotation_suppliers` / `quotations.category`; badge de origem (Cadastro / Histórico); cadastro de categorias atendidas no modal do fornecedor (`commodity_group` do catálogo de itens).
 
 ### Concluído

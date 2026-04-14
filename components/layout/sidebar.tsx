@@ -41,6 +41,7 @@ const buyerNavItems: NavItem[] = [
   { title: "Requisições", href: "/comprador/requisicoes", icon: ClipboardList },
   { title: "Cotações", href: "/comprador/cotacoes", icon: FileText },
   { title: "Pedidos", href: "/comprador/pedidos", icon: ShoppingCart },
+  { title: "Contratos", href: "/comprador/contratos", icon: FileText },
   { title: "Aprovações", href: "/comprador/aprovacoes", icon: ShieldCheck },
   { title: "Itens", href: "/comprador/itens", icon: Package },
   { title: "Fornecedores", href: "/comprador/fornecedores", icon: Building2 },
@@ -66,7 +67,7 @@ export function Sidebar({ type }: SidebarProps) {
   const [pendingApprovals, setPendingApprovals] = useState<number | null>(null)
   const pathname = usePathname()
   const { userId, companyId, hasRole, isSuperAdmin, loading: userLoading } = useUser()
-  const { hasPermission, loading: permissionsLoading } = usePermissions()
+  const { hasPermission, hasFeature, loading: permissionsLoading } = usePermissions()
 
   const isLoading = userLoading || permissionsLoading
 
@@ -82,6 +83,8 @@ export function Sidebar({ type }: SidebarProps) {
       if (href === "/comprador/requisicoes") return hasPermission("nav.requisitions") || isSuperAdmin
       if (href === "/comprador/cotacoes") return hasPermission("nav.quotations") || isSuperAdmin
       if (href === "/comprador/pedidos") return hasPermission("nav.orders") || isSuperAdmin
+      if (href === "/comprador/contratos")
+        return hasFeature("contracts") || isSuperAdmin
       if (href === "/comprador/aprovacoes")
         return hasPermission("approval.requisition") || hasPermission("approval.order")
       if (href === "/comprador/itens") return hasPermission("nav.items") || isSuperAdmin
@@ -91,7 +94,7 @@ export function Sidebar({ type }: SidebarProps) {
       if (href === "/comprador/configuracoes/usuarios") return canShowAdminLinks
       return true
     })
-  }, [type, hasPermission, canShowAdminLinks, isSuperAdmin])
+  }, [type, hasPermission, hasFeature, canShowAdminLinks, isSuperAdmin])
 
   useEffect(() => {
     if (type !== "comprador" || !companyId || !userId) return

@@ -1,7 +1,7 @@
 # Valore — Handoff para Novo Chat
 
 ## Data: 14/04/2026
-## Versão: v2.19.66
+## Versão: v2.19.67
 
 ## 1. CONTEXTO DO PROJETO
 
