@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
+import { SuggestSuppliersButton } from "@/components/comprador/suggest-suppliers-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -905,6 +906,19 @@ export default function EditarCotacaoPage({
         onToggle={toggle}
       >
         <div className="space-y-3 pt-2">
+          <div className="flex justify-end">
+            <SuggestSuppliersButton
+              quotationId={id}
+              onAddSupplier={(supplier) => {
+                addSupplier({
+                  id: supplier.id,
+                  name: supplier.name,
+                  cnpj: null,
+                  category: null,
+                })
+              }}
+            />
+          </div>
           <div className="relative">
             <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
               <Search className="h-4 w-4 text-muted-foreground" />

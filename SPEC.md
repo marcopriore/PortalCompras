@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.63
+## Versão atual: v2.19.66
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -202,7 +202,7 @@ Regras:
 - `supplier_term_acceptances`: vínculo termo + `purchase_order_id` + `supplier_id` + `user_id`, `ip_address`, snapshot `term_version` / `term_version_date`
 - `payment_conditions`: `id`, `company_id`, `code`, `description`, `active`.
 - `notifications` e `notification_preferences` com canais por tipo.
-- Migrations de referência: `020`–`022` (requisição/cotação), **`023_saving_module_item_prices.sql`**, **`024_supplier_terms.sql`**.
+- Migrations de referência: `020`–`022` (requisição/cotação), **`023_saving_module_item_prices.sql`**, **`024_supplier_terms.sql`**, **`025_supplier_categories.sql`** (`supplier_categories`).
 
 ### PDF do pedido de compra
 
@@ -220,12 +220,16 @@ Regras:
 
 ---
 
-## 9. Backlog (estado atual — v2.19.64)
+## 9. Backlog (estado atual — v2.19.66)
 
 ### Produto
 
 - Módulo de Contratos
 - Negociação assistida por IA
+
+### Módulos Premium
+
+- **Sugestão automática de fornecedor:** botão "Sugerir Fornecedores" na cotação (nova e edição); busca por `supplier_categories` (cadastro) + histórico em `quotation_suppliers` / `quotations.category`; badge de origem (Cadastro / Histórico); cadastro de categorias atendidas no modal do fornecedor (`commodity_group` do catálogo de itens).
 
 ### Concluído
 
@@ -255,7 +259,8 @@ Regras:
 | v2.19.58–v2.19.59 | Score fornecedor |
 | v2.19.60–v2.19.61 | PDF do pedido |
 | v2.19.62–v2.19.63 | Aceite de termos de fornecimento |
+| v2.19.66 | `supplier_categories` (migration 025), categorias no modal do fornecedor, API e botão de sugestão de fornecedores na cotação |
 
 ---
 
-*Última revisão: v2.19.63.*
+*Última revisão: v2.19.66.*

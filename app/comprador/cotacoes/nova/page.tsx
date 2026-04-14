@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
 import { logAudit } from '@/lib/audit'
+import { SuggestSuppliersButton } from '@/components/comprador/suggest-suppliers-button'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -119,6 +120,7 @@ function NovaCotacaoContent() {
 
   const searchParams = useSearchParams()
   const requisitionId = searchParams.get('requisition_id')
+  const quotationId = searchParams.get('quotation_id')
 
   const [description, setDescription] = useState('')
   const [deadline, setDeadline] = useState<Date | undefined>()
@@ -764,6 +766,22 @@ function NovaCotacaoContent() {
       {/* Seção Fornecedores */}
       <Section title="Fornecedores" icon={<Building2 className="h-4 w-4 text-primary" />} sectionKey="suppliers" open={open.suppliers} onToggle={toggle}>
         <div className="space-y-3 pt-2">
+          {category && (
+            <div className="flex justify-end">
+              <SuggestSuppliersButton
+                category={category}
+                excludeSupplierIds={selectedSuppliers.map((s) => s.id)}
+                onAddSupplier={(supplier) => {
+                  addSupplier({
+                    id: supplier.id,
+                    name: supplier.name,
+                    cnpj: null,
+                    category: null,
+                  })
+                }}
+              />
+            </div>
+          )}
           <div className="relative">
             <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
               <Search className="h-4 w-4 text-muted-foreground" />

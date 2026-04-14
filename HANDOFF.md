@@ -1,7 +1,7 @@
 # Valore — Handoff para Novo Chat
 
 ## Data: 14/04/2026
-## Versão: v2.19.64
+## Versão: v2.19.66
 
 ## 1. CONTEXTO DO PROJETO
 
@@ -29,7 +29,10 @@
 - **Saving / ROI:** campos de preço no catálogo e itens de cotação (migration 023); triggers de média e herança; dashboard com Saving total, cobertura de alvo, por fornecedor e por mês
 - Equalização: indicadores % vs preço alvo e % vs média histórica (prefs em `localStorage`)
 - Itens: somente leitura, linha expansível, import/export Excel, sync ERP placeholder
-- Fornecedores: modal detalhes, **score de fornecedor** (badge), contagem de pedidos, import/export Excel
+- Fornecedores: modal detalhes, **score de fornecedor** (badge), contagem de pedidos, import/export Excel; seção **Categorias Atendidas** (vínculo com `commodity_group` do catálogo via `supplier_categories`)
+- **Migration `025_supplier_categories.sql`:** tabela `supplier_categories` — vínculo fornecedor ↔ categoria (alinhada ao `commodity_group` de `items`), RLS por tenant
+- **SuggestSuppliersButton** (`components/comprador/suggest-suppliers-button.tsx`): modo **A** `GET /api/suggest-suppliers?quotation_id=` (categoria da cotação + fornecedores já na cotação); modo **B** `?category=&exclude_ids=` (categoria do formulário na cotação nova + IDs já adicionados); origem cadastro vs. histórico com badges
+- APIs: `GET`/`POST`/`DELETE` `app/api/supplier-categories/route.ts`; `GET` `app/api/suggest-suppliers/route.ts`
 - Relatórios: **BI** com hierarquia Saving → Spend → Pedidos → Cotações & Fornecedores, filtros globais, **4 exports Excel**
 - Dashboard: cards reais + painel de Saving/ROI além de Spend, Lead Time e status de cotações
 - Dashboard: card **Análise de Spend por IA** com cache local por `company_id` (1h), cooldown com countdown e exibição de data/hora da última geração
@@ -82,6 +85,7 @@
 - `profiles`: `avatar_url`, `job_title`, `department`, `phone`
 - `items`: `long_description`, `source`, `sync_at`; índice único `(company_id, code)`
 - `suppliers`: índice único `(company_id, code)`
+- `supplier_categories`: vínculo fornecedor ↔ categoria por tenant (migration 025); categorias do cadastro alinhadas ao `commodity_group` de `items`
 - `purchase_orders`: `supplier_id`, `accepted_at`, `accepted_by_supplier`, `estimated_delivery_date`, `cancellation_reason`, `delivery_date_change_reason`, `created_by`, `quotation_id`, `requisition_code`
 - `notifications`, `notification_preferences`, `payment_conditions`
 - `company_settings`: `company_id`, `key`, `value`

@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.63
+- Versão atual: v2.19.66
 
 ---
 
@@ -134,6 +134,7 @@
 | quotation_items | long_description, **source_requisition_code**; preços de referência alinhados ao catálogo quando aplicável |
 | supplier_terms | termos por tenant: `title`, `content`, `version`, `version_date`, `active` (um ativo por empresa) |
 | supplier_term_acceptances | aceite por pedido: `term_id`, `purchase_order_id`, `supplier_id`, `user_id`, `ip_address`, snapshot de versão |
+| supplier_categories | `company_id`, `supplier_id`, `category` — categorias atendidas (alinhadas ao `commodity_group` de `items`); UNIQUE (`supplier_id`, `category`) |
 | approval_levels | flow ('requisition'\|'order'), cost_center, category |
 | approval_requests | flow, entity_id, approver_id, status: pending/approved/rejected; **decided_at**, **rejection_reason** |
 | tenant_features | feature_keys liberados por tenant |
@@ -203,6 +204,10 @@
 - `app/api/notify-proposal-submitted/route.ts`
 - `components/comprador/spend-ai-insights.tsx`
 - `app/api/ai-spend-analysis/route.ts`
+- `components/comprador/suggest-suppliers-button.tsx`
+- `components/comprador/supplier-categories.tsx`
+- `app/api/suggest-suppliers/route.ts`
+- `app/api/supplier-categories/route.ts`
 
 ---
 
@@ -281,6 +286,7 @@
 - `022_requisitions_buyer_update_policy.sql` — policy **requisitions: buyer atualiza status** (comprador atualiza requisições do tenant).
 - `023_saving_module_item_prices.sql` — `target_price`, `last_purchase_price`, `average_price`; triggers `trg_update_item_prices`, `trg_inherit_item_prices`.
 - `024_supplier_terms.sql` — `supplier_terms`, `supplier_term_acceptances`, RLS; sem policy `USING (true)` em aceites (service role ignora RLS).
+- `025_supplier_categories.sql` — `supplier_categories`, índices, RLS por tenant.
 
 ### RLS (referência)
 - **requisitions: requester cancela proprias** — UPDATE: `USING (requester_id = auth.uid() AND status = 'pending')` + `WITH CHECK (status = 'cancelled' …)`.
@@ -306,7 +312,7 @@
 | /comprador/pedidos | ✅ |
 | /comprador/pedidos/[id] | ✅ inclui PDF do pedido |
 | /comprador/itens | ✅ somente leitura, expansível, import/export Excel, sync ERP |
-| /comprador/fornecedores | ✅ modal detalhes, score fornecedor, contagem pedidos, import/export Excel |
+| /comprador/fornecedores | ✅ modal detalhes, score fornecedor, categorias atendidas (`supplier_categories`), contagem pedidos, import/export Excel |
 | /comprador/relatorios | ✅ BI: Saving → Spend → Pedidos → Cotações; filtros globais; 4 exports Excel |
 | /comprador/configuracoes/** | ✅ inclui aba Termos de Fornecimento (admin) |
 | /comprador/configuracoes/seguranca | ✅ 2FA TOTP real, layout side-by-side |

@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
 import { useSupplierScores } from '@/lib/hooks/use-supplier-score'
 import { SupplierScoreBadge } from '@/components/ui/supplier-score-badge'
+import { SupplierCategories } from '@/components/comprador/supplier-categories'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -19,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
 import {
   Table,
   TableBody,
@@ -674,6 +676,11 @@ export default function FornecedoresPage() {
                   <p className="text-sm">{orderCounts[selectedSupplier.id] ?? 0}</p>
                 </div>
               </div>
+              <Separator className="my-4" />
+              <SupplierCategories
+                supplierId={selectedSupplier.id}
+                companyId={companyId ?? ''}
+              />
               {supplierScores[selectedSupplier.id] && (
                 <div className="space-y-3 border-t border-border pt-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
