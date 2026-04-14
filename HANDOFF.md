@@ -1,7 +1,7 @@
 # Valore — Handoff para Novo Chat
 
-## Data: 13/04/2026
-## Versão: v2.19.63
+## Data: 14/04/2026
+## Versão: v2.19.64
 
 ## 1. CONTEXTO DO PROJETO
 
@@ -32,6 +32,8 @@
 - Fornecedores: modal detalhes, **score de fornecedor** (badge), contagem de pedidos, import/export Excel
 - Relatórios: **BI** com hierarquia Saving → Spend → Pedidos → Cotações & Fornecedores, filtros globais, **4 exports Excel**
 - Dashboard: cards reais + painel de Saving/ROI além de Spend, Lead Time e status de cotações
+- Dashboard: card **Análise de Spend por IA** com cache local por `company_id` (1h), cooldown com countdown e exibição de data/hora da última geração
+- **SpendAIInsights:** card no dashboard, cache `localStorage` 1h por `company_id`, countdown, select de período (30/90/180 dias), renderização markdown
 - Pedidos: **PDF** do pedido (`/api/purchase-order-pdf`, react-pdf, `runtime = nodejs`)
 - Configurações: Empresa, Perfil, Notificações, Aprovações, Segurança (2FA), Campos (condições de pagamento), **Termos de Fornecimento** (admin)
 
@@ -50,6 +52,8 @@
 
 ### Infraestrutura
 - Notificações: clique no sino navega à entidade (`resolveNotificationRoute`); proposta submetida via **`/api/notify-proposal-submitted`** (service role); ajustes cross-company em `notify-with-email`
+- IA de Spend: nova API `GET /api/ai-spend-analysis` com autenticação via cookies, coleta de spend/saving/top fornecedores/cotações sem proposta por tenant (service role), chamada Anthropic (`ANTHROPIC_API_KEY`) e snapshot de dados para UI
+- **GET `/api/ai-spend-analysis`:** coleta 4 blocos de dados do tenant, chama Anthropic `claude-sonnet-4-20250514`, retorna `insights` + `generatedAt` + `dataSnapshot`
 - Demais gatilhos: pedido enviado, requisição criada/aprovada/rejeitada, cotação cancelada/concluída, novo usuário
 - Storage: company-logos, profile-avatars (públicos), proposal-attachments (privado)
 - Funções SQL versionadas em migration 017
@@ -118,6 +122,7 @@
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `ANTHROPIC_API_KEY` (sem `NEXT_PUBLIC_`)
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL`
 - `NEXT_PUBLIC_APP_URL`

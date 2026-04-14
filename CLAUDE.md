@@ -201,6 +201,8 @@
 - `app/api/purchase-order-pdf/route.ts`
 - `app/api/supplier-terms/route.ts`, `app/api/supplier-terms/accept/route.ts`
 - `app/api/notify-proposal-submitted/route.ts`
+- `components/comprador/spend-ai-insights.tsx`
+- `app/api/ai-spend-analysis/route.ts`
 
 ---
 
@@ -296,7 +298,7 @@
 | /solicitante/nova | ✅ Formulário com catálogo, itens, anexos |
 | /solicitante/[id] | ✅ Timeline horizontal, informações gerais, itens, histórico |
 | /solicitante/[id]/editar | ✅ Editar e resubmeter após rejeição |
-| /comprador | ✅ dashboard com dados reais + painel ROI/Saving (total, cobertura alvo, por fornecedor, por mês) |
+| /comprador | ✅ dashboard + painel ROI/Saving + Análise de Spend por IA (cache 1h, countdown, markdown) |
 | /comprador/requisicoes/** | ✅ |
 | /comprador/aprovacoes | ✅ |
 | /comprador/cotacoes/** | ✅ |

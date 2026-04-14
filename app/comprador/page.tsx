@@ -7,6 +7,7 @@ import { endOfMonth, format, startOfMonth, subMonths } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
 import { MetricsCard } from "@/components/dashboard/metrics-card"
 import { SpendAIInsights } from "@/components/comprador/spend-ai-insights"
 import {
@@ -43,6 +44,7 @@ type QuotationStatus = "draft" | "waiting" | "analysis" | "completed" | "cancell
 export default function CompradorDashboard() {
   const router = useRouter()
   const { companyId, loading: userLoading } = useUser()
+  const { hasFeature } = usePermissions()
 
   const [quotationsPending, setQuotationsPending] = useState<number>(0)
   const [quotationsByStatus, setQuotationsByStatus] = useState<
@@ -981,7 +983,7 @@ export default function CompradorDashboard() {
             </CardContent>
           </Card>
         </div>
-        <SpendAIInsights />
+        {hasFeature("ai_analytics") && <SpendAIInsights />}
       </div>
     </div>
   )

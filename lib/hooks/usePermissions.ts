@@ -15,6 +15,7 @@ export type FeatureKey =
   | "settings"
   | "approval_requisition"
   | "approval_order"
+  | "ai_analytics"
 
 export type PermissionKey =
   | "nav.dashboard"
@@ -71,6 +72,7 @@ const ALL_FEATURES: FeatureKey[] = [
   "settings",
   "approval_requisition",
   "approval_order",
+  "ai_analytics",
 ]
 
 const ALL_PERMISSIONS: PermissionKey[] = [

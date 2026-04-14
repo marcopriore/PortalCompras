@@ -74,18 +74,26 @@ function formatDateTime(iso: string): string {
 }
 
 function renderInsights(text: string): React.ReactElement {
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-
+  const lines = text.split("\n").filter((l) => l.trim() !== "")
   return (
     <div className="space-y-2">
-      {lines.map((line, i) => (
-        <p key={i} className="text-sm text-foreground leading-relaxed">
-          {line}
-        </p>
-      ))}
+      {lines.map((line, i) => {
+        // Título ##
+        if (line.startsWith("## ")) {
+          return (
+            <p key={i} className="text-sm font-semibold text-foreground mb-1">
+              {line.replace(/^## /, "")}
+            </p>
+          )
+        }
+        // Linha normal — converter **texto** em <strong>
+        const parts = line.split(/\*\*(.*?)\*\*/g)
+        return (
+          <p key={i} className="text-sm text-foreground leading-relaxed">
+            {parts.map((part, j) => (j % 2 === 1 ? <strong key={j}>{part}</strong> : part))}
+          </p>
+        )
+      })}
     </div>
   )
 }

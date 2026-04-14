@@ -47,6 +47,7 @@ import {
   Settings,
   ScrollText,
   Download,
+  Sparkles,
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 
@@ -90,8 +91,11 @@ type FeatureKey =
   | 'users'
   | 'settings'
   | 'logs'
+  | 'approval_requisition'
+  | 'approval_order'
+  | 'ai_analytics'
 
-const FEATURES: Array<{
+const CORE_FEATURES: Array<{
   key: FeatureKey
   label: string
   description: string
@@ -167,9 +171,38 @@ const FEATURES: Array<{
     description: 'Histórico de ações realizadas no sistema',
     icon: 'ScrollText',
   },
+  {
+    key: 'approval_requisition',
+    label: 'Aprovação de Requisições',
+    description: 'Fluxo de aprovação de requisições',
+    icon: 'ClipboardList',
+  },
+  {
+    key: 'approval_order',
+    label: 'Aprovação de Pedidos',
+    description: 'Fluxo de aprovação de pedidos de compra',
+    icon: 'ShoppingCart',
+  },
 ]
 
-function getFeatureIcon(iconName: (typeof FEATURES)[number]['icon']) {
+const PREMIUM_FEATURES: Array<{
+  key: FeatureKey
+  label: string
+  description: string
+  icon: React.ReactNode
+}> = [
+  {
+    key: 'ai_analytics',
+    label: 'IA & Analytics',
+    description:
+      'Análise de spend, insights automáticos e sugestões por inteligência artificial',
+    icon: <Sparkles className="h-5 w-5 text-violet-500" />,
+  },
+]
+
+const FEATURES = [...CORE_FEATURES, ...PREMIUM_FEATURES]
+
+function getFeatureIcon(iconName: (typeof CORE_FEATURES)[number]['icon']) {
   const commonProps = { className: 'h-4 w-4' }
   if (iconName === 'FileText') return <FileText {...commonProps} />
   if (iconName === 'Scale') return <Scale {...commonProps} />
@@ -273,6 +306,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
   const [usersPage, setUsersPage] = useState(1)
 
   const totalUsers = profiles.length
+  const enabledFeatures = Object.keys(featuresState).filter((key) => featuresState[key])
 
   const userBreakdown = useMemo(() => {
     let buyers = 0
@@ -833,70 +867,136 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
           {/* BLOCO 3: Funcionalidades */}
           {isSuperAdmin && (
             <div className="bg-card border border-border rounded-xl p-5">
-              <div className="flex items-center justify-between mb-4">
+              <div className="space-y-6">
+                {/* Módulos Core */}
                 <div>
-                  <h2 className="text-sm font-semibold text-foreground">
-                    Funcionalidades
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Módulos ativos para este tenant
-                  </p>
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  {Object.values(featuresState).filter(Boolean).length} de{' '}
-                  {FEATURES.length} ativos
-                </span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {FEATURES.map((feature) => {
-                  const enabled = featuresState[feature.key] ?? true
-                  return (
-                    <div
-                      key={feature.key}
-                      className={`border rounded-xl p-4 flex items-start justify-between gap-4 ${
-                        enabled
-                          ? 'border-border bg-card'
-                          : 'border-border bg-muted/30 opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="font-medium text-foreground">Funcionalidades</h3>
+                      <p className="text-sm text-muted-foreground">Módulos core do produto</p>
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      {CORE_FEATURES.filter((f) => enabledFeatures.includes(f.key)).length} de {CORE_FEATURES.length} ativos
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {CORE_FEATURES.map((feature) => {
+                      const enabled = featuresState[feature.key] ?? true
+                      return (
                         <div
-                          className={`rounded-lg p-2 flex-shrink-0 ${
+                          key={feature.key}
+                          className={`border rounded-xl p-4 flex items-start justify-between gap-4 ${
                             enabled
-                              ? 'bg-primary/10 text-primary'
-                              : 'bg-muted text-muted-foreground'
+                              ? 'border-border bg-card'
+                              : 'border-border bg-muted/30 opacity-60'
                           }`}
                         >
-                          {getFeatureIcon(feature.icon)}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">
-                            {feature.label}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {feature.description}
-                          </p>
-                        </div>
-                      </div>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div>
-                            <Switch
-                              checked={enabled}
-                              onCheckedChange={(val) =>
-                                void handleToggle(feature.key, val)
-                              }
-                              disabled={featuresLoading}
-                            />
+                          <div className="flex items-start gap-3">
+                            <div
+                              className={`rounded-lg p-2 flex-shrink-0 ${
+                                enabled
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'bg-muted text-muted-foreground'
+                              }`}
+                            >
+                              {getFeatureIcon(feature.icon)}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">
+                                {feature.label}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {feature.description}
+                              </p>
+                            </div>
                           </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {enabled ? 'Habilitado' : 'Desabilitado'}
-                        </TooltipContent>
-                      </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div>
+                                <Switch
+                                  checked={enabled}
+                                  onCheckedChange={(val) =>
+                                    void handleToggle(feature.key, val)
+                                  }
+                                  disabled={featuresLoading}
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {enabled ? 'Habilitado' : 'Desabilitado'}
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Módulos Premium */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div>
+                      <h3 className="font-medium text-foreground flex items-center gap-2">
+                        Módulos Premium
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                          Premium
+                        </span>
+                      </h3>
+                      <p className="text-sm text-muted-foreground">Funcionalidades avançadas comercializadas separadamente</p>
                     </div>
-                  )
-                })}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {PREMIUM_FEATURES.map((feature) => {
+                      const enabled = featuresState[feature.key] ?? true
+                      return (
+                        <div
+                          key={feature.key}
+                          className={`border rounded-xl p-4 flex items-start justify-between gap-4 border-violet-200 dark:border-violet-800 ${
+                            enabled
+                              ? 'bg-card'
+                              : 'bg-muted/30 opacity-60'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <div
+                              className={`rounded-lg p-2 flex-shrink-0 ${
+                                enabled
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'bg-muted text-muted-foreground'
+                              }`}
+                            >
+                              {feature.icon}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">
+                                {feature.label}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {feature.description}
+                              </p>
+                            </div>
+                          </div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div>
+                                <Switch
+                                  checked={enabled}
+                                  onCheckedChange={(val) =>
+                                    void handleToggle(feature.key, val)
+                                  }
+                                  disabled={featuresLoading}
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {enabled ? 'Habilitado' : 'Desabilitado'}
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           )}

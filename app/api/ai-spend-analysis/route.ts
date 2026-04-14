@@ -19,7 +19,6 @@ type PurchaseOrderItem = {
 
 type QuotationItem = {
   id: string
-  category: string | null
   target_price: number | null
 }
 
@@ -124,6 +123,7 @@ export async function GET(request: Request) {
     if (profileError || !profile?.company_id) {
       return NextResponse.json({ error: "Company not found" }, { status: 404 })
     }
+    const companyId = profile.company_id
 
     const service = createServiceRoleClient()
     const startDate = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString()
@@ -163,7 +163,7 @@ export async function GET(request: Request) {
     if (quotationItemIds.length > 0) {
       const { data, error } = await service
         .from("quotation_items")
-        .select("id, category, target_price")
+        .select("id, target_price")
         .in("id", quotationItemIds)
 
       if (error) throw error
@@ -172,18 +172,44 @@ export async function GET(request: Request) {
 
     const quotationItemMap = new Map(quotationItems.map((item) => [item.id, item]))
 
-    const spendByCategoryMap = new Map<string, number>()
-    for (const item of purchaseOrderItems) {
-      const qItem = item.quotation_item_id
-        ? quotationItemMap.get(item.quotation_item_id)
-        : undefined
-      const category = qItem?.category?.trim() || "Sem categoria"
-      const lineTotal = Number(item.unit_price ?? 0) * Number(item.quantity ?? 0)
-      spendByCategoryMap.set(category, (spendByCategoryMap.get(category) ?? 0) + lineTotal)
+    const { data: spendData, error: spendError } = await service
+      .from("purchase_orders")
+      .select(
+        `
+      quotation_id,
+      quotations!inner(category),
+      purchase_order_items(
+        unit_price,
+        quantity
+      )
+    `,
+      )
+      .eq("company_id", companyId)
+      .in("status", ["sent", "processing", "completed"])
+      .gte("created_at", new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString())
+
+    if (spendError) {
+      console.error("[ai-spend-analysis] erro spend query:", JSON.stringify(spendError))
+      return NextResponse.json({ error: `spend query: ${JSON.stringify(spendError)}` }, { status: 500 })
     }
 
-    const spendPorCategoria = Array.from(spendByCategoryMap.entries())
-      .map(([category, total_spend]) => ({ category, total_spend }))
+    const spendPorCategoria: { category: string; total_spend: number }[] = (
+      Object.values(
+        ((spendData ?? []) as any[]).reduce(
+          (acc, po) => {
+            const categoria = (po.quotations as any)?.category ?? "Sem categoria"
+            const totalPO = ((po.purchase_order_items as any[]) ?? []).reduce(
+              (s, i) => s + (i.unit_price ?? 0) * (i.quantity ?? 0),
+              0,
+            )
+            if (!acc[categoria]) acc[categoria] = { category: categoria, total_spend: 0 }
+            acc[categoria].total_spend += totalPO
+            return acc
+          },
+          {} as Record<string, { category: string; total_spend: number }>,
+        ),
+      ) as { category: string; total_spend: number }[]
+    )
       .sort((a, b) => b.total_spend - a.total_spend)
       .slice(0, 10)
 
@@ -348,6 +374,12 @@ COTAÇÕES AGUARDANDO PROPOSTA: ${semProposta}
       ],
     }
 
+    console.log(
+      "[ai-spend-analysis] chamando Anthropic, period:",
+      period,
+      "company:",
+      companyId,
+    )
     const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -358,15 +390,11 @@ COTAÇÕES AGUARDANDO PROPOSTA: ${semProposta}
       body: JSON.stringify(anthropicPayload),
     })
 
+    console.log("[ai-spend-analysis] status Anthropic:", anthropicResponse.status)
     if (!anthropicResponse.ok) {
-      const errorBody = await anthropicResponse.text()
-      return NextResponse.json(
-        {
-          error: `Falha ao gerar insights na Anthropic (status ${anthropicResponse.status})`,
-          details: errorBody,
-        },
-        { status: 502 },
-      )
+      const errBody = await anthropicResponse.text()
+      console.error("[ai-spend-analysis] erro Anthropic:", errBody)
+      return NextResponse.json({ error: `Anthropic error: ${errBody}` }, { status: 502 })
     }
 
     const anthropicJson = (await anthropicResponse.json()) as unknown
@@ -385,7 +413,8 @@ COTAÇÕES AGUARDANDO PROPOSTA: ${semProposta}
       },
     })
   } catch (error) {
-    console.error("ai-spend-analysis GET:", error)
-    return NextResponse.json({ error: "Internal error" }, { status: 500 })
+    console.error("[ai-spend-analysis] erro:", error)
+    const message = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

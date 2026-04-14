@@ -68,9 +68,11 @@ Stack principal: Next.js 16, TypeScript, Tailwind/shadcn, Supabase (Auth + RLS),
 - Dropdown **Colunas** → sub-opções sob “Preço unit.”; preferências em `localStorage` (`valore:equalizacao:column_visibility`).
 - Banner âmbar de benchmark removido em favor dos indicadores inline.
 
-### Dashboard comprador — ROI / Saving
+### Status das telas
 
-- Painel em `/comprador`: Saving Total Histórico, Cobertura Preço Alvo, Saving por Fornecedor, Saving por Mês (`app/comprador/page.tsx`).
+| Rota | Status |
+|------|--------|
+| `/comprador` | ✅ dashboard + painel ROI/Saving + Análise de Spend por IA (cache 1h, countdown, markdown) |
 
 ### Relatórios BI
 
@@ -218,13 +220,16 @@ Regras:
 
 ---
 
-## 9. Backlog (estado atual — v2.19.63)
+## 9. Backlog (estado atual — v2.19.64)
 
 ### Produto
 
 - Módulo de Contratos
-- Análise de spend por IA
 - Negociação assistida por IA
+
+### Concluído
+
+- Análise de spend por IA
 
 ### Técnico / plataforma
 
