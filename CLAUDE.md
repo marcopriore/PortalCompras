@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.36
+- Versão atual: v2.19.63
 
 ---
 
@@ -56,6 +56,7 @@
 - Tabela genérica de configurações por tenant: `company_id`, `key`, `value` (text)
 - Upsert: `onConflict: "company_id,key"`
 - Exemplo: `lead_time_target_days` (meta de lead time em dias, editável pelo comprador)
+- **Score fornecedor:** `score_weight_price` — peso do critério Preço (padrão 40% no hook; UI de configuração no backlog)
 
 ### Qualidade de código
 
@@ -64,6 +65,22 @@
 - SEMPRE rodar `npx tsc --noEmit` antes de considerar concluído
 - NUNCA usar cores hardcoded — sempre tokens do design system
 - NUNCA deixar `console.log` em produção
+
+### Saving (indicadores)
+- **Negativo** = economia vs. referência (verde); **positivo** = acima do alvo (vermelho)
+
+### Score de fornecedor
+- **NUNCA** exibir `supplier-score-badge` / score agregado para `profile_type === 'supplier'`
+
+### PDF do pedido (`@react-pdf/renderer`)
+- Gerar via **API Route** `GET` com **service role**; `export const runtime = "nodejs"` na route
+- Documento: `lib/pdf/purchase-order-pdf.tsx`
+
+### Notificações cross-company
+- Cenários que exigem bypass de RLS (ex.: proposta submetida): usar **`/api/notify-proposal-submitted`** com service role conforme implementação atual
+
+### Termos de fornecimento
+- Aceite persistido com **IP**, **versão** e **data** do termo; página pública `/termos/[company_id]` sem autenticação
 
 ---
 
@@ -113,8 +130,10 @@
 | requisitions | status: pending/approved/rejected/in_quotation/completed/cancelled |
 | purchase_orders | status: draft/sent/processing/completed/cancelled/refused/error; supplier_id, accepted_at, accepted_by_supplier, estimated_delivery_date, cancellation_reason, delivery_date_change_reason, created_by, quotation_id |
 | purchase_order_items | delivery_days por item |
-| items | long_description |
-| quotation_items | long_description, **source_requisition_code** (text, opcional — requisição de origem) |
+| items | long_description; **Saving:** `target_price`, `last_purchase_price`, `average_price` |
+| quotation_items | long_description, **source_requisition_code**; preços de referência alinhados ao catálogo quando aplicável |
+| supplier_terms | termos por tenant: `title`, `content`, `version`, `version_date`, `active` (um ativo por empresa) |
+| supplier_term_acceptances | aceite por pedido: `term_id`, `purchase_order_id`, `supplier_id`, `user_id`, `ip_address`, snapshot de versão |
 | approval_levels | flow ('requisition'\|'order'), cost_center, category |
 | approval_requests | flow, entity_id, approver_id, status: pending/approved/rejected; **decided_at**, **rejection_reason** |
 | tenant_features | feature_keys liberados por tenant |
@@ -155,6 +174,7 @@
 - **Cotações e requisições:** ao salvar/editar cotação ou enviar (`waiting`), requisições identificadas por `source_requisition_code` nos itens passam a `in_quotation` com `quotation_id`. Ao **cancelar** cotação, requisições vinculadas a essa cotação voltam a `approved` com `quotation_id` null (filtro por `quotation_id` da cotação).
 - **Busca catálogo (itens/fornecedores) em cotações:** `.or(\`campo.ilike.${termo}\`)` — termo no formato `%texto%`, **sem** aspas duplas extras na string do filtro.
 - **Audit log (requisição):** registrar `requisition.created` (criação), `requisition.in_quotation` (vínculo à cotação), `requisition.approved` (liberação após cancelamento da cotação — evento no `audit_logs`, não confundir com fluxo de aprovação manual).
+- **Equalização:** preferências de colunas em `localStorage` key `valore:equalizacao:column_visibility` (sub-opções de preço unitário / benchmark).
 
 ---
 
@@ -162,6 +182,7 @@
 
 - `lib/hooks/use-auto-refresh.ts`
 - `lib/hooks/use-notifications.ts`
+- `lib/hooks/use-supplier-score.ts`
 - `lib/notify.ts`
 - `lib/notify-with-email.ts`
 - `lib/email/send-email.ts`
@@ -172,8 +193,14 @@
 - `lib/utils/activity-helpers.ts`
 - `lib/utils/date-helpers.ts` (expandido)
 - `lib/po-status.ts`
-- `components/ui/notification-bell.tsx`
+- `components/ui/notification-bell.tsx` (`resolveNotificationRoute`, `handleNotificationClick`)
+- `components/ui/supplier-score-badge.tsx`
+- `components/fornecedor/terms-acceptance-dialog.tsx`
+- `lib/pdf/purchase-order-pdf.tsx`
 - `components/ui/last-updated.tsx`
+- `app/api/purchase-order-pdf/route.ts`
+- `app/api/supplier-terms/route.ts`, `app/api/supplier-terms/accept/route.ts`
+- `app/api/notify-proposal-submitted/route.ts`
 
 ---
 
@@ -229,6 +256,12 @@
 | v2.19.34 | Update status requisição in_quotation ao salvar e liberar ao cancelar |
 | v2.19.35 | Audit log vincular e liberar requisição, histórico atualizado |
 | v2.19.36 | Audit log requisition.created no portal solicitante e comprador |
+| v2.19.37–v2.19.44 | Módulo Saving (campos e triggers), equalização benchmark, dashboard ROI, relatórios |
+| v2.19.45–v2.19.51 | Relatórios BI, exports Excel, benchmark de preço nas colunas |
+| v2.19.52–v2.19.57 | Notificações: navegação ao clicar, cross-company, `notify-proposal-submitted`, fix `quotation_rounds` |
+| v2.19.58–v2.19.59 | Score de fornecedor (hook + badge; oculto para supplier) |
+| v2.19.60–v2.19.61 | PDF do pedido (API + react-pdf, botões comprador/fornecedor) |
+| v2.19.62–v2.19.63 | Termos de fornecimento: migration 024, APIs, modal aceite, página pública, aba Configurações |
 
 ---
 
@@ -244,6 +277,8 @@
 - `020_requisitions_cancelled_status.sql` — constraint `requisitions.status` inclui `cancelled`; policy **requisitions: requester cancela proprias** com `WITH CHECK` explícito (apenas pending → cancelled).
 - `021_quotation_items_source_requisition.sql` — coluna `quotation_items.source_requisition_code`.
 - `022_requisitions_buyer_update_policy.sql` — policy **requisitions: buyer atualiza status** (comprador atualiza requisições do tenant).
+- `023_saving_module_item_prices.sql` — `target_price`, `last_purchase_price`, `average_price`; triggers `trg_update_item_prices`, `trg_inherit_item_prices`.
+- `024_supplier_terms.sql` — `supplier_terms`, `supplier_term_acceptances`, RLS; sem policy `USING (true)` em aceites (service role ignora RLS).
 
 ### RLS (referência)
 - **requisitions: requester cancela proprias** — UPDATE: `USING (requester_id = auth.uid() AND status = 'pending')` + `WITH CHECK (status = 'cancelled' …)`.
@@ -261,17 +296,17 @@
 | /solicitante/nova | ✅ Formulário com catálogo, itens, anexos |
 | /solicitante/[id] | ✅ Timeline horizontal, informações gerais, itens, histórico |
 | /solicitante/[id]/editar | ✅ Editar e resubmeter após rejeição |
-| /comprador | ✅ todos os cards e gráficos com dados reais |
+| /comprador | ✅ dashboard com dados reais + painel ROI/Saving (total, cobertura alvo, por fornecedor, por mês) |
 | /comprador/requisicoes/** | ✅ |
 | /comprador/aprovacoes | ✅ |
 | /comprador/cotacoes/** | ✅ |
-| /comprador/cotacoes/[id]/equalizacao | ✅ complexo |
+| /comprador/cotacoes/[id]/equalizacao | ✅ complexo; benchmark % vs alvo / % vs média histórica; prefs em localStorage |
 | /comprador/pedidos | ✅ |
-| /comprador/pedidos/[id] | ✅ |
+| /comprador/pedidos/[id] | ✅ inclui PDF do pedido |
 | /comprador/itens | ✅ somente leitura, expansível, import/export Excel, sync ERP |
-| /comprador/fornecedores | ✅ modal detalhes, contagem pedidos, import/export Excel |
-| /comprador/relatorios | ✅ dados reais, Lead Time vs Meta editável, Spend por Categoria, Volume por Mês |
-| /comprador/configuracoes/** | ✅ |
+| /comprador/fornecedores | ✅ modal detalhes, score fornecedor, contagem pedidos, import/export Excel |
+| /comprador/relatorios | ✅ BI: Saving → Spend → Pedidos → Cotações; filtros globais; 4 exports Excel |
+| /comprador/configuracoes/** | ✅ inclui aba Termos de Fornecimento (admin) |
 | /comprador/configuracoes/seguranca | ✅ 2FA TOTP real, layout side-by-side |
 | /admin/tenants/** | ✅ |
 | /admin/tenants/[id] | ✅ layout 3 blocos, métricas com período, funcionalidades inline |
@@ -280,5 +315,6 @@
 | /fornecedor/cotacoes | ✅ Listagem completa com filtros |
 | /fornecedor/cotacoes/[id] | ✅ Resposta proposta + wizard Excel |
 | /fornecedor/pedidos | ✅ Listagem com métricas |
-| /fornecedor/pedidos/[id] | ✅ Detalhe aceite/recusa/data entrega |
+| /fornecedor/pedidos/[id] | ✅ Aceite com modal de termos, recusa, data entrega, PDF |
+| /termos/[company_id] | ✅ Termos ativos (público, sem login) |
 | /fornecedor/atividades | ✅ Histórico completo paginado |

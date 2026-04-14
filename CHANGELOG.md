@@ -1,5 +1,32 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.37]–[v2.19.63] — 2026-04-13
+
+### Saving e equalização
+- Campos `target_price`, `last_purchase_price`, `average_price` em `items` e `quotation_items` (migration `023_saving_module_item_prices.sql`)
+- Triggers `trg_update_item_prices`, `trg_inherit_item_prices`
+- Equalização: colunas % vs alvo e % vs média histórica; toggles no dropdown Colunas; `localStorage` `valore:equalizacao:column_visibility`
+
+### Dashboard e relatórios
+- Dashboard comprador: painel ROI/Saving (total histórico, cobertura alvo, por fornecedor, por mês)
+- Relatórios: hierarquia Saving → Spend → Pedidos → Cotações & Fornecedores; filtros período/categoria/fornecedor; exports Excel (Spend categoria, Performance fornecedores, Saving acumulado, Tempo do processo)
+
+### Score de fornecedor
+- `use-supplier-score`, `supplier-score-badge`; peso Preço via `company_settings.score_weight_price` (padrão 40%); não exibir para `profile_type === 'supplier'`
+
+### Notificações
+- Clique no sino: `resolveNotificationRoute` / `handleNotificationClick`; fix `quotation_rounds` → `quotation_id`
+- Cross-company em `notify-with-email`; rota `notify-proposal-submitted` com service role
+
+### PDF do pedido
+- `GET /api/purchase-order-pdf`, `lib/pdf/purchase-order-pdf.tsx`, `runtime = nodejs`; botão nas telas de detalhe do pedido (comprador e fornecedor)
+
+### Termos de fornecimento
+- Migration `024_supplier_terms.sql`: `supplier_terms`, `supplier_term_acceptances`
+- APIs `supplier-terms`, `supplier-terms/accept`; modal de aceite no fornecedor; aba Termos em Configurações; página pública `/termos/[company_id]`
+
+---
+
 ## [v2.19.13] — 2026-04-09
 - feat: 2FA via TOTP real na aba Segurança (Google Authenticator)
 - feat: layout Segurança em 2 colunas, remove Sessões Ativas e 2FA SMS

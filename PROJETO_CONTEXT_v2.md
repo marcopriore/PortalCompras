@@ -63,7 +63,7 @@ git push origin vX.X.X
 - **Hospedagem futura:** Vercel
 - **Repositório:** https://github.com/marcopriore/PortalCompras
 - **Caminho local:** `C:\Dev\Portal Compras`
-- **Versão atual:** v2.14.2
+- **Versão atual:** v2.19.63 *(atualizar seções detalhadas deste arquivo conforme `SPEC.md` / `CLAUDE.md` quando necessário)*
 
 ---
 

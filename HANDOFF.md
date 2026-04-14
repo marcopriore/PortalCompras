@@ -1,7 +1,7 @@
 # Valore — Handoff para Novo Chat
 
-## Data: 09/04/2026
-## Versão: v2.19.13
+## Data: 13/04/2026
+## Versão: v2.19.63
 
 ## 1. CONTEXTO DO PROJETO
 
@@ -26,16 +26,20 @@
 
 ### Portal Comprador
 - Requisições, cotações, equalização (com rodadas), aprovações, pedidos
+- **Saving / ROI:** campos de preço no catálogo e itens de cotação (migration 023); triggers de média e herança; dashboard com Saving total, cobertura de alvo, por fornecedor e por mês
+- Equalização: indicadores % vs preço alvo e % vs média histórica (prefs em `localStorage`)
 - Itens: somente leitura, linha expansível, import/export Excel, sync ERP placeholder
-- Fornecedores: modal detalhes, contagem de pedidos reais, import/export Excel
-- Relatórios: todos os cards com dados reais, Lead Time vs Meta editável, Spend por Categoria, Volume de Spend por Mês, Pedidos por Status, Top 5 Fornecedores por Pedidos
-- Dashboard: todos os cards reais (Cotações Pendentes, Pedidos em Andamento, Tempo Fluxo Compras, Saving = —), SpendAnalysisChart, LeadTimeChart, QuotationStatusChart sem mock
-- Configurações: Empresa (logo upload), Perfil (foto upload), Notificações, Aprovações, Segurança (2FA TOTP real), Configuração de Campos
+- Fornecedores: modal detalhes, **score de fornecedor** (badge), contagem de pedidos, import/export Excel
+- Relatórios: **BI** com hierarquia Saving → Spend → Pedidos → Cotações & Fornecedores, filtros globais, **4 exports Excel**
+- Dashboard: cards reais + painel de Saving/ROI além de Spend, Lead Time e status de cotações
+- Pedidos: **PDF** do pedido (`/api/purchase-order-pdf`, react-pdf, `runtime = nodejs`)
+- Configurações: Empresa, Perfil, Notificações, Aprovações, Segurança (2FA), Campos (condições de pagamento), **Termos de Fornecimento** (admin)
 
 ### Portal Fornecedor
 - Dashboard com gráficos reais
 - Cotações: listagem, resposta com wizard Excel
-- Pedidos: lista + detalhe (aceite, recusa, atualização data)
+- Pedidos: lista + detalhe (aceite com **modal de termos** quando houver termo ativo, recusa, data, **PDF**)
+- **Pública:** `/termos/[company_id]` — leitura dos termos ativos sem login
 - Atividades: histórico paginado
 
 ### Portal Admin
@@ -45,13 +49,18 @@
 - Logs: paginação server-side (25/página), filtros por descrição, usuário, tenant, tipo, data
 
 ### Infraestrutura
-- Notificações in-app + e-mail: pedido enviado, requisição criada/aprovada/rejeitada, cotação cancelada/concluída, novo usuário
+- Notificações: clique no sino navega à entidade (`resolveNotificationRoute`); proposta submetida via **`/api/notify-proposal-submitted`** (service role); ajustes cross-company em `notify-with-email`
+- Demais gatilhos: pedido enviado, requisição criada/aprovada/rejeitada, cotação cancelada/concluída, novo usuário
 - Storage: company-logos, profile-avatars (públicos), proposal-attachments (privado)
 - Funções SQL versionadas em migration 017
-- company_settings: configurações por tenant (ex: lead_time_target_days)
+- company_settings: ex. `lead_time_target_days`, `score_weight_price`
+- Termos: `supplier_terms`, `supplier_term_acceptances` (migration 024)
 
 ## 4. PADRÕES CRÍTICOS
 
+- **Saving:** negativo = economia (verde), positivo = acima do alvo (vermelho)
+- **Score fornecedor:** nunca mostrar para `profile_type === 'supplier'`
+- **PDF pedido:** `@react-pdf/renderer` na API route, `runtime = "nodejs"`, service role na leitura
 - Multi-tenant: `company_id` + RLS em todas as tabelas
 - `profile_type`: `buyer | supplier`
 - Login/logout: `window.location.href` (não `router.push`) para portais

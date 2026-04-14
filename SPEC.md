@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.36
+## Versão atual: v2.19.63
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -26,8 +26,9 @@ Stack principal: Next.js 16, TypeScript, Tailwind/shadcn, Supabase (Auth + RLS),
 | `/fornecedor/cotacoes` | ✅ | Listagem completa com filtros + auto-refresh |
 | `/fornecedor/cotacoes/[id]` | ✅ | Resposta de proposta + wizard de importação Excel |
 | `/fornecedor/pedidos` | ✅ | Listagem com métricas e filtros |
-| `/fornecedor/pedidos/[id]` | ✅ | Aceite, recusa e atualização de data de entrega |
+| `/fornecedor/pedidos/[id]` | ✅ | Aceite (modal de termos de fornecimento quando houver termo ativo), recusa, data de entrega, PDF |
 | `/fornecedor/atividades` | ✅ | Histórico completo paginado |
+| `/termos/[company_id]` | ✅ | Página pública (sem login) — termos ativos da empresa |
 
 ---
 
@@ -50,6 +51,39 @@ Stack principal: Next.js 16, TypeScript, Tailwind/shadcn, Supabase (Auth + RLS),
 - **Coluna Requisição:** exibida na grade de itens (edição, nova e visualização).
 - **Vinculação automática:** ao salvar cotação (edição) ou enviar (`waiting`), requisições referenciadas nos itens → `in_quotation` + `quotation_id`.
 - **Liberação automática:** ao cancelar cotação, requisições vinculadas a essa cotação → `approved` + `quotation_id` null.
+
+---
+
+## 4.1 Módulo de Saving (v2.19.37+)
+
+- **Campos em `items` e `quotation_items`:** `target_price`, `last_purchase_price`, `average_price` (preço médio ponderado histórico).
+- **Migration:** `023_saving_module_item_prices.sql`
+- **Trigger `trg_update_item_prices`:** ao criar/atualizar contexto de pedido, atualiza média ponderada histórica no catálogo.
+- **Trigger `trg_inherit_item_prices`:** ao criar `quotation_items`, herda preços do item do catálogo.
+- **Semântica de indicadores:** valor **negativo** = economia vs. referência (verde); **positivo** = acima do alvo (vermelho).
+
+### Equalização — benchmark de preço
+
+- Colunas opcionais nas células de preço unitário: **% vs alvo** e **% vs média histórica**.
+- Dropdown **Colunas** → sub-opções sob “Preço unit.”; preferências em `localStorage` (`valore:equalizacao:column_visibility`).
+- Banner âmbar de benchmark removido em favor dos indicadores inline.
+
+### Dashboard comprador — ROI / Saving
+
+- Painel em `/comprador`: Saving Total Histórico, Cobertura Preço Alvo, Saving por Fornecedor, Saving por Mês (`app/comprador/page.tsx`).
+
+### Relatórios BI
+
+- Hierarquia de navegação: **Saving → Spend → Pedidos → Cotações & Fornecedores**.
+- Filtros globais: período, categoria, fornecedor (`app/comprador/relatorios/page.tsx`).
+- **Quatro exports Excel:** Spend por Categoria, Performance Fornecedores, Saving Acumulado, Tempo do Processo (ExcelJS, cabeçalho padrão do projeto).
+
+### Score de fornecedor
+
+- **Hook:** `lib/hooks/use-supplier-score.ts`
+- **Componente:** `components/ui/supplier-score-badge.tsx` (Preço, Cobertura, Lead Time, Confiabilidade).
+- Peso do componente Preço configurável via `company_settings` key `score_weight_price` (padrão 40%).
+- **Regra:** não exibir score para `profile_type === 'supplier'` (somente experiência comprador/admin).
 
 ---
 
@@ -92,11 +126,12 @@ Campos por canal (migration `014_notification_preferences_channels.sql`):
 
 ### 5.3 Componentes e serviços
 
-- `components/ui/notification-bell.tsx`
+- `components/ui/notification-bell.tsx` — `resolveNotificationRoute()` + `handleNotificationClick()` para navegar à entidade ao clicar; resolução de `quotation_id` a partir de `quotation_rounds` quando necessário
 - `lib/hooks/use-notifications.ts`
 - `lib/notify.ts` (`createNotification`)
 - `lib/notify-with-email.ts` (client -> API)
-- `app/api/notify-with-email/route.ts` (server)
+- `app/api/notify-with-email/route.ts` (server) — suporte a notificação **cross-company** (ex.: fornecedor → comprador)
+- `app/api/notify-proposal-submitted/route.ts` — envio pós-proposta com **service role** para contornar RLS
 - `app/api/get-user-email/route.ts` (service role, por tenant)
 - `lib/email/send-email.ts` (Resend)
 - `lib/email/templates/base.ts` e `lib/email/templates/index.ts`
@@ -155,42 +190,67 @@ Regras:
 ## 8. Banco (resumo objetivo)
 
 - `requisitions.status`: `pending`, `approved`, `rejected`, `in_quotation`, `completed`, **`cancelled`**
-- `quotation_items`: `long_description`, **`source_requisition_code`** (text, opcional)
+- `quotation_items`: `long_description`, **`source_requisition_code`**; campos Saving alinhados ao catálogo quando aplicável (`target_price`, `last_purchase_price`, `average_price`)
 - `profiles.profile_type`: `'buyer' | 'supplier' | 'requester'`
 - `purchase_orders`: `supplier_id`, `accepted_at`, `accepted_by_supplier`, `estimated_delivery_date`, `cancellation_reason`, `delivery_date_change_reason`, `created_by`, `quotation_id`.
 - Status PO válidos: `draft`, `sent`, `processing`, `completed`, `cancelled`, `refused`, `error`.
 - `purchase_order_items`: `delivery_days`.
-- `items`: `long_description`.
+- `items`: `long_description`; **Saving:** `target_price`, `last_purchase_price`, `average_price`
+- `supplier_terms`: `company_id`, `title`, `content`, `version`, `version_date`, `active` — um ativo por empresa (índice único parcial)
+- `supplier_term_acceptances`: vínculo termo + `purchase_order_id` + `supplier_id` + `user_id`, `ip_address`, snapshot `term_version` / `term_version_date`
 - `payment_conditions`: `id`, `company_id`, `code`, `description`, `active`.
 - `notifications` e `notification_preferences` com canais por tipo.
-- Migrations de referência: `020_requisitions_cancelled_status.sql`, `021_quotation_items_source_requisition.sql`, `022_requisitions_buyer_update_policy.sql`.
+- Migrations de referência: `020`–`022` (requisição/cotação), **`023_saving_module_item_prices.sql`**, **`024_supplier_terms.sql`**.
+
+### PDF do pedido de compra
+
+- **API:** `GET /api/purchase-order-pdf?id=<uuid>` — `export const runtime = "nodejs"`, service role para leitura do pedido
+- **Layout:** `lib/pdf/purchase-order-pdf.tsx` (`@react-pdf/renderer`) — A4, logo, comprador/fornecedor, condições, itens, total, observações, rodapé com paginação
+- **UI:** botão “PDF Pedido” em `/comprador/pedidos/[id]` e `/fornecedor/pedidos/[id]`
+
+### Aceite de termos de fornecimento
+
+- **APIs:** `GET`/`POST` `app/api/supplier-terms/route.ts`; `POST` `app/api/supplier-terms/accept/route.ts`
+- **Fornecedor:** ao aceitar pedido, modal `components/fornecedor/terms-acceptance-dialog.tsx`; registro de aceite com IP e versão
+- **Comprador:** aba **Termos de Fornecimento** em `app/comprador/configuracoes/page.tsx` (admin)
+- **Pública:** `/termos/[company_id]` — termo ativo sem autenticação
+- Novas versões desativam o termo anterior; aceites antigos permanecem ligados à versão vigente na época
 
 ---
 
-## 9. Backlog (estado atual — v2.19.36)
+## 9. Backlog (estado atual — v2.19.63)
 
 ### Produto
 
 - Módulo de Contratos
-- PDF do Pedido de Compra
-- Saving — `target_price` em items, calcular vs. preço pago
-- Navegação ao clicar em notificação (redirecionar para entidade)
-- Extração de relatórios via Excel (Saving e Lead Time)
-- Módulo de Negociação por IA
-- API Store / gestão de acesso por módulo e tenant
-- Timeline da requisição: ao cancelar cotação, regredir etapa Cotação → Aprovação
+- Análise de spend por IA
+- Negociação assistida por IA
 
-### Técnico
+### Técnico / plataforma
 
-- Permissões por perfil mais granulares (Master admin module)
-- Aumentar cobertura de testes
-- Política de segurança de senhas (complexidade, expiração, histórico 5 senhas)
-
-### Go-to-market / Documentação
-
-- Migrar documentação de implantação para Notion
+- Enforcement de permissões no frontend (sidebar dinâmica por role)
+- Cobertura de testes
+- Política de segurança de senhas
+- Configuração do `score_weight_price` na interface de Configurações
 - Rotina de atualização das documentações
+
+### Go-to-market
+
+- Migrar documentação de implantação para Notion (opcional)
 
 ---
 
-*Última revisão: v2.19.36.*
+### Tags de referência (v2.19.37–v2.19.63)
+
+| Faixa | Foco |
+|-------|------|
+| v2.19.37–v2.19.44 | Saving, equalização, dashboard, relatórios |
+| v2.19.45–v2.19.51 | Relatórios BI, benchmark de preço, exports |
+| v2.19.52–v2.19.57 | Notificações, cross-company, navegação |
+| v2.19.58–v2.19.59 | Score fornecedor |
+| v2.19.60–v2.19.61 | PDF do pedido |
+| v2.19.62–v2.19.63 | Aceite de termos de fornecimento |
+
+---
+
+*Última revisão: v2.19.63.*
