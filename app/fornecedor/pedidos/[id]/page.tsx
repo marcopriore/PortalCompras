@@ -908,6 +908,7 @@ export default function FornecedorPedidoDetalhePage({
       <TermsAcceptanceDialog
         open={termsDialogOpen}
         term={activeTerm}
+        companyId={order?.company_id ?? null}
         loading={termsLoading}
         saving={saving}
         onAccept={() => void handleAccept()}

@@ -9,10 +9,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { FileText } from "lucide-react"
+import { ExternalLink, FileText } from "lucide-react"
 
 type Term = {
   id: string
@@ -25,6 +24,7 @@ type Term = {
 type Props = {
   open: boolean
   term: Term | null
+  companyId: string | null
   loading?: boolean
   saving?: boolean
   onAccept: () => void
@@ -34,6 +34,7 @@ type Props = {
 export function TermsAcceptanceDialog({
   open,
   term,
+  companyId,
   loading,
   saving,
   onAccept,
@@ -45,6 +46,17 @@ export function TermsAcceptanceDialog({
     if (open) setAccepted(false)
   }, [open])
 
+  const termsUrl = companyId ? `/termos/${companyId}` : null
+
+  const versionDate = term
+    ? new Date(term.version_date).toLocaleDateString("pt-BR", {
+        timeZone: "UTC",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : null
+
   return (
     <Dialog
       open={open}
@@ -52,58 +64,65 @@ export function TermsAcceptanceDialog({
         if (!o) onCancel()
       }}
     >
-      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col sm:max-w-2xl">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-primary" />
-            <DialogTitle>
-              {loading ? "Carregando termos..." : term?.title ?? "Termos e Condições"}
-            </DialogTitle>
+            <FileText className="h-5 w-5 shrink-0 text-primary" />
+            <DialogTitle>Aceite de Termos de Fornecimento</DialogTitle>
           </div>
-          {term ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Versão {term.version} —{" "}
-              {new Date(term.version_date).toLocaleDateString("pt-BR", {
-                timeZone: "UTC",
-              })}
-            </p>
-          ) : null}
         </DialogHeader>
 
         {loading ? (
-          <div className="flex flex-1 items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">Carregando...</p>
+          <div className="flex items-center justify-center py-8">
+            <p className="text-sm text-muted-foreground">Carregando termos...</p>
           </div>
         ) : term ? (
-          <>
-            <ScrollArea className="max-h-96 flex-1 rounded-lg border border-border p-4">
-              <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
-                {term.content}
-              </div>
-            </ScrollArea>
+          <div className="space-y-4">
+            <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-4">
+              <p className="text-sm font-semibold text-foreground">{term.title}</p>
+              <p className="text-xs text-muted-foreground">
+                Versão {term.version} — vigente desde {versionDate}
+              </p>
+              {termsUrl && (
+                <a
+                  href={termsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Ler termos completos
+                </a>
+              )}
+            </div>
 
-            <div className="mt-2 flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3">
+            <div className="flex items-start gap-3 rounded-lg border border-border bg-background p-4">
               <Checkbox
                 id="accept-terms"
                 checked={accepted}
                 onCheckedChange={(v) => setAccepted(Boolean(v))}
+                className="mt-0.5 shrink-0"
               />
-              <Label htmlFor="accept-terms" className="cursor-pointer text-sm leading-relaxed">
-                Li e concordo com os <span className="font-semibold">{term.title}</span> versão{" "}
-                {term.version}. Entendo que ao aceitar este pedido estou vinculado às condições
-                descritas acima.
+              <Label
+                htmlFor="accept-terms"
+                className="cursor-pointer text-sm leading-relaxed text-foreground"
+              >
+                Declaro que li e aceito integralmente os{" "}
+                <span className="font-semibold">{term.title}</span> (Versão {term.version}), e estou
+                ciente de que ao confirmar este aceite fico vinculado às condições neles
+                estabelecidas.
               </Label>
             </div>
-          </>
+          </div>
         ) : (
-          <div className="flex flex-1 items-center justify-center py-12">
+          <div className="py-6 text-center">
             <p className="text-sm text-muted-foreground">
               Nenhum termo configurado. Prossiga com o aceite.
             </p>
           </div>
         )}
 
-        <DialogFooter className="mt-2">
+        <DialogFooter>
           <Button type="button" variant="outline" onClick={onCancel} disabled={saving}>
             Cancelar
           </Button>
