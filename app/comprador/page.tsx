@@ -8,6 +8,7 @@ import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { MetricsCard } from "@/components/dashboard/metrics-card"
+import { SpendAIInsights } from "@/components/comprador/spend-ai-insights"
 import {
   SpendAnalysisChart,
   QuotationStatusChart,
@@ -980,6 +981,7 @@ export default function CompradorDashboard() {
             </CardContent>
           </Card>
         </div>
+        <SpendAIInsights />
       </div>
     </div>
   )
