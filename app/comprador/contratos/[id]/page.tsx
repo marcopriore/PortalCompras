@@ -1,8 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
-import { format, parseISO, differenceInDays, startOfDay } from "date-fns"
+import { useRouter, useSearchParams } from "next/navigation"
+import {
+  differenceInDays,
+  format,
+  isBefore,
+  parseISO,
+  startOfDay,
+} from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
@@ -16,7 +22,6 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -28,6 +33,24 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   ArrowLeft,
   Edit,
   Save,
@@ -36,34 +59,36 @@ import {
   FileText,
   Download,
   AlertTriangle,
+  ExternalLink,
+  Search,
+  Send,
+  CheckCircle,
+  XCircle,
 } from "lucide-react"
-import type { Contract } from "@/types/contracts"
-import { CONTRACT_TYPES, CONTRACT_STATUSES } from "@/types/contracts"
+import type {
+  Contract,
+  ContractAcceptance,
+  ContractItem,
+  ContractKind,
+} from "@/types/contracts"
+import { CONTRACT_KINDS, CONTRACT_STATUSES } from "@/types/contracts"
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
 })
 
-const TYPE_LABELS: Record<Contract["type"], string> = {
-  fornecimento: "Fornecimento",
-  servico: "Serviço",
-  sla: "SLA",
-  nda: "NDA",
-  outro: "Outro",
-}
-
-const STATUS_LABELS: Record<Contract["status"], string> = {
-  draft: "Rascunho",
-  active: "Ativo",
-  expired: "Expirado",
-  cancelled: "Cancelado",
+function formatBRL(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "—"
+  return money.format(value)
 }
 
 function statusBadgeClass(status: Contract["status"]): string {
   switch (status) {
     case "draft":
       return "bg-muted text-muted-foreground"
+    case "pending_acceptance":
+      return "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200"
     case "active":
       return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
     case "expired":
@@ -79,12 +104,13 @@ type FormState = {
   supplier_id: string
   code: string
   title: string
-  type: string
-  status: string
+  contract_kind: ContractKind
   start_date: string
   end_date: string
   value: string
   notes: string
+  payment_condition_id: string
+  erp_code: string
 }
 
 function contractToForm(c: Contract): FormState {
@@ -92,8 +118,7 @@ function contractToForm(c: Contract): FormState {
     supplier_id: c.supplier_id,
     code: c.code,
     title: c.title,
-    type: c.type,
-    status: c.status,
+    contract_kind: c.contract_kind,
     start_date: c.start_date.slice(0, 10),
     end_date: c.end_date.slice(0, 10),
     value:
@@ -104,6 +129,8 @@ function contractToForm(c: Contract): FormState {
           }).format(c.value)
         : "",
     notes: c.notes ?? "",
+    payment_condition_id: c.payment_condition_id ?? "",
+    erp_code: c.erp_code ?? "",
   }
 }
 
@@ -127,6 +154,83 @@ function daysUntilEnd(c: Contract): number {
   return differenceInDays(parseISO(c.end_date), startOfDay(new Date()))
 }
 
+type EditContractItem = ContractItem & {
+  _toEliminate?: boolean
+  _eliminateReason?: string
+  _isNew?: boolean
+}
+
+type CatalogItemRow = {
+  id: string
+  code: string
+  short_description: string
+  unit_of_measure: string
+  target_price: number | null
+}
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = React.useState(value)
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay)
+    return () => clearTimeout(t)
+  }, [value, delay])
+  return debounced
+}
+
+function cloneItemsForEdit(items: ContractItem[] | undefined): EditContractItem[] {
+  return (items ?? []).map((i) => ({
+    ...i,
+    eliminated: i.eliminated ?? false,
+    eliminated_at: i.eliminated_at ?? null,
+    eliminated_reason: i.eliminated_reason ?? null,
+  }))
+}
+
+function buildNewEditItem(
+  contractId: string,
+  companyId: string,
+  row: CatalogItemRow,
+): EditContractItem {
+  const unit =
+    row.target_price != null && Number.isFinite(Number(row.target_price))
+      ? Number(row.target_price)
+      : 0
+  return {
+    id: `temp-${crypto.randomUUID()}`,
+    contract_id: contractId,
+    company_id: companyId,
+    material_code: row.code,
+    material_description: row.short_description,
+    unit_of_measure: row.unit_of_measure || null,
+    quantity_contracted: 1,
+    quantity_consumed: 0,
+    unit_price: unit,
+    total_price: unit,
+    consumed_value: 0,
+    delivery_days: null,
+    notes: null,
+    quotation_item_id: null,
+    created_at: "",
+    eliminated: false,
+    eliminated_at: null,
+    eliminated_reason: null,
+    _isNew: true,
+  }
+}
+
+function calcularStatus(
+  start_date: string,
+  end_date: string,
+): Contract["status"] {
+  if (!start_date || !end_date) return "draft"
+  const hoje = startOfDay(new Date())
+  const fim = parseISO(end_date)
+  if (isBefore(fim, hoje)) return "expired"
+  // Sempre começa como draft — só vai para active
+  // após aceite do fornecedor
+  return "draft"
+}
+
 export default function ContratoPage({
   params,
 }: {
@@ -134,6 +238,7 @@ export default function ContratoPage({
 }) {
   const { id } = React.use(params)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { companyId, loading: userLoading, isSuperAdmin } = useUser()
   const { hasFeature, loading: permissionsLoading } = usePermissions()
 
@@ -143,36 +248,70 @@ export default function ContratoPage({
   const [editing, setEditing] = React.useState(false)
   const [form, setForm] = React.useState<FormState | null>(null)
   const [saving, setSaving] = React.useState(false)
+  const [sendingForAcceptance, setSendingForAcceptance] = React.useState(false)
   const [uploading, setUploading] = React.useState(false)
-  const [suppliers, setSuppliers] = React.useState<
-    Array<{ id: string; name: string; code: string }>
+  const [acceptances, setAcceptances] = React.useState<ContractAcceptance[]>([])
+  const editQueryHandled = React.useRef(false)
+  const [paymentConditions, setPaymentConditions] = React.useState<
+    Array<{ id: string; code: string; description: string }>
   >([])
+  const [editItems, setEditItems] = React.useState<EditContractItem[]>([])
+  const [itemSearch, setItemSearch] = React.useState("")
+  const debouncedItemSearch = useDebounce(itemSearch, 300)
+  const [itemResults, setItemResults] = React.useState<CatalogItemRow[]>([])
+  const [itemSearchLoading, setItemSearchLoading] = React.useState(false)
+
+  const [confirmDialog, setConfirmDialog] = React.useState<{
+    open: boolean
+    title: string
+    description: string
+    onConfirm: () => void | Promise<void>
+  }>({
+    open: false,
+    title: "",
+    description: "",
+    onConfirm: async () => {},
+  })
 
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const canAccess = hasFeature("contracts") || isSuperAdmin
 
+  function showConfirm(
+    title: string,
+    description: string,
+    onConfirm: () => void | Promise<void>,
+  ) {
+    setConfirmDialog({ open: true, title, description, onConfirm })
+  }
+
   React.useEffect(() => {
-    if (userLoading || !companyId || !canAccess) {
+    if (!userLoading && !permissionsLoading && !canAccess) {
       setLoading(false)
-      return
     }
+  }, [userLoading, permissionsLoading, canAccess])
+
+  React.useEffect(() => {
+    if (userLoading || !companyId || !canAccess) return
 
     let cancelled = false
     ;(async () => {
       try {
         const supabase = createClient()
         const { data, error } = await supabase
-          .from("suppliers")
-          .select("id, name, code")
+          .from("payment_conditions")
+          .select("id, code, description")
           .eq("company_id", companyId)
-          .eq("status", "active")
-          .order("name")
-        if (!cancelled && !error) {
-          setSuppliers(
-            (data ?? []) as Array<{ id: string; name: string; code: string }>,
-          )
-        }
+          .eq("active", true)
+          .order("code")
+        if (cancelled || error) return
+        setPaymentConditions(
+          (data ?? []) as Array<{
+            id: string
+            code: string
+            description: string
+          }>,
+        )
       } catch {
         /* ignore */
       }
@@ -183,25 +322,118 @@ export default function ContratoPage({
     }
   }, [userLoading, companyId, canAccess])
 
+  React.useEffect(() => {
+    if (
+      !editing ||
+      !companyId ||
+      contract?.status !== "draft" ||
+      debouncedItemSearch.trim().length < 2
+    ) {
+      setItemResults([])
+      setItemSearchLoading(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      setItemSearchLoading(true)
+      const supabase = createClient()
+      const term = `%${debouncedItemSearch.trim()}%`
+      try {
+        const { data, error } = await supabase
+          .from("items")
+          .select("id, code, short_description, unit_of_measure, target_price")
+          .eq("company_id", companyId)
+          .eq("status", "active")
+          .or(`code.ilike.${term},short_description.ilike.${term}`)
+          .limit(10)
+        if (cancelled || error) {
+          setItemResults([])
+          return
+        }
+        setItemResults(
+          (data ?? []).map(
+            (r: {
+              id: string
+              code: string
+              short_description: string
+              unit_of_measure: string | null
+              target_price: number | null
+            }) => ({
+              id: r.id,
+              code: r.code,
+              short_description: r.short_description,
+              unit_of_measure: r.unit_of_measure ?? "",
+              target_price:
+                r.target_price != null && !Number.isNaN(Number(r.target_price))
+                  ? Number(r.target_price)
+                  : null,
+            }),
+          ),
+        )
+      } finally {
+        if (!cancelled) setItemSearchLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [editing, companyId, contract?.status, debouncedItemSearch])
+
   const loadContract = React.useCallback(async () => {
     setLoading(true)
     setLoadError(false)
     try {
-      const res = await fetch(`/api/contracts/${id}`)
-      const data = (await res.json()) as { contract?: Contract; error?: string }
-      if (!res.ok || !data.contract) {
+      const [contractRes, accRes] = await Promise.all([
+        fetch(`/api/contracts/${id}`),
+        fetch(`/api/contracts/${id}/acceptances`),
+      ])
+      const data = (await contractRes.json()) as {
+        contract?: Contract
+        error?: string
+      }
+      if (!contractRes.ok || !data.contract) {
         setLoadError(true)
         setContract(null)
         setForm(null)
+        setAcceptances([])
         return
       }
       const c = data.contract
       setContract(c)
       setForm(contractToForm(c))
+      if (accRes.ok) {
+        const accData = (await accRes.json()) as {
+          acceptances?: ContractAcceptance[]
+        }
+        setAcceptances(
+          Array.isArray(accData.acceptances) ? accData.acceptances : [],
+        )
+      } else {
+        setAcceptances([])
+      }
     } finally {
       setLoading(false)
     }
   }, [id])
+
+  React.useEffect(() => {
+    editQueryHandled.current = false
+  }, [id])
+
+  React.useEffect(() => {
+    if (!contract) return
+    if (searchParams.get("edit") !== "true") {
+      editQueryHandled.current = false
+      return
+    }
+    if (editQueryHandled.current) return
+    editQueryHandled.current = true
+    setForm(contractToForm(contract))
+    setEditItems(cloneItemsForEdit(contract.items))
+    setItemSearch("")
+    setItemResults([])
+    setEditing(true)
+  }, [contract, searchParams])
 
   React.useEffect(() => {
     if (userLoading || permissionsLoading || !canAccess) return
@@ -210,6 +442,33 @@ export default function ContratoPage({
 
   function openFilePicker() {
     fileInputRef.current?.click()
+  }
+
+  function handleSendForAcceptance() {
+    showConfirm(
+      "Enviar para Aceite",
+      "O contrato será enviado ao fornecedor para aceite. Deseja continuar?",
+      async () => {
+        setSendingForAcceptance(true)
+        try {
+          const res = await fetch(`/api/contracts/${id}/send-for-acceptance`, {
+            method: "POST",
+          })
+          const data = (await res.json()) as {
+            success?: boolean
+            error?: string
+          }
+          if (!res.ok || !data.success) {
+            toast.error(data.error ?? "Não foi possível enviar para aceite.")
+            return
+          }
+          toast.success("Contrato enviado para aceite!")
+          await loadContract()
+        } finally {
+          setSendingForAcceptance(false)
+        }
+      },
+    )
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -240,17 +499,19 @@ export default function ContratoPage({
   }
 
   async function handleSaveEdit() {
-    if (!form) return
+    if (!form || !companyId || !contract) return
+    const isRestricted = contract.status !== "draft"
     const {
       supplier_id,
       code,
       title,
-      type,
-      status,
+      contract_kind,
       start_date,
       end_date,
       value,
       notes,
+      payment_condition_id,
+      erp_code,
     } = form
 
     if (!supplier_id) {
@@ -269,47 +530,267 @@ export default function ContratoPage({
       toast.error("Informe as datas de vigência.")
       return
     }
-
-    const valueNum = parseValueToNumber(value)
-    if (value.trim() && valueNum === null) {
-      toast.error("Valor inválido.")
+    if (!payment_condition_id) {
+      toast.error("Selecione uma condição de pagamento")
       return
+    }
+
+    let valueNum: number | null = null
+    if (!isRestricted && contract_kind === "por_valor") {
+      if (value.trim()) {
+        valueNum = parseValueToNumber(value)
+        if (valueNum === null) {
+          toast.error("Valor inválido.")
+          return
+        }
+      }
+    }
+
+    const newRows = isRestricted
+      ? []
+      : editItems.filter((i) => i._isNew)
+    for (const row of newRows) {
+      if (!row.material_code.trim() || !row.material_description.trim()) {
+        toast.error("Preencha código e descrição em todos os itens novos.")
+        return
+      }
+      if (
+        !Number.isFinite(row.quantity_contracted) ||
+        row.quantity_contracted <= 0
+      ) {
+        toast.error("Quantidade inválida em um dos itens novos.")
+        return
+      }
+      if (!Number.isFinite(row.unit_price) || row.unit_price < 0) {
+        toast.error("Preço unitário inválido em um dos itens novos.")
+        return
+      }
+    }
+
+    const executeSaveEdit = async () => {
+    let restrictedPatchStatus: Contract["status"]
+    if (!isRestricted) {
+      restrictedPatchStatus = calcularStatus(start_date, end_date)
+    } else if (
+      contract.status === "pending_acceptance" ||
+      contract.status === "active"
+    ) {
+      restrictedPatchStatus = "draft"
+    } else {
+      restrictedPatchStatus = calcularStatus(start_date, end_date)
     }
 
     setSaving(true)
     try {
+      const patchBody = isRestricted
+        ? {
+            start_date,
+            end_date,
+            status: restrictedPatchStatus,
+            notes: notes.trim() || null,
+            payment_condition_id: payment_condition_id || null,
+          }
+        : {
+            supplier_id,
+            code: code.trim(),
+            title: title.trim(),
+            contract_kind,
+            status: restrictedPatchStatus,
+            start_date,
+            end_date,
+            value: contract_kind === "por_valor" ? valueNum : null,
+            notes: notes.trim() || null,
+            payment_condition_id: payment_condition_id || null,
+            erp_code: erp_code.trim() || null,
+          }
+
       const res = await fetch(`/api/contracts/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          supplier_id,
-          code: code.trim(),
-          title: title.trim(),
-          type,
-          status,
-          start_date,
-          end_date,
-          value: valueNum,
-          notes: notes.trim() || null,
-        }),
+        body: JSON.stringify(patchBody),
       })
       const data = (await res.json()) as { contract?: Contract; error?: string }
       if (!res.ok || !data.contract) {
         toast.error(data.error ?? "Não foi possível salvar.")
         return
       }
-      setContract(data.contract)
-      setForm(contractToForm(data.contract))
+
+      for (const item of editItems) {
+        if (!item._toEliminate || item._isNew || item.id.startsWith("temp-")) {
+          continue
+        }
+        const elimRes = await fetch(
+          `/api/contract-items?id=${encodeURIComponent(item.id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              eliminated: true,
+              eliminated_reason: item._eliminateReason?.trim() ?? "",
+            }),
+          },
+        )
+        if (!elimRes.ok) {
+          const err = (await elimRes.json()) as { error?: string }
+          toast.error(err.error ?? "Não foi possível eliminar um dos itens.")
+          return
+        }
+      }
+
+      if (newRows.length > 0) {
+        const itemsPayload = newRows.map((i) => ({
+          material_code: i.material_code.trim(),
+          material_description: i.material_description.trim(),
+          unit_of_measure: i.unit_of_measure?.trim() || undefined,
+          quantity_contracted: i.quantity_contracted,
+          unit_price: i.unit_price,
+          delivery_days:
+            i.delivery_days != null && !Number.isNaN(Number(i.delivery_days))
+              ? Number(i.delivery_days)
+              : null,
+          notes: i.notes?.trim() || undefined,
+        }))
+        const postRes = await fetch("/api/contract-items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contract_id: id, items: itemsPayload }),
+        })
+        const postData = (await postRes.json()) as { error?: string }
+        if (!postRes.ok) {
+          toast.error(postData.error ?? "Não foi possível salvar itens novos.")
+          return
+        }
+      }
+
+      if (!isRestricted) {
+        const supabase = createClient()
+        for (const item of editItems) {
+          if (
+            item._isNew ||
+            item._toEliminate ||
+            item.eliminated ||
+            item.id.startsWith("temp-")
+          ) {
+            continue
+          }
+          const orig = contract.items?.find((o) => o.id === item.id)
+          if (!orig) continue
+          const newDd =
+            item.delivery_days != null &&
+            !Number.isNaN(Number(item.delivery_days))
+              ? Number(item.delivery_days)
+              : null
+          const oldDd =
+            orig.delivery_days != null &&
+            !Number.isNaN(Number(orig.delivery_days))
+              ? Number(orig.delivery_days)
+              : null
+          if (newDd === oldDd) continue
+          if (newDd != null && newDd < 0) {
+            toast.error("Prazo (dias) inválido em um dos itens.")
+            return
+          }
+          const { error: itemErr } = await supabase
+            .from("contract_items")
+            .update({ delivery_days: newDd })
+            .eq("id", item.id)
+            .eq("company_id", companyId)
+          if (itemErr) {
+            toast.error(
+              itemErr.message ??
+                "Não foi possível atualizar prazos dos itens.",
+            )
+            return
+          }
+        }
+      }
+
+      await loadContract()
       setEditing(false)
+      setEditItems([])
+      setItemSearch("")
+      setItemResults([])
+      if (searchParams.get("edit") === "true") {
+        router.replace(`/comprador/contratos/${id}`)
+      }
       toast.success("Contrato atualizado.")
     } finally {
       setSaving(false)
     }
+    }
+
+    if (isRestricted && contract.status === "active") {
+      showConfirm(
+        "Atenção",
+        "Atenção: ao salvar alterações em um contrato ativo, " +
+          "o status voltará a rascunho até você enviar novamente para aceite. " +
+          "Deseja continuar?",
+        executeSaveEdit,
+      )
+      return
+    }
+    if (isRestricted && contract.status === "pending_acceptance") {
+      showConfirm(
+        "Salvar alterações",
+        "Ao salvar, o contrato voltará a rascunho. " +
+          'Será necessário clicar em "Enviar para Aceite" novamente. ' +
+          "Deseja continuar?",
+        executeSaveEdit,
+      )
+      return
+    }
+    await executeSaveEdit()
   }
 
   function handleCancelEdit() {
     if (contract) setForm(contractToForm(contract))
+    setEditItems([])
+    setItemSearch("")
+    setItemResults([])
     setEditing(false)
+    if (searchParams.get("edit") === "true") {
+      router.replace(`/comprador/contratos/${id}`)
+    }
+  }
+
+  function beginEdit() {
+    if (!contract) return
+    setForm(contractToForm(contract))
+    setEditItems(cloneItemsForEdit(contract.items))
+    setItemSearch("")
+    setItemResults([])
+    setEditing(true)
+  }
+
+  function handleCancelar() {
+    if (!contract) return
+    showConfirm(
+      "Cancelar Contrato",
+      "Esta ação não pode ser desfeita. O contrato será marcado como cancelado.",
+      async () => {
+        setSaving(true)
+        try {
+          const res = await fetch(`/api/contracts/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "cancelled" }),
+          })
+          const data = (await res.json()) as {
+            contract?: Contract
+            error?: string
+          }
+          if (!res.ok || !data.contract) {
+            toast.error(data.error ?? "Não foi possível cancelar o contrato.")
+            return
+          }
+          setContract(data.contract)
+          setForm(contractToForm(data.contract))
+          toast.success("Contrato cancelado")
+        } finally {
+          setSaving(false)
+        }
+      },
+    )
   }
 
   if (!userLoading && !permissionsLoading && !canAccess) {
@@ -340,7 +821,7 @@ export default function ContratoPage({
 
   if (loadError || !contract || !form) {
     return (
-      <div className="p-6 space-y-4 max-w-lg">
+      <div className="p-6 space-y-4 w-full">
         <Button type="button" variant="ghost" size="sm" onClick={() => router.back()}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Voltar
@@ -356,9 +837,10 @@ export default function ContratoPage({
 
   const expiring = isExpiringSoon(contract)
   const daysLeft = daysUntilEnd(contract)
+  const isRestricted = contract.status !== "draft"
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
+    <div className="p-6 space-y-6 w-full">
       <input
         ref={fileInputRef}
         type="file"
@@ -380,7 +862,8 @@ export default function ContratoPage({
                     {contract.code}
                   </Badge>
                   <Badge className={statusBadgeClass(contract.status)}>
-                    {STATUS_LABELS[contract.status]}
+                    {CONTRACT_STATUSES.find((s) => s.value === contract.status)
+                      ?.label ?? contract.status}
                   </Badge>
                 </div>
                 <h1 className="text-2xl font-semibold tracking-tight mt-1">
@@ -393,10 +876,38 @@ export default function ContratoPage({
           </div>
         </div>
         {!editing ? (
-          <Button type="button" variant="outline" onClick={() => setEditing(true)}>
-            <Edit className="h-4 w-4 mr-2" />
-            Editar
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {contract.status === "draft" ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void handleSendForAcceptance()}
+                disabled={sendingForAcceptance}
+                className="gap-1.5"
+              >
+                <Send className="h-4 w-4" />
+                {sendingForAcceptance ? "Enviando..." : "Enviar para Aceite"}
+              </Button>
+            ) : null}
+            {contract.status !== "cancelled" && contract.status !== "expired" ? (
+              <Button type="button" variant="outline" size="sm" onClick={beginEdit}>
+                <Edit className="h-4 w-4 mr-2" />
+                Editar
+              </Button>
+            ) : null}
+            {contract.status !== "cancelled" && contract.status !== "expired" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-destructive border-destructive hover:bg-destructive/10"
+                onClick={() => void handleCancelar()}
+                disabled={saving}
+              >
+                Cancelar Contrato
+              </Button>
+            ) : null}
+          </div>
         ) : (
           <div className="flex gap-2">
             <Button
@@ -448,8 +959,11 @@ export default function ContratoPage({
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Tipo</p>
-                  <p className="text-sm font-medium">{TYPE_LABELS[contract.type]}</p>
+                  <p className="text-xs text-muted-foreground">Tipo de Contrato</p>
+                  <p className="text-sm font-medium">
+                    {CONTRACT_KINDS.find((k) => k.value === contract.contract_kind)
+                      ?.label ?? contract.contract_kind}
+                  </p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Vigência</p>
@@ -465,6 +979,23 @@ export default function ContratoPage({
                     {contract.value != null ? money.format(contract.value) : "—"}
                   </p>
                 </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Condição de Pagamento</p>
+                  <p className="text-sm font-medium">
+                    {contract.payment_condition_code
+                      ? `${contract.payment_condition_code} — ${contract.payment_condition_description ?? ""}`
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    Código ERP{" "}
+                    <span className="text-muted-foreground">(integração ERP)</span>
+                  </p>
+                  <p className="text-sm font-medium">
+                    {contract.erp_code?.trim() ? contract.erp_code : "—"}
+                  </p>
+                </div>
                 <div className="sm:col-span-2">
                   <p className="text-xs text-muted-foreground">Observações</p>
                   <p className="text-sm whitespace-pre-wrap">
@@ -474,6 +1005,140 @@ export default function ContratoPage({
               </div>
             </CardContent>
           </Card>
+
+          {contract.items && contract.items.length > 0 && (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg bg-muted p-3 text-center">
+                  <p className="text-xs text-muted-foreground">Valor Total</p>
+                  <p className="font-semibold">{formatBRL(contract.total_value)}</p>
+                </div>
+                <div className="rounded-lg bg-blue-50 p-3 text-center dark:bg-blue-950/30">
+                  <p className="text-xs text-muted-foreground">Consumido</p>
+                  <p className="font-semibold text-blue-700 dark:text-blue-300">
+                    {formatBRL(contract.consumed_value)}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-green-50 p-3 text-center dark:bg-green-950/30">
+                  <p className="text-xs text-muted-foreground">Saldo</p>
+                  <p className="font-semibold text-green-700 dark:text-green-300">
+                    {formatBRL(
+                      (contract.total_value ?? 0) - contract.consumed_value,
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="w-full rounded-lg border border-border overflow-hidden">
+                <Table className="w-full text-sm">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Código</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead className="whitespace-nowrap">UN</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">
+                        Qtd Cont.
+                      </TableHead>
+                      <TableHead className="text-right whitespace-nowrap">
+                        Qtd Cons.
+                      </TableHead>
+                      <TableHead className="text-right whitespace-nowrap">
+                        Preço Unit.
+                      </TableHead>
+                      <TableHead className="text-right whitespace-nowrap">
+                        Prazo
+                      </TableHead>
+                      <TableHead className="text-right whitespace-nowrap">
+                        Total
+                      </TableHead>
+                      <TableHead className="text-right whitespace-nowrap">
+                        Saldo
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {contract.items.map((item: ContractItem) => {
+                      const lineBalance = item.total_price - item.consumed_value
+                      return (
+                        <TableRow key={item.id}>
+                          <TableCell
+                            className={`font-mono text-xs ${
+                              item.eliminated ? "line-through opacity-50" : ""
+                            }`}
+                          >
+                            {item.material_code}
+                          </TableCell>
+                          <TableCell
+                            className={`max-w-[200px] ${
+                              item.eliminated ? "line-through opacity-50" : ""
+                            }`}
+                          >
+                            {item.material_description}
+                          </TableCell>
+                          <TableCell>{item.unit_of_measure ?? "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {item.quantity_contracted}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {item.quantity_consumed}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">
+                            {money.format(item.unit_price)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">
+                            {item.delivery_days != null ? item.delivery_days : "—"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums whitespace-nowrap">
+                            {money.format(item.total_price)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right tabular-nums whitespace-nowrap font-medium ${
+                              lineBalance > 0
+                                ? "text-green-700 dark:text-green-400"
+                                : "text-destructive"
+                            }`}
+                          >
+                            {money.format(lineBalance)}
+                          </TableCell>
+                          <TableCell>
+                            {item.eliminated ? (
+                              <Badge
+                                variant="outline"
+                                className="text-destructive border-destructive text-xs"
+                              >
+                                Eliminado
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
+          )}
+
+          {contract.contract_terms?.trim() ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Termos Contratuais</p>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                {contract.contract_terms}
+              </p>
+              <a
+                href={`/contratos/${contract.id}/termos`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Ver página pública dos termos
+              </a>
+            </div>
+          ) : null}
 
           <Card>
             <CardHeader>
@@ -519,6 +1184,39 @@ export default function ContratoPage({
               )}
             </CardContent>
           </Card>
+
+          {acceptances.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold">Histórico de Aceites</h3>
+              <div className="space-y-2">
+                {acceptances.map((a) => (
+                  <div
+                    key={a.id}
+                    className="flex items-center gap-3 text-sm border rounded-md px-3 py-2"
+                  >
+                    {a.action === "accepted" ? (
+                      <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-destructive shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium">
+                        {a.action === "accepted" ? "Aceito" : "Recusado"}
+                      </span>
+                      {a.notes ? (
+                        <span className="text-muted-foreground ml-2">
+                          — {a.notes}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                      {format(parseISO(a.created_at), "dd/MM/yyyy HH:mm")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       ) : (
         <Card>
@@ -526,37 +1224,36 @@ export default function ContratoPage({
             <CardTitle className="text-base">Dados do contrato</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
+            {isRestricted ? (
+              <div
+                className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 mb-4 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200"
+                role="status"
+              >
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                Contrato ativo — apenas condição de pagamento, vigência,
+                observações e eliminação de itens podem ser alterados.
+              </div>
+            ) : null}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>
-                  Fornecedor <span className="text-destructive">*</span>
-                </Label>
-                <Select
-                  value={form.supplier_id}
-                  onValueChange={(v) => setForm((f) => (f ? { ...f, supplier_id: v } : f))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Fornecedor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {suppliers.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name} ({s.code})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Fornecedor</Label>
+                <div className="flex items-center h-10 px-3 rounded-md border border-border bg-muted text-sm text-foreground">
+                  <span className="truncate">
+                    {contract.supplier_name}
+                    <span className="text-muted-foreground">
+                      {" "}
+                      ({contract.supplier_code})
+                    </span>
+                  </span>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>
                   Código <span className="text-destructive">*</span>
                 </Label>
-                <Input
-                  value={form.code}
-                  onChange={(e) =>
-                    setForm((f) => (f ? { ...f, code: e.target.value } : f))
-                  }
-                />
+                <div className="flex items-center h-10 px-3 rounded-md border border-border bg-muted text-sm text-foreground font-mono">
+                  {form.code}
+                </div>
               </div>
             </div>
 
@@ -566,6 +1263,12 @@ export default function ContratoPage({
                   Título <span className="text-destructive">*</span>
                 </Label>
                 <Input
+                  readOnly={isRestricted}
+                  className={
+                    isRestricted
+                      ? "h-10 border border-border bg-muted text-sm text-foreground"
+                      : "h-10"
+                  }
                   value={form.title}
                   onChange={(e) =>
                     setForm((f) => (f ? { ...f, title: e.target.value } : f))
@@ -573,53 +1276,70 @@ export default function ContratoPage({
                 />
               </div>
               <div className="space-y-2">
-                <Label>Tipo</Label>
-                <Select
-                  value={form.type}
-                  onValueChange={(v) => setForm((f) => (f ? { ...f, type: v } : f))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CONTRACT_TYPES.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {TYPE_LABELS[t]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>Tipo de Contrato</Label>
+                <div className="flex items-center h-10 px-3 rounded-md border border-border bg-muted text-sm text-foreground">
+                  {CONTRACT_KINDS.find((k) => k.value === form.contract_kind)
+                    ?.label ?? form.contract_kind}
+                </div>
               </div>
             </div>
 
+            {form.contract_kind === "por_valor" ? (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Valor Total</Label>
+                  <Input
+                    type="text"
+                    readOnly={isRestricted}
+                    placeholder="R$ 0,00"
+                    className={
+                      isRestricted
+                        ? "h-10 border border-border bg-muted text-sm text-foreground"
+                        : "h-10"
+                    }
+                    value={form.value}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, value: e.target.value } : f))
+                    }
+                  />
+                </div>
+                <div />
+              </div>
+            ) : null}
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Status</Label>
+                <Label>
+                  Condição de Pagamento{" "}
+                  <span className="text-destructive">*</span>
+                </Label>
                 <Select
-                  value={form.status}
-                  onValueChange={(v) => setForm((f) => (f ? { ...f, status: v } : f))}
+                  value={form.payment_condition_id || undefined}
+                  onValueChange={(v) =>
+                    setForm((f) =>
+                      f ? { ...f, payment_condition_id: v } : f,
+                    )
+                  }
                 >
-                  <SelectTrigger>
-                    <SelectValue />
+                  <SelectTrigger className="h-10">
+                    <SelectValue placeholder="Selecione..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {CONTRACT_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {STATUS_LABELS[s]}
+                    {paymentConditions.map((pc) => (
+                      <SelectItem key={pc.id} value={pc.id}>
+                        {pc.code} — {pc.description}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Valor</Label>
+                <Label>Código ERP (preenchido pela integração)</Label>
                 <Input
-                  type="text"
-                  placeholder="R$ 0,00"
-                  value={form.value}
-                  onChange={(e) =>
-                    setForm((f) => (f ? { ...f, value: e.target.value } : f))
-                  }
+                  readOnly
+                  className="h-10 border border-border bg-muted text-sm text-foreground"
+                  value={form.erp_code}
+                  placeholder="—"
                 />
               </div>
             </div>
@@ -658,7 +1378,403 @@ export default function ContratoPage({
               />
             </div>
 
-            <Separator />
+            <div className="space-y-3 w-full">
+              <Label>Itens do contrato</Label>
+              {!isRestricted ? (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Busque no catálogo para adicionar linhas. Itens eliminados
+                    permanecem visíveis para histórico.
+                  </p>
+                  <div className="relative">
+                    <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
+                      <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <input
+                        type="text"
+                        placeholder="Buscar item no catálogo (código ou descrição)…"
+                        value={itemSearch}
+                        onChange={(e) => setItemSearch(e.target.value)}
+                        className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                      />
+                    </div>
+                    {itemSearch.trim().length >= 2 && (
+                      <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-popover shadow-md">
+                        {itemSearchLoading ? (
+                          <li className="px-3 py-2 text-sm text-muted-foreground">
+                            Buscando…
+                          </li>
+                        ) : itemResults.length === 0 ? (
+                          <li className="px-3 py-2 text-sm text-muted-foreground">
+                            Nenhum item encontrado
+                          </li>
+                        ) : (
+                          itemResults.map((row) => (
+                            <li key={row.id}>
+                              <button
+                                type="button"
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                                onClick={() => {
+                                  setEditItems((prev) => [
+                                    ...prev,
+                                    buildNewEditItem(
+                                      contract.id,
+                                      companyId!,
+                                      row,
+                                    ),
+                                  ])
+                                  setItemSearch("")
+                                  setItemResults([])
+                                }}
+                              >
+                                <span className="font-medium">{row.code}</span>{" "}
+                                <span className="text-muted-foreground">
+                                  {row.short_description}
+                                </span>
+                              </button>
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Itens eliminados permanecem visíveis para histórico. Novos itens
+                  não podem ser adicionados neste status.
+                </p>
+              )}
+
+              <div className="w-full rounded-md border border-border overflow-hidden">
+                <Table className="w-full text-sm">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Código</TableHead>
+                      <TableHead>Descrição</TableHead>
+                      <TableHead className="whitespace-nowrap">UN</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">
+                        Qtd contratada
+                      </TableHead>
+                      <TableHead className="text-right whitespace-nowrap">
+                        Preço unit.
+                      </TableHead>
+                      <TableHead className="text-right whitespace-nowrap">
+                        Prazo (dias)
+                      </TableHead>
+                      <TableHead className="whitespace-nowrap">Status</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">
+                        Ação
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {editItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={8}
+                          className="text-center text-sm text-muted-foreground py-8"
+                        >
+                          {isRestricted
+                            ? "Nenhum item."
+                            : "Nenhum item. Use a busca acima para adicionar do catálogo."}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      editItems.map((item) => {
+                        const rowTone = item.eliminated
+                          ? "opacity-50"
+                          : item._toEliminate
+                            ? "bg-red-50 dark:bg-red-950/25"
+                            : ""
+                        const strike =
+                          item.eliminated && !item._toEliminate
+                            ? "line-through opacity-60"
+                            : ""
+                        const canEditPrazo =
+                          !isRestricted &&
+                          !item.eliminated &&
+                          !item._toEliminate &&
+                          !item._isNew
+                        const canEditNew =
+                          !isRestricted &&
+                          item._isNew &&
+                          !item._toEliminate
+
+                        return (
+                          <TableRow key={item.id} className={rowTone}>
+                            <TableCell className={`font-mono text-xs ${strike}`}>
+                              {canEditNew ? (
+                                <Input
+                                  className="h-7 text-xs"
+                                  value={item.material_code}
+                                  onChange={(e) =>
+                                    setEditItems((prev) =>
+                                      prev.map((x) =>
+                                        x.id === item.id
+                                          ? {
+                                              ...x,
+                                              material_code: e.target.value,
+                                            }
+                                          : x,
+                                      ),
+                                    )
+                                  }
+                                />
+                              ) : (
+                                item.material_code
+                              )}
+                            </TableCell>
+                            <TableCell
+                              className={`max-w-[200px] text-sm ${strike}`}
+                            >
+                              {canEditNew ? (
+                                <Input
+                                  className="h-7 text-xs"
+                                  value={item.material_description}
+                                  onChange={(e) =>
+                                    setEditItems((prev) =>
+                                      prev.map((x) =>
+                                        x.id === item.id
+                                          ? {
+                                              ...x,
+                                              material_description:
+                                                e.target.value,
+                                            }
+                                          : x,
+                                      ),
+                                    )
+                                  }
+                                />
+                              ) : (
+                                <span className="line-clamp-2">
+                                  {item.material_description}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <span className="text-xs px-2">
+                                {item.unit_of_measure || "—"}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {canEditNew ? (
+                                <Input
+                                  className="h-7 w-20 text-xs text-right"
+                                  type="number"
+                                  min={0.0001}
+                                  step="any"
+                                  value={item.quantity_contracted}
+                                  onChange={(e) => {
+                                    const n = parseFloat(e.target.value)
+                                    setEditItems((prev) =>
+                                      prev.map((x) =>
+                                        x.id === item.id
+                                          ? {
+                                              ...x,
+                                              quantity_contracted:
+                                                Number.isFinite(n) && n > 0
+                                                  ? n
+                                                  : x.quantity_contracted,
+                                            }
+                                          : x,
+                                      ),
+                                    )
+                                  }}
+                                />
+                              ) : (
+                                <span className="tabular-nums">
+                                  {item.quantity_contracted}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {canEditNew ? (
+                                <Input
+                                  className="h-7 w-24 text-xs text-right"
+                                  type="number"
+                                  min={0}
+                                  step="any"
+                                  value={item.unit_price}
+                                  onChange={(e) => {
+                                    const n = parseFloat(e.target.value)
+                                    setEditItems((prev) =>
+                                      prev.map((x) =>
+                                        x.id === item.id
+                                          ? {
+                                              ...x,
+                                              unit_price:
+                                                Number.isFinite(n) && n >= 0
+                                                  ? n
+                                                  : x.unit_price,
+                                            }
+                                          : x,
+                                      ),
+                                    )
+                                  }}
+                                />
+                              ) : (
+                                <span className="tabular-nums whitespace-nowrap">
+                                  {money.format(item.unit_price)}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {canEditPrazo || canEditNew ? (
+                                <Input
+                                  className="h-7 w-20 text-xs text-right"
+                                  type="number"
+                                  min={0}
+                                  value={
+                                    item.delivery_days == null
+                                      ? ""
+                                      : item.delivery_days
+                                  }
+                                  onChange={(e) => {
+                                    const v = e.target.value
+                                    const n =
+                                      v === ""
+                                        ? null
+                                        : parseInt(v, 10)
+                                    setEditItems((prev) =>
+                                      prev.map((x) =>
+                                        x.id === item.id
+                                          ? {
+                                              ...x,
+                                              delivery_days:
+                                                v === ""
+                                                  ? null
+                                                  : Number.isNaN(n)
+                                                    ? x.delivery_days
+                                                    : n,
+                                            }
+                                          : x,
+                                      ),
+                                    )
+                                  }}
+                                />
+                              ) : (
+                                <span className="tabular-nums text-muted-foreground">
+                                  {item.delivery_days ?? "—"}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {item.eliminated && !item._toEliminate ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-destructive border-destructive text-xs"
+                                >
+                                  Eliminado
+                                </Badge>
+                              ) : item._toEliminate ? (
+                                <Badge
+                                  variant="outline"
+                                  className="text-amber-800 border-amber-600 text-xs dark:text-amber-200"
+                                >
+                                  A eliminar
+                                </Badge>
+                              ) : item._isNew ? (
+                                <Badge variant="secondary" className="text-xs">
+                                  Novo
+                                </Badge>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">
+                                  —
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex flex-col items-end gap-1">
+                                {item.eliminated && !item._toEliminate ? null : item._toEliminate ? (
+                                  <>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 text-xs"
+                                      onClick={() =>
+                                        setEditItems((prev) =>
+                                          prev.map((x) =>
+                                            x.id === item.id
+                                              ? {
+                                                  ...x,
+                                                  _toEliminate: false,
+                                                  _eliminateReason: undefined,
+                                                }
+                                              : x,
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      Desfazer
+                                    </Button>
+                                    <Input
+                                      className="h-7 text-xs w-40"
+                                      placeholder="Motivo (opcional)"
+                                      value={item._eliminateReason ?? ""}
+                                      onChange={(e) =>
+                                        setEditItems((prev) =>
+                                          prev.map((x) =>
+                                            x.id === item.id
+                                              ? {
+                                                  ...x,
+                                                  _eliminateReason:
+                                                    e.target.value,
+                                                }
+                                              : x,
+                                          ),
+                                        )
+                                      }
+                                    />
+                                  </>
+                                ) : item._isNew ? (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs text-destructive"
+                                    onClick={() =>
+                                      setEditItems((prev) =>
+                                        prev.filter((x) => x.id !== item.id),
+                                      )
+                                    }
+                                  >
+                                    Remover
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 text-xs text-destructive border-destructive"
+                                    onClick={() =>
+                                      setEditItems((prev) =>
+                                        prev.map((x) =>
+                                          x.id === item.id
+                                            ? {
+                                                ...x,
+                                                _toEliminate: true,
+                                                _eliminateReason:
+                                                  x._eliminateReason ?? "",
+                                              }
+                                            : x,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    Eliminar
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
 
             <div>
               <p className="text-sm font-medium mb-2">Documento (PDF)</p>
@@ -701,6 +1817,36 @@ export default function ContratoPage({
           </CardContent>
         </Card>
       )}
+
+      <AlertDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) =>
+          setConfirmDialog((prev) => ({ ...prev, open }))
+        }
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{confirmDialog.title}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDialog.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel type="button">Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                const fn = confirmDialog.onConfirm
+                setConfirmDialog((prev) => ({ ...prev, open: false }))
+                void Promise.resolve(fn())
+              }}
+            >
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -2,30 +2,17 @@ import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import {
-  CONTRACT_STATUSES,
-  CONTRACT_TYPES,
-  type ContractStatus,
-  type ContractType,
   contractFromRow,
+  type ContractKind,
+  isContractKind,
+  isContractStatus,
+  isContractType,
 } from "@/types/contracts"
 
 const CONTRACT_SELECT = `
-  id,
-  company_id,
-  supplier_id,
-  code,
-  title,
-  type,
-  status,
-  start_date,
-  end_date,
-  value,
-  file_url,
-  notes,
-  created_by,
-  created_at,
-  updated_at,
-  suppliers!inner ( name, code )
+  *,
+  suppliers!inner(name, code),
+  payment_conditions(code, description)
 `
 
 async function getAuthedContext() {
@@ -98,7 +85,7 @@ export async function GET(request: Request) {
       .eq("company_id", ctx.companyId)
       .order("end_date", { ascending: true })
 
-    if (statusFilter && CONTRACT_STATUSES.includes(statusFilter as ContractStatus)) {
+    if (statusFilter && isContractStatus(statusFilter)) {
       query = query.eq("status", statusFilter)
     }
 
@@ -137,7 +124,6 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as Record<string, unknown>
     const supplier_id = body.supplier_id
-    const code = body.code
     const title = body.title
     const type = body.type
     const status = body.status
@@ -146,7 +132,6 @@ export async function POST(request: Request) {
 
     if (
       typeof supplier_id !== "string" ||
-      typeof code !== "string" ||
       typeof title !== "string" ||
       typeof type !== "string" ||
       typeof status !== "string" ||
@@ -156,12 +141,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid body" }, { status: 400 })
     }
 
-    if (!CONTRACT_TYPES.includes(type as ContractType)) {
+    if (!isContractType(type)) {
       return NextResponse.json({ error: "Invalid type" }, { status: 400 })
     }
-    if (!CONTRACT_STATUSES.includes(status as ContractStatus)) {
+    if (!isContractStatus(status)) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 })
     }
+
+    let contract_kind: ContractKind = "por_valor"
+    if (body.contract_kind !== undefined && body.contract_kind !== null) {
+      if (typeof body.contract_kind !== "string" || !isContractKind(body.contract_kind)) {
+        return NextResponse.json({ error: "Invalid contract_kind" }, { status: 400 })
+      }
+      contract_kind = body.contract_kind
+    }
+
+    const { data: codeData, error: codeRpcError } = await ctx.supabase.rpc(
+      "generate_contract_code",
+      { p_company_id: ctx.companyId },
+    )
+    if (codeRpcError || typeof codeData !== "string" || !codeData) {
+      return NextResponse.json(
+        { error: codeRpcError?.message ?? "Falha ao gerar código do contrato." },
+        { status: 500 },
+      )
+    }
+    const generatedCode = codeData
 
     const startNorm = start_date.slice(0, 10)
     const endNorm = end_date.slice(0, 10)
@@ -181,20 +186,54 @@ export async function POST(request: Request) {
         ? null
         : String(body.notes)
 
+    let payment_condition_id: string | null = null
+    if (body.payment_condition_id !== undefined && body.payment_condition_id !== null) {
+      if (typeof body.payment_condition_id !== "string") {
+        return NextResponse.json(
+          { error: "Invalid payment_condition_id" },
+          { status: 400 },
+        )
+      }
+      payment_condition_id = body.payment_condition_id
+    }
+
+    const contract_terms =
+      body.contract_terms === undefined || body.contract_terms === null
+        ? null
+        : String(body.contract_terms)
+
+    const erp_code =
+      body.erp_code === undefined || body.erp_code === null
+        ? null
+        : String(body.erp_code)
+
+    let quotation_id: string | null = null
+    if (body.quotation_id !== undefined && body.quotation_id !== null) {
+      if (typeof body.quotation_id !== "string") {
+        return NextResponse.json({ error: "Invalid quotation_id" }, { status: 400 })
+      }
+      quotation_id = body.quotation_id
+    }
+
     const { data: inserted, error } = await ctx.supabase
       .from("contracts")
       .insert({
         company_id: ctx.companyId,
         supplier_id,
-        code,
+        code: generatedCode,
         title,
         type,
+        contract_kind,
         status,
         start_date: startNorm,
         end_date: endNorm,
         value,
         notes,
         created_by: ctx.userId,
+        payment_condition_id,
+        contract_terms,
+        erp_code,
+        quotation_id,
       })
       .select(CONTRACT_SELECT)
       .single()

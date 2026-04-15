@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   ChevronDown,
   ChevronLeft,
+  FileSignature,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -39,6 +40,7 @@ const navItems = [
   { href: "/fornecedor", label: "Dashboard", icon: LayoutDashboard },
   { href: "/fornecedor/cotacoes", label: "Cotações", icon: FileText },
   { href: "/fornecedor/pedidos", label: "Pedidos", icon: ShoppingCart },
+  { href: "/fornecedor/contratos", label: "Contratos", icon: FileSignature },
 ] as const
 
 export interface FornecedorPortalShellProps {

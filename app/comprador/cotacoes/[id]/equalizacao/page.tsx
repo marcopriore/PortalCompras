@@ -22,6 +22,7 @@ import {
   LockKeyhole,
   RefreshCw,
   Loader2,
+  FileSignature,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -198,6 +199,8 @@ type Quotation = {
   response_deadline?: string | null
   created_at?: string | null
 }
+
+type PaymentConditionRow = { id: string; code: string; description: string }
 
 /** Convites na cotação — ordem das colunas na equalização segue o array retornado pelo banco. */
 type QuotationSupplier = {
@@ -434,7 +437,6 @@ export default function EqualizacaoPage({
   const router = useRouter()
   const { companyId, userId, loading: userLoading, profileType } = useUser()
   const { hasFeature, hasPermission } = usePermissions()
-  void hasFeature
 
   // Next.js 16: params é Promise
   const { id } = React.use(params)
@@ -517,6 +519,9 @@ export default function EqualizacaoPage({
   const [countdownTick, setCountdownTick] = React.useState(0)
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
+  const [paymentConditions, setPaymentConditions] = React.useState<
+    PaymentConditionRow[]
+  >([])
 
   const equalizacaoSupplierIds = React.useMemo(
     () =>
@@ -859,6 +864,25 @@ export default function EqualizacaoPage({
     }
     void fetchEqualizationData({ showLoading })
   }, [fetchEqualizationData, userLoading, companyId])
+
+  React.useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      const supabase = createClient()
+      const { data: pcData } = await supabase
+        .from("payment_conditions")
+        .select("id, code, description")
+        .eq("company_id", companyId)
+        .eq("active", true)
+        .order("code")
+      if (cancelled) return
+      setPaymentConditions((pcData ?? []) as PaymentConditionRow[])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [companyId])
 
   const supplierRespondStats = React.useMemo(() => {
     const totalSuppliers = proposals.length
@@ -1340,6 +1364,104 @@ export default function EqualizacaoPage({
 
   const handleClearAllSelections = () => {
     setItemSelections({})
+  }
+
+  function handleGerarContrato() {
+    if (!selectedRoundId) {
+      toast.error("Selecione uma rodada.")
+      return
+    }
+
+    const selectedEntries = Object.entries(itemSelections).filter(
+      (e): e is [string, string] => e[1] !== null && e[1] !== undefined,
+    )
+    if (selectedEntries.length === 0) {
+      toast.error("Selecione ao menos um item.")
+      return
+    }
+
+    type SupplierGroup = {
+      supplierId: string
+      supplierName: string
+      items: { quotationItemId: string; proposalId: string }[]
+    }
+    const bySupplier = new Map<string, SupplierGroup>()
+
+    for (const [quotationItemId, proposalId] of selectedEntries) {
+      const proposal = proposals.find((p) => p.id === proposalId)
+      if (!proposal?.supplier_id) continue
+      const key = proposal.supplier_id
+      if (!bySupplier.has(key)) {
+        bySupplier.set(key, {
+          supplierId: key,
+          supplierName: proposal.supplier_name,
+          items: [],
+        })
+      }
+      bySupplier.get(key)!.items.push({ quotationItemId, proposalId })
+    }
+
+    const suppliers = Array.from(bySupplier.values())
+    if (suppliers.length === 0) {
+      toast.error(
+        "Não foi possível identificar o fornecedor dos itens selecionados.",
+      )
+      return
+    }
+
+    const mainSupplier = [...suppliers].sort(
+      (a, b) => b.items.length - a.items.length,
+    )[0]
+
+    const contractItemsData = mainSupplier.items
+      .map(({ quotationItemId, proposalId }) => {
+        const qi = quotationItems.find((q) => q.id === quotationItemId)
+        const proposal = proposals.find((p) => p.id === proposalId)
+        const proposalItem = proposal
+          ? proposalItemsForSelectedRound(proposal, selectedRoundId).find(
+              (pi) => pi.quotation_item_id === quotationItemId,
+            )
+          : null
+
+        return {
+          material_code: qi?.material_code ?? "",
+          material_description: qi?.material_description ?? "",
+          unit_of_measure: qi?.unit_of_measure ?? "",
+          quantity_contracted: String(qi?.quantity ?? 1),
+          unit_price: String(proposalItem?.unit_price ?? 0),
+          delivery_days:
+            proposalItem?.delivery_days != null
+              ? String(proposalItem.delivery_days)
+              : "",
+          notes: "",
+        }
+      })
+      .filter((i) => i.material_code)
+
+    if (contractItemsData.length === 0) {
+      toast.error("Nenhum item válido para o contrato.")
+      return
+    }
+
+    const pcCode = quotation?.payment_condition ?? ""
+    const matchedPC = paymentConditions.find(
+      (pc) => pc.code.toLowerCase() === pcCode.trim().toLowerCase(),
+    )
+    const payment_condition_id = matchedPC?.id ?? null
+
+    const payload = {
+      quotation_id: id,
+      quotation_code: quotation?.code ?? "",
+      supplier_id: mainSupplier.supplierId,
+      supplier_name: mainSupplier.supplierName,
+      category: quotation?.category ?? "",
+      payment_condition_id,
+      items: contractItemsData,
+      multi_supplier: suppliers.length > 1,
+    }
+
+    sessionStorage.setItem("valore:novo-contrato-prefill", JSON.stringify(payload))
+    router.push("/comprador/contratos/novo?from=cotacao")
   }
 
   const handleSaveTargetPrice = React.useCallback(
@@ -2525,6 +2647,18 @@ export default function EqualizacaoPage({
                           </p>
                         </div>
                         <div className="flex-shrink-0 flex items-center gap-2">
+                          {hasFeature("contracts") && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleGerarContrato}
+                              disabled={!hasSelection}
+                              className="gap-1.5"
+                            >
+                              <FileSignature className="h-4 w-4 text-violet-500" />
+                              Gerar Contrato
+                            </Button>
+                          )}
                           {!hasPermission("order.create") ? (
                             <Tooltip>
                               <TooltipTrigger asChild>

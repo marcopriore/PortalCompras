@@ -72,6 +72,10 @@ type RequisitionOption = {
   }[]
 }
 
+type PaymentConditionRow = { id: string; code: string; description: string }
+
+const PAYMENT_NONE = "__none__"
+
 const SEARCH_DEBOUNCE_MS = 300
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -133,6 +137,10 @@ export default function EditarCotacaoPage({
   const [deadline, setDeadline] = React.useState<Date | undefined>()
   const [deadlineOpen, setDeadlineOpen] = React.useState(false)
   const [category, setCategory] = React.useState<string | undefined>()
+  const [paymentCondition, setPaymentCondition] = React.useState("")
+  const [paymentConditions, setPaymentConditions] = React.useState<
+    PaymentConditionRow[]
+  >([])
   const [itemSearch, setItemSearch] = React.useState("")
   const [itemResults, setItemResults] = React.useState<QuotationItem[]>([])
   const [itemSearchLoading, setItemSearchLoading] = React.useState(false)
@@ -156,6 +164,25 @@ export default function EditarCotacaoPage({
 
   const debouncedItemSearch = useDebounce(itemSearch, SEARCH_DEBOUNCE_MS)
   const debouncedSupplierSearch = useDebounce(supplierSearch, SEARCH_DEBOUNCE_MS)
+
+  React.useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from("payment_conditions")
+        .select("id, code, description")
+        .eq("company_id", companyId)
+        .eq("active", true)
+        .order("code")
+      if (cancelled || error) return
+      setPaymentConditions((data ?? []) as PaymentConditionRow[])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [companyId])
 
   React.useEffect(() => {
     if (!companyId || debouncedItemSearch.trim().length < 2) {
@@ -241,7 +268,9 @@ export default function EditarCotacaoPage({
 
         const { data: quotationData, error: quotationError } = await supabase
           .from("quotations")
-          .select("id, code, description, status, category, response_deadline")
+          .select(
+            "id, code, description, status, category, response_deadline, payment_condition",
+          )
           .eq("id", id)
           .eq("company_id", companyId)
           .single()
@@ -261,6 +290,9 @@ export default function EditarCotacaoPage({
         setQuotationCode(quotationData.code as string)
         setDescription((quotationData.description as string) ?? "")
         setCategory((quotationData.category as string) ?? undefined)
+        setPaymentCondition(
+          (quotationData.payment_condition as string | null) ?? "",
+        )
         if (quotationData.response_deadline) {
           setDeadline(new Date(quotationData.response_deadline as string))
         }
@@ -498,6 +530,7 @@ export default function EditarCotacaoPage({
           response_deadline: deadline
             ? deadline.toISOString().split("T")[0]
             : null,
+          payment_condition: paymentCondition.trim() || null,
         })
         .eq("id", id)
         .eq("company_id", companyId!)
@@ -691,7 +724,7 @@ export default function EditarCotacaoPage({
               )}
             </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1.5">
               <Label>Data de Criação</Label>
               <Input disabled value={today} className="bg-muted/40" />
@@ -753,6 +786,33 @@ export default function EditarCotacaoPage({
                       </SelectItem>
                     ),
                   )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Condição de Pagamento</Label>
+              <Select
+                value={paymentCondition ? paymentCondition : PAYMENT_NONE}
+                onValueChange={(v) =>
+                  setPaymentCondition(v === PAYMENT_NONE ? "" : v)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={PAYMENT_NONE}>Selecione...</SelectItem>
+                  {paymentCondition.trim() &&
+                    !paymentConditions.some((p) => p.code === paymentCondition) && (
+                      <SelectItem value={paymentCondition}>
+                        {paymentCondition}
+                      </SelectItem>
+                    )}
+                  {paymentConditions.map((pc) => (
+                    <SelectItem key={pc.id} value={pc.code}>
+                      {`${pc.code} — ${pc.description}`}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

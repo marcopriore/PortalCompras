@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { format, differenceInDays, parseISO, startOfDay } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { useUser } from "@/lib/hooks/useUser"
@@ -32,14 +33,6 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
   Plus,
   FileText,
   AlertTriangle,
@@ -47,28 +40,20 @@ import {
   Clock,
   XCircle,
   Search,
-  Upload,
   Eye,
   Pencil,
 } from "lucide-react"
 import type { Contract } from "@/types/contracts"
-import { CONTRACT_TYPES } from "@/types/contracts"
+import { CONTRACT_KINDS } from "@/types/contracts"
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
 })
 
-const TYPE_LABELS: Record<Contract["type"], string> = {
-  fornecimento: "Fornecimento",
-  servico: "Serviço",
-  sla: "SLA",
-  nda: "NDA",
-  outro: "Outro",
-}
-
 const STATUS_LABELS: Record<Contract["status"], string> = {
   draft: "Rascunho",
+  pending_acceptance: "Aguardando Aceite",
   active: "Ativo",
   expired: "Expirado",
   cancelled: "Cancelado",
@@ -78,6 +63,8 @@ function statusBadgeClass(status: Contract["status"]): string {
   switch (status) {
     case "draft":
       return "bg-muted text-muted-foreground"
+    case "pending_acceptance":
+      return "bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200"
     case "active":
       return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
     case "expired":
@@ -98,6 +85,7 @@ function isExpiringSoon(c: Contract): boolean {
 }
 
 export default function ContratosPage() {
+  const router = useRouter()
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { hasFeature, loading: permissionsLoading, features } = usePermissions()
 
@@ -105,8 +93,8 @@ export default function ContratosPage() {
   const [loading, setLoading] = React.useState(true)
   const [search, setSearch] = React.useState("")
   const [filterStatus, setFilterStatus] = React.useState<string>("all")
-  const [filterType, setFilterType] = React.useState<string>("all")
-  const [createOpen, setCreateOpen] = React.useState(false)
+  const [filterContractKind, setFilterContractKind] =
+    React.useState<string>("all")
 
   const canAccess = hasFeature("contracts") || isSuperAdmin
 
@@ -144,7 +132,11 @@ export default function ContratosPage() {
   const filtered = React.useMemo(() => {
     return contracts
       .filter((c) => filterStatus === "all" || c.status === filterStatus)
-      .filter((c) => filterType === "all" || c.type === filterType)
+      .filter(
+        (c) =>
+          filterContractKind === "all" ||
+          c.contract_kind === filterContractKind,
+      )
       .filter((c) => {
         if (!search.trim()) return true
         const s = search.toLowerCase()
@@ -154,7 +146,7 @@ export default function ContratosPage() {
           c.supplier_name.toLowerCase().includes(s)
         )
       })
-  }, [contracts, filterStatus, filterType, search])
+  }, [contracts, filterStatus, filterContractKind, search])
 
   if (!userLoading && !permissionsLoading && !canAccess) {
     return (
@@ -174,7 +166,7 @@ export default function ContratosPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 w-full">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Contratos</h1>
         <p className="text-sm text-muted-foreground">
@@ -246,20 +238,21 @@ export default function ContratosPage() {
           <SelectContent>
             <SelectItem value="all">Todos os status</SelectItem>
             <SelectItem value="draft">Rascunho</SelectItem>
+            <SelectItem value="pending_acceptance">Aguardando Aceite</SelectItem>
             <SelectItem value="active">Ativo</SelectItem>
             <SelectItem value="expired">Expirado</SelectItem>
             <SelectItem value="cancelled">Cancelado</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={filterType} onValueChange={setFilterType}>
-          <SelectTrigger className="w-full sm:w-[200px]">
-            <SelectValue placeholder="Tipo" />
+        <Select value={filterContractKind} onValueChange={setFilterContractKind}>
+          <SelectTrigger className="w-full sm:w-[220px]">
+            <SelectValue placeholder="Tipo de contrato" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos os tipos</SelectItem>
-            {CONTRACT_TYPES.map((t) => (
-              <SelectItem key={t} value={t}>
-                {TYPE_LABELS[t]}
+            <SelectItem value="all">Todos os tipos de contrato</SelectItem>
+            {CONTRACT_KINDS.map((k) => (
+              <SelectItem key={k.value} value={k.value}>
+                {k.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -267,7 +260,7 @@ export default function ContratosPage() {
         <Button
           type="button"
           className="gap-2 shrink-0"
-          onClick={() => setCreateOpen(true)}
+          onClick={() => router.push("/comprador/contratos/novo")}
         >
           <Plus className="h-4 w-4" />
           Novo Contrato
@@ -275,31 +268,6 @@ export default function ContratosPage() {
       </div>
 
       <Separator />
-
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Upload className="h-5 w-5 text-muted-foreground" />
-              Novo contrato
-            </DialogTitle>
-            <DialogDescription>
-              Cadastre um novo contrato com fornecedor, vigência e valores. Você
-              poderá anexar o PDF após salvar.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-              Fechar
-            </Button>
-            <Button type="button" asChild>
-              <Link href="/comprador/contratos/novo" onClick={() => setCreateOpen(false)}>
-                Continuar
-              </Link>
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {loading ? (
         <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
@@ -312,7 +280,7 @@ export default function ContratosPage() {
           <p className="text-lg font-medium text-foreground">
             Nenhum contrato cadastrado
           </p>
-          <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+          <p className="text-sm text-muted-foreground mt-1 w-full">
             Clique em Novo Contrato para começar
           </p>
         </div>
@@ -324,7 +292,7 @@ export default function ContratosPage() {
                 <TableHead>Código</TableHead>
                 <TableHead>Título</TableHead>
                 <TableHead>Fornecedor</TableHead>
-                <TableHead>Tipo</TableHead>
+                <TableHead>Tipo de Contrato</TableHead>
                 <TableHead>Vigência</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
                 <TableHead>Status</TableHead>
@@ -345,13 +313,20 @@ export default function ContratosPage() {
                   <TableCell className="max-w-[180px] truncate">
                     {c.supplier_name}
                   </TableCell>
-                  <TableCell>{TYPE_LABELS[c.type]}</TableCell>
+                  <TableCell>
+                    {CONTRACT_KINDS.find((k) => k.value === c.contract_kind)
+                      ?.label ?? c.contract_kind}
+                  </TableCell>
                   <TableCell className="whitespace-nowrap text-sm">
                     {format(parseISO(c.start_date), "dd/MM/yyyy", { locale: ptBR })}{" "}
                     – {format(parseISO(c.end_date), "dd/MM/yyyy", { locale: ptBR })}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {c.value != null ? money.format(c.value) : "—"}
+                    {c.total_value != null
+                      ? money.format(c.total_value)
+                      : c.value != null
+                        ? money.format(c.value)
+                        : "—"}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -374,7 +349,7 @@ export default function ContratosPage() {
                         </Link>
                       </Button>
                       <Button variant="ghost" size="icon" asChild title="Editar">
-                        <Link href={`/comprador/contratos/${c.id}`}>
+                        <Link href={`/comprador/contratos/${c.id}?edit=true`}>
                           <Pencil className="h-4 w-4" />
                         </Link>
                       </Button>

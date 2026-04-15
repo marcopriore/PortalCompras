@@ -67,6 +67,10 @@ type RequisitionOption = {
   }[]
 }
 
+type PaymentConditionRow = { id: string; code: string; description: string }
+
+const PAYMENT_NONE = '__none__'
+
 const SUPPLIER_SEARCH_DEBOUNCE_MS = 300
 const ITEM_SEARCH_DEBOUNCE_MS = 300
 
@@ -126,6 +130,8 @@ function NovaCotacaoContent() {
   const [deadline, setDeadline] = useState<Date | undefined>()
   const [deadlineOpen, setDeadlineOpen] = useState(false)
   const [category, setCategory] = useState<string | undefined>()
+  const [paymentCondition, setPaymentCondition] = useState('')
+  const [paymentConditions, setPaymentConditions] = useState<PaymentConditionRow[]>([])
   const [file, setFile] = useState<File | null>(null)
   const [itemSearch, setItemSearch] = useState('')
   const [itemResults, setItemResults] = useState<QuotationItem[]>([])
@@ -150,6 +156,25 @@ function NovaCotacaoContent() {
   const debouncedSupplierSearch = useDebounce(supplierSearch, SUPPLIER_SEARCH_DEBOUNCE_MS)
 
   const today = useMemo(() => format(new Date(), 'dd/MM/yyyy', { locale: ptBR }), [])
+
+  useEffect(() => {
+    if (!companyId) return
+    let cancelled = false
+    ;(async () => {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('payment_conditions')
+        .select('id, code, description')
+        .eq('company_id', companyId)
+        .eq('active', true)
+        .order('code')
+      if (cancelled || error) return
+      setPaymentConditions((data ?? []) as PaymentConditionRow[])
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [companyId])
 
   useEffect(() => {
     if (!requisitionId || !companyId) return
@@ -409,12 +434,12 @@ function NovaCotacaoContent() {
           status,
           category: category ?? null,
           response_deadline: deadline ? deadline.toISOString().split('T')[0] : null,
+          payment_condition: paymentCondition.trim() || null,
         })
         .select('id, code, status')
         .single()
 
       if (error) {
-        console.error('Erro quotations detalhado:', JSON.stringify(error))
         toast.error('Erro ao salvar cotação. Tente novamente.')
         setLoading(false)
         return
@@ -462,27 +487,19 @@ function NovaCotacaoContent() {
         )
 
         if (suppliersError) {
-          console.error('Erro suppliers:', JSON.stringify(suppliersError))
           toast.error('Erro ao salvar fornecedores da cotação. Tente novamente.')
           return
         }
       }
 
       if (requisitionId) {
-        const { error: reqUpdateError } = await supabase
+        await supabase
           .from('requisitions')
           .update({
             status: 'in_quotation',
             quotation_id: quotationId,
           })
           .eq('id', requisitionId)
-
-        if (reqUpdateError) {
-          console.error(
-            'Erro ao atualizar requisicao para in_quotation:',
-            JSON.stringify(reqUpdateError),
-          )
-        }
       }
 
       await logAudit({
@@ -606,7 +623,7 @@ function NovaCotacaoContent() {
               {errors.description && <p className="text-xs text-destructive">Campo obrigatório</p>}
             </div>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="space-y-1.5">
               <Label>Data de Criação</Label>
               <Input disabled value={today} className="bg-muted/40" />
@@ -642,6 +659,29 @@ function NovaCotacaoContent() {
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
                   {['MRO', 'Matéria-Prima', 'Serviços', 'TI', 'Outros'].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Condição de Pagamento</Label>
+              <Select
+                value={paymentCondition ? paymentCondition : PAYMENT_NONE}
+                onValueChange={(v) => setPaymentCondition(v === PAYMENT_NONE ? '' : v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={PAYMENT_NONE}>Selecione...</SelectItem>
+                  {paymentCondition.trim() &&
+                    !paymentConditions.some((p) => p.code === paymentCondition) && (
+                      <SelectItem value={paymentCondition}>{paymentCondition}</SelectItem>
+                    )}
+                  {paymentConditions.map((pc) => (
+                    <SelectItem key={pc.id} value={pc.code}>
+                      {`${pc.code} — ${pc.description}`}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

@@ -2,30 +2,17 @@ import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import {
-  CONTRACT_STATUSES,
-  CONTRACT_TYPES,
-  type ContractStatus,
-  type ContractType,
   contractFromRow,
+  isContractKind,
+  isContractStatus,
+  isContractType,
 } from "@/types/contracts"
 
 const CONTRACT_SELECT = `
-  id,
-  company_id,
-  supplier_id,
-  code,
-  title,
-  type,
-  status,
-  start_date,
-  end_date,
-  value,
-  file_url,
-  notes,
-  created_by,
-  created_at,
-  updated_at,
-  suppliers!inner ( name, code )
+  *,
+  suppliers!inner(name, code),
+  payment_conditions(code, description),
+  contract_items(*)
 `
 
 async function getAuthedContext() {
@@ -131,19 +118,22 @@ export async function PATCH(request: Request, context: RouteCtx) {
       patch.title = body.title
     }
     if (body.type !== undefined) {
-      if (
-        typeof body.type !== "string" ||
-        !CONTRACT_TYPES.includes(body.type as ContractType)
-      ) {
+      if (typeof body.type !== "string" || !isContractType(body.type)) {
         return NextResponse.json({ error: "Invalid type" }, { status: 400 })
       }
       patch.type = body.type
     }
-    if (body.status !== undefined) {
+    if (body.contract_kind !== undefined) {
       if (
-        typeof body.status !== "string" ||
-        !CONTRACT_STATUSES.includes(body.status as ContractStatus)
+        typeof body.contract_kind !== "string" ||
+        !isContractKind(body.contract_kind)
       ) {
+        return NextResponse.json({ error: "Invalid contract_kind" }, { status: 400 })
+      }
+      patch.contract_kind = body.contract_kind
+    }
+    if (body.status !== undefined) {
+      if (typeof body.status !== "string" || !isContractStatus(body.status)) {
         return NextResponse.json({ error: "Invalid status" }, { status: 400 })
       }
       patch.status = body.status
@@ -179,6 +169,27 @@ export async function PATCH(request: Request, context: RouteCtx) {
     if (body.file_url !== undefined) {
       patch.file_url =
         body.file_url === null ? null : String(body.file_url)
+    }
+    if (body.payment_condition_id !== undefined) {
+      if (
+        body.payment_condition_id !== null &&
+        typeof body.payment_condition_id !== "string"
+      ) {
+        return NextResponse.json(
+          { error: "Invalid payment_condition_id" },
+          { status: 400 },
+        )
+      }
+      patch.payment_condition_id =
+        body.payment_condition_id === null ? null : body.payment_condition_id
+    }
+    if (body.contract_terms !== undefined) {
+      patch.contract_terms =
+        body.contract_terms === null ? null : String(body.contract_terms)
+    }
+    if (body.erp_code !== undefined) {
+      patch.erp_code =
+        body.erp_code === null ? null : String(body.erp_code)
     }
 
     if (Object.keys(patch).length === 0) {
