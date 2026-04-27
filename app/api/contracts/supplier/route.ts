@@ -75,6 +75,10 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    if ((rows ?? []).some((row) => row.supplier_id !== ctx.supplierId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
     const contracts = (rows ?? []).map((row) => contractFromRow(row))
 
     return NextResponse.json({ contracts })

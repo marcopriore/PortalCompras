@@ -1,0 +1,8 @@
+ALTER TABLE contracts
+  ALTER COLUMN supplier_id DROP NOT NULL;
+
+ALTER TABLE contracts
+  ALTER COLUMN start_date DROP NOT NULL;
+
+ALTER TABLE contracts
+  ALTER COLUMN end_date DROP NOT NULL;

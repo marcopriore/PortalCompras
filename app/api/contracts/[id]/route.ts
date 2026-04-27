@@ -10,7 +10,7 @@ import {
 
 const CONTRACT_SELECT = `
   *,
-  suppliers!inner(name, code),
+  suppliers(name, code),
   payment_conditions(code, description),
   contract_items(*)
 `
@@ -46,7 +46,7 @@ async function getAuthedContext() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_id")
+    .select("company_id, is_superadmin")
     .eq("id", user.id)
     .single()
 
@@ -54,7 +54,17 @@ async function getAuthedContext() {
     return { error: NextResponse.json({ error: "Company not found" }, { status: 404 }) }
   }
 
-  return { supabase, companyId: profile.company_id as string }
+  const isSuperAdmin = Boolean(profile.is_superadmin)
+  let companyId = profile.company_id as string
+
+  if (isSuperAdmin) {
+    const selectedCookie = cookieStore.get("selected_company_id")
+    if (selectedCookie?.value) {
+      companyId = decodeURIComponent(selectedCookie.value)
+    }
+  }
+
+  return { supabase, companyId, isSuperAdmin }
 }
 
 type RouteCtx = { params: Promise<{ id: string }> }

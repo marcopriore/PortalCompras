@@ -7,6 +7,8 @@ import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { useTenant } from "@/contexts/tenant-context"
+import { ContractImportExcelDialog } from "@/components/comprador/contract-import-excel-dialog"
 import {
   Card,
   CardContent,
@@ -25,17 +27,17 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { ArrowLeft, FileText, Search, Trash2, Upload } from "lucide-react"
+  ArrowLeft,
+  FileText,
+  Search,
+  Trash2,
+  Upload,
+} from "lucide-react"
 import {
   CONTRACT_KINDS,
   type Contract,
   type ContractKind,
+  type ContractItemForm,
   type ContractStatus,
 } from "@/types/contracts"
 
@@ -50,19 +52,6 @@ type FormState = {
   notes: string
   payment_condition_id: string
   erp_code: string
-}
-
-interface ContractItemForm {
-  material_code: string
-  material_description: string
-  unit_of_measure: string
-  quantity_contracted: string
-  unit_price: string
-  delivery_days: string
-  notes: string
-  item_id?: string
-  /** Itens vindos do prefill da cotação (sessionStorage). */
-  _fromQuotation?: boolean
 }
 
 type CatalogItemRow = {
@@ -234,64 +223,13 @@ function buildContractItemsPayload(rows: ContractItemForm[]): {
   return { items }
 }
 
-function parseExcelRowsToItems(ws: import("exceljs").Worksheet): {
-  items: ContractItemForm[]
-  errors: string[]
-} {
-  const items: ContractItemForm[] = []
-  const errors: string[] = []
-  let rowNum = 0
-  ws.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return
-    rowNum = rowNumber
-    const code = String(row.getCell(1).value ?? "").trim()
-    const description = String(row.getCell(2).value ?? "").trim()
-    const unit = String(row.getCell(3).value ?? "").trim()
-    const qty = String(row.getCell(4).value ?? "").trim()
-    const price = String(row.getCell(5).value ?? "").trim()
-    const delivery_days = String(row.getCell(6).value ?? "").trim()
-    if (!code && !description && !qty && !price) return
-    if (!code || !description) {
-      errors.push(`Linha ${rowNumber}: código e descrição são obrigatórios.`)
-      return
-    }
-    const q = parseQty(qty)
-    const p = parsePrice(price)
-    if (Number.isNaN(q) || q <= 0) {
-      errors.push(`Linha ${rowNumber}: quantidade inválida.`)
-      return
-    }
-    if (Number.isNaN(p) || p < 0) {
-      errors.push(`Linha ${rowNumber}: preço unitário inválido.`)
-      return
-    }
-    if (delivery_days) {
-      const d = parseInt(delivery_days, 10)
-      if (Number.isNaN(d) || d < 0) {
-        errors.push(`Linha ${rowNumber}: prazo (dias) inválido.`)
-        return
-      }
-    }
-    items.push({
-      material_code: code,
-      material_description: description,
-      unit_of_measure: unit,
-      quantity_contracted: qty,
-      unit_price: price,
-      delivery_days,
-      notes: "",
-    })
-  })
-  void rowNum
-  return { items, errors }
-}
-
 export default function NovoContratoPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const fromCotacao = searchParams.get("from") === "cotacao"
 
-  const { companyId, loading: userLoading, isSuperAdmin } = useUser()
+  const { loading: userLoading, isSuperAdmin } = useUser()
+  const { companyId } = useTenant()
   const { hasFeature, loading: permissionsLoading } = usePermissions()
 
   const [form, setForm] = React.useState<FormState>(emptyForm)
@@ -312,15 +250,13 @@ export default function NovoContratoPage() {
   const [itemSearchLoading, setItemSearchLoading] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
+  const [savedContractId, setRascunhoId] = React.useState<string | null>(null)
+  const [savedDraftMeta, setSavedDraftMeta] = React.useState<{
+    code: string | null
+    erp_code: string | null
+  } | null>(null)
 
   const [importDialog, setImportDialog] = React.useState(false)
-  const [importStep, setImportStep] = React.useState<1 | 2 | 3>(1)
-  const [importedItems, setImportedItems] = React.useState<ContractItemForm[]>(
-    [],
-  )
-  const [importErrors, setImportErrors] = React.useState<string[]>([])
-  const importFileInputRef = React.useRef<HTMLInputElement>(null)
-
   const prefillConsumedRef = React.useRef(false)
 
   const canAccess = hasFeature("contracts") || isSuperAdmin
@@ -512,90 +448,6 @@ export default function NovoContratoPage() {
     }
   }, [debouncedItemSearch, companyId, canAccess, userLoading])
 
-  function openImportDialog() {
-    setImportStep(1)
-    setImportedItems([])
-    setImportErrors([])
-    setImportDialog(true)
-  }
-
-  function closeImportDialog() {
-    setImportDialog(false)
-    setImportStep(1)
-    setImportedItems([])
-    setImportErrors([])
-    if (importFileInputRef.current) importFileInputRef.current.value = ""
-  }
-
-  async function handleDownloadTemplate() {
-    const ExcelJS = (await import("exceljs")).default
-    const wb = new ExcelJS.Workbook()
-    const ws = wb.addWorksheet("Itens")
-    ws.addRow([
-      "Código",
-      "Descrição",
-      "UN",
-      "Quantidade",
-      "Preço Unitário",
-      "Prazo (dias)",
-    ])
-    ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } }
-    ws.getRow(1).fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FF4F3EF5" },
-    }
-    const buf = await wb.xlsx.writeBuffer()
-    const blob = new Blob([buf], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = "template-itens-contrato.xlsx"
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  async function handleProcessExcel() {
-    const file = importFileInputRef.current?.files?.[0]
-    if (!file) {
-      toast.error("Selecione um arquivo Excel.")
-      return
-    }
-    try {
-      const ExcelJS = (await import("exceljs")).default
-      const wb = new ExcelJS.Workbook()
-      const buffer = await file.arrayBuffer()
-      await wb.xlsx.load(buffer)
-      const ws = wb.worksheets[0]
-      if (!ws) {
-        toast.error("Planilha sem abas.")
-        return
-      }
-      const { items, errors } = parseExcelRowsToItems(ws)
-      setImportedItems(items)
-      setImportErrors(errors)
-      if (errors.length > 0) {
-        toast.error("Corrija os erros indicados antes de continuar.")
-        return
-      }
-      if (items.length === 0) {
-        toast.error("Nenhum item encontrado na planilha.")
-        return
-      }
-      setImportStep(3)
-    } catch {
-      toast.error("Não foi possível ler o arquivo Excel.")
-    }
-  }
-
-  function handleConfirmImport() {
-    if (importedItems.length === 0) return
-    setContractItems((prev) => [...prev, ...importedItems])
-    toast.success(`${importedItems.length} item(s) adicionado(s)`)
-    closeImportDialog()
-  }
 
   function addItemFromCatalog(item: CatalogItemRow) {
     setContractItems((prev) => [
@@ -645,78 +497,126 @@ export default function NovoContratoPage() {
       erp_code,
     } = form
 
-    if (!supplier_id) {
-      toast.error("Selecione o fornecedor.")
-      return
-    }
-    if (!title.trim()) {
-      toast.error("Informe o título do contrato.")
-      return
-    }
-    if (!start_date) {
-      toast.error("Informe a data de início.")
-      return
-    }
-    if (!end_date) {
-      toast.error("Informe a data de fim.")
-      return
-    }
-    if (!payment_condition_id) {
-      toast.error("Selecione uma condição de pagamento")
-      return
-    }
-
-    let valueNum: number | null = null
-    if (contract_kind === "por_valor") {
-      if (value.trim()) {
-        valueNum = parseValueToNumber(value)
-        if (valueNum === null) {
-          toast.error("Valor inválido.")
-          return
-        }
+    if (mode === "send") {
+      if (!supplier_id) {
+        toast.error("Selecione o fornecedor.")
+        return
+      }
+      if (!title.trim()) {
+        toast.error("Informe o título do contrato.")
+        return
+      }
+      if (!start_date) {
+        toast.error("Informe a data de início.")
+        return
+      }
+      if (!end_date) {
+        toast.error("Informe a data de fim.")
+        return
+      }
+      if (!payment_condition_id) {
+        toast.error("Selecione uma condição de pagamento")
+        return
       }
     }
 
-    const { items: itemsPayload, error: itemsError } =
-      buildContractItemsPayload(contractItems)
-    if (itemsError) {
-      toast.error(itemsError)
-      return
+    let valueNum: number | null = null
+    if (contract_kind === "por_valor" && value.trim()) {
+      valueNum = parseValueToNumber(value)
+      if (valueNum === null && mode === "send") {
+        toast.error("Valor inválido.")
+        return
+      }
+      if (valueNum === null) {
+        valueNum = null
+      }
+    }
+
+    const shouldValidateItems = mode === "send"
+    let itemsPayload: Array<{
+      material_code: string
+      material_description: string
+      unit_of_measure: string | null
+      quantity_contracted: number
+      unit_price: number
+      delivery_days: number | null
+      notes: string | null
+    }> = []
+    if (shouldValidateItems) {
+      const { items, error: itemsError } = buildContractItemsPayload(contractItems)
+      if (itemsError) {
+        toast.error(itemsError)
+        return
+      }
+      itemsPayload = items
+    } else {
+      const { items } = buildContractItemsPayload(contractItems)
+      itemsPayload = items
+    }
+
+    const payload = {
+      supplier_id: supplier_id || null,
+      title: mode === "save" ? title.trim() || "Rascunho sem título" : title.trim(),
+      type: "fornecimento",
+      contract_kind,
+      status: mode === "save" ? "draft" : calcularStatus(start_date, end_date),
+      start_date: start_date || null,
+      end_date: end_date || null,
+      value: valueNum,
+      notes: notes.trim() || null,
+      payment_condition_id: payment_condition_id || null,
+      contract_terms: null,
+      erp_code: erp_code.trim() || null,
+      quotation_id: quotation_id.trim() || null,
     }
 
     setSaving(true)
     try {
-      const res = await fetch("/api/contracts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          supplier_id,
-          title: title.trim(),
+      let contract: Contract | null = null
+      if (mode === "save" && savedContractId) {
+        const patchPayload: Record<string, unknown> = {
+          title: title.trim() || "Rascunho sem título",
           type: "fornecimento",
           contract_kind,
-          status: calcularStatus(start_date, end_date),
-          start_date,
-          end_date,
-          value: valueNum,
+          status: "draft",
           notes: notes.trim() || null,
           payment_condition_id: payment_condition_id || null,
-          contract_terms: null,
           erp_code: erp_code.trim() || null,
-          quotation_id: quotation_id.trim() || null,
-        }),
-      })
-      const data = (await res.json()) as {
-        contract?: Contract
-        error?: string
-      }
-      if (!res.ok || !data.contract) {
-        toast.error(data.error ?? "Não foi possível salvar o contrato.")
-        return
+        }
+        if (supplier_id) patchPayload.supplier_id = supplier_id
+        if (start_date) patchPayload.start_date = start_date
+        if (end_date) patchPayload.end_date = end_date
+        patchPayload.value = valueNum
+
+        const res = await fetch(`/api/contracts/${savedContractId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patchPayload),
+        })
+        const data = (await res.json()) as { contract?: Contract; error?: string }
+        if (!res.ok || !data.contract) {
+          toast.error(data.error ?? "Não foi possível salvar o rascunho.")
+          return
+        }
+        contract = data.contract
+      } else {
+        const res = await fetch("/api/contracts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+        const data = (await res.json()) as {
+          contract?: Contract
+          error?: string
+        }
+        if (!res.ok || !data.contract) {
+          toast.error(data.error ?? "Não foi possível salvar o contrato.")
+          return
+        }
+        contract = data.contract
       }
 
-      const contract = data.contract
-
-      if (itemsPayload.length > 0) {
+      if (contract && itemsPayload.length > 0 && !(mode === "save" && savedContractId)) {
         const itemsRes = await fetch("/api/contract-items", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -731,14 +631,23 @@ export default function NovoContratoPage() {
             itemsData.error ??
               "Contrato criado, mas não foi possível salvar os itens.",
           )
-          router.push(`/comprador/contratos/${contract.id}`)
           return
         }
       }
 
       if (mode === "save") {
-        toast.success("Contrato salvo!")
-        router.push(`/comprador/contratos/${contract.id}`)
+        if (contract) {
+          setRascunhoId(contract.id)
+          setSavedDraftMeta({
+            code: contract.code ?? null,
+            erp_code: contract.erp_code ?? null,
+          })
+        }
+        toast.success("Rascunho salvo!")
+        return
+      }
+      if (!contract) {
+        toast.error("Não foi possível preparar o contrato para envio.")
         return
       }
 
@@ -784,78 +693,45 @@ export default function NovoContratoPage() {
 
   return (
     <div className="p-6 space-y-6 w-full">
-      <Dialog open={importDialog} onOpenChange={(o) => !o && closeImportDialog()}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Importar Itens via Excel</DialogTitle>
-          </DialogHeader>
-          {importStep === 1 && (
-            <div className="space-y-4 text-sm">
-              <p className="text-muted-foreground">
-                Baixe o template, preencha e faça o upload.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={() => void handleDownloadTemplate()}>
-                  Baixar Template
-                </Button>
-                <Button type="button" onClick={() => setImportStep(2)}>
-                  Próximo
-                </Button>
-              </div>
-            </div>
-          )}
-          {importStep === 2 && (
-            <div className="space-y-4 text-sm">
-              <Input
-                ref={importFileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                className="cursor-pointer"
-              />
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => setImportStep(1)}>
-                  Voltar
-                </Button>
-                <Button type="button" onClick={() => void handleProcessExcel()}>
-                  Processar
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-          {importStep === 3 && (
-            <div className="space-y-4 text-sm">
-              <p>{importedItems.length} itens encontrados</p>
-              {importErrors.length > 0 && (
-                <ul className="list-disc pl-4 space-y-1 text-destructive text-xs">
-                  {importErrors.map((e, i) => (
-                    <li key={i}>{e}</li>
-                  ))}
-                </ul>
-              )}
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button type="button" variant="outline" onClick={() => setImportStep(2)}>
-                  Voltar
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleConfirmImport}
-                  disabled={importedItems.length === 0}
-                >
-                  Confirmar
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ContractImportExcelDialog
+        open={importDialog}
+        onClose={() => setImportDialog(false)}
+        companyId={companyId ?? ""}
+        onImport={(items) => setContractItems((prev) => [...prev, ...items])}
+      />
 
-      <div className="flex items-center gap-4">
-        <Button type="button" variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => router.push("/comprador/contratos")}>
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+          <div className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-primary" />
+            <h1 className="text-2xl font-bold">Novo Contrato</h1>
+          </div>
+        </div>
+
         <div className="flex items-center gap-2">
-          <FileText className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-semibold tracking-tight">Novo Contrato</h1>
+          <Button
+            variant="outline"
+            onClick={() => router.push("/comprador/contratos")}
+            disabled={saving}
+          >
+            Cancelar
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void handleSubmit("save")}
+            disabled={saving}
+          >
+            {saving ? "Salvando..." : "Salvar"}
+          </Button>
+          <Button
+            onClick={() => void handleSubmit("send")}
+            disabled={saving}
+          >
+            {saving ? "Salvando..." : "Salvar e Enviar para Aceite"}
+          </Button>
         </div>
       </div>
 
@@ -864,11 +740,30 @@ export default function NovoContratoPage() {
           <CardTitle className="text-base">Dados do contrato</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>
-                Fornecedor <span className="text-destructive">*</span>
-              </Label>
+          <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+            <div className="space-y-1.5">
+              <Label>Código Interno</Label>
+              <Input
+                readOnly
+                className="w-44 bg-muted font-mono"
+                value={savedDraftMeta?.code ?? "—"}
+                placeholder="Gerado automaticamente"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Código ERP</Label>
+              <Input
+                readOnly
+                className="w-44 bg-muted"
+                value={savedDraftMeta?.erp_code ?? "—"}
+              />
+              <p className="text-xs text-muted-foreground">
+                Preenchido automaticamente pela integração
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Fornecedor</Label>
               {fromCotacao ? (
                 <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border bg-muted text-sm">
                   <span className="truncate">
@@ -885,7 +780,7 @@ export default function NovoContratoPage() {
                   disabled={loading}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione o fornecedor" />
+                    <SelectValue placeholder="Selecione o fornecedor..." />
                   </SelectTrigger>
                   <SelectContent>
                     {suppliers.map((s) => (
@@ -897,132 +792,120 @@ export default function NovoContratoPage() {
                 </Select>
               )}
             </div>
-            <div className="space-y-2">
-              <Label>
-                Título <span className="text-destructive">*</span>
-              </Label>
+            <div className="space-y-1.5">
+              <Label>Título</Label>
               <Input
                 placeholder="Nome do contrato"
+                maxLength={150}
                 value={form.title}
                 onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
               />
+              <p className="text-xs text-muted-foreground text-right">
+                {form.title.length}/150
+              </p>
             </div>
-          </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>
-                Tipo de Contrato <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={form.contract_kind}
-                onValueChange={(v) =>
-                  setForm((f) => ({
-                    ...f,
-                    contract_kind: v as ContractKind,
-                  }))
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CONTRACT_KINDS.map((k) => (
-                    <SelectItem key={k.value} value={k.value}>
-                      {k.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="space-y-1.5">
+              <Label>Tipo de Contrato</Label>
+              <div className="w-fit">
+                <Select
+                  value={form.contract_kind}
+                  onValueChange={(v) =>
+                    setForm((f) => ({
+                      ...f,
+                      contract_kind: v as ContractKind,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-52">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CONTRACT_KINDS.map((k) => (
+                      <SelectItem key={k.value} value={k.value}>
+                        {k.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            {form.contract_kind === "por_valor" ? (
-              <div className="space-y-2">
-                <Label>Valor Total</Label>
+            <div className="space-y-1.5">
+              {form.contract_kind === "por_valor" ? (
+                <>
+                  <Label>Valor Total</Label>
+                  <Input
+                    type="text"
+                    className="w-44"
+                    placeholder="R$ 0,00"
+                    value={form.value}
+                    onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
+                  />
+                </>
+              ) : null}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Condição de Pagamento <span className="text-destructive">*</span></Label>
+              <div className="w-fit">
+                <Select
+                  value={form.payment_condition_id || undefined}
+                  onValueChange={(v) =>
+                    setForm((f) => ({
+                      ...f,
+                      payment_condition_id: v,
+                    }))
+                  }
+                  disabled={loading}
+                >
+                  <SelectTrigger className="w-52">
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {paymentConditions.map((pc) => (
+                      <SelectItem key={pc.id} value={pc.id}>
+                        {pc.code} — {pc.description}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Vigência <span className="text-destructive">*</span></Label>
+              <div className="flex gap-3 items-center">
                 <Input
-                  type="text"
-                  placeholder="R$ 0,00"
-                  value={form.value}
-                  onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
+                  type="date"
+                  className="w-40"
+                  value={form.start_date}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, start_date: e.target.value }))
+                  }
+                />
+                <span className="text-muted-foreground text-sm">até</span>
+                <Input
+                  type="date"
+                  className="w-40"
+                  value={form.end_date}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, end_date: e.target.value }))
+                  }
                 />
               </div>
-            ) : (
-              <div />
-            )}
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>
-                Condição de Pagamento <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={form.payment_condition_id || undefined}
-                onValueChange={(v) =>
-                  setForm((f) => ({
-                    ...f,
-                    payment_condition_id: v,
-                  }))
-                }
-                disabled={loading}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {paymentConditions.map((pc) => (
-                    <SelectItem key={pc.id} value={pc.id}>
-                      {pc.code} — {pc.description}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Código ERP (preenchido pela integração)</Label>
-              <Input
-                readOnly
-                className="bg-muted"
-                value={form.erp_code}
-                placeholder="—"
+            <div className="col-span-2 space-y-1.5">
+              <Label>Observações</Label>
+              <Textarea
+                rows={3}
+                maxLength={500}
+                value={form.notes}
+                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder="Notas internas sobre o contrato…"
               />
+              <p className="text-xs text-muted-foreground text-right">
+                {(form.notes ?? "").length}/500
+              </p>
             </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>
-                Data início <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="date"
-                value={form.start_date}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, start_date: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>
-                Data fim <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="date"
-                value={form.end_date}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, end_date: e.target.value }))
-                }
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Observações</Label>
-            <Textarea
-              rows={4}
-              value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              placeholder="Notas internas sobre o contrato…"
-            />
           </div>
 
           <p className="text-xs text-muted-foreground">
@@ -1032,7 +915,14 @@ export default function NovoContratoPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold">Itens do Contrato</h3>
-              <Button type="button" variant="outline" size="sm" onClick={openImportDialog}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setImportDialog(true)
+                }}
+              >
                 <Upload className="h-3 w-3 mr-1" />
                 Importar Excel
               </Button>
@@ -1071,27 +961,29 @@ export default function NovoContratoPage() {
               )}
             </div>
 
-            {contractItems.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                Busque itens no catálogo ou importe via Excel.
-              </p>
-            ) : (
-              <div className="border border-border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted">
+            <div className="border border-border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left px-3 py-2">Código</th>
+                    <th className="text-left px-3 py-2">Descrição</th>
+                    <th className="text-center px-3 py-2 w-16">UN</th>
+                    <th className="text-center px-3 py-2 w-28">Qtd</th>
+                    <th className="text-center px-3 py-2 w-32">Preço Unit.</th>
+                    <th className="text-center px-3 py-2 w-24">Prazo (dias)</th>
+                    <th className="text-right px-3 py-2 w-28">Total</th>
+                    <th className="px-3 py-2 w-10" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {contractItems.length === 0 ? (
                     <tr>
-                      <th className="text-left px-3 py-2">Código</th>
-                      <th className="text-left px-3 py-2">Descrição</th>
-                      <th className="text-center px-3 py-2 w-16">UN</th>
-                      <th className="text-center px-3 py-2 w-28">Qtd</th>
-                      <th className="text-center px-3 py-2 w-32">Preço Unit.</th>
-                      <th className="text-center px-3 py-2 w-24">Prazo (dias)</th>
-                      <th className="text-right px-3 py-2 w-28">Total</th>
-                      <th className="px-3 py-2 w-10" />
+                      <td colSpan={8} className="text-sm text-muted-foreground text-center py-4">
+                        Busque itens no catálogo ou importe via Excel.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {contractItems.map((item, index) => {
+                  ) : (
+                    contractItems.map((item, index) => {
                       const qty = parseQty(item.quantity_contracted || "0")
                       const price = parsePrice(item.unit_price)
                       const lineTotal = qty * price
@@ -1165,32 +1057,32 @@ export default function NovoContratoPage() {
                           </td>
                         </tr>
                       )
-                    })}
-                  </tbody>
-                  <tfoot className="bg-muted/50 border-t border-border">
-                    <tr>
-                      <td colSpan={6} className="px-3 py-2 text-sm font-medium text-right">
-                        Total do Contrato:
-                      </td>
-                      <td className="px-3 py-2 text-sm font-semibold text-right">
-                        {formatBRL(
-                          (() => {
-                            const total = contractItems.reduce((sum, item) => {
-                              const qty = parseQty(item.quantity_contracted || "0")
-                              const price = parsePrice(item.unit_price)
-                              const line = qty * price
-                              return sum + (Number.isFinite(line) ? line : 0)
-                            }, 0)
-                            return Number.isFinite(total) ? total : null
-                          })(),
-                        )}
-                      </td>
-                      <td />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
+                    })
+                  )}
+                </tbody>
+                <tfoot className="bg-muted/50 border-t border-border">
+                  <tr>
+                    <td colSpan={6} className="px-3 py-2 text-sm font-medium text-right">
+                      Total do Contrato:
+                    </td>
+                    <td className="px-3 py-2 text-sm font-semibold text-right">
+                      {formatBRL(
+                        (() => {
+                          const total = contractItems.reduce((sum, item) => {
+                            const qty = parseQty(item.quantity_contracted || "0")
+                            const price = parsePrice(item.unit_price)
+                            const line = qty * price
+                            return sum + (Number.isFinite(line) ? line : 0)
+                          }, 0)
+                          return Number.isFinite(total) ? total : null
+                        })(),
+                      )}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-4">

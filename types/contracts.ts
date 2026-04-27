@@ -49,6 +49,18 @@ export interface ContractItem {
   eliminated_reason: string | null
 }
 
+export interface ContractItemForm {
+  material_code: string
+  material_description: string
+  unit_of_measure: string
+  quantity_contracted: string
+  unit_price: string
+  delivery_days: string
+  notes: string
+  item_id?: string
+  _fromQuotation?: boolean
+}
+
 export interface ContractAcceptance {
   id: string
   contract_id: string

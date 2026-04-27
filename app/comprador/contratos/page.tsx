@@ -7,6 +7,7 @@ import { format, differenceInDays, parseISO, startOfDay } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { useTenant } from "@/contexts/tenant-context"
 import {
   Card,
   CardContent,
@@ -78,6 +79,7 @@ function statusBadgeClass(status: Contract["status"]): string {
 
 function isExpiringSoon(c: Contract): boolean {
   if (c.status !== "active") return false
+  if (!c.end_date) return false
   const end = parseISO(c.end_date)
   const today = startOfDay(new Date())
   const days = differenceInDays(end, today)
@@ -88,6 +90,7 @@ export default function ContratosPage() {
   const router = useRouter()
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { hasFeature, loading: permissionsLoading, features } = usePermissions()
+  const { companyId } = useTenant()
 
   const [contracts, setContracts] = React.useState<Contract[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -100,6 +103,7 @@ export default function ContratosPage() {
 
   React.useEffect(() => {
     if (userLoading || permissionsLoading) return
+    if (!companyId) return
     if (!canAccess) {
       setLoading(false)
       return
@@ -122,7 +126,7 @@ export default function ContratosPage() {
     return () => {
       cancelled = true
     }
-  }, [userLoading, permissionsLoading, canAccess, features.contracts])
+  }, [userLoading, permissionsLoading, canAccess, companyId, features.contracts])
 
   const total = contracts.length
   const ativos = contracts.filter((c) => c.status === "active").length
@@ -318,8 +322,13 @@ export default function ContratosPage() {
                       ?.label ?? c.contract_kind}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm">
-                    {format(parseISO(c.start_date), "dd/MM/yyyy", { locale: ptBR })}{" "}
-                    – {format(parseISO(c.end_date), "dd/MM/yyyy", { locale: ptBR })}
+                    {c.start_date
+                      ? format(parseISO(c.start_date), "dd/MM/yyyy", { locale: ptBR })
+                      : "—"}{" "}
+                    –{" "}
+                    {c.end_date
+                      ? format(parseISO(c.end_date), "dd/MM/yyyy", { locale: ptBR })
+                      : "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {c.total_value != null

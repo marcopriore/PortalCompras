@@ -84,6 +84,9 @@ export async function GET(_request: Request, context: RouteCtx) {
     if (!row) {
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
+    if (row.supplier_id !== ctx.supplierId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
 
     const contract = contractFromRow(row)
     const companyId = contract.company_id

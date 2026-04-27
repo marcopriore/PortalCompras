@@ -14,6 +14,7 @@ import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { useTenant } from "@/contexts/tenant-context"
 import {
   Card,
   CardContent,
@@ -65,11 +66,13 @@ import {
   CheckCircle,
   XCircle,
 } from "lucide-react"
+import { ContractImportExcelDialog } from "@/components/comprador/contract-import-excel-dialog"
 import type {
   Contract,
   ContractAcceptance,
   ContractItem,
   ContractKind,
+  ContractItemForm,
 } from "@/types/contracts"
 import { CONTRACT_KINDS, CONTRACT_STATUSES } from "@/types/contracts"
 
@@ -144,6 +147,7 @@ function parseValueToNumber(raw: string): number | null {
 
 function isExpiringSoon(c: Contract): boolean {
   if (c.status !== "active") return false
+  if (!c.end_date) return false
   const end = parseISO(c.end_date)
   const today = startOfDay(new Date())
   const days = differenceInDays(end, today)
@@ -151,6 +155,7 @@ function isExpiringSoon(c: Contract): boolean {
 }
 
 function daysUntilEnd(c: Contract): number {
+  if (!c.end_date) return 0
   return differenceInDays(parseISO(c.end_date), startOfDay(new Date()))
 }
 
@@ -239,7 +244,8 @@ export default function ContratoPage({
   const { id } = React.use(params)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { companyId, loading: userLoading, isSuperAdmin } = useUser()
+  const { loading: userLoading, isSuperAdmin } = useUser()
+  const { companyId } = useTenant()
   const { hasFeature, loading: permissionsLoading } = usePermissions()
 
   const [contract, setContract] = React.useState<Contract | null>(null)
@@ -255,11 +261,15 @@ export default function ContratoPage({
   const [paymentConditions, setPaymentConditions] = React.useState<
     Array<{ id: string; code: string; description: string }>
   >([])
+  const [suppliers, setSuppliers] = React.useState<
+    Array<{ id: string; name: string; code: string }>
+  >([])
   const [editItems, setEditItems] = React.useState<EditContractItem[]>([])
   const [itemSearch, setItemSearch] = React.useState("")
   const debouncedItemSearch = useDebounce(itemSearch, 300)
   const [itemResults, setItemResults] = React.useState<CatalogItemRow[]>([])
   const [itemSearchLoading, setItemSearchLoading] = React.useState(false)
+  const [importDialog, setImportDialog] = React.useState(false)
 
   const [confirmDialog, setConfirmDialog] = React.useState<{
     open: boolean
@@ -321,6 +331,31 @@ export default function ContratoPage({
       cancelled = true
     }
   }, [userLoading, companyId, canAccess])
+
+  React.useEffect(() => {
+    if (!editing || !companyId || contract?.status !== "draft") return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from("suppliers")
+          .select("id, name, code")
+          .eq("company_id", companyId)
+          .eq("status", "active")
+          .order("name")
+        if (cancelled || error) return
+        setSuppliers((data ?? []) as Array<{ id: string; name: string; code: string }>)
+      } catch {
+        /* ignore */
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [editing, companyId, contract?.status])
 
   React.useEffect(() => {
     if (
@@ -436,9 +471,9 @@ export default function ContratoPage({
   }, [contract, searchParams])
 
   React.useEffect(() => {
-    if (userLoading || permissionsLoading || !canAccess) return
+    if (userLoading || permissionsLoading || !canAccess || !companyId) return
     void loadContract()
-  }, [userLoading, permissionsLoading, canAccess, loadContract])
+  }, [userLoading, permissionsLoading, canAccess, companyId, loadContract])
 
   function openFilePicker() {
     fileInputRef.current?.click()
@@ -498,7 +533,7 @@ export default function ContratoPage({
     }
   }
 
-  async function handleSaveEdit() {
+  async function handleSaveEdit(mode: "save" | "send" = "save") {
     if (!form || !companyId || !contract) return
     const isRestricted = contract.status !== "draft"
     const {
@@ -514,25 +549,27 @@ export default function ContratoPage({
       erp_code,
     } = form
 
-    if (!supplier_id) {
-      toast.error("Selecione o fornecedor.")
-      return
-    }
-    if (!code.trim()) {
-      toast.error("Informe o código do contrato.")
-      return
-    }
-    if (!title.trim()) {
-      toast.error("Informe o título do contrato.")
-      return
-    }
-    if (!start_date || !end_date) {
-      toast.error("Informe as datas de vigência.")
-      return
-    }
-    if (!payment_condition_id) {
-      toast.error("Selecione uma condição de pagamento")
-      return
+    if (mode === "send") {
+      if (!supplier_id) {
+        toast.error("Selecione o fornecedor.")
+        return
+      }
+      if (!code.trim()) {
+        toast.error("Informe o código do contrato.")
+        return
+      }
+      if (!title.trim()) {
+        toast.error("Informe o título do contrato.")
+        return
+      }
+      if (!start_date || !end_date) {
+        toast.error("Informe as datas de vigência.")
+        return
+      }
+      if (!payment_condition_id) {
+        toast.error("Selecione uma condição de pagamento")
+        return
+      }
     }
 
     let valueNum: number | null = null
@@ -591,7 +628,7 @@ export default function ContratoPage({
             payment_condition_id: payment_condition_id || null,
           }
         : {
-            supplier_id,
+            supplier_id: supplier_id || null,
             code: code.trim(),
             title: title.trim(),
             contract_kind,
@@ -675,6 +712,24 @@ export default function ContratoPage({
           }
           const orig = contract.items?.find((o) => o.id === item.id)
           if (!orig) continue
+          const newQty =
+            item.quantity_contracted != null &&
+            !Number.isNaN(Number(item.quantity_contracted))
+              ? Number(item.quantity_contracted)
+              : null
+          const oldQty =
+            orig.quantity_contracted != null &&
+            !Number.isNaN(Number(orig.quantity_contracted))
+              ? Number(orig.quantity_contracted)
+              : null
+          const newPrice =
+            item.unit_price != null && !Number.isNaN(Number(item.unit_price))
+              ? Number(item.unit_price)
+              : null
+          const oldPrice =
+            orig.unit_price != null && !Number.isNaN(Number(orig.unit_price))
+              ? Number(orig.unit_price)
+              : null
           const newDd =
             item.delivery_days != null &&
             !Number.isNaN(Number(item.delivery_days))
@@ -685,14 +740,26 @@ export default function ContratoPage({
             !Number.isNaN(Number(orig.delivery_days))
               ? Number(orig.delivery_days)
               : null
-          if (newDd === oldDd) continue
+          if (newQty === oldQty && newPrice === oldPrice && newDd === oldDd) continue
+          if (newQty == null || newQty <= 0) {
+            toast.error("Quantidade inválida em um dos itens.")
+            return
+          }
+          if (newPrice == null || newPrice < 0) {
+            toast.error("Preço unitário inválido em um dos itens.")
+            return
+          }
           if (newDd != null && newDd < 0) {
             toast.error("Prazo (dias) inválido em um dos itens.")
             return
           }
           const { error: itemErr } = await supabase
             .from("contract_items")
-            .update({ delivery_days: newDd })
+            .update({
+              quantity_contracted: newQty,
+              unit_price: newPrice,
+              delivery_days: newDd,
+            })
             .eq("id", item.id)
             .eq("company_id", companyId)
           if (itemErr) {
@@ -703,6 +770,33 @@ export default function ContratoPage({
             return
           }
         }
+      }
+
+      if (!isRestricted && mode === "save") {
+        await loadContract()
+        toast.success("Rascunho salvo!")
+        return
+      }
+
+      if (!isRestricted && mode === "send") {
+        const sendRes = await fetch(`/api/contracts/${id}/send-for-acceptance`, {
+          method: "POST",
+        })
+        const sendData = (await sendRes.json()) as { success?: boolean; error?: string }
+        if (!sendRes.ok || !sendData.success) {
+          toast.error(sendData.error ?? "Não foi possível enviar para aceite.")
+          return
+        }
+        toast.success("Contrato enviado para aceite!")
+        setEditing(false)
+        setEditItems([])
+        setItemSearch("")
+        setItemResults([])
+        if (searchParams.get("edit") === "true") {
+          router.replace(`/comprador/contratos/${id}`)
+        }
+        await loadContract()
+        return
       }
 
       await loadContract()
@@ -760,6 +854,20 @@ export default function ContratoPage({
     setItemSearch("")
     setItemResults([])
     setEditing(true)
+  }
+
+  function markForElimination(item: EditContractItem) {
+    setEditItems((prev) =>
+      prev.map((x) =>
+        x.id === item.id
+          ? {
+              ...x,
+              _toEliminate: true,
+              _eliminateReason: x._eliminateReason ?? "",
+            }
+          : x,
+      ),
+    )
   }
 
   function handleCancelar() {
@@ -849,6 +957,33 @@ export default function ContratoPage({
         onChange={(e) => void handleFileChange(e)}
       />
 
+      {!isRestricted && editing ? (
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false)
+                router.replace(`/comprador/contratos/${id}`)
+              }}
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <h1 className="text-2xl font-bold">Editar Contrato</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleCancelEdit} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button variant="outline" onClick={() => void handleSaveEdit("save")} disabled={saving}>
+              {saving ? "Salvando..." : "Salvar"}
+            </Button>
+            <Button onClick={() => void handleSaveEdit("send")} disabled={saving}>
+              {saving ? "Salvando..." : "Salvar e Enviar para Aceite"}
+            </Button>
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
           <Button type="button" variant="ghost" size="icon" onClick={() => router.back()}>
@@ -926,6 +1061,7 @@ export default function ContratoPage({
           </div>
         )}
       </div>
+      )}
 
       {expiring && (
         <div
@@ -968,9 +1104,13 @@ export default function ContratoPage({
                 <div>
                   <p className="text-xs text-muted-foreground">Vigência</p>
                   <p className="text-sm font-medium">
-                    {format(parseISO(contract.start_date), "dd/MM/yyyy", { locale: ptBR })}{" "}
+                    {contract.start_date
+                      ? format(parseISO(contract.start_date), "dd/MM/yyyy", { locale: ptBR })
+                      : "—"}{" "}
                     –{" "}
-                    {format(parseISO(contract.end_date), "dd/MM/yyyy", { locale: ptBR })}
+                    {contract.end_date
+                      ? format(parseISO(contract.end_date), "dd/MM/yyyy", { locale: ptBR })
+                      : "—"}
                   </p>
                 </div>
                 <div>
@@ -1234,36 +1374,33 @@ export default function ContratoPage({
                 observações e eliminação de itens podem ser alterados.
               </div>
             ) : null}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Fornecedor</Label>
-                <div className="flex items-center h-10 px-3 rounded-md border border-border bg-muted text-sm text-foreground">
-                  <span className="truncate">
-                    {contract.supplier_name}
-                    <span className="text-muted-foreground">
-                      {" "}
-                      ({contract.supplier_code})
-                    </span>
-                  </span>
-                </div>
+            <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+              <div className="space-y-1.5">
+                <Label>Código Interno</Label>
+                <Input
+                  readOnly
+                  className="w-44 bg-muted font-mono"
+                  value={contract?.code ?? "—"}
+                  placeholder="Gerado automaticamente"
+                />
               </div>
-              <div className="space-y-2">
-                <Label>
-                  Código <span className="text-destructive">*</span>
-                </Label>
-                <div className="flex items-center h-10 px-3 rounded-md border border-border bg-muted text-sm text-foreground font-mono">
-                  {form.code}
-                </div>
+              <div className="space-y-1.5">
+                <Label>Código ERP</Label>
+                <Input
+                  readOnly
+                  className="w-44 bg-muted"
+                  value={contract?.erp_code ?? "—"}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Preenchido automaticamente pela integração
+                </p>
               </div>
-            </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>
-                  Título <span className="text-destructive">*</span>
-                </Label>
+              <div className="space-y-1.5">
+                <Label>Título</Label>
                 <Input
                   readOnly={isRestricted}
+                  maxLength={150}
                   className={
                     isRestricted
                       ? "h-10 border border-border bg-muted text-sm text-foreground"
@@ -1274,118 +1411,176 @@ export default function ContratoPage({
                     setForm((f) => (f ? { ...f, title: e.target.value } : f))
                   }
                 />
+                <p className="text-xs text-muted-foreground text-right">
+                  {form.title.length}/150
+                </p>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
+                <Label>Fornecedor</Label>
+                {!isRestricted ? (
+                  <Select
+                    value={form.supplier_id}
+                    onValueChange={(v) =>
+                      setForm((prev) => (prev ? { ...prev, supplier_id: v } : prev))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o fornecedor..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {suppliers.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name} ({s.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <div className="flex items-center h-10 px-3 rounded-md border border-border bg-muted text-sm text-foreground">
+                    <span className="truncate">
+                      {contract.supplier_name}{" "}
+                      <span className="text-muted-foreground">({contract.supplier_code})</span>
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
                 <Label>Tipo de Contrato</Label>
-                <div className="flex items-center h-10 px-3 rounded-md border border-border bg-muted text-sm text-foreground">
-                  {CONTRACT_KINDS.find((k) => k.value === form.contract_kind)
-                    ?.label ?? form.contract_kind}
+                {!isRestricted ? (
+                  <div className="w-fit">
+                    <Select
+                      value={form.contract_kind}
+                      onValueChange={(v) =>
+                        setForm((f) =>
+                          f ? { ...f, contract_kind: v as ContractKind } : f,
+                        )
+                      }
+                    >
+                      <SelectTrigger className="w-52">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CONTRACT_KINDS.map((k) => (
+                          <SelectItem key={k.value} value={k.value}>
+                            {k.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="flex items-center h-10 px-3 rounded-md border border-border bg-muted text-sm text-foreground">
+                    {CONTRACT_KINDS.find((k) => k.value === form.contract_kind)
+                      ?.label ?? form.contract_kind}
+                  </div>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {form.contract_kind === "por_valor" ? (
+                  <>
+                    <Label>Valor Total</Label>
+                    <Input
+                      type="text"
+                      readOnly={isRestricted}
+                      placeholder="R$ 0,00"
+                      className={
+                        isRestricted
+                          ? "w-44 h-10 border border-border bg-muted text-sm text-foreground"
+                          : "w-44"
+                      }
+                      value={form.value}
+                      onChange={(e) =>
+                        setForm((f) => (f ? { ...f, value: e.target.value } : f))
+                      }
+                    />
+                  </>
+                ) : null}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Condição de Pagamento <span className="text-destructive">*</span></Label>
+                <div className="w-fit">
+                  <Select
+                    value={form.payment_condition_id || undefined}
+                    onValueChange={(v) =>
+                      setForm((f) =>
+                        f ? { ...f, payment_condition_id: v } : f,
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-52">
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {paymentConditions.map((pc) => (
+                        <SelectItem key={pc.id} value={pc.id}>
+                          {pc.code} — {pc.description}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-            </div>
-
-            {form.contract_kind === "por_valor" ? (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Valor Total</Label>
+              <div className="space-y-1.5">
+                <Label>Vigência <span className="text-destructive">*</span></Label>
+                <div className="flex gap-3 items-center">
                   <Input
-                    type="text"
-                    readOnly={isRestricted}
-                    placeholder="R$ 0,00"
-                    className={
-                      isRestricted
-                        ? "h-10 border border-border bg-muted text-sm text-foreground"
-                        : "h-10"
-                    }
-                    value={form.value}
+                    type="date"
+                    className="w-40"
+                    value={form.start_date}
                     onChange={(e) =>
-                      setForm((f) => (f ? { ...f, value: e.target.value } : f))
+                      setForm((f) => (f ? { ...f, start_date: e.target.value } : f))
+                    }
+                  />
+                  <span className="text-sm text-muted-foreground">até</span>
+                  <Input
+                    type="date"
+                    className="w-40"
+                    value={form.end_date}
+                    onChange={(e) =>
+                      setForm((f) => (f ? { ...f, end_date: e.target.value } : f))
                     }
                   />
                 </div>
-                <div />
               </div>
-            ) : null}
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>
-                  Condição de Pagamento{" "}
-                  <span className="text-destructive">*</span>
-                </Label>
-                <Select
-                  value={form.payment_condition_id || undefined}
-                  onValueChange={(v) =>
-                    setForm((f) =>
-                      f ? { ...f, payment_condition_id: v } : f,
-                    )
-                  }
-                >
-                  <SelectTrigger className="h-10">
-                    <SelectValue placeholder="Selecione..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {paymentConditions.map((pc) => (
-                      <SelectItem key={pc.id} value={pc.id}>
-                        {pc.code} — {pc.description}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Código ERP (preenchido pela integração)</Label>
-                <Input
-                  readOnly
-                  className="h-10 border border-border bg-muted text-sm text-foreground"
-                  value={form.erp_code}
-                  placeholder="—"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Data início</Label>
-                <Input
-                  type="date"
-                  value={form.start_date}
+              <div className="col-span-2 space-y-1.5">
+                <Label>Observações</Label>
+                <Textarea
+                  rows={3}
+                  maxLength={500}
+                  value={form.notes}
                   onChange={(e) =>
-                    setForm((f) => (f ? { ...f, start_date: e.target.value } : f))
+                    setForm((f) => (f ? { ...f, notes: e.target.value } : f))
                   }
                 />
+                <p className="text-xs text-muted-foreground text-right max-w-2xl">
+                  {(form.notes ?? "").length}/500
+                </p>
               </div>
-              <div className="space-y-2">
-                <Label>Data fim</Label>
-                <Input
-                  type="date"
-                  value={form.end_date}
-                  onChange={(e) =>
-                    setForm((f) => (f ? { ...f, end_date: e.target.value } : f))
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Observações</Label>
-              <Textarea
-                rows={4}
-                value={form.notes}
-                onChange={(e) =>
-                  setForm((f) => (f ? { ...f, notes: e.target.value } : f))
-                }
-              />
             </div>
 
             <div className="space-y-3 w-full">
-              <Label>Itens do contrato</Label>
               {!isRestricted ? (
                 <>
-                  <p className="text-xs text-muted-foreground">
-                    Busque no catálogo para adicionar linhas. Itens eliminados
-                    permanecem visíveis para histórico.
-                  </p>
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <h3 className="text-sm font-semibold">Itens do contrato</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Busque no catálogo para adicionar linhas. Itens eliminados
+                        permanecem visíveis para histórico.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setImportDialog(true)}
+                    >
+                      <Upload className="h-3 w-3 mr-1" />
+                      Importar Excel
+                    </Button>
+                  </div>
                   <div className="relative">
                     <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
                       <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -1490,15 +1685,11 @@ export default function ContratoPage({
                           item.eliminated && !item._toEliminate
                             ? "line-through opacity-60"
                             : ""
-                        const canEditPrazo =
+                        const canEditLine =
                           !isRestricted &&
                           !item.eliminated &&
-                          !item._toEliminate &&
-                          !item._isNew
-                        const canEditNew =
-                          !isRestricted &&
-                          item._isNew &&
                           !item._toEliminate
+                        const canEditNew = canEditLine && Boolean(item._isNew)
 
                         return (
                           <TableRow key={item.id} className={rowTone}>
@@ -1557,7 +1748,7 @@ export default function ContratoPage({
                               </span>
                             </TableCell>
                             <TableCell className="text-right">
-                              {canEditNew ? (
+                              {canEditLine ? (
                                 <Input
                                   className="h-7 w-20 text-xs text-right"
                                   type="number"
@@ -1588,7 +1779,7 @@ export default function ContratoPage({
                               )}
                             </TableCell>
                             <TableCell className="text-right">
-                              {canEditNew ? (
+                              {canEditLine ? (
                                 <Input
                                   className="h-7 w-24 text-xs text-right"
                                   type="number"
@@ -1619,7 +1810,7 @@ export default function ContratoPage({
                               )}
                             </TableCell>
                             <TableCell className="text-right">
-                              {canEditPrazo || canEditNew ? (
+                              {canEditLine ? (
                                 <Input
                                   className="h-7 w-20 text-xs text-right"
                                   type="number"
@@ -1746,21 +1937,8 @@ export default function ContratoPage({
                                     type="button"
                                     variant="outline"
                                     size="sm"
-                                    className="h-7 text-xs text-destructive border-destructive"
-                                    onClick={() =>
-                                      setEditItems((prev) =>
-                                        prev.map((x) =>
-                                          x.id === item.id
-                                            ? {
-                                                ...x,
-                                                _toEliminate: true,
-                                                _eliminateReason:
-                                                  x._eliminateReason ?? "",
-                                              }
-                                            : x,
-                                        ),
-                                      )
-                                    }
+                                    className="text-destructive border-destructive hover:bg-destructive/10"
+                                    onClick={() => markForElimination(item)}
                                   >
                                     Eliminar
                                   </Button>
@@ -1814,9 +1992,56 @@ export default function ContratoPage({
                 </Button>
               )}
             </div>
+
+            {!isRestricted ? (
+              <div className="flex justify-end gap-2 pt-4">
+                <Button type="button" variant="outline" onClick={handleCancelEdit} disabled={saving}>
+                  Cancelar
+                </Button>
+                <Button type="button" variant="outline" onClick={() => void handleSaveEdit("save")} disabled={saving}>
+                  {saving ? "Salvando..." : "Salvar"}
+                </Button>
+                <Button type="button" onClick={() => void handleSaveEdit("send")} disabled={saving}>
+                  {saving ? "Salvando..." : "Salvar e Enviar para Aceite"}
+                </Button>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       )}
+
+      <ContractImportExcelDialog
+        open={importDialog}
+        onClose={() => setImportDialog(false)}
+        companyId={companyId ?? ""}
+        onImport={(items: ContractItemForm[]) => {
+          setEditItems((prev) => [
+            ...prev,
+            ...items.map((item) => ({
+              id: `temp-${crypto.randomUUID()}`,
+              contract_id: id,
+              company_id: companyId ?? "",
+              material_code: item.material_code,
+              material_description: item.material_description,
+              unit_of_measure: item.unit_of_measure || null,
+              quantity_contracted: Number(item.quantity_contracted || 0),
+              quantity_consumed: 0,
+              unit_price: Number(item.unit_price || 0),
+              total_price:
+                Number(item.quantity_contracted || 0) * Number(item.unit_price || 0),
+              consumed_value: 0,
+              delivery_days: item.delivery_days ? Number(item.delivery_days) : null,
+              notes: item.notes || null,
+              quotation_item_id: null,
+              created_at: "",
+              eliminated: false,
+              eliminated_at: null,
+              eliminated_reason: null,
+              _isNew: true,
+            })),
+          ])
+        }}
+      />
 
       <AlertDialog
         open={confirmDialog.open}

@@ -39,7 +39,7 @@ async function getAuthedContext() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_id")
+    .select("company_id, is_superadmin")
     .eq("id", user.id)
     .single()
 
@@ -47,9 +47,20 @@ async function getAuthedContext() {
     return { error: NextResponse.json({ error: "Company not found" }, { status: 404 }) }
   }
 
+  const isSuperAdmin = Boolean(profile.is_superadmin)
+  let companyId = profile.company_id as string
+
+  if (isSuperAdmin) {
+    const selectedCookie = cookieStore.get("selected_company_id")
+    if (selectedCookie?.value) {
+      companyId = decodeURIComponent(selectedCookie.value)
+    }
+  }
+
   return {
     supabase,
-    companyId: profile.company_id as string,
+    companyId,
+    isSuperAdmin,
   }
 }
 
@@ -117,7 +128,7 @@ export async function POST(request: Request, context: RouteCtx) {
 
     const {
       data: { publicUrl },
-    } = service.storage.from(BUCKET).getPublicUrl(path)
+    } = ctx.supabase.storage.from(BUCKET).getPublicUrl(path)
 
     const { error: updateError } = await ctx.supabase
       .from("contracts")

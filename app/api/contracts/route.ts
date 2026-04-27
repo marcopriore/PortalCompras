@@ -11,7 +11,7 @@ import {
 
 const CONTRACT_SELECT = `
   *,
-  suppliers!inner(name, code),
+  suppliers(name, code),
   payment_conditions(code, description)
 `
 
@@ -46,7 +46,7 @@ async function getAuthedContext() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_id")
+    .select("company_id, is_superadmin")
     .eq("id", user.id)
     .single()
 
@@ -54,10 +54,21 @@ async function getAuthedContext() {
     return { error: NextResponse.json({ error: "Company not found" }, { status: 404 }) }
   }
 
+  const isSuperAdmin = Boolean(profile.is_superadmin)
+  let companyId = profile.company_id as string
+
+  if (isSuperAdmin) {
+    const selectedCookie = cookieStore.get("selected_company_id")
+    if (selectedCookie?.value) {
+      companyId = decodeURIComponent(selectedCookie.value)
+    }
+  }
+
   return {
     supabase,
-    companyId: profile.company_id as string,
+    companyId,
     userId: user.id,
+    isSuperAdmin,
   }
 }
 
@@ -130,21 +141,37 @@ export async function POST(request: Request) {
     const start_date = body.start_date
     const end_date = body.end_date
 
-    if (
-      typeof supplier_id !== "string" ||
-      typeof title !== "string" ||
-      typeof type !== "string" ||
-      typeof status !== "string" ||
-      typeof start_date !== "string" ||
-      typeof end_date !== "string"
-    ) {
+    if (typeof title !== "string") {
       return NextResponse.json({ error: "Invalid body" }, { status: 400 })
     }
 
-    if (!isContractType(type)) {
+    let supplierId: string | null = null
+    if (supplier_id !== undefined && supplier_id !== null) {
+      if (typeof supplier_id !== "string") {
+        return NextResponse.json({ error: "Invalid supplier_id" }, { status: 400 })
+      }
+      supplierId = supplier_id
+    }
+
+    let typeValue: string = "fornecimento"
+    if (type !== undefined && type !== null) {
+      if (typeof type !== "string") {
+        return NextResponse.json({ error: "Invalid type" }, { status: 400 })
+      }
+      typeValue = type
+    }
+    if (!isContractType(typeValue)) {
       return NextResponse.json({ error: "Invalid type" }, { status: 400 })
     }
-    if (!isContractStatus(status)) {
+
+    let statusValue: string = "draft"
+    if (status !== undefined && status !== null) {
+      if (typeof status !== "string") {
+        return NextResponse.json({ error: "Invalid status" }, { status: 400 })
+      }
+      statusValue = status
+    }
+    if (!isContractStatus(statusValue)) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 })
     }
 
@@ -168,8 +195,21 @@ export async function POST(request: Request) {
     }
     const generatedCode = codeData
 
-    const startNorm = start_date.slice(0, 10)
-    const endNorm = end_date.slice(0, 10)
+    let startNorm: string | null = null
+    if (start_date !== undefined && start_date !== null) {
+      if (typeof start_date !== "string") {
+        return NextResponse.json({ error: "Invalid start_date" }, { status: 400 })
+      }
+      startNorm = start_date.slice(0, 10)
+    }
+
+    let endNorm: string | null = null
+    if (end_date !== undefined && end_date !== null) {
+      if (typeof end_date !== "string") {
+        return NextResponse.json({ error: "Invalid end_date" }, { status: 400 })
+      }
+      endNorm = end_date.slice(0, 10)
+    }
 
     let value: number | null = null
     if (body.value !== undefined && body.value !== null) {
@@ -219,12 +259,12 @@ export async function POST(request: Request) {
       .from("contracts")
       .insert({
         company_id: ctx.companyId,
-        supplier_id,
+        supplier_id: supplierId,
         code: generatedCode,
         title,
-        type,
+        type: typeValue,
         contract_kind,
-        status,
+        status: statusValue,
         start_date: startNorm,
         end_date: endNorm,
         value,
