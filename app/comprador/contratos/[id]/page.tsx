@@ -930,7 +930,12 @@ export default function ContratoPage({
   if (loadError || !contract || !form) {
     return (
       <div className="p-6 space-y-4 w-full">
-        <Button type="button" variant="ghost" size="sm" onClick={() => router.back()}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push("/comprador/contratos")}
+        >
           <ArrowLeft className="h-4 w-4 mr-2" />
           Voltar
         </Button>
@@ -986,7 +991,12 @@ export default function ContratoPage({
       ) : (
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
-          <Button type="button" variant="ghost" size="icon" onClick={() => router.back()}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push("/comprador/contratos")}
+          >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
@@ -1400,11 +1410,11 @@ export default function ContratoPage({
                 <Label>Título</Label>
                 <Input
                   readOnly={isRestricted}
-                  maxLength={150}
+                  maxLength={100}
                   className={
                     isRestricted
-                      ? "h-10 border border-border bg-muted text-sm text-foreground"
-                      : "h-10"
+                      ? "h-10 w-[100ch] max-w-full border border-border bg-muted text-sm text-foreground"
+                      : "h-10 w-[100ch] max-w-full"
                   }
                   value={form.title}
                   onChange={(e) =>
@@ -1412,7 +1422,7 @@ export default function ContratoPage({
                   }
                 />
                 <p className="text-xs text-muted-foreground text-right">
-                  {form.title.length}/150
+                  {form.title.length}/100
                 </p>
               </div>
               <div className="space-y-1.5">

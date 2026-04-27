@@ -763,6 +763,19 @@ export default function NovoContratoPage() {
             </div>
 
             <div className="space-y-1.5">
+              <Label>Título</Label>
+              <Input
+                placeholder="Nome do contrato"
+                maxLength={100}
+                className="w-[100ch] max-w-full"
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground text-right">
+                {form.title.length}/100
+              </p>
+            </div>
+            <div className="space-y-1.5">
               <Label>Fornecedor</Label>
               {fromCotacao ? (
                 <div className="flex items-center gap-2 h-10 px-3 rounded-md border border-border bg-muted text-sm">
@@ -791,18 +804,6 @@ export default function NovoContratoPage() {
                   </SelectContent>
                 </Select>
               )}
-            </div>
-            <div className="space-y-1.5">
-              <Label>Título</Label>
-              <Input
-                placeholder="Nome do contrato"
-                maxLength={150}
-                value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              />
-              <p className="text-xs text-muted-foreground text-right">
-                {form.title.length}/150
-              </p>
             </div>
 
             <div className="space-y-1.5">
