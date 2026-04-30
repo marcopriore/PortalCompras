@@ -47,6 +47,7 @@ import {
   Settings,
   ScrollText,
   Download,
+  BrainCircuit,
   Sparkles,
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
@@ -94,6 +95,7 @@ type FeatureKey =
   | 'approval_requisition'
   | 'approval_order'
   | 'ai_analytics'
+  | 'ai_negotiation'
   | 'contracts'
 
 const CORE_FEATURES: Array<{
@@ -194,10 +196,16 @@ const PREMIUM_FEATURES: Array<{
 }> = [
   {
     key: 'ai_analytics',
-    label: 'IA & Analytics',
+    label: 'IA Spend Analysis',
     description:
-      'Análise de spend, insights automáticos e sugestões por inteligência artificial',
+      'Análise de spend e insights automáticos por IA no dashboard',
     icon: <Sparkles className="h-5 w-5 text-violet-500" />,
+  },
+  {
+    key: 'ai_negotiation',
+    label: 'IA Negociação',
+    description: 'Análise de propostas e sugestões de negociação por IA na equalização',
+    icon: <BrainCircuit className="h-5 w-5 text-violet-500" />,
   },
   {
     key: 'contracts',

@@ -190,7 +190,7 @@ export async function GET(request: Request) {
         `,
       )
       .eq("company_id", ctx.companyId)
-      .eq("status", "submitted")
+      .in("status", ["submitted", "selected"])
       .eq("quotation_rounds.quotation_id", quotationId)
 
     if (roundId) {
@@ -419,8 +419,8 @@ Regras:
 
     let logId: string | null = null
     try {
-      const service = createServiceRoleClient()
-      const { data: insertedLog, error: logError } = await service
+      const serviceClient = createServiceRoleClient()
+      const { data: insertedLog, error: logError } = await serviceClient
         .from("ai_analysis_logs")
         .insert({
           company_id: ctx.companyId,
@@ -439,6 +439,32 @@ Regras:
 
       if (!logError && insertedLog?.id) {
         logId = insertedLog.id as string
+      }
+
+      const { error: auditError } = await serviceClient.from("audit_logs").insert({
+        company_id: ctx.companyId,
+        user_id: ctx.userId,
+        event_type: "ia_analysis",
+        entity: "quotation",
+        entity_id: quotationId,
+        description: `Análise de IA gerada para cotação ${quotation.code}`,
+        metadata: {
+          analysis_type: "quotation_negotiation",
+          round_id: roundId ?? null,
+          model: "claude-sonnet-4-20250514",
+          input_tokens: data.usage?.input_tokens,
+          output_tokens: data.usage?.output_tokens,
+          ai_log_id: insertedLog?.id ?? null,
+          prompt_resumo: `${userPrompt.slice(0, 500)}...`,
+          cobertura_percent: cobertura,
+          total_items: totalItems,
+          items_com_proposta: itemsComProposta,
+          fornecedores_unicos: fornecedoresUnicos,
+        },
+      })
+
+      if (auditError) {
+        console.error("[quotation-ai-analysis] erro ao salvar audit log:", auditError)
       }
     } catch (logError) {
       console.error("[quotation-ai-analysis] erro ao salvar log:", logError)

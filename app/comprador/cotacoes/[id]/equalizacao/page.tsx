@@ -2537,7 +2537,7 @@ export default function EqualizacaoPage({
 
             return (
               <>
-                {hasFeature("ai_analytics") && companyId && (
+                {hasFeature("ai_negotiation") && companyId && (
                   <div className="mb-2">
                     <QuotationAIAnalysis
                       quotationId={id}

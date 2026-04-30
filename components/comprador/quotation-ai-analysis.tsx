@@ -7,6 +7,7 @@ import {
   CheckCircle,
   ChevronDown,
   Clock,
+  Download,
   RefreshCw,
   Sparkles,
   TrendingDown,
@@ -60,6 +61,7 @@ interface AIAnalysis {
 type CachePayload = {
   analysis: AIAnalysis
   generatedAt: string
+  quotationCode: string | null
   cachedAt: string
 }
 
@@ -135,8 +137,10 @@ export function QuotationAIAnalysis({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [generatedAt, setGeneratedAt] = useState<string | null>(null)
+  const [quotationCode, setQuotationCode] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+  const [exporting, setExporting] = useState(false)
   const autoAnalyzeRef = useRef(false)
 
   useEffect(() => {
@@ -145,12 +149,14 @@ export function QuotationAIAnalysis({
     if (!cached) {
       setAnalysis(null)
       setGeneratedAt(null)
+      setQuotationCode(null)
       setCooldown(0)
       return
     }
 
     setAnalysis(cached.analysis)
     setGeneratedAt(cached.generatedAt)
+    setQuotationCode(cached.quotationCode ?? null)
 
     const cachedAtMs = new Date(cached.cachedAt).getTime()
     const remaining = Math.max(0, COOLDOWN_SECONDS - Math.floor((Date.now() - cachedAtMs) / 1000))
@@ -183,6 +189,7 @@ export function QuotationAIAnalysis({
       const data = (await response.json()) as {
         analysis?: AIAnalysis
         generatedAt?: string
+        quotationCode?: string
         error?: string
       }
 
@@ -195,9 +202,11 @@ export function QuotationAIAnalysis({
 
       setAnalysis(data.analysis)
       setGeneratedAt(data.generatedAt)
+      setQuotationCode(data.quotationCode ?? null)
       saveCache(quotationId, roundId, {
         analysis: data.analysis,
         generatedAt: data.generatedAt,
+        quotationCode: data.quotationCode ?? null,
       })
       setCooldown(COOLDOWN_SECONDS)
     } catch (err) {
@@ -205,6 +214,132 @@ export function QuotationAIAnalysis({
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleExportExcel() {
+    if (!analysis) return
+
+    const ExcelJS = (await import("exceljs")).default
+    const wb = new ExcelJS.Workbook()
+
+    const HEADER_COLOR = "FF4F3EF5"
+    const ALERT_HIGH = "FFFDE8E8"
+    const ALERT_MED = "FFFFF9C4"
+    const ALERT_LOW = "FFF1F5F9"
+    const REC_COLOR = "FFF0FDF4"
+    const CP_COLOR = "FFEFF6FF"
+
+    wb.creator = "Valore"
+    wb.created = new Date()
+
+    const wsResumo = wb.addWorksheet("Resumo")
+    wsResumo.views = [{ showGridLines: false }]
+    wsResumo.columns = [{ width: 30 }, { width: 80 }]
+    wsResumo.addRow(["Análise de Negociação por IA — Valore"])
+    wsResumo.getRow(1).getCell(1).font = {
+      bold: true,
+      size: 14,
+      color: { argb: "FF4F3EF5" },
+    }
+    wsResumo.addRow([])
+    wsResumo.addRow(["Cotação", quotationCode ?? "—"])
+    wsResumo.addRow(["Gerado em", generatedAt ? formatDateTime(generatedAt) : "—"])
+    wsResumo.addRow([])
+    wsResumo.addRow(["Resumo Executivo"])
+    wsResumo.getRow(6).getCell(1).font = { bold: true }
+    wsResumo.addRow([analysis.resumo_executivo])
+    wsResumo.getRow(7).getCell(1).alignment = { wrapText: true }
+
+    const wsAlertas = wb.addWorksheet("Alertas")
+    wsAlertas.views = [{ showGridLines: false }]
+    wsAlertas.columns = [{ width: 15 }, { width: 45 }, { width: 20 }, { width: 15 }]
+    const headerAlertas = wsAlertas.addRow(["Código", "Mensagem", "Tipo", "Severidade"])
+    headerAlertas.height = 22
+    headerAlertas.eachCell((cell) => {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_COLOR } }
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } }
+      cell.alignment = { vertical: "middle" }
+    })
+    analysis.alertas.forEach((a) => {
+      const row = wsAlertas.addRow([a.material_code, a.mensagem, a.tipo, a.severidade])
+      const bg = a.severidade === "alta" ? ALERT_HIGH : a.severidade === "media" ? ALERT_MED : ALERT_LOW
+      row.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } }
+      })
+    })
+
+    const wsRec = wb.addWorksheet("Recomendações")
+    wsRec.views = [{ showGridLines: false }]
+    wsRec.columns = [{ width: 15 }, { width: 30 }, { width: 18 }, { width: 15 }, { width: 50 }]
+    const headerRec = wsRec.addRow([
+      "Código",
+      "Fornecedor Recomendado",
+      "Preço (R$)",
+      "Confiança",
+      "Justificativa",
+    ])
+    headerRec.height = 22
+    headerRec.eachCell((cell) => {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_COLOR } }
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } }
+      cell.alignment = { vertical: "middle" }
+    })
+    analysis.recomendacoes.forEach((r) => {
+      const row = wsRec.addRow([
+        r.material_code,
+        r.fornecedor_recomendado_nome ?? "—",
+        r.preco_recomendado,
+        r.confianca,
+        r.justificativa,
+      ])
+      row.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: REC_COLOR } }
+      })
+      row.getCell(3).numFmt = '"R$"#,##0.00'
+    })
+
+    const wsCp = wb.addWorksheet("Contrapropostas")
+    wsCp.views = [{ showGridLines: false }]
+    wsCp.columns = [{ width: 15 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 50 }]
+    const headerCp = wsCp.addRow([
+      "Código",
+      "Melhor Preço (R$)",
+      "Sugerido (R$)",
+      "Redução (%)",
+      "Justificativa",
+    ])
+    headerCp.height = 22
+    headerCp.eachCell((cell) => {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_COLOR } }
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } }
+      cell.alignment = { vertical: "middle" }
+    })
+    analysis.contrapropostas.forEach((cp) => {
+      const row = wsCp.addRow([
+        cp.material_code,
+        cp.preco_atual_melhor,
+        cp.preco_sugerido,
+        cp.reducao_percentual,
+        cp.justificativa,
+      ])
+      row.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: CP_COLOR } }
+      })
+      row.getCell(2).numFmt = '"R$"#,##0.00'
+      row.getCell(3).numFmt = '"R$"#,##0.00'
+      row.getCell(4).numFmt = '0.0"%"'
+    })
+
+    const buf = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buf], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `analise-ia-${quotationCode ?? "cotacao"}-${new Date().toISOString().slice(0, 10)}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   useEffect(() => {
@@ -249,6 +384,26 @@ export function QuotationAIAnalysis({
         </div>
 
         <div className="flex items-center gap-2">
+          {analysis && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1 border-violet-300"
+              onClick={async (e) => {
+                e.stopPropagation()
+                setExporting(true)
+                try {
+                  await handleExportExcel()
+                } finally {
+                  setExporting(false)
+                }
+              }}
+              disabled={exporting}
+            >
+              <Download className="h-3 w-3" />
+              {exporting ? "Exportando..." : "Excel"}
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"

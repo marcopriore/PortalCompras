@@ -16,6 +16,7 @@ export type FeatureKey =
   | "approval_requisition"
   | "approval_order"
   | "ai_analytics"
+  | "ai_negotiation"
   | "contracts"
 
 export type PermissionKey =
@@ -74,6 +75,7 @@ const ALL_FEATURES: FeatureKey[] = [
   "approval_requisition",
   "approval_order",
   "ai_analytics",
+  "ai_negotiation",
   "contracts",
 ]
 
