@@ -73,6 +73,7 @@ import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { SupplierScoreBadge } from "@/components/ui/supplier-score-badge"
+import { QuotationAIAnalysis } from "@/components/comprador/quotation-ai-analysis"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSupplierScores } from "@/lib/hooks/use-supplier-score"
 import { toast } from "sonner"
@@ -444,6 +445,8 @@ export default function EqualizacaoPage({
   const [quotation, setQuotation] = React.useState<Quotation | null>(null)
   const [quotationItems, setQuotationItems] = React.useState<QuotationItem[]>([])
   const [proposals, setProposals] = React.useState<Proposal[]>([])
+  const [submittedCount, setSubmittedCount] = React.useState(0)
+  const [hasNewProposal, setHasNewProposal] = React.useState(false)
   const [allProposalsCatalog, setAllProposalsCatalog] = React.useState<Proposal[]>([])
   const [loading, setLoading] = React.useState(true)
   const [itemSelections, setItemSelections] = React.useState<Record<string, string | null>>({})
@@ -541,6 +544,7 @@ export default function EqualizacaoPage({
   const structureSnapshotRef = React.useRef({ items: 0, suppliers: 0 })
   const quotationSuppliersSnapshotRef = React.useRef<QuotationSupplier[]>([])
   const selectedRoundIdRef = React.useRef<string | null>(null)
+  const isFirstFetch = React.useRef(true)
 
   const countdownIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
   const deadlineExpireFetchedRef = React.useRef(false)
@@ -551,11 +555,36 @@ export default function EqualizacaoPage({
 
   React.useEffect(() => {
     isFirstLoadRef.current = true
+    isFirstFetch.current = true
+    setSubmittedCount(0)
+    setHasNewProposal(false)
   }, [id])
 
   React.useEffect(() => {
     selectedRoundIdRef.current = selectedRoundId
   }, [selectedRoundId])
+
+  const updateSubmittedTracking = React.useCallback((nextProposals: Proposal[]) => {
+    const currentCount = nextProposals.filter((p) => p.status === "submitted").length
+
+    if (isFirstFetch.current) {
+      isFirstFetch.current = false
+      setSubmittedCount(currentCount)
+      setHasNewProposal(false)
+      return
+    }
+
+    setSubmittedCount((prev) => {
+      if (currentCount > prev) {
+        setHasNewProposal(true)
+      } else if (currentCount === prev) {
+        setHasNewProposal(false)
+      } else {
+        setHasNewProposal(false)
+      }
+      return currentCount
+    })
+  }, [])
 
   const maxRoundNumber =
     rounds.length > 0 ? Math.max(...rounds.map((r) => r.round_number)) : null
@@ -756,6 +785,7 @@ export default function EqualizacaoPage({
           ),
         )
         setProposals(probs)
+        updateSubmittedTracking(probs)
         setOrderedItems(orderedMap)
 
         if (q?.status === "completed") {
@@ -835,8 +865,9 @@ export default function EqualizacaoPage({
         quotationSuppliersSnapshotRef.current,
       )
       setProposals(probs)
+      updateSubmittedTracking(probs)
     }
-  }, [id])
+  }, [id, updateSubmittedTracking])
 
   const refreshEqualizacao = React.useCallback(async () => {
     setIsRefreshing(true)
@@ -2506,6 +2537,17 @@ export default function EqualizacaoPage({
 
             return (
               <>
+                {hasFeature("ai_analytics") && companyId && (
+                  <div className="mb-2">
+                    <QuotationAIAnalysis
+                      quotationId={id}
+                      roundId={selectedRoundId}
+                      companyId={companyId}
+                      hasNewProposal={hasNewProposal}
+                      onAnalyzed={() => setHasNewProposal(false)}
+                    />
+                  </div>
+                )}
                 {/* Área de ações: fora das tabelas */}
                 <div className="flex flex-row gap-4 items-start p-3 mb-2 border border-border rounded-lg bg-muted/30">
                   <div className="flex flex-col gap-2 flex-1 min-w-0">
