@@ -1,11 +1,18 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -14,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ScrollText } from 'lucide-react'
+import { ScrollText, Sparkles } from 'lucide-react'
 
 type AuditLog = {
   id: string
@@ -27,6 +34,82 @@ type AuditLog = {
   metadata: Record<string, unknown> | null
   created_at: string
   companies?: { name: string } | null
+}
+
+type AiLogData = {
+  prompt: string
+  response: string
+  model: string
+  input_tokens: number | null
+  output_tokens: number | null
+  analysis_type: string
+  created_at: string
+}
+
+const PROMPT_SECTION_PATTERNS = [
+  /^IMPORTANTE:/i,
+  /^Contexto da cotação/i,
+  /^INSTRUÇÕES IMPORTANTES:/i,
+  /^Dados das propostas:/i,
+  /^Regras:/i,
+  /^Analise as propostas/i,
+  /^\{/,
+  /^"recomendacoes"/,
+  /^"contrapropostas"/,
+  /^"alertas"/,
+  /^"resumo_executivo"/,
+]
+
+function formatResponse(text: string): string {
+  try {
+    const parsed = JSON.parse(text)
+    return JSON.stringify(parsed, null, 2)
+  } catch {
+    return text
+  }
+}
+
+function highlightJson(json: string): ReactNode {
+  const lines = json.split('\n')
+  return lines.map((line, i) => {
+    const highlighted = line
+      .replace(/"([^"]+)":/g, '<span class="text-yellow-300">"$1"</span>:')
+      .replace(/: "([^"]*)"/g, ': <span class="text-green-300">"$1"</span>')
+      .replace(/: (-?\d+\.?\d*)/g, ': <span class="text-blue-300">$1</span>')
+      .replace(/: (null|true|false)/g, ': <span class="text-purple-300">$1</span>')
+
+    return <div key={i} dangerouslySetInnerHTML={{ __html: highlighted }} />
+  })
+}
+
+function highlightPrompt(text: string): ReactNode {
+  const lines = text.split('\n')
+  return lines.map((line, i) => {
+    const trimmed = line.trim()
+    const isSection = PROMPT_SECTION_PATTERNS.some((pattern) => pattern.test(trimmed))
+
+    if (isSection) {
+      return (
+        <div key={i} className="text-violet-300 font-semibold mt-2 first:mt-0">
+          {line}
+        </div>
+      )
+    }
+
+    if (trimmed.startsWith('- ')) {
+      return (
+        <div key={i} className="text-slate-300 pl-2">
+          <span className="text-cyan-400">-</span> {trimmed.slice(2)}
+        </div>
+      )
+    }
+
+    return (
+      <div key={i} className="text-slate-100">
+        {line}
+      </div>
+    )
+  })
 }
 
 function getEventMeta(eventType: string): { label: string; className: string } {
@@ -115,6 +198,10 @@ function getEventMeta(eventType: string): { label: string; className: string } {
       label: 'Entrega Atualizada',
       className: 'bg-violet-100 text-violet-800',
     },
+    ia_analysis: {
+      label: 'Análise IA',
+      className: 'bg-violet-100 text-violet-800',
+    },
   }
 
   return (
@@ -168,6 +255,17 @@ export default function AdminLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(false)
   const [tenants, setTenants] = useState<{ id: string; name: string }[]>([])
+  const [aiLogDialog, setAiLogDialog] = useState<{
+    open: boolean
+    logId: string | null
+    data: AiLogData | null
+    loading: boolean
+  }>({
+    open: false,
+    logId: null,
+    data: null,
+    loading: false,
+  })
 
   const prevFiltersRef = useRef({
     search: '',
@@ -266,6 +364,32 @@ export default function AdminLogsPage() {
   }, [])
 
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
+
+  async function handleViewAiLog(logId: string) {
+    setAiLogDialog({
+      open: true,
+      logId,
+      data: null,
+      loading: true,
+    })
+
+    try {
+      const response = await fetch(`/api/ai-analysis-logs/${logId}`)
+      const result = (await response.json()) as { log?: AiLogData; error?: string }
+      if (!response.ok || !result.log) {
+        setAiLogDialog((prev) => ({ ...prev, data: null, loading: false }))
+        return
+      }
+      setAiLogDialog((prev) => ({ ...prev, data: result.log ?? null, loading: false }))
+    } catch {
+      setAiLogDialog((prev) => ({ ...prev, data: null, loading: false }))
+    }
+  }
+
+  function shortId(value: string | null): string {
+    if (!value) return '—'
+    return value.length > 8 ? value.slice(0, 8) : value
+  }
 
   return (
     <div className="space-y-4">
@@ -405,6 +529,27 @@ export default function AdminLogsPage() {
                   (Array.isArray(log.metadata)
                     ? log.metadata.length > 0
                     : Object.keys(log.metadata as Record<string, unknown>).length > 0)
+                const metadata = (log.metadata ?? {}) as Record<string, unknown>
+                const aiLogId =
+                  typeof metadata.ai_log_id === 'string' ? metadata.ai_log_id : null
+                const coberturaPercent =
+                  typeof metadata.cobertura_percent === 'number'
+                    ? metadata.cobertura_percent
+                    : null
+                const totalItems =
+                  typeof metadata.total_items === 'number' ? metadata.total_items : null
+                const itemsComProposta =
+                  typeof metadata.items_com_proposta === 'number'
+                    ? metadata.items_com_proposta
+                    : null
+                const fornecedoresUnicos =
+                  typeof metadata.fornecedores_unicos === 'number'
+                    ? metadata.fornecedores_unicos
+                    : null
+                const inputTokens =
+                  typeof metadata.input_tokens === 'number' ? metadata.input_tokens : null
+                const outputTokens =
+                  typeof metadata.output_tokens === 'number' ? metadata.output_tokens : null
                 return (
                   <TableRow key={log.id} className="hover:bg-muted/50 transition-colors">
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
@@ -427,7 +572,50 @@ export default function AdminLogsPage() {
                     </TableCell>
                     <TableCell className="text-sm text-foreground">{log.description}</TableCell>
                     <TableCell className="px-3 py-2 max-w-xs">
-                      {metaObj ? (
+                      {log.event_type === 'ia_analysis' ? (
+                        <div className="space-y-1 text-xs text-muted-foreground">
+                          <p>
+                            Cotação: <span className="font-medium text-foreground">{shortId(log.entity_id)}</span>
+                          </p>
+                          <p>
+                            Cobertura:{' '}
+                            <span className="font-medium text-foreground">
+                              {coberturaPercent != null ? `${coberturaPercent}%` : '—'}
+                            </span>
+                          </p>
+                          <p>
+                            Itens:{' '}
+                            <span className="font-medium text-foreground">
+                              {itemsComProposta != null && totalItems != null
+                                ? `${itemsComProposta}/${totalItems}`
+                                : '—'}
+                            </span>
+                          </p>
+                          <p>
+                            Fornecedores:{' '}
+                            <span className="font-medium text-foreground">
+                              {fornecedoresUnicos ?? '—'}
+                            </span>
+                          </p>
+                          <p>
+                            Tokens:{' '}
+                            <span className="font-medium text-foreground">
+                              {inputTokens != null && outputTokens != null
+                                ? `${inputTokens} + ${outputTokens}`
+                                : '—'}
+                            </span>
+                          </p>
+                          {aiLogId ? (
+                            <button
+                              type="button"
+                              onClick={() => handleViewAiLog(aiLogId)}
+                              className="text-xs text-violet-600 hover:underline"
+                            >
+                              Ver IA
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : metaObj ? (
                         <details className="cursor-pointer">
                           <summary className="text-xs text-primary underline">Ver detalhes</summary>
                           <pre className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-all">
@@ -473,6 +661,66 @@ export default function AdminLogsPage() {
           </div>
         </div>
       ) : null}
+
+      <Dialog
+        open={aiLogDialog.open}
+        onOpenChange={(o) => setAiLogDialog((prev) => ({ ...prev, open: o }))}
+      >
+        <DialogContent
+          className="max-h-[90vh] flex flex-col"
+          style={{ width: "90vw", maxWidth: "1400px" }}
+        >
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-violet-500" />
+              Detalhes da Análise por IA
+            </DialogTitle>
+            {aiLogDialog.data && (
+              <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1 flex-wrap">
+                <span>Modelo: {aiLogDialog.data.model}</span>
+                <span>
+                  Entrada: {aiLogDialog.data.input_tokens?.toLocaleString('pt-BR') ?? 0} tokens
+                </span>
+                <span>
+                  Saída: {aiLogDialog.data.output_tokens?.toLocaleString('pt-BR') ?? 0} tokens
+                </span>
+                <span>
+                  {new Date(aiLogDialog.data.created_at).toLocaleString('pt-BR')}
+                </span>
+              </div>
+            )}
+          </DialogHeader>
+
+          {aiLogDialog.loading && (
+            <div className="animate-pulse space-y-2 py-4 shrink-0">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-4 bg-muted rounded w-full" />
+              ))}
+            </div>
+          )}
+
+          {aiLogDialog.data && (
+            <div className="flex-1 overflow-hidden mt-4">
+              <Tabs defaultValue="prompt" className="h-full flex flex-col">
+                <TabsList className="shrink-0">
+                  <TabsTrigger value="prompt">Prompt enviado</TabsTrigger>
+                  <TabsTrigger value="response">Resposta da IA</TabsTrigger>
+                </TabsList>
+                <TabsContent value="prompt" className="flex-1 overflow-hidden mt-2">
+                  <div className="h-[60vh] overflow-y-auto rounded-md border bg-slate-950 p-4 font-mono text-xs text-slate-100 whitespace-pre-wrap leading-relaxed">
+                    {highlightPrompt(aiLogDialog.data.prompt)}
+                  </div>
+                </TabsContent>
+                <TabsContent value="response" className="flex-1 overflow-hidden mt-2">
+                  <div className="h-[60vh] overflow-y-auto rounded-md border bg-slate-950 p-4 font-mono text-xs leading-relaxed text-slate-100">
+                    {highlightJson(formatResponse(aiLogDialog.data.response ?? ''))}
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
