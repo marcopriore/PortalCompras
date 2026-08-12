@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.66
+- Versão atual: v2.19.70
 
 ---
 
@@ -334,3 +334,34 @@
 | /fornecedor/pedidos/[id] | ✅ Aceite com modal de termos, recusa, data entrega, PDF |
 | /termos/[company_id] | ✅ Termos ativos (público, sem login) |
 | /fornecedor/atividades | ✅ Histórico completo paginado |
+
+---
+
+## Isolamento de Tenant (CRÍTICO)
+- Todas as telas do comprador DEVEM usar useTenant() para companyId
+- companyId DEVE estar nas dependências do useEffect de carregamento
+- APIs DEVEM ler selected_company_id do cookie para superadmin:
+  const isSuperAdmin = Boolean(profile.is_superadmin)
+  if (isSuperAdmin) {
+    const cookie = cookieStore.get("selected_company_id")
+    if (cookie?.value) companyId = decodeURIComponent(cookie.value)
+  }
+- NUNCA usar apenas profile.company_id em APIs acessadas por superadmin
+
+## Contratos
+- Status active NUNCA automático — só via /api/contracts/[id]/accept
+- supplier_id, start_date, end_date são nullable (rascunho)
+- Soft delete de itens: eliminated=true, nunca DELETE físico
+- generate_contract_code() via RPC (não gerar no frontend)
+- Upload PDF: service role só para Storage; ownership via cliente autenticado
+- Aceite cross-tenant: service role necessário (fornecedor lê contrato do comprador)
+
+## IA & Analytics
+- ANTHROPIC_API_KEY: nunca NEXT_PUBLIC_, nunca no client
+- Modelo: claude-sonnet-4-20250514
+- ai_analysis_logs: gravar prompt + response completos via service role
+- audit_logs ia_analysis: gravar via service role, não bloquear resposta em falha
+- Cache: ai_analytics = 1h (spend), ai_negotiation = 30min (equalização)
+- Propostas para análise: status IN ('submitted', 'selected')
+- Parse JSON da resposta: sempre limpar markdown fences antes de JSON.parse
+- feature gate: ai_analytics (dashboard), ai_negotiation (equalização)

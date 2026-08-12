@@ -1,5 +1,56 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.64]–[v2.19.70] — 2026-04-30
+
+### Módulo de Contratos (v2.19.67–v2.19.69)
+- Migrations: 026_contracts.sql, 027_contracts_phase1.sql,
+  028_contract_items_delivery.sql, 029_contract_items_eliminated.sql,
+  030_contract_acceptance.sql, 031_contracts_nullable_fields.sql
+- Tabelas: contracts, contract_items, contract_acceptances
+- Enums: contract_status (draft/pending_acceptance/active/expired/cancelled),
+  contract_type, contract_kind (por_valor/por_quantidade)
+- Storage bucket: contract-files (público)
+- Portal comprador: listagem com métricas, criação (rascunho sem validações,
+  salvar e enviar para aceite), edição por status (draft livre,
+  active/pending restrito), upload PDF, soft delete de itens,
+  histórico de aceites, página pública /contratos/[id]/termos
+- Portal fornecedor: /fornecedor/contratos — listagem e detalhe
+  com aceite/recusa + modal de termos + histórico
+- Fluxo: draft → enviar para aceite → pending_acceptance →
+  aceito (active) / recusado (draft com refusal_reason)
+- Import Excel de itens com validação no catálogo (3 etapas:
+  orientações → upload → prévia com erros)
+- Isolamento de tenant corrigido: APIs respeitam selected_company_id
+  do cookie para superadmin
+- Módulo Premium: feature key contracts no admin
+
+### IA & Analytics (v2.19.64–v2.19.65, v2.19.70)
+- SpendAIInsights: card no dashboard, cache 1h por company_id,
+  countdown, select de período, renderização markdown
+- GET /api/ai-spend-analysis: coleta 4 blocos de dados, chama
+  Anthropic claude-sonnet-4-20250514
+- Módulos Premium separados no admin: ai_analytics (Spend Analysis)
+  e ai_negotiation (Negociação na equalização)
+- QuotationAIAnalysis: card colapsável na equalização com análise
+  de propostas, alertas de desvio, recomendações e contrapropostas
+- GET /api/quotation-ai-analysis: filtra propostas submitted+selected,
+  contexto de cobertura, instruções inteligentes para poucos fornecedores
+- Export Excel da análise (4 abas: Resumo, Alertas, Recomendações,
+  Contrapropostas) com identidade visual do sistema
+- ai_analysis_logs: tabela de histórico de análises com prompt
+  completo e resposta
+- Audit log ia_analysis com metadata formatado
+- Modal "Ver IA" nos logs do admin com tabs Prompt/Resposta
+  e syntax highlight JSON
+
+### Sugestão de Fornecedor (v2.19.66)
+- supplier_categories: vínculo fornecedor ↔ categoria
+- SuggestSuppliersButton na cotação (modo A: quotation_id,
+  modo B: category + exclude_ids)
+- Seção Categorias Atendidas no modal do fornecedor
+
+---
+
 ## [v2.19.37]–[v2.19.63] — 2026-04-13
 
 ### Saving e equalização

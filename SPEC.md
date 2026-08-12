@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.66
+## Versão atual: v2.19.70
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -28,7 +28,9 @@ Stack principal: Next.js 16, TypeScript, Tailwind/shadcn, Supabase (Auth + RLS),
 | `/fornecedor/pedidos` | ✅ | Listagem com métricas e filtros |
 | `/fornecedor/pedidos/[id]` | ✅ | Aceite (modal de termos de fornecimento quando houver termo ativo), recusa, data de entrega, PDF |
 | `/fornecedor/atividades` | ✅ | Histórico completo paginado |
+| `/fornecedor/contratos` | ✅ | Listagem e detalhe com aceite/recusa |
 | `/termos/[company_id]` | ✅ | Página pública (sem login) — termos ativos da empresa |
+| `/contratos/[id]/termos` | ✅ | Página pública sem login |
 
 ---
 
@@ -73,9 +75,10 @@ Stack principal: Next.js 16, TypeScript, Tailwind/shadcn, Supabase (Auth + RLS),
 | Rota | Status |
 |------|--------|
 | `/comprador` | ✅ dashboard + painel ROI/Saving + Análise de Spend por IA (cache 1h, countdown, markdown) |
-| `/comprador/contratos` | ✅ listagem, métricas, filtros |
-| `/comprador/contratos/novo` | ✅ formulário completo |
-| `/comprador/contratos/[id]` | ✅ detalhe, edição inline, upload PDF |
+| `/comprador/contratos` | ✅ listagem, métricas, filtros, isolamento tenant |
+| `/comprador/contratos/novo` | ✅ criação, rascunho livre, salvar e enviar para aceite, import Excel com validação |
+| `/comprador/contratos/[id]` | ✅ detalhe, edição por status, upload PDF, aceite/recusa, histórico |
+| `/comprador/cotacoes/[id]/equalizacao` | ✅ + IA Negociação (QuotationAIAnalysis) |
 
 ### Relatórios BI
 
@@ -223,32 +226,71 @@ Regras:
 
 ---
 
-## 9. Backlog (estado atual — v2.19.66)
+## 8.1 Módulo de Contratos
 
-### Produto
+### Fluxo de status
+draft → (enviar para aceite) → pending_acceptance →
+  aceito: active | recusado: draft (com refusal_reason)
+active → (edição com confirmação) → draft → pending_acceptance
+active → (cancelar) → cancelled
+end_date passada → expired (manual/automático — pendente)
 
-- Negociação assistida por IA
+### Regras críticas
+- Status active NUNCA é setado automaticamente por data —
+  apenas via aceite do fornecedor (/api/contracts/[id]/accept)
+- supplier_id, start_date, end_date são nullable (rascunho parcial)
+- Edição restrita quando status !== 'draft': só condição de pagamento,
+  vigência, observações e eliminação de itens
+- Itens eliminados: soft delete (eliminated=true), nunca deletar fisicamente
+- contract_kind: por_valor (campo value visível) ou
+  por_quantidade (campo value oculto)
+- Código gerado automaticamente via generate_contract_code() RPC
+- Isolamento tenant: APIs leem selected_company_id do cookie
+  para superadmin
 
-### Módulos Premium
+### APIs de contratos
+- GET/POST /api/contracts
+- GET/PATCH/DELETE /api/contracts/[id]
+- POST /api/contracts/[id]/upload
+- POST /api/contracts/[id]/send-for-acceptance
+- POST /api/contracts/[id]/accept
+- GET /api/contracts/[id]/acceptances
+- GET /api/contracts/[id]/supplier-view
+- GET /api/contracts/supplier
+- GET/POST/PATCH/DELETE /api/contract-items
+- GET /api/contracts-public-terms
 
-- **contracts:** Gestão de contratos (feature key: `contracts`).
-- **Sugestão automática de fornecedor:** botão "Sugerir Fornecedores" na cotação (nova e edição); busca por `supplier_categories` (cadastro) + histórico em `quotation_suppliers` / `quotations.category`; badge de origem (Cadastro / Histórico); cadastro de categorias atendidas no modal do fornecedor (`commodity_group` do catálogo de itens).
+## 8.2 Módulo IA & Analytics
 
-### Concluído
+### feature: ai_analytics
+- SpendAIInsights no dashboard do comprador
+- Cache localStorage 1h por company_id
+- GET /api/ai-spend-analysis
 
-- Análise de spend por IA
+### feature: ai_negotiation
+- QuotationAIAnalysis na equalização
+- Análise de propostas submitted+selected da rodada
+- Cache localStorage 30min por quotation_id+round_id
+- Trigger automático quando nova proposta detectada (polling)
+- Export Excel com 4 abas
+- GET /api/quotation-ai-analysis
+- Logs: ai_analysis_logs + audit_logs (event_type: ia_analysis)
+- Modal "Ver IA" em /admin/logs
 
-### Técnico / plataforma
+---
 
-- Enforcement de permissões no frontend (sidebar dinâmica por role)
-- Cobertura de testes
-- Política de segurança de senhas
-- Configuração do `score_weight_price` na interface de Configurações
-- Rotina de atualização das documentações
+## 9. Backlog (estado atual — v2.19.70)
 
-### Go-to-market
-
-- Migrar documentação de implantação para Notion (opcional)
+1. Notificações de contratos (envio para aceite, aceito, recusado, vencendo em 30 dias)
+2. PDF do contrato gerado pelo sistema
+3. Consumo de saldo via pedidos vinculados ao contrato
+4. Status expired automático em contratos
+5. Atualizar documentação (CLAUDE.md, SPEC.md após esta sessão)
+6. Enforcement de permissões no frontend (sidebar dinâmica por role)
+7. Cobertura de testes
+8. Política de segurança de senhas
+9. Configuração score_weight_price na interface
+10. Migrar documentação de implantação para Notion
 
 ---
 
@@ -262,8 +304,8 @@ Regras:
 | v2.19.58–v2.19.59 | Score fornecedor |
 | v2.19.60–v2.19.61 | PDF do pedido |
 | v2.19.62–v2.19.63 | Aceite de termos de fornecimento |
-| v2.19.66 | `supplier_categories` (migration 025), categorias no modal do fornecedor, API e botão de sugestão de fornecedores na cotação |
+| v2.19.64–v2.19.70 | IA & Analytics (spend + negociação), contratos, supplier_categories, ai_analysis_logs |
 
 ---
 
-*Última revisão: v2.19.66.*
+*Última revisão: v2.19.70.*
