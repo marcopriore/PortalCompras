@@ -16,6 +16,7 @@ import {
   XCircle,
 } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
+import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -119,9 +120,11 @@ export default function FornecedorContratoDetalhePage({
   const [termsAccepted, setTermsAccepted] = React.useState(false)
   const [termsDialogOpen, setTermsDialogOpen] = React.useState(false)
 
-  const load = React.useCallback(async () => {
-    setLoading(true)
-    setNotFound(false)
+  const load = React.useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true)
+      setNotFound(false)
+    }
     try {
       const res = await fetch(`/api/contracts/${id}/supplier-view`)
       const data = (await res.json()) as {
@@ -132,19 +135,23 @@ export default function FornecedorContratoDetalhePage({
         error?: string
       }
       if (res.status === 404) {
-        setContract(null)
-        setNotFound(true)
-        setAcceptances([])
-        setSupplierTerms(null)
-        setCompanyName("")
+        if (!silent) {
+          setContract(null)
+          setNotFound(true)
+          setAcceptances([])
+          setSupplierTerms(null)
+          setCompanyName("")
+        }
         return
       }
       if (!res.ok || !data.contract) {
-        toast.error(data.error ?? "Não foi possível carregar o contrato.")
-        setContract(null)
-        setAcceptances([])
-        setSupplierTerms(null)
-        setCompanyName("")
+        if (!silent) {
+          toast.error(data.error ?? "Não foi possível carregar o contrato.")
+          setContract(null)
+          setAcceptances([])
+          setSupplierTerms(null)
+          setCompanyName("")
+        }
         return
       }
       setContract(data.contract)
@@ -152,9 +159,19 @@ export default function FornecedorContratoDetalhePage({
       setSupplierTerms(data.supplierTerms ?? null)
       setCompanyName(data.companyName?.trim() ?? "")
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [id])
+
+  const refreshContract = React.useCallback(async () => {
+    await load(true)
+  }, [load])
+
+  useAutoRefresh({
+    intervalMs: 30_000,
+    onRefresh: refreshContract,
+    enabled: Boolean(supplierId) && !userLoading && !acting,
+  })
 
   React.useEffect(() => {
     if (userLoading) return
@@ -162,7 +179,7 @@ export default function FornecedorContratoDetalhePage({
       setLoading(false)
       return
     }
-    void load()
+    void load(false)
   }, [userLoading, supplierId, load])
 
   async function handleAccept() {

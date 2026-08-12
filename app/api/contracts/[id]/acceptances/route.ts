@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import {
   contractAcceptanceFromRow,
   type ContractAcceptance,
@@ -81,10 +82,13 @@ export async function GET(_request: Request, context: RouteCtx) {
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    const { data: rows, error } = await ctx.supabase
+    const service = createServiceRoleClient()
+
+    const { data: rows, error } = await service
       .from("contract_acceptances")
       .select("*")
       .eq("contract_id", id)
+      .eq("company_id", ctx.companyId)
       .order("created_at", { ascending: false })
 
     if (error) {

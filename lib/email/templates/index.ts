@@ -210,3 +210,224 @@ export function templateDeliveryUpdated(data: {
     html: emailBase(content, "Data de entrega atualizada"),
   }
 }
+
+// ─── CONTRATOS ───────────────────────────────────────────
+
+export function templateContractSentForAcceptance(data: {
+  supplierName: string
+  buyerCompanyName: string
+  contractCode: string
+  contractTitle: string
+  startDate?: string
+  endDate?: string
+}): { subject: string; html: string } {
+  const base = getAppEmailBaseUrl()
+  const vigencia =
+    data.startDate && data.endDate
+      ? `${data.startDate} até ${data.endDate}`
+      : "A definir"
+  const content = `
+    <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 8px;">
+      Contrato aguardando seu aceite
+    </h2>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
+      Olá, ${data.supplierName}! A empresa ${data.buyerCompanyName}
+      enviou um contrato para sua análise e aceite.
+    </p>
+    <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;
+                padding:16px;margin-bottom:24px;text-align:center;">
+      <span style="font-size:32px;">📄</span>
+      <p style="color:#5b21b6;font-weight:600;margin:8px 0 0;font-size:16px;">
+        ${data.contractCode}
+      </p>
+      <p style="color:#7c3aed;font-size:13px;margin:4px 0 0;">
+        ${data.contractTitle}
+      </p>
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+      <tr><td>
+        <table width="100%">
+          ${emailInfoRow("Empresa", data.buyerCompanyName)}
+          ${emailInfoRow("Contrato", data.contractCode)}
+          ${emailInfoRow("Vigência", vigencia)}
+        </table>
+      </td></tr>
+    </table>
+    ${emailButton("Ver Contrato", `${base}/fornecedor/contratos`)}
+  `
+  return {
+    subject: `Contrato aguardando aceite — ${data.contractCode}`,
+    html: emailBase(content, "Contrato aguardando aceite"),
+  }
+}
+
+export function templateContractAccepted(data: {
+  buyerName: string
+  supplierName: string
+  contractCode: string
+  contractTitle: string
+}): { subject: string; html: string } {
+  const base = getAppEmailBaseUrl()
+  const content = `
+    <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 8px;">
+      Contrato aceito pelo fornecedor
+    </h2>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
+      Olá, ${data.buyerName}! O fornecedor aceitou o contrato
+      e ele está agora ativo.
+    </p>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;
+                padding:16px;margin-bottom:24px;text-align:center;">
+      <span style="font-size:32px;">✅</span>
+      <p style="color:#166534;font-weight:600;margin:8px 0 0;font-size:16px;">
+        ${data.contractCode} ativo
+      </p>
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+      <tr><td>
+        <table width="100%">
+          ${emailInfoRow("Fornecedor", data.supplierName)}
+          ${emailInfoRow("Contrato", data.contractCode)}
+          ${emailInfoRow("Título", data.contractTitle)}
+        </table>
+      </td></tr>
+    </table>
+    ${emailButton("Ver Contrato", `${base}/comprador/contratos`)}
+  `
+  return {
+    subject: `Contrato aceito — ${data.contractCode}`,
+    html: emailBase(content, "Contrato aceito"),
+  }
+}
+
+export function templateContractRefused(data: {
+  buyerName: string
+  supplierName: string
+  contractCode: string
+  contractTitle: string
+  reason?: string
+}): { subject: string; html: string } {
+  const base = getAppEmailBaseUrl()
+  const content = `
+    <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 8px;">
+      Contrato recusado pelo fornecedor
+    </h2>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
+      Olá, ${data.buyerName}! O fornecedor recusou o contrato
+      ${data.contractCode}. Você pode revisar as condições e reenviar.
+    </p>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;
+                padding:16px;margin-bottom:24px;">
+      <p style="color:#dc2626;font-weight:600;margin:0 0 8px;">
+        Motivo da recusa:
+      </p>
+      <p style="color:#7f1d1d;margin:0;font-size:14px;">
+        ${data.reason ?? "Não informado"}
+      </p>
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+      <tr><td>
+        <table width="100%">
+          ${emailInfoRow("Fornecedor", data.supplierName)}
+          ${emailInfoRow("Contrato", data.contractCode)}
+          ${emailInfoRow("Título", data.contractTitle)}
+        </table>
+      </td></tr>
+    </table>
+    ${emailButton("Revisar Contrato", `${base}/comprador/contratos`)}
+  `
+  return {
+    subject: `Contrato recusado — ${data.contractCode}`,
+    html: emailBase(content, "Contrato recusado"),
+  }
+}
+
+export function templateContractExpiringSoon(data: {
+  buyerName: string
+  supplierName: string
+  contractCode: string
+  contractTitle: string
+  endDate: string
+  daysRemaining: number
+}): { subject: string; html: string } {
+  const base = getAppEmailBaseUrl()
+  const content = `
+    <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 8px;">
+      Contrato próximo do vencimento
+    </h2>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
+      Olá, ${data.buyerName}! O contrato abaixo vence em
+      <strong>${data.daysRemaining} dia(s)</strong>.
+      Renove ou tome as providências necessárias.
+    </p>
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;
+                padding:16px;margin-bottom:24px;text-align:center;">
+      <span style="font-size:32px;">⚠️</span>
+      <p style="color:#92400e;font-weight:600;margin:8px 0 0;font-size:16px;">
+        Vence em ${data.daysRemaining} dia(s) — ${data.endDate}
+      </p>
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+      <tr><td>
+        <table width="100%">
+          ${emailInfoRow("Fornecedor", data.supplierName)}
+          ${emailInfoRow("Contrato", data.contractCode)}
+          ${emailInfoRow("Título", data.contractTitle)}
+          ${emailInfoRow("Vencimento", data.endDate)}
+        </table>
+      </td></tr>
+    </table>
+    ${emailButton("Ver Contrato", `${base}/comprador/contratos`)}
+  `
+  return {
+    subject: `⚠️ Contrato vence em ${data.daysRemaining} dia(s) — ${data.contractCode}`,
+    html: emailBase(content, "Contrato próximo do vencimento"),
+  }
+}
+
+export function templateContractExpired(data: {
+  buyerName: string
+  supplierName: string
+  contractCode: string
+  contractTitle: string
+  endDate: string
+}): { subject: string; html: string } {
+  const base = getAppEmailBaseUrl()
+  const content = `
+    <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 8px;">
+      Contrato vencido
+    </h2>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
+      Olá, ${data.buyerName}! O contrato abaixo atingiu a data de vencimento
+      (<strong>${data.endDate}</strong>) e foi marcado como expirado.
+      Renove ou tome as providências necessárias.
+    </p>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;
+                padding:16px;margin-bottom:24px;text-align:center;">
+      <span style="font-size:32px;">⏱️</span>
+      <p style="color:#991b1b;font-weight:600;margin:8px 0 0;font-size:16px;">
+        Vencido em ${data.endDate}
+      </p>
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+      <tr><td>
+        <table width="100%">
+          ${emailInfoRow("Fornecedor", data.supplierName)}
+          ${emailInfoRow("Contrato", data.contractCode)}
+          ${emailInfoRow("Título", data.contractTitle)}
+          ${emailInfoRow("Vencimento", data.endDate)}
+        </table>
+      </td></tr>
+    </table>
+    ${emailButton("Ver Contrato", `${base}/comprador/contratos`)}
+  `
+  return {
+    subject: `Contrato vencido — ${data.contractCode}`,
+    html: emailBase(content, "Contrato vencido"),
+  }
+}

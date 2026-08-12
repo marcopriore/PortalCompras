@@ -71,9 +71,24 @@ export async function proxy(request: NextRequest) {
   if (!isAuthRoute && !isPublicFornecedorPath(pathname)) {
     try {
       await supabase.rpc("close_expired_rounds")
+      await supabase.rpc("expire_overdue_contracts")
     } catch {
       // falha silenciosa — não bloquear o usuário
     }
+
+    const maintenanceSecret = process.env.CONTRACT_MAINTENANCE_SECRET ?? ""
+    const maintenanceUrl = new URL(
+      "/api/contracts/scheduled-maintenance",
+      request.nextUrl.origin,
+    )
+    void fetch(maintenanceUrl.toString(), {
+      method: "POST",
+      headers: maintenanceSecret
+        ? { "x-maintenance-key": maintenanceSecret }
+        : undefined,
+    }).catch(() => {
+      // notificações agendadas não devem bloquear o usuário
+    })
   }
 
   const { data: profileRow, error: profileError } = await supabase

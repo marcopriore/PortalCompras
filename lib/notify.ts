@@ -14,7 +14,7 @@ export interface CreateNotificationParams {
 export async function createNotification(
   params: CreateNotificationParams,
   supabase?: SupabaseClient,
-) {
+): Promise<boolean> {
   try {
     const db = supabase ?? createClient()
     const { error } = await db.from("notifications").insert({
@@ -26,8 +26,13 @@ export async function createNotification(
       entity: params.entity ?? null,
       entity_id: params.entityId ?? null,
     })
-    if (error) console.error("createNotification error:", error)
+    if (error) {
+      console.error("createNotification error:", error)
+      return false
+    }
+    return true
   } catch (e) {
     console.error("createNotification error:", e)
+    return false
   }
 }

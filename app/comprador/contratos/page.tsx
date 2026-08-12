@@ -8,6 +8,7 @@ import { ptBR } from "date-fns/locale"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useTenant } from "@/contexts/tenant-context"
+import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import {
   Card,
   CardContent,
@@ -101,32 +102,42 @@ export default function ContratosPage() {
 
   const canAccess = hasFeature("contracts") || isSuperAdmin
 
-  React.useEffect(() => {
-    if (userLoading || permissionsLoading) return
-    if (!companyId) return
-    if (!canAccess) {
-      setLoading(false)
-      return
-    }
+  const loadContracts = React.useCallback(
+    async (silent = false) => {
+      if (userLoading || permissionsLoading) return
+      if (!companyId) return
+      if (!canAccess) {
+        if (!silent) setLoading(false)
+        return
+      }
 
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
+      if (!silent) setLoading(true)
       try {
         const res = await fetch("/api/contracts")
         const data = (await res.json()) as { contracts?: Contract[] }
-        if (!cancelled && res.ok && Array.isArray(data.contracts)) {
+        if (res.ok && Array.isArray(data.contracts)) {
           setContracts(data.contracts)
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!silent) setLoading(false)
       }
-    })()
+    },
+    [userLoading, permissionsLoading, canAccess, companyId],
+  )
 
-    return () => {
-      cancelled = true
-    }
-  }, [userLoading, permissionsLoading, canAccess, companyId, features.contracts])
+  React.useEffect(() => {
+    void loadContracts(false)
+  }, [loadContracts, features.contracts])
+
+  const refreshContracts = React.useCallback(async () => {
+    await loadContracts(true)
+  }, [loadContracts])
+
+  useAutoRefresh({
+    intervalMs: 30_000,
+    onRefresh: refreshContracts,
+    enabled: Boolean(companyId) && !userLoading && !permissionsLoading && canAccess,
+  })
 
   const total = contracts.length
   const ativos = contracts.filter((c) => c.status === "active").length

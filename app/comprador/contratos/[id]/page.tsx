@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useTenant } from "@/contexts/tenant-context"
+import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import {
   Card,
   CardContent,
@@ -414,9 +415,11 @@ export default function ContratoPage({
     }
   }, [editing, companyId, contract?.status, debouncedItemSearch])
 
-  const loadContract = React.useCallback(async () => {
-    setLoading(true)
-    setLoadError(false)
+  const loadContract = React.useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true)
+      setLoadError(false)
+    }
     try {
       const [contractRes, accRes] = await Promise.all([
         fetch(`/api/contracts/${id}`),
@@ -427,15 +430,19 @@ export default function ContratoPage({
         error?: string
       }
       if (!contractRes.ok || !data.contract) {
-        setLoadError(true)
-        setContract(null)
-        setForm(null)
-        setAcceptances([])
+        if (!silent) {
+          setLoadError(true)
+          setContract(null)
+          setForm(null)
+          setAcceptances([])
+        }
         return
       }
       const c = data.contract
       setContract(c)
-      setForm(contractToForm(c))
+      if (!editing) {
+        setForm(contractToForm(c))
+      }
       if (accRes.ok) {
         const accData = (await accRes.json()) as {
           acceptances?: ContractAcceptance[]
@@ -443,13 +450,29 @@ export default function ContratoPage({
         setAcceptances(
           Array.isArray(accData.acceptances) ? accData.acceptances : [],
         )
-      } else {
+      } else if (!silent) {
         setAcceptances([])
       }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
-  }, [id])
+  }, [id, editing])
+
+  const refreshContract = React.useCallback(async () => {
+    if (editing) return
+    await loadContract(true)
+  }, [editing, loadContract])
+
+  useAutoRefresh({
+    intervalMs: 30_000,
+    onRefresh: refreshContract,
+    enabled:
+      Boolean(companyId) &&
+      !userLoading &&
+      !permissionsLoading &&
+      canAccess &&
+      !editing,
+  })
 
   React.useEffect(() => {
     editQueryHandled.current = false
@@ -472,7 +495,7 @@ export default function ContratoPage({
 
   React.useEffect(() => {
     if (userLoading || permissionsLoading || !canAccess || !companyId) return
-    void loadContract()
+    void loadContract(false)
   }, [userLoading, permissionsLoading, canAccess, companyId, loadContract])
 
   function openFilePicker() {
@@ -1087,6 +1110,23 @@ export default function ContratoPage({
         </div>
       )}
 
+      {contract.status === "draft" && contract.refusal_reason?.trim() ? (
+        <div
+          className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
+          role="status"
+        >
+          <XCircle className="h-5 w-5 shrink-0 text-destructive" />
+          <div>
+            <p className="font-medium text-destructive">
+              Contrato recusado pelo fornecedor
+            </p>
+            <p className="mt-1 text-muted-foreground whitespace-pre-wrap">
+              {contract.refusal_reason}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {!editing ? (
         <>
           <Card>
@@ -1334,39 +1374,6 @@ export default function ContratoPage({
               )}
             </CardContent>
           </Card>
-
-          {acceptances.length > 0 && (
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold">Histórico de Aceites</h3>
-              <div className="space-y-2">
-                {acceptances.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center gap-3 text-sm border rounded-md px-3 py-2"
-                  >
-                    {a.action === "accepted" ? (
-                      <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-destructive shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <span className="font-medium">
-                        {a.action === "accepted" ? "Aceito" : "Recusado"}
-                      </span>
-                      {a.notes ? (
-                        <span className="text-muted-foreground ml-2">
-                          — {a.notes}
-                        </span>
-                      ) : null}
-                    </div>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                      {format(parseISO(a.created_at), "dd/MM/yyyy HH:mm")}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </>
       ) : (
         <Card>
@@ -2019,6 +2026,37 @@ export default function ContratoPage({
           </CardContent>
         </Card>
       )}
+
+      {acceptances.length > 0 ? (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">Histórico de Aceites</h3>
+          <div className="space-y-2">
+            {acceptances.map((a) => (
+              <div
+                key={a.id}
+                className="flex items-center gap-3 text-sm border rounded-md px-3 py-2"
+              >
+                {a.action === "accepted" ? (
+                  <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-destructive shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium">
+                    {a.action === "accepted" ? "Aceito" : "Recusado"}
+                  </span>
+                  {a.notes ? (
+                    <span className="text-muted-foreground ml-2">— {a.notes}</span>
+                  ) : null}
+                </div>
+                <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                  {format(parseISO(a.created_at), "dd/MM/yyyy HH:mm")}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <ContractImportExcelDialog
         open={importDialog}

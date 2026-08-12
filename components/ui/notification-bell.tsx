@@ -38,12 +38,14 @@ function resolveNotificationRoute(
     quotation_rounds: `/comprador/cotacoes/${entityId}`,
     purchase_order: `/comprador/pedidos/${entityId}`,
     requisition: `/comprador/requisicoes/${entityId}`,
+    contract: `/comprador/contratos/${entityId}`,
   }
 
   const supplierRoutes: Record<string, string> = {
     quotation: `/fornecedor/cotacoes/${entityId}`,
     quotation_rounds: `/fornecedor/cotacoes/${entityId}`,
     purchase_order: `/fornecedor/pedidos/${entityId}`,
+    contract: `/fornecedor/contratos/${entityId}`,
   }
 
   const requesterRoutes: Record<string, string> = {
@@ -65,6 +67,13 @@ function resolveNotificationRoute(
     return buyerRoutes[entity ?? ""] ?? null
   }
 
+  if (type.startsWith("contract") || entity === "contract") {
+    if (profileType === "supplier") {
+      return supplierRoutes.contract ?? null
+    }
+    return buyerRoutes.contract ?? null
+  }
+
   if (profileType === "supplier") return supplierRoutes[entity ?? ""] ?? null
   if (profileType === "requester") return requesterRoutes[entity ?? ""] ?? null
   return buyerRoutes[entity ?? ""] ?? null
@@ -81,6 +90,11 @@ function getNotificationIcon(type: string) {
     "quotation.invited": { icon: FileText, color: "text-blue-500" },
     "quotation.new_round": { icon: FileText, color: "text-indigo-500" },
     "order.received": { icon: ShoppingCart, color: "text-blue-500" },
+    "contract.sent_for_acceptance": { icon: FileText, color: "text-purple-500" },
+    "contract.accepted": { icon: CheckCircle, color: "text-green-500" },
+    "contract.refused": { icon: XCircle, color: "text-red-500" },
+    "contract.expiring_soon": { icon: Calendar, color: "text-amber-500" },
+    "contract.expired": { icon: Calendar, color: "text-red-500" },
   }
   return map[type] ?? { icon: Bell, color: "text-muted-foreground" }
 }
@@ -88,11 +102,14 @@ function getNotificationIcon(type: string) {
 export function NotificationBell() {
   const router = useRouter()
   const { profileType } = useUser()
-  const { notifications, unreadCount, markAsRead, markAllAsRead } =
+  const [open, setOpen] = React.useState(false)
+  const { notifications, unreadCount, markAsRead, markAllAsRead, fetchNotifications } =
     useNotifications()
 
   const handleNotificationClick = React.useCallback(
     async (n: Notification) => {
+      setOpen(false)
+
       if (!n.read) void markAsRead(n.id)
 
       if (n.entity === "quotation_rounds" && n.entity_id) {
@@ -128,7 +145,13 @@ export function NotificationBell() {
   )
 
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen)
+        if (nextOpen) void fetchNotifications()
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />

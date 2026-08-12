@@ -2,6 +2,12 @@ import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
+import { createNotification } from "@/lib/notify"
+import { sendEmail } from "@/lib/email/send-email"
+import {
+  templateContractAccepted,
+  templateContractRefused,
+} from "@/lib/email/templates"
 
 async function getAuthedSupabase() {
   const cookieStore = await cookies()
@@ -71,7 +77,7 @@ export async function POST(request: Request, context: RouteCtx) {
     const { data: contract, error: contractErr } = await service
       .from("contracts")
       .select(
-        "id, company_id, supplier_id, status",
+        "id, company_id, supplier_id, status, code, title, created_by",
       )
       .eq("id", contractId)
       .maybeSingle()
@@ -173,6 +179,175 @@ export async function POST(request: Request, context: RouteCtx) {
       if (updErr) {
         return NextResponse.json({ error: updErr.message }, { status: 500 })
       }
+    }
+
+    try {
+      const recipientMap = new Map<
+        string,
+        { id: string; full_name: string | null }
+      >()
+
+      const { data: tenantProfiles, error: tenantErr } = await service
+        .from("profiles")
+        .select("id, full_name, profile_type, roles")
+        .eq("company_id", companyId)
+        .eq("status", "active")
+
+      if (tenantErr) {
+        console.error("contract accept/refuse notify: tenant profiles", tenantErr)
+      }
+
+      for (const profile of tenantProfiles ?? []) {
+        const roles = Array.isArray(profile.roles) ? profile.roles : []
+        const isBuyerSide =
+          profile.profile_type === "buyer" || roles.includes("admin")
+        if (isBuyerSide) {
+          recipientMap.set(profile.id, {
+            id: profile.id,
+            full_name: profile.full_name,
+          })
+        }
+      }
+
+      if (contract.created_by) {
+        const { data: creator } = await service
+          .from("profiles")
+          .select("id, full_name")
+          .eq("id", contract.created_by)
+          .maybeSingle()
+        if (creator?.id) {
+          recipientMap.set(creator.id, {
+            id: creator.id,
+            full_name: creator.full_name,
+          })
+        }
+      }
+
+      const recipients = Array.from(recipientMap.values()).slice(0, 10)
+
+      if (recipients.length === 0) {
+        console.error(
+          "contract accept/refuse notify: no recipients found",
+          { contractId, companyId, createdBy: contract.created_by },
+        )
+      }
+
+      const { data: supplierRow } = await service
+        .from("suppliers")
+        .select("name")
+        .eq("id", supplierId)
+        .maybeSingle()
+
+      const supplierName = supplierRow?.name ?? "Fornecedor"
+      const contractCode = contract.code ?? ""
+      const contractTitle = contract.title ?? ""
+
+      for (const buyer of recipients) {
+        if (body.action === "accepted") {
+          const inserted = await createNotification(
+            {
+              userId: buyer.id,
+              companyId: companyId,
+              type: "contract.accepted",
+              title: "Contrato aceito pelo fornecedor",
+              body: `${supplierName} aceitou o contrato ${contractCode}`,
+              entity: "contract",
+              entityId: contractId,
+            },
+            service,
+          )
+
+          if (!inserted) {
+            console.error(
+              "contract.accepted notify: insert failed",
+              buyer.id,
+            )
+          }
+
+          const { subject, html } = templateContractAccepted({
+            buyerName: buyer.full_name ?? "Comprador",
+            supplierName,
+            contractCode,
+            contractTitle,
+          })
+
+          const { data: prefs } = await service
+            .from("notification_preferences")
+            .select("order_accepted_email")
+            .eq("user_id", buyer.id)
+            .eq("company_id", companyId)
+            .maybeSingle()
+
+          const wantsEmail =
+            (prefs as { order_accepted_email?: boolean } | null)
+              ?.order_accepted_email ?? false
+
+          if (wantsEmail) {
+            const { data: authData } = await service.auth.admin.getUserById(
+              buyer.id,
+            )
+            const toEmail = authData.user?.email
+            if (toEmail) {
+              await sendEmail({ to: toEmail, subject, html })
+            }
+          }
+        } else {
+          const refusalBody = notes
+            ? `${supplierName} recusou o contrato ${contractCode}: ${notes}`
+            : `${supplierName} recusou o contrato ${contractCode}`
+
+          const inserted = await createNotification(
+            {
+              userId: buyer.id,
+              companyId: companyId,
+              type: "contract.refused",
+              title: "Contrato recusado pelo fornecedor",
+              body: refusalBody,
+              entity: "contract",
+              entityId: contractId,
+            },
+            service,
+          )
+
+          if (!inserted) {
+            console.error(
+              "contract.refused notify: insert failed",
+              buyer.id,
+            )
+          }
+
+          const { subject, html } = templateContractRefused({
+            buyerName: buyer.full_name ?? "Comprador",
+            supplierName,
+            contractCode,
+            contractTitle,
+            reason: notes ?? undefined,
+          })
+
+          const { data: prefs } = await service
+            .from("notification_preferences")
+            .select("order_refused_email")
+            .eq("user_id", buyer.id)
+            .eq("company_id", companyId)
+            .maybeSingle()
+
+          const wantsEmail =
+            (prefs as { order_refused_email?: boolean } | null)
+              ?.order_refused_email ?? false
+
+          if (wantsEmail) {
+            const { data: authData } = await service.auth.admin.getUserById(
+              buyer.id,
+            )
+            const toEmail = authData.user?.email
+            if (toEmail) {
+              await sendEmail({ to: toEmail, subject, html })
+            }
+          }
+        }
+      }
+    } catch (notifyErr) {
+      console.error("contract.accept/refuse notify:", notifyErr)
     }
 
     return NextResponse.json({ success: true })

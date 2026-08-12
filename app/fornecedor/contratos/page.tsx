@@ -13,6 +13,7 @@ import {
   XCircle,
 } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
+import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -79,34 +80,47 @@ export default function FornecedorContratosPage() {
   const [loading, setLoading] = React.useState(true)
   const [search, setSearch] = React.useState("")
 
-  React.useEffect(() => {
-    if (userLoading) return
-    if (!supplierId) {
-      setContracts([])
-      setLoading(false)
-      return
-    }
+  const loadContracts = React.useCallback(
+    async (silent = false) => {
+      if (userLoading) return
+      if (!supplierId) {
+        setContracts([])
+        if (!silent) setLoading(false)
+        return
+      }
 
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
+      if (!silent) setLoading(true)
       try {
         const res = await fetch("/api/contracts/supplier")
-        const data = (await res.json()) as { contracts?: Contract[]; error?: string }
-        if (!cancelled && res.ok && Array.isArray(data.contracts)) {
+        const data = (await res.json()) as {
+          contracts?: Contract[]
+          error?: string
+        }
+        if (res.ok && Array.isArray(data.contracts)) {
           setContracts(data.contracts)
-        } else if (!cancelled && !res.ok) {
+        } else if (!res.ok) {
           setContracts([])
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!silent) setLoading(false)
       }
-    })()
+    },
+    [userLoading, supplierId],
+  )
 
-    return () => {
-      cancelled = true
-    }
-  }, [userLoading, supplierId])
+  React.useEffect(() => {
+    void loadContracts(false)
+  }, [loadContracts])
+
+  const refreshContracts = React.useCallback(async () => {
+    await loadContracts(true)
+  }, [loadContracts])
+
+  useAutoRefresh({
+    intervalMs: 30_000,
+    onRefresh: refreshContracts,
+    enabled: Boolean(supplierId) && !userLoading,
+  })
 
   const metrics = React.useMemo(() => {
     const total = contracts.length
