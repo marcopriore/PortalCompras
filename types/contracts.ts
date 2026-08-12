@@ -37,9 +37,11 @@ export interface ContractItem {
   unit_of_measure: string | null
   quantity_contracted: number
   quantity_consumed: number
+  reserved_quantity: number
   unit_price: number
   total_price: number
   consumed_value: number
+  reserved_value: number
   delivery_days: number | null
   notes: string | null
   quotation_item_id: string | null
@@ -95,6 +97,8 @@ export interface Contract {
   total_value: number | null
   consumed_value: number
   consumed_quantity: number
+  reserved_value: number
+  reserved_quantity: number
   payment_condition_id: string | null
   payment_condition_code: string | null
   payment_condition_description: string | null
@@ -125,9 +129,11 @@ export function contractItemFromRow(row: unknown): ContractItem {
       r.unit_of_measure != null ? String(r.unit_of_measure) : null,
     quantity_contracted: Number(r.quantity_contracted ?? 0),
     quantity_consumed: Number(r.quantity_consumed ?? 0),
+    reserved_quantity: Number(r.reserved_quantity ?? 0),
     unit_price: Number(r.unit_price ?? 0),
     total_price: Number(r.total_price ?? 0),
     consumed_value: Number(r.consumed_value ?? 0),
+    reserved_value: Number(r.reserved_value ?? 0),
     delivery_days:
       r.delivery_days != null ? Number(r.delivery_days) : null,
     notes: r.notes != null ? String(r.notes) : null,
@@ -182,6 +188,8 @@ export function contractFromRow(row: unknown): Contract {
     total_value: r.total_value != null ? Number(r.total_value) : null,
     consumed_value: Number(r.consumed_value ?? 0),
     consumed_quantity: Number(r.consumed_quantity ?? 0),
+    reserved_value: Number(r.reserved_value ?? 0),
+    reserved_quantity: Number(r.reserved_quantity ?? 0),
     payment_condition_id: r.payment_condition_id
       ? String(r.payment_condition_id)
       : null,

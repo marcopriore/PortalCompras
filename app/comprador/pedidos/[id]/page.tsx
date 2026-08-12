@@ -103,6 +103,10 @@ type PurchaseOrderItem = {
   unit_price: number
   tax_percent: number | null
   total_price: number | null
+  contract_id: string | null
+  contract_item_id: string | null
+  contract_code: string | null
+  contract_item_code: string | null
 }
 
 type EditItem = {
@@ -473,7 +477,22 @@ export default function PurchaseOrderDetailPage({
             .single(),
           supabase
             .from("purchase_order_items")
-            .select("*")
+            .select(
+              `
+              id,
+              material_code,
+              material_description,
+              quantity,
+              unit_of_measure,
+              unit_price,
+              tax_percent,
+              total_price,
+              contract_id,
+              contract_item_id,
+              contracts:contract_id (code),
+              contract_items:contract_item_id (material_code)
+            `,
+            )
             .eq("purchase_order_id", id)
             .order("material_code", { ascending: true }),
           supabase
@@ -494,7 +513,38 @@ export default function PurchaseOrderDetailPage({
             .order("created_at", { ascending: true }),
         ])
         setOrder((orderRes.data as PurchaseOrder) ?? null)
-        const poItems = ((itemsRes.data as unknown) as PurchaseOrderItem[]) ?? []
+        const rawItems = (itemsRes.data ?? []) as Array<
+          Record<string, unknown> & {
+            contracts?: { code?: string } | { code?: string }[] | null
+            contract_items?: { material_code?: string } | { material_code?: string }[] | null
+          }
+        >
+        const poItems: PurchaseOrderItem[] = rawItems.map((row) => {
+          const contractEmbed = Array.isArray(row.contracts)
+            ? row.contracts[0]
+            : row.contracts
+          const contractItemEmbed = Array.isArray(row.contract_items)
+            ? row.contract_items[0]
+            : row.contract_items
+          return {
+            id: String(row.id ?? ""),
+            material_code: String(row.material_code ?? ""),
+            material_description: String(row.material_description ?? ""),
+            quantity: Number(row.quantity ?? 0),
+            unit_of_measure:
+              row.unit_of_measure != null ? String(row.unit_of_measure) : null,
+            unit_price: Number(row.unit_price ?? 0),
+            tax_percent: row.tax_percent != null ? Number(row.tax_percent) : null,
+            total_price: row.total_price != null ? Number(row.total_price) : null,
+            contract_id: row.contract_id != null ? String(row.contract_id) : null,
+            contract_item_id:
+              row.contract_item_id != null ? String(row.contract_item_id) : null,
+            contract_code: contractEmbed?.code ? String(contractEmbed.code) : null,
+            contract_item_code: contractItemEmbed?.material_code
+              ? String(contractItemEmbed.material_code)
+              : null,
+          }
+        })
         setItems(poItems)
         setPaymentOptions(((paymentsRes.data as PaymentConditionOption[]) ?? []) as PaymentConditionOption[])
         if (logsRes.error) {
@@ -1389,6 +1439,8 @@ export default function PurchaseOrderDetailPage({
                 <TableRow>
                   <TableHead>Código</TableHead>
                   <TableHead>Descrição Curta</TableHead>
+                  <TableHead className="whitespace-nowrap">Contrato</TableHead>
+                  <TableHead className="whitespace-nowrap">Item Contr.</TableHead>
                   <TableHead className="text-right">Qtd</TableHead>
                   <TableHead className="text-center">Unidade</TableHead>
                   <TableHead className="text-right">Preço Unit.</TableHead>
@@ -1404,6 +1456,12 @@ export default function PurchaseOrderDetailPage({
                           {item.material_code}
                         </TableCell>
                         <TableCell>{item.material_description}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {items.find((i) => i.id === item.id)?.contract_code ?? "—"}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {items.find((i) => i.id === item.id)?.contract_item_code ?? "—"}
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex flex-col items-end gap-1">
                             <input
@@ -1462,6 +1520,12 @@ export default function PurchaseOrderDetailPage({
                           {item.material_code}
                         </TableCell>
                         <TableCell>{item.material_description}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {items.find((i) => i.id === item.id)?.contract_code ?? "—"}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {items.find((i) => i.id === item.id)?.contract_item_code ?? "—"}
+                        </TableCell>
                         <TableCell className="text-right">{item.quantity}</TableCell>
                         <TableCell className="text-center">
                           {item.unit_of_measure ?? "—"}

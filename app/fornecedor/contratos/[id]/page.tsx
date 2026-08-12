@@ -47,6 +47,7 @@ import type {
   ContractItem,
 } from "@/types/contracts"
 import { CONTRACT_KINDS } from "@/types/contracts"
+import { contractAvailableValue } from "@/lib/contracts/contract-balance-helpers"
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -415,23 +416,27 @@ export default function FornecedorContratoDetalhePage({
 
       {contract.items && contract.items.length > 0 ? (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
             <div className="rounded-lg bg-muted p-3 text-center">
               <p className="text-xs text-muted-foreground">Valor Total</p>
               <p className="font-semibold">{formatBRL(contract.total_value)}</p>
             </div>
             <div className="rounded-lg bg-blue-50 p-3 text-center dark:bg-blue-950/30">
-              <p className="text-xs text-muted-foreground">Consumido</p>
+              <p className="text-xs text-muted-foreground">Reservado</p>
               <p className="font-semibold text-blue-700 dark:text-blue-300">
+                {formatBRL(contract.reserved_value)}
+              </p>
+            </div>
+            <div className="rounded-lg bg-amber-50 p-3 text-center dark:bg-amber-950/30">
+              <p className="text-xs text-muted-foreground">Consumido</p>
+              <p className="font-semibold text-amber-700 dark:text-amber-300">
                 {formatBRL(contract.consumed_value)}
               </p>
             </div>
             <div className="rounded-lg bg-green-50 p-3 text-center dark:bg-green-950/30">
               <p className="text-xs text-muted-foreground">Saldo</p>
               <p className="font-semibold text-green-700 dark:text-green-300">
-                {formatBRL(
-                  (contract.total_value ?? 0) - contract.consumed_value,
-                )}
+                {formatBRL(contractAvailableValue(contract))}
               </p>
             </div>
           </div>

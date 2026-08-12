@@ -66,8 +66,11 @@ import {
   Send,
   CheckCircle,
   XCircle,
+  Package,
 } from "lucide-react"
 import { ContractImportExcelDialog } from "@/components/comprador/contract-import-excel-dialog"
+import { CreatePoFromContractDialog } from "@/components/comprador/create-po-from-contract-dialog"
+import { contractAvailableValue, contractItemAvailableValue } from "@/lib/contracts/contract-balance-helpers"
 import type {
   Contract,
   ContractAcceptance,
@@ -210,9 +213,11 @@ function buildNewEditItem(
     unit_of_measure: row.unit_of_measure || null,
     quantity_contracted: 1,
     quantity_consumed: 0,
+    reserved_quantity: 0,
     unit_price: unit,
     total_price: unit,
     consumed_value: 0,
+    reserved_value: 0,
     delivery_days: null,
     notes: null,
     quotation_item_id: null,
@@ -256,6 +261,7 @@ export default function ContratoPage({
   const [form, setForm] = React.useState<FormState | null>(null)
   const [saving, setSaving] = React.useState(false)
   const [sendingForAcceptance, setSendingForAcceptance] = React.useState(false)
+  const [createPoOpen, setCreatePoOpen] = React.useState(false)
   const [uploading, setUploading] = React.useState(false)
   const [acceptances, setAcceptances] = React.useState<ContractAcceptance[]>([])
   const editQueryHandled = React.useRef(false)
@@ -1057,6 +1063,17 @@ export default function ContratoPage({
                 {sendingForAcceptance ? "Enviando..." : "Enviar para Aceite"}
               </Button>
             ) : null}
+            {contract.status === "active" ? (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setCreatePoOpen(true)}
+                className="gap-1.5"
+              >
+                <Package className="h-4 w-4" />
+                Criar Pedido
+              </Button>
+            ) : null}
             {contract.status !== "cancelled" && contract.status !== "expired" ? (
               <Button type="button" variant="outline" size="sm" onClick={beginEdit}>
                 <Edit className="h-4 w-4 mr-2" />
@@ -1198,23 +1215,27 @@ export default function ContratoPage({
 
           {contract.items && contract.items.length > 0 && (
             <>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="rounded-lg bg-muted p-3 text-center">
                   <p className="text-xs text-muted-foreground">Valor Total</p>
                   <p className="font-semibold">{formatBRL(contract.total_value)}</p>
                 </div>
                 <div className="rounded-lg bg-blue-50 p-3 text-center dark:bg-blue-950/30">
-                  <p className="text-xs text-muted-foreground">Consumido</p>
+                  <p className="text-xs text-muted-foreground">Reservado</p>
                   <p className="font-semibold text-blue-700 dark:text-blue-300">
+                    {formatBRL(contract.reserved_value)}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-amber-50 p-3 text-center dark:bg-amber-950/30">
+                  <p className="text-xs text-muted-foreground">Consumido</p>
+                  <p className="font-semibold text-amber-700 dark:text-amber-300">
                     {formatBRL(contract.consumed_value)}
                   </p>
                 </div>
                 <div className="rounded-lg bg-green-50 p-3 text-center dark:bg-green-950/30">
                   <p className="text-xs text-muted-foreground">Saldo</p>
-                  <p className="font-semibold text-green-700 dark:text-green-300">
-                    {formatBRL(
-                      (contract.total_value ?? 0) - contract.consumed_value,
-                    )}
+                  <p className="font-semibold text-green-700 dark:text-green-400">
+                    {formatBRL(contractAvailableValue(contract))}
                   </p>
                 </div>
               </div>
@@ -1249,7 +1270,7 @@ export default function ContratoPage({
                   </TableHeader>
                   <TableBody>
                     {contract.items.map((item: ContractItem) => {
-                      const lineBalance = item.total_price - item.consumed_value
+                      const lineBalance = contractItemAvailableValue(item)
                       return (
                         <TableRow key={item.id}>
                           <TableCell
@@ -2074,10 +2095,12 @@ export default function ContratoPage({
               unit_of_measure: item.unit_of_measure || null,
               quantity_contracted: Number(item.quantity_contracted || 0),
               quantity_consumed: 0,
+              reserved_quantity: 0,
               unit_price: Number(item.unit_price || 0),
               total_price:
                 Number(item.quantity_contracted || 0) * Number(item.unit_price || 0),
               consumed_value: 0,
+              reserved_value: 0,
               delivery_days: item.delivery_days ? Number(item.delivery_days) : null,
               notes: item.notes || null,
               quotation_item_id: null,
@@ -2120,6 +2143,14 @@ export default function ContratoPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {contract.status === "active" ? (
+        <CreatePoFromContractDialog
+          contract={contract}
+          open={createPoOpen}
+          onOpenChange={setCreatePoOpen}
+        />
+      ) : null}
     </div>
   )
 }
