@@ -59,6 +59,7 @@ import { toast } from "sonner"
 import type { LucideIcon } from "lucide-react"
 import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
 import { formatDateBR, formatDateTimeBR } from "@/lib/utils/date-helpers"
+import { buildContractItemLineNumberMap } from "@/lib/contracts/contract-balance-helpers"
 
 type PurchaseOrderStatus =
   | "draft"
@@ -106,7 +107,7 @@ type PurchaseOrderItem = {
   contract_id: string | null
   contract_item_id: string | null
   contract_code: string | null
-  contract_item_code: string | null
+  contract_item_line: number | null
 }
 
 type EditItem = {
@@ -478,8 +479,7 @@ export default function PurchaseOrderDetailPage({
           supabase
             .from("purchase_order_items")
             .select(
-              `
-              id,
+              `id,
               material_code,
               material_description,
               quantity,
@@ -489,9 +489,7 @@ export default function PurchaseOrderDetailPage({
               total_price,
               contract_id,
               contract_item_id,
-              contracts:contract_id (code),
-              contract_items:contract_item_id (material_code)
-            `,
+              contracts:contract_id (code)`,
             )
             .eq("purchase_order_id", id)
             .order("material_code", { ascending: true }),
@@ -516,16 +514,38 @@ export default function PurchaseOrderDetailPage({
         const rawItems = (itemsRes.data ?? []) as Array<
           Record<string, unknown> & {
             contracts?: { code?: string } | { code?: string }[] | null
-            contract_items?: { material_code?: string } | { material_code?: string }[] | null
           }
         >
+        let lineNumberMap = new Map<string, number>()
+        const contractIds = [
+          ...new Set(
+            rawItems
+              .map((row) =>
+                row.contract_id != null ? String(row.contract_id) : null,
+              )
+              .filter((x): x is string => Boolean(x)),
+          ),
+        ]
+        if (contractIds.length > 0) {
+          const { data: contractItemRows } = await supabase
+            .from("contract_items")
+            .select("id, contract_id, created_at, eliminated")
+            .in("contract_id", contractIds)
+          lineNumberMap = buildContractItemLineNumberMap(
+            (contractItemRows ?? []) as Array<{
+              id: string
+              contract_id: string
+              created_at: string
+              eliminated: boolean
+            }>,
+          )
+        }
         const poItems: PurchaseOrderItem[] = rawItems.map((row) => {
           const contractEmbed = Array.isArray(row.contracts)
             ? row.contracts[0]
             : row.contracts
-          const contractItemEmbed = Array.isArray(row.contract_items)
-            ? row.contract_items[0]
-            : row.contract_items
+          const contractItemId =
+            row.contract_item_id != null ? String(row.contract_item_id) : null
           return {
             id: String(row.id ?? ""),
             material_code: String(row.material_code ?? ""),
@@ -537,11 +557,10 @@ export default function PurchaseOrderDetailPage({
             tax_percent: row.tax_percent != null ? Number(row.tax_percent) : null,
             total_price: row.total_price != null ? Number(row.total_price) : null,
             contract_id: row.contract_id != null ? String(row.contract_id) : null,
-            contract_item_id:
-              row.contract_item_id != null ? String(row.contract_item_id) : null,
+            contract_item_id: contractItemId,
             contract_code: contractEmbed?.code ? String(contractEmbed.code) : null,
-            contract_item_code: contractItemEmbed?.material_code
-              ? String(contractItemEmbed.material_code)
+            contract_item_line: contractItemId
+              ? (lineNumberMap.get(contractItemId) ?? null)
               : null,
           }
         })
@@ -1460,7 +1479,7 @@ export default function PurchaseOrderDetailPage({
                           {items.find((i) => i.id === item.id)?.contract_code ?? "—"}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {items.find((i) => i.id === item.id)?.contract_item_code ?? "—"}
+                          {items.find((i) => i.id === item.id)?.contract_item_line ?? "—"}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex flex-col items-end gap-1">
@@ -1524,7 +1543,7 @@ export default function PurchaseOrderDetailPage({
                           {items.find((i) => i.id === item.id)?.contract_code ?? "—"}
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {items.find((i) => i.id === item.id)?.contract_item_code ?? "—"}
+                          {items.find((i) => i.id === item.id)?.contract_item_line ?? "—"}
                         </TableCell>
                         <TableCell className="text-right">{item.quantity}</TableCell>
                         <TableCell className="text-center">

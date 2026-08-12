@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   contractAvailableValue,
   contractItemAvailableQuantity,
+  buildContractItemLineNumberMap,
   isContractEligibleForPurchaseOrder,
 } from "@/lib/contracts/contract-balance-helpers"
 import type { Contract, ContractItem } from "@/types/contracts"
@@ -77,5 +78,22 @@ describe("contract-balance-helpers", () => {
     expect(
       isContractEligibleForPurchaseOrder(baseContract, new Date("2026-06-01")),
     ).toBe(true)
+  })
+
+  it("numera itens do contrato em sequência", () => {
+    const map = buildContractItemLineNumberMap([
+      {
+        id: "b",
+        contract_id: "c1",
+        created_at: "2026-02-01T00:00:00Z",
+      },
+      {
+        id: "a",
+        contract_id: "c1",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ])
+    expect(map.get("a")).toBe(1)
+    expect(map.get("b")).toBe(2)
   })
 })

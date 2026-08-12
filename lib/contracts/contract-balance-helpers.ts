@@ -55,3 +55,32 @@ export function validatePoLineQuantity(
   }
   return null
 }
+
+/** Número sequencial do item no contrato (1, 2, 3…), por ordem de criação. */
+export function buildContractItemLineNumberMap(
+  rows: Array<{
+    id: string
+    contract_id: string
+    created_at: string
+    eliminated?: boolean
+  }>,
+): Map<string, number> {
+  const byContract = new Map<string, typeof rows>()
+  for (const row of rows) {
+    if (row.eliminated) continue
+    const list = byContract.get(row.contract_id) ?? []
+    list.push(row)
+    byContract.set(row.contract_id, list)
+  }
+
+  const lineMap = new Map<string, number>()
+  for (const contractRows of byContract.values()) {
+    const sorted = [...contractRows].sort((a, b) =>
+      a.created_at.localeCompare(b.created_at),
+    )
+    sorted.forEach((row, index) => {
+      lineMap.set(row.id, index + 1)
+    })
+  }
+  return lineMap
+}
