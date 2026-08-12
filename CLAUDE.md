@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.70
+- Versão atual: v2.19.72
 
 ---
 
@@ -277,6 +277,7 @@
 | v2.19.58–v2.19.59 | Score de fornecedor (hook + badge; oculto para supplier) |
 | v2.19.60–v2.19.61 | PDF do pedido (API + react-pdf, botões comprador/fornecedor) |
 | v2.19.62–v2.19.63 | Termos de fornecimento: migration 024, APIs, modal aceite, página pública, aba Configurações |
+| v2.19.72 | Consumo de saldo de contrato via pedido (Fase 1), notificação fornecedor→comprador, item contrato sequencial |
 
 ---
 

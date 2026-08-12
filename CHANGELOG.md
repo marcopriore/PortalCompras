@@ -1,5 +1,25 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.72] — 2026-08-12
+
+### Consumo de saldo de contrato via pedido (Fase 1)
+- Migrations `034`–`037`: reserva/consumo de saldo, FKs por linha em
+  `purchase_order_items`, funções `reserve_contract_balance`,
+  `release_contract_balance`, `consume_contract_balance`, trigger em
+  `purchase_orders`
+- Criar pedido a partir de contrato ativo: modal no comprador, API
+  `POST /api/contracts/[id]/create-purchase-order`, status inicial `draft`
+- Referência de contrato por **linha** (estilo ME23N): colunas Contrato +
+  Item Contr. no pedido; preço herdado do contrato
+- Consumo no aceite do fornecedor (`processing`), não só em `completed`
+- Cards de saldo no contrato: Total / Reservado / Consumido / Disponível
+- Notificações de contratos, expiração automática e polling nas telas
+- `POST /api/notify-purchase-order-buyer`: notificação comprador no aceite,
+  recusa e alteração de entrega (fornecedor → comprador, service role)
+- Item Contr. exibe sequencial (1, 2, 3…) em vez do código do material
+
+---
+
 ## [v2.19.64]–[v2.19.70] — 2026-04-30
 
 ### Módulo de Contratos (v2.19.67–v2.19.69)
