@@ -489,7 +489,11 @@ export default function PurchaseOrderDetailPage({
               total_price,
               contract_id,
               contract_item_id,
-              contracts:contract_id (code)`,
+              contracts:contract_id (code),
+              contract_items:contract_item_id (
+                contract_id,
+                contracts:contract_id (code)
+              )`,
             )
             .eq("purchase_order_id", id)
             .order("material_code", { ascending: true }),
@@ -514,23 +518,36 @@ export default function PurchaseOrderDetailPage({
         const rawItems = (itemsRes.data ?? []) as Array<
           Record<string, unknown> & {
             contracts?: { code?: string } | { code?: string }[] | null
+            contract_items?:
+              | {
+                  contract_id?: string
+                  contracts?: { code?: string } | { code?: string }[] | null
+                }
+              | {
+                  contract_id?: string
+                  contracts?: { code?: string } | { code?: string }[] | null
+                }[]
+              | null
           }
         >
         let lineNumberMap = new Map<string, number>()
-        const contractIds = [
-          ...new Set(
-            rawItems
-              .map((row) =>
-                row.contract_id != null ? String(row.contract_id) : null,
-              )
-              .filter((x): x is string => Boolean(x)),
-          ),
-        ]
-        if (contractIds.length > 0) {
+        const contractIds = new Set<string>()
+        for (const row of rawItems) {
+          if (row.contract_id != null) {
+            contractIds.add(String(row.contract_id))
+          }
+          const itemEmbed = Array.isArray(row.contract_items)
+            ? row.contract_items[0]
+            : row.contract_items
+          if (itemEmbed?.contract_id) {
+            contractIds.add(String(itemEmbed.contract_id))
+          }
+        }
+        if (contractIds.size > 0) {
           const { data: contractItemRows } = await supabase
             .from("contract_items")
             .select("id, contract_id, created_at, eliminated")
-            .in("contract_id", contractIds)
+            .in("contract_id", [...contractIds])
           lineNumberMap = buildContractItemLineNumberMap(
             (contractItemRows ?? []) as Array<{
               id: string
@@ -544,8 +561,22 @@ export default function PurchaseOrderDetailPage({
           const contractEmbed = Array.isArray(row.contracts)
             ? row.contracts[0]
             : row.contracts
+          const itemEmbed = Array.isArray(row.contract_items)
+            ? row.contract_items[0]
+            : row.contract_items
+          const nestedContract = itemEmbed?.contracts
+            ? Array.isArray(itemEmbed.contracts)
+              ? itemEmbed.contracts[0]
+              : itemEmbed.contracts
+            : null
           const contractItemId =
             row.contract_item_id != null ? String(row.contract_item_id) : null
+          const resolvedContractId =
+            row.contract_id != null
+              ? String(row.contract_id)
+              : itemEmbed?.contract_id
+                ? String(itemEmbed.contract_id)
+                : null
           return {
             id: String(row.id ?? ""),
             material_code: String(row.material_code ?? ""),
@@ -556,9 +587,13 @@ export default function PurchaseOrderDetailPage({
             unit_price: Number(row.unit_price ?? 0),
             tax_percent: row.tax_percent != null ? Number(row.tax_percent) : null,
             total_price: row.total_price != null ? Number(row.total_price) : null,
-            contract_id: row.contract_id != null ? String(row.contract_id) : null,
+            contract_id: resolvedContractId,
             contract_item_id: contractItemId,
-            contract_code: contractEmbed?.code ? String(contractEmbed.code) : null,
+            contract_code: contractEmbed?.code
+              ? String(contractEmbed.code)
+              : nestedContract?.code
+                ? String(nestedContract.code)
+                : null,
             contract_item_line: contractItemId
               ? (lineNumberMap.get(contractItemId) ?? null)
               : null,

@@ -7,7 +7,7 @@ import type { NotifyWithEmailBody } from "@/lib/notify-with-email"
 async function canNotifyRecipient(
   service: ReturnType<typeof createServiceRoleClient>,
   caller: {
-    company_id: string
+    company_id: string | null
     profile_type: string | null
     supplier_id: string | null
     is_superadmin: boolean | null
@@ -74,7 +74,12 @@ export async function POST(request: Request) {
       .eq("id", user.id)
       .single()
 
-    if (!callerProfile?.company_id) {
+    if (
+      !callerProfile ||
+      (!callerProfile.company_id &&
+        callerProfile.profile_type !== "supplier" &&
+        !callerProfile.is_superadmin)
+    ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 

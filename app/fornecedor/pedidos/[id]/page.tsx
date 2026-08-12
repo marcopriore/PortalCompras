@@ -7,15 +7,8 @@ import { ptBR } from "date-fns/locale"
 import { CheckCircle, ChevronLeft, Clock, Download, Package, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
-import { notifyWithEmail } from "@/lib/notify-with-email"
-import { getUserEmail } from "@/lib/email/get-user-email"
-import {
-  templateDeliveryUpdated,
-  templateOrderAccepted,
-  templateOrderRefused,
-} from "@/lib/email/templates"
+import { notifyPurchaseOrderBuyer } from "@/lib/notify-purchase-order-buyer"
 import { logAudit } from "@/lib/audit"
-import { formatDateBR as formatDateBRForNotify } from "@/lib/utils/date-helpers"
 import { useUser } from "@/lib/hooks/useUser"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -76,26 +69,6 @@ type PurchaseOrderDetail = {
   updated_at: string | null
   company_id: string
   companies: CompanyEmbed
-}
-
-async function getPurchaseOrderBuyerUserId(
-  supabase: ReturnType<typeof createClient>,
-  order: Pick<PurchaseOrderDetail, "id" | "company_id" | "created_by" | "quotation_id">,
-): Promise<string | null> {
-  if (order.created_by) return order.created_by
-  if (order.quotation_id) {
-    const { data, error } = await supabase
-      .from("quotations")
-      .select("created_by")
-      .eq("id", order.quotation_id)
-      .single()
-    if (error) {
-      console.error("getPurchaseOrderBuyerUserId quotation:", error)
-      return null
-    }
-    return data?.created_by ?? null
-  }
-  return null
 }
 
 type POItem = {
@@ -378,36 +351,11 @@ export default function FornecedorPedidoDetalhePage({
       }
 
       try {
-        const buyerId = await getPurchaseOrderBuyerUserId(supabase, order)
-        if (buyerId) {
-          const { data: buyerProfile } = await supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("id", buyerId)
-            .maybeSingle()
-          const buyerEmail = await getUserEmail(buyerId)
-          const { subject, html } = templateOrderAccepted({
-            buyerName: buyerProfile?.full_name ?? "Comprador",
-            supplierName: order.supplier_name,
-            orderCode: order.code,
-            estimatedDelivery: estimatedDate
-              ? formatDateBRForNotify(estimatedDate)
-              : undefined,
-          })
-          await notifyWithEmail({
-            userId: buyerId,
-            companyId: order.company_id,
-            type: "order.accepted",
-            title: "Pedido aceito pelo fornecedor",
-            body: `${order.supplier_name} aceitou o ${order.code}`,
-            entity: "purchase_orders",
-            entityId: order.id,
-            toEmail: buyerEmail ?? undefined,
-            subject,
-            html,
-            emailPrefKey: "order_accepted_email",
-          })
-        }
+        await notifyPurchaseOrderBuyer({
+          orderId: order.id,
+          event: "accepted",
+          estimatedDelivery: estimatedDate,
+        })
       } catch (e) {
         console.error("notify order.accepted:", e)
       }
@@ -459,34 +407,11 @@ export default function FornecedorPedidoDetalhePage({
         })
       }
       try {
-        const buyerId = await getPurchaseOrderBuyerUserId(supabase, order)
-        if (buyerId) {
-          const { data: buyerProfile } = await supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("id", buyerId)
-            .maybeSingle()
-          const buyerEmail = await getUserEmail(buyerId)
-          const { subject, html } = templateOrderRefused({
-            buyerName: buyerProfile?.full_name ?? "Comprador",
-            supplierName: order.supplier_name,
-            orderCode: order.code,
-            reason,
-          })
-          await notifyWithEmail({
-            userId: buyerId,
-            companyId: order.company_id,
-            type: "order.refused",
-            title: "Pedido recusado pelo fornecedor",
-            body: `${order.supplier_name} recusou o ${order.code}. Motivo: ${reason}`,
-            entity: "purchase_orders",
-            entityId: order.id,
-            toEmail: buyerEmail ?? undefined,
-            subject,
-            html,
-            emailPrefKey: "order_refused_email",
-          })
-        }
+        await notifyPurchaseOrderBuyer({
+          orderId: order.id,
+          event: "refused",
+          refuseReason: reason,
+        })
       } catch (e) {
         console.error("notify order.refused:", e)
       }
@@ -541,36 +466,12 @@ export default function FornecedorPedidoDetalhePage({
         })
       }
       try {
-        const buyerId = await getPurchaseOrderBuyerUserId(supabase, order)
-        if (buyerId) {
-          const { data: buyerProfile } = await supabase
-            .from("profiles")
-            .select("full_name")
-            .eq("id", buyerId)
-            .maybeSingle()
-          const buyerEmail = await getUserEmail(buyerId)
-          const newDateLabel = formatDateBRForNotify(estimatedDate)
-          const { subject, html } = templateDeliveryUpdated({
-            buyerName: buyerProfile?.full_name ?? "Comprador",
-            supplierName: order.supplier_name,
-            orderCode: order.code,
-            newDate: newDateLabel,
-            reason: justification,
-          })
-          await notifyWithEmail({
-            userId: buyerId,
-            companyId: order.company_id,
-            type: "order.delivery_updated",
-            title: "Data de entrega atualizada",
-            body: `${order.supplier_name} atualizou a entrega do ${order.code} para ${newDateLabel}`,
-            entity: "purchase_orders",
-            entityId: order.id,
-            toEmail: buyerEmail ?? undefined,
-            subject,
-            html,
-            emailPrefKey: "delivery_done_email",
-          })
-        }
+        await notifyPurchaseOrderBuyer({
+          orderId: order.id,
+          event: "delivery_updated",
+          newDeliveryDate: estimatedDate,
+          deliveryReason: justification,
+        })
       } catch (e) {
         console.error("notify order.delivery_updated:", e)
       }
