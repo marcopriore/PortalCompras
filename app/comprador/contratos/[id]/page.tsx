@@ -253,6 +253,7 @@ export default function ContratoPage({
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { companyId } = useTenant()
   const { hasFeature, loading: permissionsLoading } = usePermissions()
+  const contractBalanceEnabled = hasFeature("contract_balance") || isSuperAdmin
 
   const [contract, setContract] = React.useState<Contract | null>(null)
   const [loadError, setLoadError] = React.useState(false)
@@ -1063,7 +1064,7 @@ export default function ContratoPage({
                 {sendingForAcceptance ? "Enviando..." : "Enviar para Aceite"}
               </Button>
             ) : null}
-            {contract.status === "active" ? (
+            {contract.status === "active" && contractBalanceEnabled ? (
               <Button
                 type="button"
                 size="sm"
@@ -2144,7 +2145,7 @@ export default function ContratoPage({
         </AlertDialogContent>
       </AlertDialog>
 
-      {contract.status === "active" ? (
+      {contract.status === "active" && contractBalanceEnabled ? (
         <CreatePoFromContractDialog
           contract={contract}
           open={createPoOpen}

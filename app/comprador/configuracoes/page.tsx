@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import {
+  CONTRACT_PO_LINK_PROMPT_KEY,
+  parseContractPoLinkPrompt,
+} from "@/lib/contracts/contract-balance-settings"
 import { logAudit } from "@/lib/audit"
 import { toast } from "sonner"
 import * as XLSX from "xlsx"
@@ -410,6 +414,7 @@ export default function ConfiguracoesPage() {
   const [mfaSuccess, setMfaSuccess] = React.useState<string | null>(null)
 
   const { hasFeature } = usePermissions()
+  const contractBalanceEnabled = hasFeature("contract_balance")
 
   const [approvalRequisitionEnabled, setApprovalRequisitionEnabled] = React.useState(false)
   const [approvalOrderEnabled, setApprovalOrderEnabled] = React.useState(false)
@@ -460,6 +465,9 @@ export default function ConfiguracoesPage() {
 
   const [paymentConditions, setPaymentConditions] = React.useState<PaymentCondition[]>([])
   const [loadingConditions, setLoadingConditions] = React.useState(false)
+  const [contractPoLinkPrompt, setContractPoLinkPrompt] = React.useState(true)
+  const [loadingContractSettings, setLoadingContractSettings] = React.useState(false)
+  const [savingContractPrompt, setSavingContractPrompt] = React.useState(false)
   const [conditionDialog, setConditionDialog] = React.useState<{
     open: boolean
     mode: "create" | "edit"
@@ -667,6 +675,67 @@ export default function ConfiguracoesPage() {
       cancelled = true
     }
   }, [activeTab, companyId, canManageCompany, userLoading])
+
+  React.useEffect(() => {
+    if (
+      userLoading ||
+      activeTab !== "campos" ||
+      !companyId ||
+      !canManageCompany ||
+      !contractBalanceEnabled
+    ) {
+      return
+    }
+    let cancelled = false
+    const supabase = createClient()
+    setLoadingContractSettings(true)
+    void supabase
+      .from("company_settings")
+      .select("value")
+      .eq("company_id", companyId)
+      .eq("key", CONTRACT_PO_LINK_PROMPT_KEY)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          console.error(error)
+          setContractPoLinkPrompt(true)
+        } else {
+          setContractPoLinkPrompt(
+            parseContractPoLinkPrompt(data?.value as string | null | undefined),
+          )
+        }
+        setLoadingContractSettings(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, companyId, canManageCompany, userLoading, contractBalanceEnabled])
+
+  const handleContractPoLinkPromptChange = async (enabled: boolean) => {
+    if (!companyId || !canManageCompany) return
+    setContractPoLinkPrompt(enabled)
+    setSavingContractPrompt(true)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.from("company_settings").upsert(
+        {
+          company_id: companyId,
+          key: CONTRACT_PO_LINK_PROMPT_KEY,
+          value: enabled ? "true" : "false",
+        },
+        { onConflict: "company_id,key" },
+      )
+      if (error) throw error
+      toast.success("Preferência de vínculo com contrato atualizada.")
+    } catch (e) {
+      console.error(e)
+      setContractPoLinkPrompt(!enabled)
+      toast.error("Não foi possível salvar a preferência.")
+    } finally {
+      setSavingContractPrompt(false)
+    }
+  }
 
   React.useEffect(() => {
     if (userLoading || activeTab !== "termos" || !companyId) return
@@ -2873,6 +2942,45 @@ export default function ConfiguracoesPage() {
               </CardContent>
             </Card>
           )}
+
+          {canManageCompany && contractBalanceEnabled ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Consumo de contrato na equalização</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Ao criar pedido na equalização, o sistema pode verificar contratos
+                  ativos e sugerir vínculo por linha antes de gerar o pedido.
+                </p>
+              </CardHeader>
+              <CardContent>
+                {loadingContractSettings ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando preferências...
+                  </div>
+                ) : (
+                  <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-4">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">
+                        Verificar contratos ao criar pedido
+                      </p>
+                      <p className="text-xs text-muted-foreground max-w-xl">
+                        Quando ativo, o sistema analisa contratos compatíveis e exibe
+                        o modal de confirmação. Desativado, o pedido é criado
+                        diretamente com os preços da proposta, sem sugerir vínculo.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={contractPoLinkPrompt}
+                      disabled={savingContractPrompt}
+                      onCheckedChange={(v) => void handleContractPoLinkPromptChange(v)}
+                      aria-label="Verificar contratos ao criar pedido na equalização"
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       )}
 

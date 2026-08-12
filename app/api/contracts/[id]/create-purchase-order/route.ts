@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isContractEligibleForPurchaseOrder } from "@/lib/contracts/contract-balance-helpers"
+import { tenantHasContractBalance } from "@/lib/contracts/contract-balance-settings"
 
 async function getBuyerContext() {
   const cookieStore = await cookies()
@@ -67,6 +68,17 @@ export async function POST(request: Request, context: RouteCtx) {
   try {
     const ctx = await getBuyerContext()
     if ("error" in ctx) return ctx.error
+
+    const contractBalanceEnabled = await tenantHasContractBalance(
+      ctx.supabase,
+      ctx.companyId,
+    )
+    if (!contractBalanceEnabled) {
+      return NextResponse.json(
+        { error: "Funcionalidade Consumo de Contrato não habilitada" },
+        { status: 403 },
+      )
+    }
 
     const { id: contractId } = await context.params
     const body = (await request.json()) as {

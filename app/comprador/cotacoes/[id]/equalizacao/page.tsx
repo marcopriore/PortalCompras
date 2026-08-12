@@ -74,6 +74,15 @@ import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { SupplierScoreBadge } from "@/components/ui/supplier-score-badge"
 import { QuotationAIAnalysis } from "@/components/comprador/quotation-ai-analysis"
+import {
+  LinkContractEqualizacaoDialog,
+  type EqualizacaoSelectionRow,
+} from "@/components/comprador/link-contract-equalizacao-dialog"
+import type { EqualizacaoContractLink } from "@/lib/contracts/match-contract-items"
+import {
+  CONTRACT_PO_LINK_PROMPT_KEY,
+  parseContractPoLinkPrompt,
+} from "@/lib/contracts/contract-balance-settings"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSupplierScores } from "@/lib/hooks/use-supplier-score"
 import { toast } from "sonner"
@@ -97,6 +106,9 @@ type OrderedItemInfo = {
   roundId: string | null
   roundNumber: number | null
 }
+
+/** Pedidos nestes status não bloqueiam o item na equalização para novo pedido. */
+const PO_STATUSES_RELEASING_QUOTATION_ITEM = new Set(["cancelled", "refused"])
 
 type Round = {
   id: string
@@ -438,6 +450,7 @@ export default function EqualizacaoPage({
   const router = useRouter()
   const { companyId, userId, loading: userLoading, profileType } = useUser()
   const { hasFeature, hasPermission } = usePermissions()
+  const contractBalanceEnabled = hasFeature("contract_balance")
 
   // Next.js 16: params é Promise
   const { id } = React.use(params)
@@ -525,6 +538,9 @@ export default function EqualizacaoPage({
   const [paymentConditions, setPaymentConditions] = React.useState<
     PaymentConditionRow[]
   >([])
+  const [linkContractDialogOpen, setLinkContractDialogOpen] = React.useState(false)
+  const [checkingContracts, setCheckingContracts] = React.useState(false)
+  const [contractPoLinkPrompt, setContractPoLinkPrompt] = React.useState(true)
 
   const equalizacaoSupplierIds = React.useMemo(
     () =>
@@ -739,7 +755,7 @@ export default function EqualizacaoPage({
           const { data: poItemsData } = await supabase
             .from("purchase_order_items")
             .select(
-              "quotation_item_id, purchase_order_id, round_id, purchase_orders(code, proposal_id), quotation_rounds(round_number)",
+              "quotation_item_id, purchase_order_id, round_id, purchase_orders(code, proposal_id, status), quotation_rounds(round_number)",
             )
             .in("quotation_item_id", quotationItemIds)
 
@@ -748,8 +764,8 @@ export default function EqualizacaoPage({
             purchase_order_id: string
             round_id: string | null
             purchase_orders:
-              | { code: string; proposal_id: string | null }
-              | { code: string; proposal_id: string | null }[]
+              | { code: string; proposal_id: string | null; status?: string }
+              | { code: string; proposal_id: string | null; status?: string }[]
               | null
             quotation_rounds:
               | { round_number: number }
@@ -759,6 +775,8 @@ export default function EqualizacaoPage({
             const po = Array.isArray(row.purchase_orders)
               ? row.purchase_orders[0]
               : row.purchase_orders
+            const poStatus = po?.status ?? ""
+            if (PO_STATUSES_RELEASING_QUOTATION_ITEM.has(poStatus)) return
             const orderCode = po?.code ?? "—"
             const proposalId = po?.proposal_id ?? ""
             const roundNumber = pickNestedRoundNumber(row.quotation_rounds)
@@ -914,6 +932,27 @@ export default function EqualizacaoPage({
       cancelled = true
     }
   }, [companyId])
+
+  React.useEffect(() => {
+    if (!companyId || !contractBalanceEnabled) return
+    let cancelled = false
+    ;(async () => {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from("company_settings")
+        .select("value")
+        .eq("company_id", companyId)
+        .eq("key", CONTRACT_PO_LINK_PROMPT_KEY)
+        .maybeSingle()
+      if (cancelled) return
+      setContractPoLinkPrompt(
+        parseContractPoLinkPrompt(data?.value as string | null | undefined),
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [companyId, contractBalanceEnabled])
 
   const supplierRespondStats = React.useMemo(() => {
     const totalSuppliers = proposals.length
@@ -1397,6 +1436,26 @@ export default function EqualizacaoPage({
     setItemSelections({})
   }
 
+  const equalizacaoSelectionRows = React.useMemo((): EqualizacaoSelectionRow[] => {
+    const rows: EqualizacaoSelectionRow[] = []
+    for (const [quotationItemId, proposalId] of Object.entries(itemSelections)) {
+      if (!proposalId) continue
+      if (orderedItems.has(quotationItemId)) continue
+      const qi = quotationItems.find((q) => q.id === quotationItemId)
+      const proposal = proposals.find((p) => p.id === proposalId)
+      if (!qi || !proposal?.supplier_id) continue
+      rows.push({
+        quotationItemId,
+        supplierId: proposal.supplier_id,
+        supplierName: proposal.supplier_name,
+        materialCode: qi.material_code,
+        materialDescription: qi.material_description,
+        quantity: qi.quantity,
+      })
+    }
+    return rows
+  }, [itemSelections, quotationItems, proposals, orderedItems])
+
   function handleGerarContrato() {
     if (!selectedRoundId) {
       toast.error("Selecione uma rodada.")
@@ -1633,7 +1692,62 @@ export default function EqualizacaoPage({
     return Math.min(...totals)
   }, [proposals, selectedRoundId, quotationItems])
 
-  const handleFinalize = async () => {
+  const handleCreateOrderClick = async () => {
+    if (!quotation || !companyId || !userId) return
+    if (!selectedRoundId) return
+    if (!hasSelection) return
+    if (!hasPermission("order.create")) return
+
+    if (!hasFeature("contract_balance") || equalizacaoSelectionRows.length === 0) {
+      await handleFinalize({})
+      return
+    }
+
+    if (!contractPoLinkPrompt) {
+      await handleFinalize({})
+      return
+    }
+
+    setCheckingContracts(true)
+    try {
+      const res = await fetch(`/api/quotations/${id}/contract-matches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selections: equalizacaoSelectionRows.map((s) => ({
+            quotationItemId: s.quotationItemId,
+            supplierId: s.supplierId,
+            materialCode: s.materialCode,
+            quantity: s.quantity,
+          })),
+        }),
+      })
+      const data = (await res.json()) as {
+        items?: Array<{ candidates?: unknown[] }>
+        error?: string
+      }
+      if (!res.ok) {
+        toast.error(data.error ?? "Não foi possível verificar contratos")
+        return
+      }
+      const hasMatches = (data.items ?? []).some(
+        (row) => (row.candidates?.length ?? 0) > 0,
+      )
+      if (hasMatches) {
+        setLinkContractDialogOpen(true)
+      } else {
+        await handleFinalize({})
+      }
+    } catch {
+      toast.error("Erro ao verificar contratos")
+    } finally {
+      setCheckingContracts(false)
+    }
+  }
+
+  const handleFinalize = async (
+    contractLinksForOrder: Record<string, EqualizacaoContractLink | null> = {},
+  ) => {
     if (!quotation || !companyId || !userId) return
     if (!selectedRoundId) return
     if (!hasSelection) return
@@ -1697,6 +1811,17 @@ export default function EqualizacaoPage({
 
       const createdOrdersList: { code: string; supplierName: string }[] = []
 
+      async function reserveContractBalanceForOrder(orderId: string) {
+        const res = await fetch(
+          `/api/purchase-orders/${orderId}/reserve-contract-balance`,
+          { method: "POST" },
+        )
+        const data = (await res.json()) as { error?: string }
+        if (!res.ok) {
+          throw new Error(data.error ?? "Falha ao reservar saldo do contrato")
+        }
+      }
+
       for (const p of proposals) {
         const linesForPo = quotationItems.filter(
           (qi) => itemSelections[qi.id] === p.id && !orderedItems.has(qi.id),
@@ -1712,14 +1837,21 @@ export default function EqualizacaoPage({
           unitPrice: number
           taxPercent: number | null
           deliveryDays: number | null
+          contractId: string | null
+          contractItemId: string | null
         }[] = []
 
         let totalPrice = 0
         let maxDeliveryDaysFromItems = 0
+        const linkedContractCodes = new Set<string>()
+
         for (const qi of linesForPo) {
           const pi = proposalItemsByProposal.get(p.id)?.get(qi.id)
           if (!pi || pi.unit_price <= 0) continue
-          totalPrice += pi.unit_price * qi.quantity
+          const link = contractLinksForOrder[qi.id]
+          const unitPrice = link ? link.unitPrice : pi.unit_price
+          if (link) linkedContractCodes.add(link.contractCode)
+          totalPrice += unitPrice * qi.quantity
           const lineDd = pi.delivery_days
           if (lineDd != null && lineDd > maxDeliveryDaysFromItems) {
             maxDeliveryDaysFromItems = lineDd
@@ -1730,17 +1862,26 @@ export default function EqualizacaoPage({
             materialDescription: qi.material_description,
             quantity: qi.quantity,
             unitOfMeasure: qi.unit_of_measure,
-            unitPrice: pi.unit_price,
+            unitPrice,
             taxPercent: pi.tax_percent,
             deliveryDays: pi.delivery_days ?? null,
+            contractId: link?.contractId ?? null,
+            contractItemId: link?.contractItemId ?? null,
           })
         }
 
         if (itemsPayload.length === 0) continue
 
+        const hasContractLink = itemsPayload.some((i) => i.contractItemId != null)
+
         const headerDeliveryDays = p.delivery_days ?? 0
         const poDeliveryDays =
           maxDeliveryDaysFromItems > 0 ? maxDeliveryDaysFromItems : headerDeliveryDays
+
+        const observations =
+          linkedContractCodes.size > 0
+            ? `Pedido com linha(s) vinculada(s) ao(s) contrato(s) ${[...linkedContractCodes].join(", ")} (equalização ${quotation.code})`
+            : null
 
         const { data: poData, error: purchaseOrderInsertError } = await supabase
           .from("purchase_orders")
@@ -1757,7 +1898,7 @@ export default function EqualizacaoPage({
             quotation_code: quotation.code,
             requisition_code: null,
             total_price: totalPrice,
-            observations: null,
+            observations,
             created_by: userId,
             status: "draft",
           })
@@ -1784,30 +1925,60 @@ export default function EqualizacaoPage({
           unit_price: i.unitPrice,
           tax_percent: i.taxPercent,
           delivery_days: i.deliveryDays,
+          contract_id: i.contractId,
+          contract_item_id: i.contractItemId,
         }))
 
         const { error: purchaseOrderItemsInsertError } = await supabase
           .from("purchase_order_items")
           .insert(poItemsPayload)
-        if (purchaseOrderItemsInsertError) throw purchaseOrderItemsInsertError
+        if (purchaseOrderItemsInsertError) {
+          await supabase.from("purchase_orders").delete().eq("id", purchaseOrderId)
+          throw purchaseOrderItemsInsertError
+        }
+
+        if (hasContractLink) {
+          try {
+            await reserveContractBalanceForOrder(purchaseOrderId)
+          } catch (reserveErr) {
+            await supabase.from("purchase_orders").delete().eq("id", purchaseOrderId)
+            throw reserveErr
+          }
+        }
 
         createdOrdersList.push({ code: orderCode, supplierName: p.supplier_name })
       }
 
       if (createdOrdersList.length === 0) {
-        toast.error("Nenhum pedido foi gerado. Verifique preços e itens selecionados.")
-        return
+        const noOrdersError = new Error(
+          "Nenhum pedido foi gerado. Verifique preços e itens selecionados.",
+        )
+        toast.error(noOrdersError.message)
+        throw noOrdersError
       }
 
       const allQuotationItemIds = quotationItems.map((qi) => qi.id)
       if (allQuotationItemIds.length > 0) {
         const { data: coverageRows, error: coverageQueryError } = await supabase
           .from("purchase_order_items")
-          .select("quotation_item_id")
+          .select("quotation_item_id, purchase_orders(status)")
           .in("quotation_item_id", allQuotationItemIds)
         if (coverageQueryError) throw coverageQueryError
         const coveredIds = new Set(
-          ((coverageRows ?? []) as { quotation_item_id: string }[])
+          ((coverageRows ?? []) as Array<{
+            quotation_item_id: string
+            purchase_orders:
+              | { status?: string }
+              | { status?: string }[]
+              | null
+          }>)
+            .filter((row) => {
+              const po = Array.isArray(row.purchase_orders)
+                ? row.purchase_orders[0]
+                : row.purchase_orders
+              const status = po?.status ?? ""
+              return !PO_STATUSES_RELEASING_QUOTATION_ITEM.has(status)
+            })
             .map((r) => r.quotation_item_id)
             .filter(Boolean),
         )
@@ -1857,6 +2028,7 @@ export default function EqualizacaoPage({
             ? err.message
             : fallback
       toast.error(message)
+      throw err
     } finally {
       setFinalizing(false)
     }
@@ -2723,12 +2895,16 @@ export default function EqualizacaoPage({
                             <Button
                               variant="default"
                               size="sm"
-                              onClick={handleFinalize}
-                              disabled={!hasSelection || finalizing}
+                              onClick={() => void handleCreateOrderClick()}
+                              disabled={!hasSelection || finalizing || checkingContracts}
                               className="w-fit whitespace-nowrap shrink-0"
                             >
                               <ShoppingCart className="mr-2 h-4 w-4" />
-                              {finalizing ? "Criando..." : "Criar Pedido"}
+                              {checkingContracts
+                                ? "Verificando..."
+                                : finalizing
+                                  ? "Criando..."
+                                  : "Criar Pedido"}
                             </Button>
                           )}
                           {!isReadOnly && (
@@ -3520,6 +3696,17 @@ export default function EqualizacaoPage({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {hasFeature("contract_balance") ? (
+        <LinkContractEqualizacaoDialog
+          quotationId={id}
+          open={linkContractDialogOpen}
+          onOpenChange={setLinkContractDialogOpen}
+          selections={equalizacaoSelectionRows}
+          onConfirm={(links) => handleFinalize(links)}
+          submitting={finalizing}
+        />
+      ) : null}
     </div>
   )
 }

@@ -97,6 +97,7 @@ type FeatureKey =
   | 'ai_analytics'
   | 'ai_negotiation'
   | 'contracts'
+  | 'contract_balance'
 
 const CORE_FEATURES: Array<{
   key: FeatureKey
@@ -212,6 +213,13 @@ const PREMIUM_FEATURES: Array<{
     label: 'Contratos',
     description: 'Gestão de contratos com fornecedores, vigência e documentos PDF',
     icon: <FileText className="h-5 w-5 text-violet-500" />,
+  },
+  {
+    key: 'contract_balance',
+    label: 'Consumo de Contrato',
+    description:
+      'Criar pedido a partir do contrato, reserva/consumo de saldo e vínculo na equalização',
+    icon: <ShoppingCart className="h-5 w-5 text-violet-500" />,
   },
 ]
 
