@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { seedDefaultTenantSettings } from '@/lib/settings/tenant-settings'
 
 export async function POST(request: Request) {
   try {
@@ -34,6 +35,12 @@ export async function POST(request: Request) {
         { error: 'Erro ao criar tenant' },
         { status: 500 },
       )
+    }
+
+    try {
+      await seedDefaultTenantSettings(supabaseAdmin, (company as { id: string }).id)
+    } catch (settingsError) {
+      console.error('create-tenant: seedDefaultTenantSettings', settingsError)
     }
 
     // 2. Criar usuário admin do tenant no Auth

@@ -16,7 +16,6 @@ import {
   XCircle,
 } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
-import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -120,6 +119,7 @@ export default function FornecedorContratoDetalhePage({
   const [showRefuseForm, setShowRefuseForm] = React.useState(false)
   const [termsAccepted, setTermsAccepted] = React.useState(false)
   const [termsDialogOpen, setTermsDialogOpen] = React.useState(false)
+  const [generatingPdf, setGeneratingPdf] = React.useState(false)
 
   const load = React.useCallback(async (silent = false) => {
     if (!silent) {
@@ -164,16 +164,6 @@ export default function FornecedorContratoDetalhePage({
     }
   }, [id])
 
-  const refreshContract = React.useCallback(async () => {
-    await load(true)
-  }, [load])
-
-  useAutoRefresh({
-    intervalMs: 30_000,
-    onRefresh: refreshContract,
-    enabled: Boolean(supplierId) && !userLoading && !acting,
-  })
-
   React.useEffect(() => {
     if (userLoading) return
     if (!supplierId) {
@@ -182,6 +172,29 @@ export default function FornecedorContratoDetalhePage({
     }
     void load(false)
   }, [userLoading, supplierId, load])
+
+  const handleDownloadPDF = async () => {
+    if (!contract) return
+    setGeneratingPdf(true)
+    try {
+      const response = await fetch(`/api/contract-pdf?id=${contract.id}`)
+      if (!response.ok) throw new Error("Erro ao gerar PDF")
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `contrato_${contract.code}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error(e)
+      toast.error("Não foi possível gerar o PDF.")
+    } finally {
+      setGeneratingPdf(false)
+    }
+  }
 
   async function handleAccept() {
     setActing(true)
@@ -294,28 +307,41 @@ export default function FornecedorContratoDetalhePage({
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">{contract.title}</h1>
         </div>
-        {contract.status === "pending_acceptance" ? (
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            <Button
-              type="button"
-              variant="outline"
-              className="text-destructive border-destructive"
-              onClick={() => setShowRefuseForm(true)}
-              disabled={acting}
-            >
-              <XCircle className="h-4 w-4 mr-1" />
-              Recusar
-            </Button>
-            <Button
-              type="button"
-              onClick={() => setTermsDialogOpen(true)}
-              disabled={acting}
-            >
-              <CheckCircle className="h-4 w-4 mr-1" />
-              Aceitar Contrato
-            </Button>
-          </div>
-        ) : null}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void handleDownloadPDF()}
+            disabled={generatingPdf}
+          >
+            <FileText className="h-4 w-4 mr-1" />
+            {generatingPdf ? "Gerando PDF..." : "PDF Contrato"}
+          </Button>
+          {contract.status === "pending_acceptance" ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-destructive border-destructive"
+                onClick={() => setShowRefuseForm(true)}
+                disabled={acting}
+              >
+                <XCircle className="h-4 w-4 mr-1" />
+                Recusar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setTermsDialogOpen(true)}
+                disabled={acting}
+              >
+                <CheckCircle className="h-4 w-4 mr-1" />
+                Aceitar Contrato
+              </Button>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {contract.status === "pending_acceptance" ? (

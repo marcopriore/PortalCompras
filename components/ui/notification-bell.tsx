@@ -12,6 +12,7 @@ import {
   Workflow,
   CheckCircle,
   XCircle,
+  AlertTriangle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -95,6 +96,7 @@ function getNotificationIcon(type: string) {
     "contract.refused": { icon: XCircle, color: "text-red-500" },
     "contract.expiring_soon": { icon: Calendar, color: "text-amber-500" },
     "contract.expired": { icon: Calendar, color: "text-red-500" },
+    "contract.low_balance": { icon: AlertTriangle, color: "text-amber-600" },
   }
   return map[type] ?? { icon: Bell, color: "text-muted-foreground" }
 }

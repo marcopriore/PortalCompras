@@ -71,6 +71,8 @@ import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
+import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { SupplierScoreBadge } from "@/components/ui/supplier-score-badge"
 import { QuotationAIAnalysis } from "@/components/comprador/quotation-ai-analysis"
@@ -449,6 +451,7 @@ export default function EqualizacaoPage({
 }) {
   const router = useRouter()
   const { companyId, userId, loading: userLoading, profileType } = useUser()
+  const { value: scorePriceWeight } = useTenantSetting("score_weight_price")
   const { hasFeature, hasPermission } = usePermissions()
   const contractBalanceEnabled = hasFeature("contract_balance")
 
@@ -555,6 +558,7 @@ export default function EqualizacaoPage({
   const { scores: equalizacaoScores, loading: equalizacaoScoresLoading } = useSupplierScores(
     companyId,
     equalizacaoSupplierIds,
+    scorePriceWeight,
   )
 
   const structureSnapshotRef = React.useRef({ items: 0, suppliers: 0 })
@@ -897,8 +901,10 @@ export default function EqualizacaoPage({
     }
   }, [refreshProposalsLight])
 
+  const pollingIntervalMs = usePollingIntervalMs()
+
   useAutoRefresh({
-    intervalMs: 30_000,
+    intervalMs: pollingIntervalMs,
     onRefresh: refreshEqualizacao,
     enabled: Boolean(companyId && id) && !userLoading,
   })
@@ -1514,6 +1520,7 @@ export default function EqualizacaoPage({
           : null
 
         return {
+          quotation_item_id: quotationItemId,
           material_code: qi?.material_code ?? "",
           material_description: qi?.material_description ?? "",
           unit_of_measure: qi?.unit_of_measure ?? "",

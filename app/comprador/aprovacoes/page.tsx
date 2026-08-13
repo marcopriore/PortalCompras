@@ -9,6 +9,7 @@ import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { toast } from "sonner"
 
@@ -290,8 +291,10 @@ export default function AprovacoesPage() {
     }
   }, [loadData])
 
+  const pollingIntervalMs = usePollingIntervalMs()
+
   useAutoRefresh({
-    intervalMs: 30_000,
+    intervalMs: pollingIntervalMs,
     onRefresh: refreshAprovacoes,
     enabled: Boolean(companyId && userId) && !permissionsLoading && !userLoading,
   })

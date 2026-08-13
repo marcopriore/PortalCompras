@@ -3,6 +3,7 @@
 import * as React from "react"
 import { AlertCircle, Clock, RefreshCw, Sparkles } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
+import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,20 +28,20 @@ interface AIInsightCache {
   }
 }
 
-const CACHE_TTL_MS = 60 * 60 * 1000
-const COOLDOWN_MS = 60 * 60 * 1000
-
 function cacheKey(companyId: string) {
   return `valore:ai-spend-insights:${companyId}`
 }
 
-function loadCache(companyId: string): AIInsightCache | null {
+function loadCache(
+  companyId: string,
+  cacheTtlMs: number,
+): AIInsightCache | null {
   try {
     const raw = localStorage.getItem(cacheKey(companyId))
     if (!raw) return null
     const parsed: AIInsightCache & { cachedAt: string } = JSON.parse(raw)
     const age = Date.now() - new Date(parsed.cachedAt).getTime()
-    if (age > CACHE_TTL_MS) {
+    if (age > cacheTtlMs) {
       localStorage.removeItem(cacheKey(companyId))
       return null
     }
@@ -100,6 +101,8 @@ function renderInsights(text: string): React.ReactElement {
 
 export function SpendAIInsights() {
   const { companyId } = useUser()
+  const { value: cacheMinutes } = useTenantSetting("ai_spend_cache_minutes")
+  const cacheTtlMs = cacheMinutes * 60 * 1000
   const [cache, setCache] = React.useState<AIInsightCache | null>(null)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -109,7 +112,7 @@ export function SpendAIInsights() {
   React.useEffect(() => {
     if (!companyId) return
 
-    const cached = loadCache(companyId)
+    const cached = loadCache(companyId, cacheTtlMs)
     if (!cached) {
       setCache(null)
       setCooldownRemaining(0)
@@ -127,13 +130,13 @@ export function SpendAIInsights() {
       const parsed: AIInsightCache & { cachedAt: string } = JSON.parse(raw)
       const remainingSeconds = Math.max(
         0,
-        Math.ceil((COOLDOWN_MS - (Date.now() - new Date(parsed.cachedAt).getTime())) / 1000),
+        Math.ceil((cacheTtlMs - (Date.now() - new Date(parsed.cachedAt).getTime())) / 1000),
       )
       setCooldownRemaining(remainingSeconds)
     } catch {
       setCooldownRemaining(0)
     }
-  }, [companyId])
+  }, [companyId, cacheTtlMs])
 
   React.useEffect(() => {
     if (cooldownRemaining <= 0) return
@@ -167,7 +170,7 @@ export function SpendAIInsights() {
 
       saveCache(companyId, data)
       setCache(data)
-      setCooldownRemaining(COOLDOWN_MS / 1000)
+      setCooldownRemaining(Math.ceil(cacheTtlMs / 1000))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao gerar análise.")
     } finally {

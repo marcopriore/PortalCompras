@@ -4,7 +4,16 @@ import { sendEmail } from "@/lib/email/send-email"
 import {
   templateContractExpiringSoon,
   templateContractExpired,
+  templateContractLowBalance,
 } from "@/lib/email/templates"
+import {
+  loadContractExpiringAlertDays,
+  loadLowBalanceThresholdPct,
+} from "@/lib/contracts/contract-balance-settings"
+import {
+  contractAvailableValue,
+  contractValueCeiling,
+} from "@/lib/contracts/contract-balance-helpers"
 
 export type ContractBuyerRecipient = {
   id: string
@@ -223,13 +232,11 @@ export async function notifyExpiringSoonContracts(
 ): Promise<{ checked: number; notified: number }> {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const in30 = new Date(today)
-  in30.setDate(in30.getDate() + 30)
-
   const todayStr = today.toISOString().slice(0, 10)
-  const in30Str = in30.toISOString().slice(0, 10)
   const sevenDaysAgo = new Date()
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
+  const alertDaysCache = new Map<string, number>()
 
   const { data: contracts, error } = await service
     .from("contracts")
@@ -248,7 +255,6 @@ export async function notifyExpiringSoonContracts(
     .eq("status", "active")
     .not("end_date", "is", null)
     .gte("end_date", todayStr)
-    .lte("end_date", in30Str)
 
   if (error) {
     console.error("notifyExpiringSoonContracts:", error)
@@ -256,9 +262,23 @@ export async function notifyExpiringSoonContracts(
   }
 
   let notified = 0
-  const checked = contracts?.length ?? 0
+  let checked = 0
 
   for (const contract of contracts ?? []) {
+    const companyId = contract.company_id as string
+    let alertDays = alertDaysCache.get(companyId)
+    if (alertDays == null) {
+      alertDays = await loadContractExpiringAlertDays(service, companyId)
+      alertDaysCache.set(companyId, alertDays)
+    }
+
+    const endDate = String(contract.end_date).slice(0, 10)
+    const end = new Date(endDate)
+    end.setHours(0, 0, 0, 0)
+    const daysRemaining = daysBetween(today, end)
+    if (daysRemaining < 0 || daysRemaining > alertDays) continue
+
+    checked += 1
     const { data: recent } = await service
       .from("notifications")
       .select("id")
@@ -269,11 +289,8 @@ export async function notifyExpiringSoonContracts(
 
     if (recent && recent.length > 0) continue
 
-    const companyId = contract.company_id as string
     const supplierName =
       (contract.suppliers as { name?: string } | null)?.name ?? "Fornecedor"
-    const endDate = String(contract.end_date).slice(0, 10)
-    const daysRemaining = daysBetween(today, new Date(endDate))
     const recipients = await getContractBuyerRecipients(
       service,
       companyId,
@@ -304,6 +321,135 @@ export async function notifyExpiringSoonContracts(
         contractTitle: contract.title ?? "",
         endDate,
         daysRemaining,
+      })
+
+      await sendBuyerEmailIfWanted(
+        service,
+        buyer.id,
+        companyId,
+        "order_approved_email",
+        subject,
+        html,
+      )
+      notified++
+    }
+  }
+
+  return { checked, notified }
+}
+
+function formatBRL(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value)
+}
+
+export async function notifyLowBalanceContracts(
+  service: SupabaseClient,
+): Promise<{ checked: number; notified: number }> {
+  const { data: contracts, error } = await service
+    .from("contracts")
+    .select(
+      `
+      id,
+      company_id,
+      code,
+      title,
+      value,
+      total_value,
+      consumed_value,
+      reserved_value,
+      created_by,
+      supplier_id,
+      suppliers(name)
+    `,
+    )
+    .eq("status", "active")
+
+  if (error) {
+    console.error("notifyLowBalanceContracts:", error)
+    return { checked: 0, notified: 0 }
+  }
+
+  const sevenDaysAgo = new Date()
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
+  const thresholdCache = new Map<string, number>()
+  let notified = 0
+  const checked = contracts?.length ?? 0
+
+  for (const contract of contracts ?? []) {
+    const companyId = contract.company_id as string
+    const ceiling = contractValueCeiling({
+      value:
+        contract.value != null ? Number(contract.value) : null,
+      total_value:
+        contract.total_value != null ? Number(contract.total_value) : null,
+    })
+    if (ceiling <= 0) continue
+
+    const available = contractAvailableValue({
+      value:
+        contract.value != null ? Number(contract.value) : null,
+      total_value:
+        contract.total_value != null ? Number(contract.total_value) : null,
+      consumed_value: Number(contract.consumed_value ?? 0),
+      reserved_value: Number(contract.reserved_value ?? 0),
+    })
+
+    let thresholdPct = thresholdCache.get(companyId)
+    if (thresholdPct == null) {
+      thresholdPct = await loadLowBalanceThresholdPct(service, companyId)
+      thresholdCache.set(companyId, thresholdPct)
+    }
+
+    const remainingPct = (available / ceiling) * 100
+    if (remainingPct > thresholdPct) continue
+
+    const { data: recent } = await service
+      .from("notifications")
+      .select("id")
+      .eq("entity_id", contract.id)
+      .eq("type", "contract.low_balance")
+      .gt("created_at", sevenDaysAgo.toISOString())
+      .limit(1)
+
+    if (recent && recent.length > 0) continue
+
+    const supplierName =
+      (contract.suppliers as { name?: string } | null)?.name ?? "Fornecedor"
+    const recipients = await getContractBuyerRecipients(
+      service,
+      companyId,
+      contract.created_by as string | null,
+      5,
+    )
+
+    for (const buyer of recipients) {
+      const inserted = await createNotification(
+        {
+          userId: buyer.id,
+          companyId,
+          type: "contract.low_balance",
+          title: "Saldo baixo no contrato",
+          body: `${contract.code} — saldo ${formatBRL(available)} (${remainingPct.toFixed(0)}% restante)`,
+          entity: "contract",
+          entityId: contract.id,
+        },
+        service,
+      )
+
+      if (!inserted) continue
+
+      const { subject, html } = templateContractLowBalance({
+        buyerName: buyer.full_name ?? "Comprador",
+        supplierName,
+        contractCode: contract.code ?? "",
+        contractTitle: contract.title ?? "",
+        availableBalance: formatBRL(available),
+        remainingPercent: Math.round(remainingPct),
+        thresholdPercent: thresholdPct,
       })
 
       await sendBuyerEmailIfWanted(

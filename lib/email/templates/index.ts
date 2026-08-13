@@ -431,3 +431,47 @@ export function templateContractExpired(data: {
     html: emailBase(content, "Contrato vencido"),
   }
 }
+
+export function templateContractLowBalance(data: {
+  buyerName: string
+  supplierName: string
+  contractCode: string
+  contractTitle: string
+  availableBalance: string
+  remainingPercent: number
+  thresholdPercent: number
+}): { subject: string; html: string } {
+  const base = getAppEmailBaseUrl()
+  const content = `
+    <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 8px;">
+      Saldo baixo no contrato
+    </h2>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
+      Olá, ${data.buyerName}! O contrato abaixo está com saldo disponível
+      abaixo do limite configurado (${data.thresholdPercent}%).
+    </p>
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;
+                padding:16px;margin-bottom:24px;text-align:center;">
+      <span style="font-size:32px;">📉</span>
+      <p style="color:#92400e;font-weight:600;margin:8px 0 0;font-size:16px;">
+        ${data.availableBalance} disponível (${data.remainingPercent}% restante)
+      </p>
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+      <tr><td>
+        <table width="100%">
+          ${emailInfoRow("Fornecedor", data.supplierName)}
+          ${emailInfoRow("Contrato", data.contractCode)}
+          ${emailInfoRow("Título", data.contractTitle)}
+          ${emailInfoRow("Saldo disponível", data.availableBalance)}
+        </table>
+      </td></tr>
+    </table>
+    ${emailButton("Ver Contrato", `${base}/comprador/contratos`)}
+  `
+  return {
+    subject: `Saldo baixo — ${data.contractCode}`,
+    html: emailBase(content, "Saldo baixo no contrato"),
+  }
+}

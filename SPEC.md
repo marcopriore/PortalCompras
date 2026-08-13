@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.70
+## Versão atual: v2.19.75
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -233,7 +233,7 @@ draft → (enviar para aceite) → pending_acceptance →
   aceito: active | recusado: draft (com refusal_reason)
 active → (edição com confirmação) → draft → pending_acceptance
 active → (cancelar) → cancelled
-end_date passada → expired (manual/automático — pendente)
+end_date passada → expired (automático via `expire_overdue_contracts` no proxy, cooldown configurável)
 
 ### Regras críticas
 - Status active NUNCA é setado automaticamente por data —
@@ -264,33 +264,51 @@ end_date passada → expired (manual/automático — pendente)
 
 ### feature: ai_analytics
 - SpendAIInsights no dashboard do comprador
-- Cache localStorage 1h por company_id
+- Cache localStorage por `ai_spend_cache_minutes` (tenant setting, padrão 60 min)
 - GET /api/ai-spend-analysis
 
 ### feature: ai_negotiation
 - QuotationAIAnalysis na equalização
 - Análise de propostas submitted+selected da rodada
-- Cache localStorage 30min por quotation_id+round_id
+- Cache localStorage por `ai_negotiation_cache_minutes` (tenant setting, padrão 30 min)
 - Trigger automático quando nova proposta detectada (polling)
 - Export Excel com 4 abas
 - GET /api/quotation-ai-analysis
 - Logs: ai_analysis_logs + audit_logs (event_type: ia_analysis)
 - Modal "Ver IA" em /admin/logs
 
+## 8.3 Configurações técnicas por tenant (superadmin)
+
+Persistência em `company_settings` (`company_id`, `key`, `value`). Catálogo tipado em `lib/settings/tenant-settings-registry.ts`; leitura com merge de defaults em `lib/settings/tenant-settings.ts`.
+
+| Grupo | Keys | Consumidores |
+|-------|------|--------------|
+| Sistema | `polling_interval_seconds`, `background_tasks_cooldown_minutes` | `usePollingIntervalMs`, `proxy.ts` (RPCs + scheduled-maintenance) |
+| Contratos | `contract_low_balance_threshold_pct`, `contract_expiring_alert_days` | Jobs de notificação, helpers de saldo |
+| IA | `ai_spend_cache_minutes`, `ai_negotiation_cache_minutes` | Dashboard spend, equalização |
+| Fornecedores | `score_weight_price` | `useSupplierScores` |
+
+**UI:** `/admin/tenants/[id]` → aba **Configurações** (`TenantSettingsTab`). APIs: `GET/PATCH /api/admin/tenant-settings`, `GET /api/tenant-settings` (app autenticado).
+
+**Novos tenants:** `POST /api/admin/create-tenant` grava defaults do registry via `seedDefaultTenantSettings`.
+
+**Licenciamento** (módulos on/off) permanece em `tenant_features` na aba Visão Geral — rota legada `/admin/tenants/[id]/features` redireciona para a página principal.
+
 ---
 
-## 9. Backlog (estado atual — v2.19.70)
+## 9. Backlog (estado atual — v2.19.75)
 
-1. Notificações de contratos (envio para aceite, aceito, recusado, vencendo em 30 dias)
-2. PDF do contrato gerado pelo sistema
-3. Consumo de saldo via pedidos vinculados ao contrato
-4. Status expired automático em contratos
-5. Atualizar documentação (CLAUDE.md, SPEC.md após esta sessão)
-6. Enforcement de permissões no frontend (sidebar dinâmica por role)
-7. Cobertura de testes
-8. Política de segurança de senhas
-9. Configuração score_weight_price na interface
-10. Migrar documentação de implantação para Notion
+1. Enforcement de permissões no frontend (sidebar dinâmica por role)
+2. Cobertura de testes
+3. Política de segurança de senhas
+4. Indicador visual na equalização (match de contrato)
+5. Recebimento parcial ERP / liberação de reserva
+6. Migrar documentação de implantação para Notion
+
+### Concluído recentemente
+- **Admin — configurações por tenant** (registry, API, aba Configurações, polling/IA/score/contratos/proxy)
+- PDF do contrato, consumo de saldo (Fases 1–2), notificações, `expired` automático
+- Otimização proxy (cooldown tarefas background; fim do loop scheduled-maintenance)
 
 ---
 
@@ -308,4 +326,4 @@ end_date passada → expired (manual/automático — pendente)
 
 ---
 
-*Última revisão: v2.19.70.*
+*Última revisão: v2.19.75.*

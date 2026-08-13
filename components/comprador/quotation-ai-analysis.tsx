@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
 import {
   AlertCircle,
   AlertTriangle,
@@ -65,9 +66,6 @@ type CachePayload = {
   cachedAt: string
 }
 
-const CACHE_TTL_MS = 30 * 60 * 1000
-const COOLDOWN_SECONDS = 300
-
 const CACHE_KEY = (qId: string, rId: string | null) =>
   `valore:ai-quotation-analysis:${qId}:${rId ?? "latest"}`
 
@@ -94,7 +92,11 @@ function formatCountdown(seconds: number): string {
   return `${seconds}s`
 }
 
-function loadCache(quotationId: string, roundId: string | null): CachePayload | null {
+function loadCache(
+  quotationId: string,
+  roundId: string | null,
+  cacheTtlMs: number,
+): CachePayload | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY(quotationId, roundId))
     if (!raw) return null
@@ -103,7 +105,7 @@ function loadCache(quotationId: string, roundId: string | null): CachePayload | 
     const cachedAtMs = new Date(parsed.cachedAt).getTime()
     if (!cachedAtMs || Number.isNaN(cachedAtMs)) return null
 
-    const isExpired = Date.now() - cachedAtMs > CACHE_TTL_MS
+    const isExpired = Date.now() - cachedAtMs > cacheTtlMs
     if (isExpired) {
       localStorage.removeItem(CACHE_KEY(quotationId, roundId))
       return null
@@ -133,6 +135,9 @@ export function QuotationAIAnalysis({
   hasNewProposal = false,
   onAnalyzed,
 }: QuotationAIAnalysisProps) {
+  const { value: cacheMinutes } = useTenantSetting("ai_negotiation_cache_minutes")
+  const cacheTtlMs = cacheMinutes * 60 * 1000
+  const cooldownSeconds = Math.ceil(cacheTtlMs / 1000)
   const [analysis, setAnalysis] = useState<AIAnalysis | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -145,7 +150,7 @@ export function QuotationAIAnalysis({
 
   useEffect(() => {
     if (!companyId) return
-    const cached = loadCache(quotationId, roundId)
+    const cached = loadCache(quotationId, roundId, cacheTtlMs)
     if (!cached) {
       setAnalysis(null)
       setGeneratedAt(null)
@@ -159,9 +164,12 @@ export function QuotationAIAnalysis({
     setQuotationCode(cached.quotationCode ?? null)
 
     const cachedAtMs = new Date(cached.cachedAt).getTime()
-    const remaining = Math.max(0, COOLDOWN_SECONDS - Math.floor((Date.now() - cachedAtMs) / 1000))
+    const remaining = Math.max(
+      0,
+      cooldownSeconds - Math.floor((Date.now() - cachedAtMs) / 1000),
+    )
     setCooldown(remaining)
-  }, [quotationId, roundId, companyId])
+  }, [quotationId, roundId, companyId, cacheTtlMs, cooldownSeconds])
 
   useEffect(() => {
     if (cooldown <= 0) return
@@ -208,7 +216,7 @@ export function QuotationAIAnalysis({
         generatedAt: data.generatedAt,
         quotationCode: data.quotationCode ?? null,
       })
-      setCooldown(COOLDOWN_SECONDS)
+      setCooldown(cooldownSeconds)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao gerar análise da IA.")
     } finally {

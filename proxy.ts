@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
+import {
+  markBackgroundTasksRun,
+  shouldRunBackgroundTasks,
+} from "@/lib/proxy/background-tasks"
+import { getBackgroundTasksCooldownMs } from "@/lib/proxy/load-background-tasks-cooldown"
 
 const PUBLIC_FORNECEDOR_ROUTES = ["/fornecedor/login", "/fornecedor/cadastro"] as const
 
@@ -68,32 +73,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
-  if (!isAuthRoute && !isPublicFornecedorPath(pathname)) {
-    try {
-      await supabase.rpc("close_expired_rounds")
-      await supabase.rpc("expire_overdue_contracts")
-    } catch {
-      // falha silenciosa — não bloquear o usuário
-    }
-
-    const maintenanceSecret = process.env.CONTRACT_MAINTENANCE_SECRET ?? ""
-    const maintenanceUrl = new URL(
-      "/api/contracts/scheduled-maintenance",
-      request.nextUrl.origin,
-    )
-    void fetch(maintenanceUrl.toString(), {
-      method: "POST",
-      headers: maintenanceSecret
-        ? { "x-maintenance-key": maintenanceSecret }
-        : undefined,
-    }).catch(() => {
-      // notificações agendadas não devem bloquear o usuário
-    })
-  }
-
   const { data: profileRow, error: profileError } = await supabase
     .from("profiles")
-    .select("profile_type")
+    .select("company_id, is_superadmin, profile_type")
     .eq("id", user.id)
     .maybeSingle()
 
@@ -102,6 +84,45 @@ export async function proxy(request: NextRequest) {
   }
 
   const profileType = profileRow?.profile_type ?? "buyer"
+
+  if (!isAuthRoute && !isPublicFornecedorPath(pathname)) {
+    let companyIdForTasks = profileRow?.company_id as string | undefined
+    if (profileRow?.is_superadmin) {
+      const selected = request.cookies.get("selected_company_id")?.value
+      if (selected) {
+        companyIdForTasks = decodeURIComponent(selected)
+      }
+    }
+
+    const cooldownMs = companyIdForTasks
+      ? await getBackgroundTasksCooldownMs(companyIdForTasks)
+      : 15 * 60 * 1000
+
+    if (shouldRunBackgroundTasks(request, cooldownMs)) {
+      try {
+        await supabase.rpc("close_expired_rounds")
+        await supabase.rpc("expire_overdue_contracts")
+      } catch {
+        // falha silenciosa — não bloquear o usuário
+      }
+
+      const maintenanceSecret = process.env.CONTRACT_MAINTENANCE_SECRET ?? ""
+      const maintenanceUrl = new URL(
+        "/api/contracts/scheduled-maintenance",
+        request.nextUrl.origin,
+      )
+      void fetch(maintenanceUrl.toString(), {
+        method: "POST",
+        headers: maintenanceSecret
+          ? { "x-maintenance-key": maintenanceSecret }
+          : undefined,
+      }).catch(() => {
+        // notificações agendadas não devem bloquear o usuário
+      })
+
+      markBackgroundTasksRun(response, cooldownMs)
+    }
+  }
 
   if (isAuthRoute) {
     const redirectUrl = request.nextUrl.clone()

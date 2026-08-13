@@ -13,7 +13,6 @@ import {
   XCircle,
 } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
-import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -111,16 +110,6 @@ export default function FornecedorContratosPage() {
   React.useEffect(() => {
     void loadContracts(false)
   }, [loadContracts])
-
-  const refreshContracts = React.useCallback(async () => {
-    await loadContracts(true)
-  }, [loadContracts])
-
-  useAutoRefresh({
-    intervalMs: 30_000,
-    onRefresh: refreshContracts,
-    enabled: Boolean(supplierId) && !userLoading,
-  })
 
   const metrics = React.useMemo(() => {
     const total = contracts.length

@@ -15,7 +15,6 @@ import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useTenant } from "@/contexts/tenant-context"
-import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import {
   Card,
   CardContent,
@@ -163,6 +162,10 @@ function daysUntilEnd(c: Contract): number {
   return differenceInDays(parseISO(c.end_date), startOfDay(new Date()))
 }
 
+function canUploadContractDocument(status: Contract["status"]): boolean {
+  return status === "draft" || status === "pending_acceptance"
+}
+
 type EditContractItem = ContractItem & {
   _toEliminate?: boolean
   _eliminateReason?: string
@@ -264,6 +267,7 @@ export default function ContratoPage({
   const [sendingForAcceptance, setSendingForAcceptance] = React.useState(false)
   const [createPoOpen, setCreatePoOpen] = React.useState(false)
   const [uploading, setUploading] = React.useState(false)
+  const [generatingPdf, setGeneratingPdf] = React.useState(false)
   const [acceptances, setAcceptances] = React.useState<ContractAcceptance[]>([])
   const editQueryHandled = React.useRef(false)
   const [paymentConditions, setPaymentConditions] = React.useState<
@@ -292,6 +296,29 @@ export default function ContratoPage({
   })
 
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  const handleDownloadPDF = async () => {
+    if (!contract) return
+    setGeneratingPdf(true)
+    try {
+      const response = await fetch(`/api/contract-pdf?id=${contract.id}`)
+      if (!response.ok) throw new Error("Erro ao gerar PDF")
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `contrato_${contract.code}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error(e)
+      toast.error("Não foi possível gerar o PDF.")
+    } finally {
+      setGeneratingPdf(false)
+    }
+  }
 
   const canAccess = hasFeature("contracts") || isSuperAdmin
 
@@ -464,22 +491,6 @@ export default function ContratoPage({
       if (!silent) setLoading(false)
     }
   }, [id, editing])
-
-  const refreshContract = React.useCallback(async () => {
-    if (editing) return
-    await loadContract(true)
-  }, [editing, loadContract])
-
-  useAutoRefresh({
-    intervalMs: 30_000,
-    onRefresh: refreshContract,
-    enabled:
-      Boolean(companyId) &&
-      !userLoading &&
-      !permissionsLoading &&
-      canAccess &&
-      !editing,
-  })
 
   React.useEffect(() => {
     editQueryHandled.current = false
@@ -981,6 +992,7 @@ export default function ContratoPage({
   const expiring = isExpiringSoon(contract)
   const daysLeft = daysUntilEnd(contract)
   const isRestricted = contract.status !== "draft"
+  const canUploadDocument = canUploadContractDocument(contract.status)
 
   return (
     <div className="p-6 space-y-6 w-full">
@@ -1093,6 +1105,16 @@ export default function ContratoPage({
                 Cancelar Contrato
               </Button>
             ) : null}
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleDownloadPDF()}
+              disabled={generatingPdf}
+              className="gap-1.5"
+            >
+              <FileText className="h-4 w-4" />
+              {generatingPdf ? "Gerando PDF..." : "PDF Contrato"}
+            </Button>
           </div>
         ) : (
           <div className="flex gap-2">
@@ -1360,8 +1382,8 @@ export default function ContratoPage({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {contract.file_url ? (
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {contract.file_url ? (
                   <Button type="button" variant="outline" size="sm" asChild>
                     <a
                       href={contract.file_url}
@@ -1372,28 +1394,24 @@ export default function ContratoPage({
                       Visualizar PDF
                     </a>
                   </Button>
+                ) : !canUploadDocument ? (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum documento anexado.
+                  </p>
+                ) : null}
+                {canUploadDocument ? (
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant={contract.file_url ? "secondary" : "outline"}
                     size="sm"
                     onClick={openFilePicker}
                     disabled={uploading}
                   >
                     <Upload className="h-4 w-4 mr-2" />
-                    {uploading ? "Enviando…" : "Substituir"}
+                    {uploading ? "Enviando…" : "Fazer upload de arquivo"}
                   </Button>
-                </div>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={openFilePicker}
-                  disabled={uploading}
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  {uploading ? "Enviando…" : "Fazer Upload do PDF"}
-                </Button>
-              )}
+                ) : null}
+              </div>
             </CardContent>
           </Card>
         </>
@@ -1995,8 +2013,8 @@ export default function ContratoPage({
 
             <div>
               <p className="text-sm font-medium mb-2">Documento (PDF)</p>
-              {contract.file_url ? (
-                <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2">
+                {contract.file_url ? (
                   <Button type="button" variant="outline" size="sm" asChild>
                     <a
                       href={contract.file_url}
@@ -2007,29 +2025,24 @@ export default function ContratoPage({
                       Visualizar PDF
                     </a>
                   </Button>
+                ) : !canUploadDocument ? (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum documento anexado.
+                  </p>
+                ) : null}
+                {canUploadDocument ? (
                   <Button
                     type="button"
-                    variant="secondary"
+                    variant="outline"
                     size="sm"
                     onClick={openFilePicker}
                     disabled={uploading}
                   >
                     <Upload className="h-4 w-4 mr-2" />
-                    Substituir
+                    {uploading ? "Enviando…" : "Fazer upload de arquivo"}
                   </Button>
-                </div>
-              ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={openFilePicker}
-                  disabled={uploading}
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Enviar PDF
-                </Button>
-              )}
+                ) : null}
+              </div>
             </div>
 
             {!isRestricted ? (

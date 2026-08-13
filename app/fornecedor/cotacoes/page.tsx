@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { LastUpdated } from "@/components/ui/last-updated"
 import {
   formatDateBR,
@@ -529,8 +530,10 @@ export default function FornecedorCotacoesPage() {
     }
   }, [loadCotacoesData])
 
+  const pollingIntervalMs = usePollingIntervalMs()
+
   useAutoRefresh({
-    intervalMs: 60_000,
+    intervalMs: pollingIntervalMs,
     onRefresh: refreshCotacoes,
     enabled: Boolean(supplierId) && !userLoading,
   })

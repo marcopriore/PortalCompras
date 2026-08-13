@@ -15,6 +15,7 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -150,7 +151,8 @@ export default function FornecedorPedidosPage() {
     }
   }, [loadPedidos])
 
-  useAutoRefresh({ intervalMs: 30_000, onRefresh: refresh, enabled: Boolean(supplierId) && !userLoading })
+  const pollingIntervalMs = usePollingIntervalMs()
+  useAutoRefresh({ intervalMs: pollingIntervalMs, onRefresh: refresh, enabled: Boolean(supplierId) && !userLoading })
 
   const metrics = React.useMemo(() => {
     return {

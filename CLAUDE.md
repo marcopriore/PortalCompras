@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.73
+- Versão atual: v2.19.75
 
 ---
 
@@ -55,8 +55,9 @@
 ### company_settings
 - Tabela genérica de configurações por tenant: `company_id`, `key`, `value` (text)
 - Upsert: `onConflict: "company_id,key"`
-- Exemplo: `lead_time_target_days` (meta de lead time em dias, editável pelo comprador)
-- **Score fornecedor:** `score_weight_price` — peso do critério Preço (padrão 40% no hook; UI de configuração no backlog)
+- **Comprador:** `lead_time_target_days`, `contract_po_link_prompt_enabled`, etc. (`/comprador/configuracoes`)
+- **Superadmin (técnicas):** registry em `lib/settings/tenant-settings-registry.ts` — polling, cache IA, score, alertas contrato, cooldown proxy; UI em `/admin/tenants/[id]` → Configurações
+- **Score fornecedor:** `score_weight_price` — peso Preço (padrão 40%); editável no admin tenant
 
 ### Qualidade de código
 
@@ -185,6 +186,12 @@
 ## NOVOS HOOKS/LIBS/COMPONENTES
 
 - `lib/hooks/use-auto-refresh.ts`
+- `lib/hooks/use-polling-interval.ts`
+- `lib/hooks/use-tenant-settings.ts`
+- `lib/settings/tenant-settings-registry.ts`, `lib/settings/tenant-settings.ts`
+- `lib/proxy/background-tasks.ts`, `lib/proxy/load-background-tasks-cooldown.ts`
+- `components/admin/tenant-settings-tab.tsx`
+- `app/api/admin/tenant-settings/route.ts`, `app/api/tenant-settings/route.ts`
 - `lib/hooks/use-notifications.ts`
 - `lib/hooks/use-supplier-score.ts`
 - `lib/notify.ts`
@@ -279,6 +286,7 @@
 | v2.19.62–v2.19.63 | Termos de fornecimento: migration 024, APIs, modal aceite, página pública, aba Configurações |
 | v2.19.72 | Consumo de saldo de contrato via pedido (Fase 1), notificação fornecedor→comprador, item contrato sequencial |
 | v2.19.73 | Equalização com vínculo automático a contrato (Fase 2), premium contract_balance, configuração do aviso |
+| v2.19.75 | Configurações técnicas por tenant (admin), proxy cooldown background tasks, hooks useTenantSettings |
 
 ---
 
@@ -286,7 +294,7 @@
 
 ### Funções SQL versionadas (migration 017)
 - `get_my_supplier_id()` — SECURITY DEFINER, STABLE — RLS portal fornecedor
-- `close_expired_rounds()` — SECURITY DEFINER, VOLATILE — fecha rodadas vencidas via proxy.ts
+- `close_expired_rounds()` — SECURITY DEFINER, VOLATILE — fecha rodadas vencidas via proxy.ts (cooldown configurável por tenant)
 - `check_round_completion()` — SECURITY DEFINER, VOLATILE — trigger em quotation_proposals
 - Trigger: `trg_check_round_completion` AFTER UPDATE ON quotation_proposals
 

@@ -6,8 +6,8 @@ O hook `useAutoRefresh` (`lib/hooks/use-auto-refresh.ts`) centraliza o `setInter
 
 - **`intervalMs`** — período entre chamadas.
 - **`enabled`** — quando `false`, o timer é limpo (ex.: sem `companyId` / `supplierId`).
-- **`pauseWhenHidden`** — se `true` (padrão), não dispara o callback enquanto `document.hidden` (aba em segundo plano).
-- Ao **voltar para a aba**, dispara **um refresh imediato** (evento `visibilitychange`).
+- **`pauseWhenHidden`** — se `true`, não dispara o callback enquanto `document.hidden` (aba em segundo plano). **Padrão: `false`** — polling segue a cada 60s mesmo em segundo plano.
+- **`refreshOnVisible`** — se `true`, dispara refresh imediato ao voltar para a aba. **Padrão: `false`** (evita picos de chamadas ao alternar janelas).
 
 O componente `LastUpdated` (`components/ui/last-updated.tsx`) mostra **“Atualizado às HH:mm:ss”** usando `formatDateTimeBR` e um ícone `RefreshCw` com `animate-spin` enquanto `isRefreshing` é verdadeiro.
 
@@ -21,19 +21,32 @@ Nas listagens, o padrão é:
 
 | Tela | Rota | Intervalo | O que atualiza |
 |------|------|-----------|----------------|
-| Pedidos (fornecedor) | `/fornecedor/pedidos` | 30s | Lista e métricas de pedidos do fornecedor |
+| Pedidos (fornecedor) | `/fornecedor/pedidos` | 60s | Lista e métricas de pedidos do fornecedor |
 | Cotações (fornecedor) | `/fornecedor/cotacoes` | 60s | Convites, métricas e tabela de cotações |
-| Equalização | `/comprador/cotacoes/[id]/equalizacao` | 30s | Propostas e itens de proposta; refresh completo se mudar contagem de itens ou fornecedores |
-| Aprovações | `/comprador/aprovacoes` | 30s | Requisições e pedidos pendentes de aprovação |
+| Equalização | `/comprador/cotacoes/[id]/equalizacao` | 60s | Propostas e itens de proposta; refresh completo se mudar contagem de itens ou fornecedores |
+| Aprovações | `/comprador/aprovacoes` | 60s | Requisições e pedidos pendentes de aprovação |
 | Pedidos (comprador) | `/comprador/pedidos` | 60s | Lista de pedidos e totais derivados |
+| Solicitante (lista) | `/solicitante` | 60s | Listagem de requisições |
+| Solicitante (detalhe) | `/solicitante/[id]` | 60s | Dados e histórico da requisição |
+
+## Telas sem polling automático
+
+| Tela | Rota | Comportamento |
+|------|------|----------------|
+| Contratos (comprador) | `/comprador/contratos`, `/comprador/contratos/[id]` | Carrega ao abrir; sem auto-refresh |
+| Contratos (fornecedor) | `/fornecedor/contratos`, `/fornecedor/contratos/[id]` | Carrega ao abrir; sem auto-refresh |
 
 ## Comportamento
 
 - Atualização **silenciosa** nas listagens: sem reativar o estado de “loading” da página quando `silent` é usado (evita piscar o layout).
 - Indicador **“Atualizado às HH:mm:ss”** no cabeçalho, alinhado ao título quando aplicável.
-- **Pausa** automática com a aba em background (`pauseWhenHidden`).
-- **Refresh imediato** ao retornar à aba.
+- **Polling contínuo** a cada 60s, inclusive com a aba em segundo plano (`pauseWhenHidden: false` por padrão).
+- **Sem refresh imediato** ao retornar à aba (padrão `refreshOnVisible: false`).
 - Timer **removido no unmount** do componente (`clearInterval` no cleanup do `useEffect`), sem vazamento óbvio de intervalo.
+
+## Tarefas em background no proxy (`proxy.ts`)
+
+Rodadas vencidas, expiração de contratos e `POST /api/contracts/scheduled-maintenance` **não** rodam em toda requisição. O proxy aplica cooldown configurável em **Admin → Tenant → Configurações** (`background_tasks_cooldown_minutes`, padrão 15 min, grupo Sistema). Um cron externo (ex.: Vercel Cron) é opcional para ambientes sem tráfego frequente.
 
 ## Como adicionar em novas telas
 
@@ -44,9 +57,11 @@ Nas listagens, o padrão é:
    - Se `silent`, não altere o loading global; apenas atualize os dados e `setLastUpdated(new Date())` ao concluir com sucesso.
 4. Criar **`refresh = useCallback(async () => { setIsRefreshing(true); try { await load(true); } finally { setIsRefreshing(false); } }, [load])`** (ajuste nomes).
 5. No **`useEffect` de montagem**, chame `load(false)` e defina `lastUpdated` após sucesso (ou dentro de `load`).
-6. Registrar **`useAutoRefresh({ intervalMs, onRefresh: refresh, enabled: ... })`** com `enabled` coerente (ex.: só quando há `companyId`).
+6. Registrar **`useAutoRefresh({ intervalMs: 60_000, onRefresh: refresh, enabled: ... })`** com `enabled` coerente (ex.: só quando há `companyId`).
 7. Renderizar **`<LastUpdated timestamp={lastUpdated} isRefreshing={isRefreshing} />`** no cabeçalho.
 
 **Importante:** mantenha `onRefresh` estável com `useCallback` e dependências corretas para o intervalo não ser recriado sem necessidade.
 
 Para telas com **estado de UI frágil** (como equalização), prefira um refresh **parcial** dos dados e só faça reload completo quando a estrutura mudar (ex.: número de itens ou fornecedores).
+
+Para telas de **cadastro/consulta** com baixa urgência de tempo real (ex.: contratos), prefira **apenas carga inicial** sem `useAutoRefresh`.

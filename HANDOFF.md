@@ -1,7 +1,7 @@
 # Valore — Handoff para Novo Chat
 
-## Data: 30/04/2026
-## Versão: v2.19.70
+## Data: 13/08/2026
+## Versão: v2.19.75
 
 ## 1. CONTEXTO DO PROJETO
 - Valore é um SaaS de procurement B2B com portal comprador,
@@ -135,17 +135,17 @@
   proposal-attachments (privado), contract-files (público)
 
 ## 6. BACKLOG PRIORIZADO
-1. Notificações de contratos (envio para aceite, aceito, recusado,
-   vencendo em 30 dias)
-2. PDF do contrato gerado pelo sistema
-3. Consumo de saldo via pedidos vinculados ao contrato
-4. Status expired automático em contratos
-5. Atualizar documentação (CLAUDE.md, SPEC.md após esta sessão)
-6. Enforcement de permissões no frontend (sidebar dinâmica por role)
-7. Cobertura de testes
-8. Política de segurança de senhas
-9. Configuração score_weight_price na interface
-10. Migrar documentação de implantação para Notion
+1. Enforcement de permissões no frontend (sidebar dinâmica por role)
+2. Cobertura de testes (E2E fluxos críticos contrato/pedido)
+3. Política de segurança de senhas
+4. Indicador visual na equalização (itens com contrato compatível)
+5. Recebimento parcial ERP / liberação de reserva não utilizada
+6. Migrar documentação de implantação para Notion
+
+### Concluído recentemente
+- **Admin — configurações por tenant** (`/admin/tenants/[id]` → Configurações): registry, APIs, polling, IA, score, contratos, cooldown proxy
+- PDF do contrato, consumo de saldo (Fases 1 e 2) + premium `contract_balance`
+- Notificações de contrato, `expired` automático, otimização proxy (fim do loop maintenance)
 
 ## 7. SEEDS DE TESTE
 - Empresa Teste: 00000000-0000-0000-0000-000000000001

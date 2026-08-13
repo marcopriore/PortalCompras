@@ -60,6 +60,7 @@ export interface ContractItemForm {
   delivery_days: string
   notes: string
   item_id?: string
+  quotation_item_id?: string
   _fromQuotation?: boolean
 }
 

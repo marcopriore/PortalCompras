@@ -75,7 +75,7 @@ export async function POST(request: Request, context: RouteCtx) {
 
     const { data: existing, error: fetchError } = await ctx.supabase
       .from("contracts")
-      .select("id")
+      .select("id, status")
       .eq("id", contractId)
       .eq("company_id", ctx.companyId)
       .maybeSingle()
@@ -85,6 +85,14 @@ export async function POST(request: Request, context: RouteCtx) {
     }
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    const status = String((existing as { status: string }).status)
+    if (status !== "draft" && status !== "pending_acceptance") {
+      return NextResponse.json(
+        { error: "Upload não permitido após aceite do contrato." },
+        { status: 403 },
+      )
     }
 
     const formData = await request.formData()

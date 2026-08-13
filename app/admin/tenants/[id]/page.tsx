@@ -51,6 +51,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
+import { TenantSettingsTab } from '@/components/admin/tenant-settings-tab'
 
 type Tenant = {
   id: string
@@ -311,7 +312,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     requisitions: 0,
   })
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'users'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'settings'>('overview')
   const [editOpen, setEditOpen] = useState(false)
   const [editForm, setEditForm] = useState({
     name: '',
@@ -699,7 +700,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
 
       {/* Abas */}
       <div className="flex gap-1 border-b border-border mb-4">
-        {(['overview', 'users'] as const).map((tab) => (
+        {(['overview', 'users', 'settings'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -709,7 +710,11 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
-            {tab === 'overview' ? 'Visão Geral' : 'Usuários'}
+            {tab === 'overview'
+              ? 'Visão Geral'
+              : tab === 'users'
+                ? 'Usuários'
+                : 'Configurações'}
           </button>
         ))}
       </div>
@@ -1225,6 +1230,10 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
             </>
           )}
         </div>
+      )}
+
+      {activeTab === 'settings' && tenant && (
+        <TenantSettingsTab companyId={tenant.id} />
       )}
 
       {/* Dialog de edição */}

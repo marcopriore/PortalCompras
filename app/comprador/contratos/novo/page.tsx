@@ -131,6 +131,7 @@ function normalizePrefillItems(
     delivery_days: i.delivery_days ?? "",
     notes: i.notes ?? "",
     item_id: i.item_id,
+    quotation_item_id: i.quotation_item_id,
     _fromQuotation: true,
   }))
 }
@@ -144,6 +145,7 @@ function buildContractItemsPayload(rows: ContractItemForm[]): {
     unit_price: number
     delivery_days: number | null
     notes: string | null
+    quotation_item_id: string | null
   }>
   error?: string
 } {
@@ -155,6 +157,7 @@ function buildContractItemsPayload(rows: ContractItemForm[]): {
     unit_price: number
     delivery_days: number | null
     notes: string | null
+    quotation_item_id: string | null
   }> = []
 
   for (let i = 0; i < rows.length; i++) {
@@ -217,6 +220,7 @@ function buildContractItemsPayload(rows: ContractItemForm[]): {
       unit_price: price,
       delivery_days,
       notes: r.notes.trim() || null,
+      quotation_item_id: r.quotation_item_id?.trim() || null,
     })
   }
 
@@ -541,6 +545,7 @@ export default function NovoContratoPage() {
       unit_price: number
       delivery_days: number | null
       notes: string | null
+      quotation_item_id: string | null
     }> = []
     if (shouldValidateItems) {
       const { items, error: itemsError } = buildContractItemsPayload(contractItems)

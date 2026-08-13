@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
+import { useTenantSetting } from '@/lib/hooks/use-tenant-settings'
 import { useSupplierScores } from '@/lib/hooks/use-supplier-score'
 import { SupplierScoreBadge } from '@/components/ui/supplier-score-badge'
 import { SupplierCategories } from '@/components/comprador/supplier-categories'
@@ -108,7 +109,7 @@ export default function FornecedoresPage() {
   const [categoryFilter, setCategoryFilter] = useState<string[]>([])
   const [statusFilter, setStatusFilter] = useState<string[]>([])
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
-  const [priceWeight, setPriceWeight] = useState(40)
+  const { value: priceWeight } = useTenantSetting('score_weight_price')
 
   const [erpSyncOpen, setErpSyncOpen] = useState(false)
 
@@ -168,23 +169,6 @@ export default function FornecedoresPage() {
   useEffect(() => {
     void loadSuppliers()
   }, [loadSuppliers])
-
-  useEffect(() => {
-    if (!companyId) return
-    const supabase = createClient()
-    void supabase
-      .from('company_settings')
-      .select('value')
-      .eq('company_id', companyId)
-      .eq('key', 'score_weight_price')
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.value) {
-          const n = Number(data.value)
-          if (n >= 0 && n <= 100) setPriceWeight(n)
-        }
-      })
-  }, [companyId])
 
   const supplierIds = useMemo(() => suppliers.map((s) => s.id), [suppliers])
 

@@ -8,7 +8,6 @@ import { ptBR } from "date-fns/locale"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useTenant } from "@/contexts/tenant-context"
-import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import {
   Card,
   CardContent,
@@ -128,16 +127,6 @@ export default function ContratosPage() {
   React.useEffect(() => {
     void loadContracts(false)
   }, [loadContracts, features.contracts])
-
-  const refreshContracts = React.useCallback(async () => {
-    await loadContracts(true)
-  }, [loadContracts])
-
-  useAutoRefresh({
-    intervalMs: 30_000,
-    onRefresh: refreshContracts,
-    enabled: Boolean(companyId) && !userLoading && !permissionsLoading && canAccess,
-  })
 
   const total = contracts.length
   const ativos = contracts.filter((c) => c.status === "active").length

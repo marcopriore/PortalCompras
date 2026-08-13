@@ -1,5 +1,23 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.75] — 2026-08-13
+
+### Admin — configurações técnicas por tenant
+- Registry `lib/settings/tenant-settings-registry.ts` com validação min/max e grupos
+- Aba **Configurações** em `/admin/tenants/[id]` (superadmin)
+- APIs `GET/PATCH /api/admin/tenant-settings` e `GET /api/tenant-settings`
+- Polling dinâmico (`polling_interval_seconds`), cache IA, score, alertas de contrato
+- `background_tasks_cooldown_minutes` — intervalo das tarefas em background no proxy
+- Hooks `useTenantSettings` / `useTenantSetting` / `usePollingIntervalMs`
+- Novos tenants recebem defaults via `seedDefaultTenantSettings` no `create-tenant`
+- Rota legada `/admin/tenants/[id]/features` redireciona para a página principal
+
+### Proxy — performance
+- Cooldown nas tarefas `close_expired_rounds`, `expire_overdue_contracts` e
+  `scheduled-maintenance` (corrige loop de requests a cada segundo no dev)
+
+---
+
 ## [v2.19.73] — 2026-08-13
 
 ### Consumo de contrato na equalização (Fase 2)

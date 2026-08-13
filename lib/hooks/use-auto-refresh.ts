@@ -5,13 +5,16 @@ export interface UseAutoRefreshOptions {
   onRefresh: () => void
   enabled?: boolean
   pauseWhenHidden?: boolean
+  /** Refresh imediato ao voltar para a aba (visibilitychange). Padrão: false. */
+  refreshOnVisible?: boolean
 }
 
 export function useAutoRefresh({
   intervalMs,
   onRefresh,
   enabled = true,
-  pauseWhenHidden = true,
+  pauseWhenHidden = false,
+  refreshOnVisible = false,
 }: UseAutoRefreshOptions) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const isHiddenRef = useRef(false)
@@ -41,14 +44,14 @@ export function useAutoRefresh({
   }, [enabled, startTimer, stopTimer])
 
   useEffect(() => {
-    if (!pauseWhenHidden) return
     const handleVisibility = () => {
       isHiddenRef.current = document.hidden
-      if (!document.hidden && enabled) {
+      if (refreshOnVisible && !document.hidden && enabled) {
         onRefresh()
       }
     }
+    isHiddenRef.current = document.hidden
     document.addEventListener("visibilitychange", handleVisibility)
     return () => document.removeEventListener("visibilitychange", handleVisibility)
-  }, [pauseWhenHidden, enabled, onRefresh])
+  }, [refreshOnVisible, enabled, onRefresh])
 }

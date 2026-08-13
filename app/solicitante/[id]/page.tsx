@@ -6,6 +6,7 @@ import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -479,8 +480,10 @@ export default function SolicitanteDetailPage({
     void loadData()
   }, [loadData])
 
+  const pollingIntervalMs = usePollingIntervalMs()
+
   useAutoRefresh({
-    intervalMs: 15000,
+    intervalMs: pollingIntervalMs,
     onRefresh: () => {
       void loadData()
     },

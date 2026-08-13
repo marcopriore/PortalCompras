@@ -7,6 +7,7 @@ import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -123,8 +124,10 @@ export default function PedidosPage() {
     }
   }, [loadOrders])
 
+  const pollingIntervalMs = usePollingIntervalMs()
+
   useAutoRefresh({
-    intervalMs: 60_000,
+    intervalMs: pollingIntervalMs,
     onRefresh: refreshPedidos,
     enabled: Boolean(companyId) && !userLoading,
   })

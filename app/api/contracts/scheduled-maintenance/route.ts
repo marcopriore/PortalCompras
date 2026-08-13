@@ -4,10 +4,12 @@ import {
   markScheduledJobRun,
   notifyExpiredContracts,
   notifyExpiringSoonContracts,
+  notifyLowBalanceContracts,
   shouldRunScheduledJob,
 } from "@/lib/contracts/contract-notification-helpers"
 
 const EXPIRING_JOB_KEY = "contract_expiring_soon"
+const LOW_BALANCE_JOB_KEY = "contract_low_balance"
 const EXPIRING_INTERVAL_HOURS = 24
 
 function isAuthorized(request: Request): boolean {
@@ -41,11 +43,29 @@ export async function POST(request: Request) {
       await markScheduledJobRun(service, EXPIRING_JOB_KEY)
     }
 
+    let lowBalanceChecked = 0
+    let lowBalanceNotified = 0
+    const runLowBalance = await shouldRunScheduledJob(
+      service,
+      LOW_BALANCE_JOB_KEY,
+      EXPIRING_INTERVAL_HOURS,
+    )
+
+    if (runLowBalance) {
+      const result = await notifyLowBalanceContracts(service)
+      lowBalanceChecked = result.checked
+      lowBalanceNotified = result.notified
+      await markScheduledJobRun(service, LOW_BALANCE_JOB_KEY)
+    }
+
     return NextResponse.json({
       expiredNotified,
       expiringChecked,
       expiringNotified,
       expiringSkipped: !runExpiring,
+      lowBalanceChecked,
+      lowBalanceNotified,
+      lowBalanceSkipped: !runLowBalance,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error"
