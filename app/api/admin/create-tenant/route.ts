@@ -1,6 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { seedDefaultTenantSettings } from '@/lib/settings/tenant-settings'
+import { seedDefaultPasswordPolicy, buildDefaultPasswordPolicy, loadPasswordPolicy } from '@/lib/settings/password-policy'
+import { validatePasswordAgainstPolicy } from '@/lib/settings/password-policy-registry'
+import { applyPasswordChange } from '@/lib/auth/password-policy-server'
 
 export async function POST(request: Request) {
   try {
@@ -39,8 +42,18 @@ export async function POST(request: Request) {
 
     try {
       await seedDefaultTenantSettings(supabaseAdmin, (company as { id: string }).id)
+      await seedDefaultPasswordPolicy(supabaseAdmin, (company as { id: string }).id)
     } catch (settingsError) {
-      console.error('create-tenant: seedDefaultTenantSettings', settingsError)
+      console.error('create-tenant: seed settings', settingsError)
+    }
+
+    const defaultPolicy = buildDefaultPasswordPolicy()
+    const adminPasswordCheck = validatePasswordAgainstPolicy(
+      adminPassword,
+      defaultPolicy,
+    )
+    if (!adminPasswordCheck.ok) {
+      return NextResponse.json({ error: adminPasswordCheck.error }, { status: 400 })
     }
 
     // 2. Criar usuário admin do tenant no Auth
@@ -82,6 +95,16 @@ export async function POST(request: Request) {
         { status: 500 },
       )
     }
+
+    const companyId = (company as { id: string }).id
+    const policy = await loadPasswordPolicy(supabaseAdmin, companyId)
+    await applyPasswordChange(
+      supabaseAdmin,
+      authData.user.id,
+      companyId,
+      adminPassword,
+      policy,
+    )
 
     return NextResponse.json({ success: true, company })
   } catch {

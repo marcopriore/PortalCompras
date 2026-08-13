@@ -3,6 +3,7 @@ import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import FornecedorPortalShell from "@/components/layout/fornecedor-portal-shell"
+import { PasswordExpiryGuard } from "@/components/auth/password-expiry-guard"
 
 export default async function FornecedorLayout({
   children,
@@ -56,7 +57,7 @@ export default async function FornecedorLayout({
         userEmail={userEmail}
         userInitials={initials}
       >
-        {children}
+        <PasswordExpiryGuard portal="fornecedor">{children}</PasswordExpiryGuard>
       </FornecedorPortalShell>
     </Suspense>
   )

@@ -7,7 +7,7 @@ import {
   type Contract,
 } from "@/types/contracts"
 import {
-  findContractMatchesForQuotationItems,
+  findContractMatchesForQuotationItem,
   pickBestContractMatch,
   contractLinkFromMatch,
   type QuotationItemMatchInput,
@@ -159,14 +159,12 @@ export async function POST(request: Request, context: RouteCtx) {
       return c
     })
 
-    const matchMap = findContractMatchesForQuotationItems(
-      quotationId,
-      inputs,
-      contracts,
-    )
-
     const items = inputs.map((input) => {
-      const candidates = matchMap.get(input.quotationItemId) ?? []
+      const candidates = findContractMatchesForQuotationItem(
+        quotationId,
+        input,
+        contracts,
+      )
       const suggested = pickBestContractMatch(candidates)
       return {
         quotationItemId: input.quotationItemId,

@@ -24,7 +24,7 @@ export default defineConfig({
     },
     {
       name: "critical-flows",
-      testMatch: "**/critical-flows.spec.ts",
+      testMatch: "**/{critical-flows,contract-flows}.spec.ts",
       use: {
         ...devices["Desktop Chrome"],
         actionTimeout: 15000,

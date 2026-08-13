@@ -7,6 +7,7 @@ import { TenantSelector } from "@/components/layout/tenant-selector"
 import { PortalUnauthorizedToast } from "@/components/layout/portal-unauthorized-toast"
 import { CompradorRouteGuard } from "@/components/comprador/comprador-route-guard"
 import { CompradorPermissionToast } from "@/components/comprador/comprador-permission-toast"
+import { PasswordExpiryGuard } from "@/components/auth/password-expiry-guard"
 import { createClient } from "@/lib/supabase/server"
 import { Suspense } from "react"
 
@@ -95,7 +96,9 @@ export default async function CompradorLayout({
               <PortalUnauthorizedToast message="Você não tem permissão para acessar o Portal do Fornecedor." />
               <CompradorPermissionToast />
             </Suspense>
-            <CompradorRouteGuard>{children}</CompradorRouteGuard>
+            <CompradorRouteGuard>
+              <PasswordExpiryGuard portal="comprador">{children}</PasswordExpiryGuard>
+            </CompradorRouteGuard>
           </main>
         </div>
       </div>

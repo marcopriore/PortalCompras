@@ -1,7 +1,7 @@
 # Valore — Handoff para Novo Chat
 
 ## Data: 13/08/2026
-## Versão: v2.19.75
+## Versão: v2.19.77
 
 ## 1. CONTEXTO DO PROJETO
 - Valore é um SaaS de procurement B2B com portal comprador,
@@ -32,7 +32,9 @@
 - Requisições, cotações, equalização (com rodadas), aprovações, pedidos
 - Saving/ROI: campos de preço, triggers, dashboard com Saving total,
   cobertura, por fornecedor e por mês
-- Equalização: % vs alvo e % vs média histórica (prefs em localStorage)
+- Equalização: % vs alvo e % vs média histórica (prefs em localStorage);
+  indicador visual de contrato compatível por célula fornecedor
+  (feature `contract_balance`, POST em lote na abertura)
 - IA Negociação: card QuotationAIAnalysis na equalização, análise de
   propostas submitted+selected, alertas/recomendações/contrapropostas,
   export Excel, cache 30min, trigger automático por nova proposta,
@@ -49,6 +51,8 @@
   feature gate: contracts
 - Configurações: Empresa, Perfil, Notificações, Aprovações,
   Segurança (2FA TOTP), Condições de pagamento, Termos de fornecimento
+- Permissões: sidebar dinâmica por `role_permissions` + features;
+  route guard em `/comprador` (bloqueio de URL direta)
 
 ### Portal Fornecedor
 - Dashboard com gráficos reais
@@ -128,24 +132,29 @@
 - Core: quotations, equalization, orders, requisitions, suppliers,
   items, reports, users, settings, logs, approval_requisition,
   approval_order
-- Premium: ai_analytics, ai_negotiation, contracts
+- Premium: ai_analytics, ai_negotiation, contracts, contract_balance
 
 ### Storage buckets
 - company-logos (público), profile-avatars (público),
   proposal-attachments (privado), contract-files (público)
 
 ## 6. BACKLOG PRIORIZADO
-1. Enforcement de permissões no frontend (sidebar dinâmica por role)
-2. Cobertura de testes (E2E fluxos críticos contrato/pedido)
-3. Política de segurança de senhas
-4. Indicador visual na equalização (itens com contrato compatível)
-5. Recebimento parcial ERP / liberação de reserva não utilizada
-6. Migrar documentação de implantação para Notion
+1. Recebimento parcial ERP / liberação de reserva não utilizada
+2. Migrar documentação de implantação para Notion
 
 ### Concluído recentemente
-- **Admin — configurações por tenant** (`/admin/tenants/[id]` → Configurações): registry, APIs, polling, IA, score, contratos, cooldown proxy
+- **Política de senhas por tenant** (aba Segurança admin, expiração, histórico,
+  mesma regra comprador/solicitante/fornecedor, migration 039)
+- **Enforcement de permissões no frontend** (v2.19.76): `comprador-nav.ts`,
+  sidebar filtrada, route guard, toast `?error=sem_permissao`
+- **Indicador visual na equalização** (contrato compatível por célula fornecedor,
+  tooltip com saldo, feature `contract_balance`)
+- **E2E fluxos críticos contrato/pedido**: `e2e/contract-flows.spec.ts` +
+  helpers `e2e/helpers/` (fixtures dinâmicas via service role); incluído em
+  `npm run test:e2e:critical`
+- **Admin — configurações por tenant** (`/admin/tenants/[id]` → Configurações)
 - PDF do contrato, consumo de saldo (Fases 1 e 2) + premium `contract_balance`
-- Notificações de contrato, `expired` automático, otimização proxy (fim do loop maintenance)
+- Notificações de contrato, `expired` automático, otimização proxy
 
 ## 7. SEEDS DE TESTE
 - Empresa Teste: 00000000-0000-0000-0000-000000000001
@@ -169,4 +178,6 @@
 - npm run dev
 - npm run test:unit
 - npm run test:e2e
-- npm run test:e2e:critical
+- npm run test:e2e:critical — pedidos, cotações, equalização, contratos
+  (`critical-flows.spec.ts` + `contract-flows.spec.ts`; requer dev server,
+  `.env.local` com `SUPABASE_SERVICE_ROLE_KEY`)

@@ -104,6 +104,13 @@ export function canAccessCompradorPath(
   if (ctx.isSuperAdmin) return true
   if (!pathname.startsWith("/comprador")) return true
 
+  if (
+    pathname === "/comprador/alterar-senha" ||
+    pathname.startsWith("/comprador/alterar-senha/")
+  ) {
+    return true
+  }
+
   const isEqualizacao =
     pathname.includes("/equalizacao") && pathname.startsWith("/comprador/cotacoes/")
 

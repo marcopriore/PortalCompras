@@ -44,6 +44,8 @@ import {
   KeyRound,
   CheckCircle2,
 } from 'lucide-react'
+import type { PasswordPolicy } from "@/lib/settings/password-policy-registry"
+import { generatePasswordForPolicy } from "@/lib/auth/generate-password"
 
 const ROLES = [
   { value: 'admin', label: 'Administrador' },
@@ -70,19 +72,6 @@ type UserForm = {
   email: string
   roles: string[]
   status: string
-}
-
-function generatePassword(): string {
-  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-  const lower = 'abcdefghjkmnpqrstuvwxyz'
-  const digits = '23456789'
-  const special = '@#$%&*'
-  const all = upper + lower + digits + special
-  const rand = (chars: string) =>
-    chars[Math.floor(Math.random() * chars.length)]
-  const base = [rand(upper), rand(lower), rand(digits), rand(special)]
-  for (let i = 0; i < 6; i++) base.push(rand(all))
-  return base.sort(() => Math.random() - 0.5).join('')
 }
 
 function getInitials(name: string): string {
@@ -269,6 +258,28 @@ export default function TenantUsersPage() {
   const [resetSendEmail, setResetSendEmail] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [resetDone, setResetDone] = useState(false)
+  const [passwordPolicy, setPasswordPolicy] = useState<PasswordPolicy>({
+    minLength: 8,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireDigit: true,
+    requireSpecial: true,
+    expiryDays: 0,
+    historyCount: 5,
+  })
+
+  useEffect(() => {
+    if (!companyId) return
+    void fetch("/api/tenant-password-policy")
+      .then(async (res) => {
+        if (!res.ok) return null
+        return (await res.json()) as { policy?: PasswordPolicy }
+      })
+      .then((data) => {
+        if (data?.policy) setPasswordPolicy(data.policy)
+      })
+      .catch(() => {})
+  }, [companyId])
 
   useEffect(() => {
     if (!companyId) return
@@ -306,12 +317,12 @@ export default function TenantUsersPage() {
     if (!form.fullName || !form.email || !companyId) return
     if (form.roles.length === 0) return
     if (!generatedPassword) {
-      setGeneratedPassword(generatePassword())
+      setGeneratedPassword(generatePasswordForPolicy(passwordPolicy))
     }
     setSubmitting(true)
     try {
       const passwordToUse =
-        generatedPassword || generatePassword()
+        generatedPassword || generatePasswordForPolicy(passwordPolicy)
 
       const res = await fetch('/api/admin/create-user', {
         method: 'POST',
@@ -878,7 +889,7 @@ export default function TenantUsersPage() {
             <Button
               type="button"
               onClick={() => {
-                setGeneratedPassword(generatePassword())
+                setGeneratedPassword(generatePasswordForPolicy(passwordPolicy))
                 setCreateOpen(true)
               }}
             >
@@ -994,7 +1005,7 @@ export default function TenantUsersPage() {
                           size="sm"
                           onClick={() => {
                             setResetUser({ id: profile.id, full_name: profile.full_name })
-                            setResetPassword(generatePassword())
+                            setResetPassword(generatePasswordForPolicy(passwordPolicy))
                             setResetSendEmail(false)
                             setResetDone(false)
                             setResetOpen(true)
@@ -1104,7 +1115,7 @@ export default function TenantUsersPage() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={() => setGeneratedPassword(generatePassword())}
+                  onClick={() => setGeneratedPassword(generatePasswordForPolicy(passwordPolicy))}
                   className="shrink-0"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
@@ -1226,7 +1237,7 @@ export default function TenantUsersPage() {
                     variant="outline"
                     size="sm"
                     type="button"
-                    onClick={() => setResetPassword(generatePassword())}
+                    onClick={() => setResetPassword(generatePasswordForPolicy(passwordPolicy))}
                   >
                     Gerar
                   </Button>

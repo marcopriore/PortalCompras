@@ -52,6 +52,7 @@ import {
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 import { TenantSettingsTab } from '@/components/admin/tenant-settings-tab'
+import { TenantSecurityTab } from '@/components/admin/tenant-security-tab'
 
 type Tenant = {
   id: string
@@ -312,7 +313,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     requisitions: 0,
   })
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'settings'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'settings' | 'security'>('overview')
   const [editOpen, setEditOpen] = useState(false)
   const [editForm, setEditForm] = useState({
     name: '',
@@ -700,7 +701,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
 
       {/* Abas */}
       <div className="flex gap-1 border-b border-border mb-4">
-        {(['overview', 'users', 'settings'] as const).map((tab) => (
+        {(['overview', 'users', 'settings', 'security'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -714,7 +715,9 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
               ? 'Visão Geral'
               : tab === 'users'
                 ? 'Usuários'
-                : 'Configurações'}
+                : tab === 'settings'
+                  ? 'Configurações'
+                  : 'Segurança'}
           </button>
         ))}
       </div>
@@ -1234,6 +1237,10 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
 
       {activeTab === 'settings' && tenant && (
         <TenantSettingsTab companyId={tenant.id} />
+      )}
+
+      {activeTab === 'security' && tenant && (
+        <TenantSecurityTab companyId={tenant.id} />
       )}
 
       {/* Dialog de edição */}

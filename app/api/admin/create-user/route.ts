@@ -1,6 +1,12 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { createNotification } from '@/lib/notify'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
+import { loadPasswordPolicy } from '@/lib/settings/password-policy'
+import { validatePasswordAgainstPolicy } from '@/lib/settings/password-policy-registry'
+import {
+  applyPasswordChange,
+} from '@/lib/auth/password-policy-server'
 
 function resolveProfileType(roles: string[]): string {
   if (roles.includes('requester')) return 'requester'
@@ -29,14 +35,21 @@ export async function POST(request: Request) {
       )
     }
 
-    const supabaseAdmin = createClient(
+    const supabaseAdmin = createServiceRoleClient()
+    const policy = await loadPasswordPolicy(supabaseAdmin, companyId)
+    const passwordCheck = validatePasswordAgainstPolicy(password, policy)
+    if (!passwordCheck.ok) {
+      return NextResponse.json({ error: passwordCheck.error }, { status: 400 })
+    }
+
+    const supabaseAuthAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     )
 
     // 1. Criar usuário no Auth
     const { data: authData, error: authError } =
-      await supabaseAdmin.auth.admin.createUser({
+      await supabaseAuthAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
@@ -72,6 +85,14 @@ export async function POST(request: Request) {
         { status: 500 },
       )
     }
+
+    await applyPasswordChange(
+      supabaseAdmin,
+      authData.user.id,
+      companyId,
+      password,
+      policy,
+    )
 
     const profileId = authData.user.id
     void (async () => {

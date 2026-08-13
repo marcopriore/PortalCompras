@@ -80,7 +80,14 @@ import {
   LinkContractEqualizacaoDialog,
   type EqualizacaoSelectionRow,
 } from "@/components/comprador/link-contract-equalizacao-dialog"
-import type { EqualizacaoContractLink } from "@/lib/contracts/match-contract-items"
+import {
+  ContractMatchCellIndicator,
+  contractMatchCellKey,
+} from "@/components/comprador/contract-match-cell-indicator"
+import type {
+  ContractMatchCandidate,
+  EqualizacaoContractLink,
+} from "@/lib/contracts/match-contract-items"
 import {
   CONTRACT_PO_LINK_PROMPT_KEY,
   parseContractPoLinkPrompt,
@@ -1333,6 +1340,92 @@ export default function EqualizacaoPage({
     },
     [orderedItems, selectedRoundId],
   )
+
+  const contractMatchSelections = React.useMemo(() => {
+    if (!contractBalanceEnabled || !selectedRoundId) return []
+    const selections: Array<{
+      quotationItemId: string
+      supplierId: string
+      materialCode: string
+      quantity: number
+    }> = []
+    for (const qi of quotationItems) {
+      if (orderedItems.has(qi.id)) continue
+      const itemRid = getItemRoundId(qi.id)
+      for (const p of proposals) {
+        if (!p.supplier_id) continue
+        const pi = getProposalItemForQuotationItem(
+          p,
+          qi.id,
+          itemRid,
+          allProposalsCatalog,
+        )
+        if (!pi || pi.unit_price <= 0) continue
+        selections.push({
+          quotationItemId: qi.id,
+          supplierId: p.supplier_id,
+          materialCode: qi.material_code,
+          quantity: qi.quantity,
+        })
+      }
+    }
+    return selections
+  }, [
+    contractBalanceEnabled,
+    selectedRoundId,
+    quotationItems,
+    proposals,
+    orderedItems,
+    allProposalsCatalog,
+    getItemRoundId,
+  ])
+
+  const [contractMatchMap, setContractMatchMap] = React.useState<
+    Map<string, ContractMatchCandidate>
+  >(new Map())
+  const contractMatchFetchRef = React.useRef(0)
+
+  React.useEffect(() => {
+    if (!contractBalanceEnabled || contractMatchSelections.length === 0) {
+      setContractMatchMap(new Map())
+      return
+    }
+
+    const fetchId = ++contractMatchFetchRef.current
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/quotations/${id}/contract-matches`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ selections: contractMatchSelections }),
+        })
+        const data = (await res.json()) as {
+          items?: Array<{
+            quotationItemId: string
+            supplierId: string
+            candidates?: ContractMatchCandidate[]
+          }>
+        }
+        if (!res.ok || cancelled || fetchId !== contractMatchFetchRef.current) return
+
+        const next = new Map<string, ContractMatchCandidate>()
+        for (const row of data.items ?? []) {
+          const best = row.candidates?.[0]
+          if (!best) continue
+          next.set(contractMatchCellKey(row.quotationItemId, row.supplierId), best)
+        }
+        setContractMatchMap(next)
+      } catch {
+        // preview silencioso — não bloquear equalização
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [contractBalanceEnabled, id, contractMatchSelections])
 
   const splitSuggestion = React.useMemo(() => {
     const suggestion: Record<
@@ -3433,7 +3526,16 @@ export default function EqualizacaoPage({
                                 >
                                   {hasQuotablePrice ? (
                                     <div className="flex flex-col items-center gap-0.5">
-                                      <span>{formatCurrency(pi!.unit_price)}</span>
+                                      <div className="flex items-center justify-center gap-1">
+                                        <span>{formatCurrency(pi!.unit_price)}</span>
+                                        {contractBalanceEnabled && p.supplier_id && (
+                                          <ContractMatchCellIndicator
+                                            match={contractMatchMap.get(
+                                              contractMatchCellKey(qi.id, p.supplier_id),
+                                            )}
+                                          />
+                                        )}
+                                      </div>
                                       {columnVisibility.show_vs_alvo && (() => {
                                         const target = targetPrices[qi.id]
                                         if (target == null || target <= 0 || !hasQuotablePrice) return null

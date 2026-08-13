@@ -1,68 +1,11 @@
-import { test, expect, type Page } from "@playwright/test"
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-const BUYER_EMAIL = "teste@procuremax.com.br"
-const BUYER_PASSWORD = "Senha@1234"
-const SUPPLIER_EMAIL = "fornecedor@valore.com.br"
-const SUPPLIER_PASSWORD = "123456"
-
-const TEST_ORDER_CODE = "PED-2026-0033"
-const TEST_ORDER_ID = "cc46631f-fa0d-4846-ad11-105d9269972c"
-
-const TEST_QUOTATION_CODE = "COT-2026-0036"
-const TEST_QUOTATION_ID = "3c1a465b-f4d4-461e-a0b5-ab7609d6480d"
-
-async function loginBuyer(page: Page) {
-  await page.goto("/login")
-  await page.fill('input[type="email"]', BUYER_EMAIL)
-  await page.fill('input[type="password"]', BUYER_PASSWORD)
-  await page.click('button[type="submit"]')
-  await page.waitForURL((url) => url.pathname.startsWith("/comprador"), { timeout: 15000 })
-}
-
-async function loginSupplier(page: Page) {
-  await page.goto("/fornecedor/login")
-  await page.fill('input[type="email"]', SUPPLIER_EMAIL)
-  await page.fill('input[type="password"]', SUPPLIER_PASSWORD)
-  await page.click('button[type="submit"]')
-  await page.waitForURL(
-    (url) => url.pathname.startsWith("/fornecedor") && !url.pathname.includes("/login"),
-    { timeout: 15000 },
-  )
-}
-
-async function resetOrderToSent() {
-  if (!SUPABASE_URL || !SERVICE_KEY) {
-    throw new Error(
-      "Defina NEXT_PUBLIC_SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY em .env.local para os testes críticos.",
-    )
-  }
-  const res = await fetch(
-    `${SUPABASE_URL}/rest/v1/purchase_orders?id=eq.${TEST_ORDER_ID}`,
-    {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SERVICE_KEY,
-        Authorization: `Bearer ${SERVICE_KEY}`,
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({
-        status: "sent",
-        accepted_at: null,
-        accepted_by_supplier: false,
-        estimated_delivery_date: null,
-        cancellation_reason: null,
-      }),
-    },
-  )
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Reset failed: ${res.status} — ${text}`)
-  }
-}
+import { test, expect } from "@playwright/test"
+import { loginBuyer, loginSupplier } from "./helpers/auth"
+import { resetOrderToSent } from "./helpers/supabase-admin"
+import {
+  TEST_ORDER_CODE,
+  TEST_QUOTATION_CODE,
+  TEST_QUOTATION_ID,
+} from "./helpers/test-env"
 
 test.describe("Fluxo de Pedido — Fornecedor", () => {
   test.beforeAll(async () => {

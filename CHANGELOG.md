@@ -1,5 +1,23 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.77] — 2026-08-13
+
+### Política de senhas por tenant
+- Aba **Segurança** em `/admin/tenants/[id]` (superadmin)
+- Regras de complexidade, expiração programada e histórico de senhas
+- Migration `039`: `profiles.password_changed_at`, `user_password_history`
+- Enforcement em criar/reset/trocar senha (comprador, solicitante e fornecedor)
+- `PasswordExpiryGuard` e páginas `/comprador/alterar-senha`, `/fornecedor/alterar-senha`
+
+### Equalização — indicador de contrato
+- Ícone de contrato compatível na célula do fornecedor (feature `contract_balance`)
+- POST em lote na abertura da rodada; fix match por par item+fornecedor na API
+
+### Testes E2E
+- `e2e/contract-flows.spec.ts` + helpers compartilhados (`e2e/helpers/`)
+
+---
+
 ## [v2.19.75] — 2026-08-13
 
 ### Admin — configurações técnicas por tenant

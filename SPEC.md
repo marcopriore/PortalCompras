@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.75
+## Versão atual: v2.19.77
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -260,7 +260,58 @@ end_date passada → expired (automático via `expire_overdue_contracts` no prox
 - GET/POST/PATCH/DELETE /api/contract-items
 - GET /api/contracts-public-terms
 
-## 8.2 Módulo IA & Analytics
+### Consumo de contrato na equalização (feature `contract_balance`)
+- Indicador `FileSignature` na célula do fornecedor (preço unitário) quando há
+  match com saldo disponível; tooltip com código do contrato, preço e saldo
+- POST em lote `POST /api/quotations/[id]/contract-matches` na abertura da rodada
+- Ao **Criar Pedido**: modal `LinkContractEqualizacaoDialog` (se
+  `contract_po_link_prompt_enabled`)
+
+### Permissões no portal comprador
+- Menu: `lib/permissions/comprador-nav.ts` — filtro por `role_permissions` e
+  `tenant_features` (`components/layout/sidebar.tsx`)
+- Rotas: `comprador-route-guard.tsx` bloqueia URL direta sem permissão
+- Toast: `comprador-permission-toast.tsx` para `?error=sem_permissao`
+
+## 8.4 Política de senhas por tenant (superadmin)
+
+Configuração em `/admin/tenants/[id]` → aba **Segurança** (`TenantSecurityTab`).
+Persistência em `company_settings` (keys `password_*`). Mesma política para
+comprador, solicitante e fornecedor do tenant.
+
+| Key | Tipo | Padrão | Descrição |
+|-----|------|--------|-----------|
+| `password_min_length` | número | 8 | Comprimento mínimo (8–32) |
+| `password_require_uppercase` | bool | true | Exigir maiúscula |
+| `password_require_lowercase` | bool | true | Exigir minúscula |
+| `password_require_digit` | bool | true | Exigir dígito |
+| `password_require_special` | bool | true | Exigir especial |
+| `password_expiry_days` | número | 0 | Expiração em dias (0 = off, máx. 365) |
+| `password_history_count` | número | 5 | Últimas N senhas bloqueadas (0 = off, máx. 24) |
+
+**Banco (migration 039):**
+- `profiles.password_changed_at` — última troca de senha
+- `user_password_history` — hash scrypt por troca (service role nas APIs)
+
+**APIs:**
+- `GET/PATCH /api/admin/tenant-security-settings` — superadmin
+- `GET /api/tenant-password-policy` — app autenticado (regras + policy)
+- `GET /api/auth/password-status` — expiração do usuário logado
+- `POST /api/auth/change-password` — troca com validação + histórico
+
+**Enforcement:**
+- Criação/reset de usuário (`create-user`, `reset-password`)
+- Criação de tenant (senha do admin inicial)
+- Configurações → Segurança (comprador)
+- `/comprador/alterar-senha` e `/fornecedor/alterar-senha` (expiração forçada)
+- `PasswordExpiryGuard` nos layouts comprador e fornecedor
+
+**Libs:** `lib/settings/password-policy-registry.ts`, `password-policy.ts`,
+`lib/auth/password-policy-server.ts`, `generate-password.ts`
+
+**Novos tenants:** `seedDefaultPasswordPolicy` em `create-tenant`.
+
+## 8.5 Módulo IA & Analytics
 
 ### feature: ai_analytics
 - SpendAIInsights no dashboard do comprador
@@ -294,18 +345,26 @@ Persistência em `company_settings` (`company_id`, `key`, `value`). Catálogo ti
 
 **Licenciamento** (módulos on/off) permanece em `tenant_features` na aba Visão Geral — rota legada `/admin/tenants/[id]/features` redireciona para a página principal.
 
+### Testes E2E (Playwright)
+- `npm run test:e2e` — suite geral (`auth-flow.spec.ts` no projeto chromium)
+- `npm run test:e2e:critical` — fluxos críticos: pedidos, cotações, equalização
+  (`critical-flows.spec.ts`) e contrato/pedido (`contract-flows.spec.ts`)
+- Helpers: `e2e/helpers/auth.ts`, `e2e/helpers/supabase-admin.ts` (fixtures
+  dinâmicas com service role; testes pulam se não houver dados na empresa teste)
+
 ---
 
-## 9. Backlog (estado atual — v2.19.75)
+## 9. Backlog (estado atual — v2.19.77)
 
-1. Enforcement de permissões no frontend (sidebar dinâmica por role)
-2. Cobertura de testes
-3. Política de segurança de senhas
-4. Indicador visual na equalização (match de contrato)
-5. Recebimento parcial ERP / liberação de reserva
-6. Migrar documentação de implantação para Notion
+1. Recebimento parcial ERP / liberação de reserva
+2. Migrar documentação de implantação para Notion
 
 ### Concluído recentemente
+- **Política de senhas por tenant** — aba Segurança no admin, expiração, histórico,
+  enforcement comprador/fornecedor (migration 039)
+- **Enforcement de permissões** no frontend (sidebar + route guard, v2.19.76)
+- **Indicador visual na equalização** (match de contrato por célula fornecedor)
+- **E2E contrato/pedido** (`e2e/contract-flows.spec.ts`)
 - **Admin — configurações por tenant** (registry, API, aba Configurações, polling/IA/score/contratos/proxy)
 - PDF do contrato, consumo de saldo (Fases 1–2), notificações, `expired` automático
 - Otimização proxy (cooldown tarefas background; fim do loop scheduled-maintenance)
@@ -326,4 +385,4 @@ Persistência em `company_settings` (`company_id`, `key`, `value`). Catálogo ti
 
 ---
 
-*Última revisão: v2.19.75.*
+*Última revisão: v2.19.77.*

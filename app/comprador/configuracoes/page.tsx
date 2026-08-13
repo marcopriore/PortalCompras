@@ -1635,38 +1635,32 @@ export default function ConfiguracoesPage() {
     setSecuritySuccess(null)
     setSecurityError(null)
 
-    if (securityForm.newPassword.length < 8) {
-      setSecurityError("A nova senha deve ter no mínimo 8 caracteres.")
-      return
-    }
-
     if (securityForm.newPassword !== securityForm.confirmNewPassword) {
       setSecurityError("A confirmação da nova senha não confere.")
       return
     }
 
     setSecuritySaving(true)
-    const supabase = createClient()
     try {
-      const { data: authData } = await supabase.auth.getUser()
-      if (!authData?.user) {
-        setSecurityError("Sessão expirada. Faça login novamente.")
-        return
-      }
-
-      const { error } = await supabase.auth.updateUser({
-        password: securityForm.newPassword,
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: securityForm.currentPassword,
+          newPassword: securityForm.newPassword,
+        }),
       })
-
-      if (error) {
-        setSecurityError(error.message)
+      const data = (await res.json()) as { error?: string }
+      if (!res.ok) {
+        setSecurityError(data.error ?? "Falha ao alterar senha.")
         return
       }
 
       setSecuritySuccess("Senha alterada com sucesso.")
       setSecurityForm({ currentPassword: "", newPassword: "", confirmNewPassword: "" })
-    } catch (e: any) {
-      setSecurityError(e?.message ?? "Falha ao alterar senha.")
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Falha ao alterar senha."
+      setSecurityError(message)
     } finally {
       setSecuritySaving(false)
     }
