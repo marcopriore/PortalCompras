@@ -1,5 +1,24 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.73] — 2026-08-13
+
+### Consumo de contrato na equalização (Fase 2)
+- Ao **Criar Pedido** na equalização: verificação automática de contratos
+  compatíveis e modal de confirmação antes de gerar o pedido
+- Match por `quotation_item_id` ou `material_code`; preço do contrato e
+  reserva de saldo nas linhas vinculadas
+- Um pedido por fornecedor com linhas com e sem contrato no mesmo documento
+- Pedidos `cancelled` / `refused` liberam o item na equalização para novo pedido
+- APIs: `POST /api/quotations/[id]/contract-matches`,
+  `POST /api/purchase-orders/[id]/reserve-contract-balance`
+- Feature premium **`contract_balance`** (Consumo de Contrato) no admin, separada
+  do módulo **Contratos**
+- Configuração por tenant: **Verificar contratos ao criar pedido** em
+  Configurações → Configuração de Campos (padrão ligado)
+- Migration `038`: seed `contract_balance` na empresa teste
+
+---
+
 ## [v2.19.72] — 2026-08-12
 
 ### Consumo de saldo de contrato via pedido (Fase 1)
