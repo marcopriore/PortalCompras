@@ -1,11 +1,16 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import {
+  canAccessCompradorNavHref,
+  getDefaultCompradorHref,
+  type CompradorAccessContext,
+} from "@/lib/permissions/comprador-nav"
 import { createClient } from "@/lib/supabase/client"
 import {
   LayoutDashboard,
@@ -20,6 +25,7 @@ import {
   BarChart3,
   Building2,
   ShieldCheck,
+  FileSignature,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ValoreLogo } from "@/components/ui/valore-logo"
@@ -41,7 +47,7 @@ const buyerNavItems: NavItem[] = [
   { title: "Requisições", href: "/comprador/requisicoes", icon: ClipboardList },
   { title: "Cotações", href: "/comprador/cotacoes", icon: FileText },
   { title: "Pedidos", href: "/comprador/pedidos", icon: ShoppingCart },
-  { title: "Contratos", href: "/comprador/contratos", icon: FileText },
+  { title: "Contratos", href: "/comprador/contratos", icon: FileSignature },
   { title: "Aprovações", href: "/comprador/aprovacoes", icon: ShieldCheck },
   { title: "Itens", href: "/comprador/itens", icon: Package },
   { title: "Fornecedores", href: "/comprador/fornecedores", icon: Building2 },
@@ -71,30 +77,27 @@ export function Sidebar({ type }: SidebarProps) {
 
   const isLoading = userLoading || permissionsLoading
 
-  const canShowAdminLinks = hasRole("admin") || isSuperAdmin === true
+  const accessCtx = useMemo<CompradorAccessContext>(
+    () => ({
+      isSuperAdmin,
+      hasPermission,
+      hasFeature,
+      hasRole,
+    }),
+    [isSuperAdmin, hasPermission, hasFeature, hasRole],
+  )
 
-  const navItems = React.useMemo(() => {
+  const navItems = useMemo(() => {
     const base = type === "comprador" ? buyerNavItems : supplierNavItems
     if (type !== "comprador") return base
 
-    return base.filter((item) => {
-      const href = item.href
-      if (href === "/comprador") return hasPermission("nav.dashboard") || isSuperAdmin
-      if (href === "/comprador/requisicoes") return hasPermission("nav.requisitions") || isSuperAdmin
-      if (href === "/comprador/cotacoes") return hasPermission("nav.quotations") || isSuperAdmin
-      if (href === "/comprador/pedidos") return hasPermission("nav.orders") || isSuperAdmin
-      if (href === "/comprador/contratos")
-        return hasFeature("contracts") || isSuperAdmin
-      if (href === "/comprador/aprovacoes")
-        return hasPermission("approval.requisition") || hasPermission("approval.order")
-      if (href === "/comprador/itens") return hasPermission("nav.items") || isSuperAdmin
-      if (href === "/comprador/fornecedores") return hasPermission("nav.suppliers") || isSuperAdmin
-      if (href === "/comprador/relatorios") return hasPermission("nav.reports") || isSuperAdmin
-      if (href === "/comprador/configuracoes") return canShowAdminLinks
-      if (href === "/comprador/configuracoes/usuarios") return canShowAdminLinks
-      return true
-    })
-  }, [type, hasPermission, hasFeature, canShowAdminLinks, isSuperAdmin])
+    return base.filter((item) => canAccessCompradorNavHref(item.href, accessCtx))
+  }, [type, accessCtx])
+
+  const homeHref = useMemo(() => {
+    if (type !== "comprador") return "/fornecedor"
+    return getDefaultCompradorHref(accessCtx) ?? "/comprador"
+  }, [type, accessCtx])
 
   useEffect(() => {
     if (type !== "comprador" || !companyId || !userId) return
@@ -129,14 +132,14 @@ export function Sidebar({ type }: SidebarProps) {
       >
         <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
           {!collapsed && (
-            <Link href={type === "comprador" ? "/comprador" : "/fornecedor"} className="flex items-center gap-2">
+            <Link href={homeHref} className="flex items-center gap-2">
               <ValoreLogo size={28} showName={true} nameColor="#ffffff" />
             </Link>
           )}
           {collapsed && (
-            <div className="mx-auto">
+            <Link href={homeHref} className="mx-auto">
               <ValoreLogo size={28} showName={false} nameColor="#ffffff" />
-            </div>
+            </Link>
           )}
         </div>
 
@@ -150,6 +153,10 @@ export function Sidebar({ type }: SidebarProps) {
                 />
               ))}
             </>
+          ) : navItems.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-sidebar-foreground/60">
+              Nenhum menu disponível para seu perfil.
+            </p>
           ) : (
           navItems.map((item) => {
             const isActive = item.href === "/comprador" || item.href === "/fornecedor"

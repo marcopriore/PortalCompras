@@ -5,7 +5,10 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
 import { TenantSelector } from "@/components/layout/tenant-selector"
 import { PortalUnauthorizedToast } from "@/components/layout/portal-unauthorized-toast"
+import { CompradorRouteGuard } from "@/components/comprador/comprador-route-guard"
+import { CompradorPermissionToast } from "@/components/comprador/comprador-permission-toast"
 import { createClient } from "@/lib/supabase/server"
+import { Suspense } from "react"
 
 type LayoutCompany = {
   id: string
@@ -88,8 +91,11 @@ export default async function CompradorLayout({
             }
           />
           <main className="flex-1 overflow-auto p-6 bg-background">
-            <PortalUnauthorizedToast message="Você não tem permissão para acessar o Portal do Fornecedor." />
-            {children}
+            <Suspense fallback={null}>
+              <PortalUnauthorizedToast message="Você não tem permissão para acessar o Portal do Fornecedor." />
+              <CompradorPermissionToast />
+            </Suspense>
+            <CompradorRouteGuard>{children}</CompradorRouteGuard>
           </main>
         </div>
       </div>
