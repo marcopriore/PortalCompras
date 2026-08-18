@@ -34,6 +34,8 @@ export type OutboundLogRow = {
   response_body: string | null
   /** Status atual da entidade vinculada (ex.: purchase_orders.status), quando aplicável. */
   entity_status: string | null
+  /** Código ERP da entidade vinculada, quando aplicável. */
+  entity_external_code: string | null
   /** Se o monitor deve exibir o botão Reenviar para este log. */
   retry_eligible: boolean
 }

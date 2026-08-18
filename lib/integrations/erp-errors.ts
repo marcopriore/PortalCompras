@@ -52,8 +52,47 @@ export function duplicateExternalCodeMessage(externalCode: string): string {
 export function erpHttpErrorMessage(status: number): string {
   return buildErpErrorMessage(
     ERP_ERROR_KIND.ERP_HTTP,
-    `O ERP respondeu com status ${status} e não confirmou a criação do pedido.`,
+    `O ERP respondeu com status ${status} e não confirmou a operação.`,
   )
+}
+
+const ERP_ERROR_BODY_KEYS = [
+  "message",
+  "error",
+  "error_message",
+  "detail",
+  "description",
+] as const
+
+function extractPlainErpErrorDetail(responseBody: string | null): string | null {
+  if (!responseBody?.trim()) return null
+
+  try {
+    const parsed = JSON.parse(responseBody) as Record<string, unknown>
+    for (const key of ERP_ERROR_BODY_KEYS) {
+      const value = parsed[key]
+      if (typeof value === "string" && value.trim()) {
+        return value.trim()
+      }
+    }
+  } catch {
+    const trimmed = responseBody.trim()
+    if (trimmed.length > 0 && trimmed.length <= 500) {
+      return trimmed
+    }
+  }
+
+  return null
+}
+
+/** Mensagem legível para falhas HTTP do ERP (4xx/5xx). Usa body quando disponível. */
+export function formatErpHttpFailure(
+  status: number,
+  responseBody: string | null,
+): string {
+  const detail = extractPlainErpErrorDetail(responseBody)
+  if (detail) return detail
+  return `O ERP respondeu com status ${status} e não confirmou a operação.`
 }
 
 export function getBuyerOrderErrorCopy(

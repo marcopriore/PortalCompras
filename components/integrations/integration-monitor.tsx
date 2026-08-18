@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { outboundActionToPurchaseOrderOperation } from "@/lib/integrations/integrate-purchase-order"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -207,11 +208,22 @@ export function IntegrationMonitor({
     if (!log.entity_id) return
     setRetryingLogId(log.id)
     try {
-      const res = await fetch(`/api/purchase-orders/${log.entity_id}/erp-integration`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: "monitor" }),
-      })
+      const isPurchaseOrder = log.action.startsWith("purchase_order.")
+      const poOperation = outboundActionToPurchaseOrderOperation(log.action)
+      const res = await fetch(
+        isPurchaseOrder
+          ? `/api/purchase-orders/${log.entity_id}/erp-integration`
+          : "/api/integrations/outbound",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            isPurchaseOrder
+              ? { source: "monitor", operation: poOperation ?? "create" }
+              : { action: log.action, entity_id: log.entity_id, source: "monitor" },
+          ),
+        },
+      )
       const json = (await res.json()) as {
         success?: boolean
         errorMessage?: string
@@ -220,7 +232,7 @@ export function IntegrationMonitor({
       if (!res.ok || json.success === false) {
         toast.error(json.errorMessage ?? json.error ?? "Falha ao reenviar integração.")
       } else {
-        toast.success(`Integração reenviada para ${log.entity_code ?? "o pedido"}.`)
+        toast.success(`Integração reenviada para ${log.entity_code ?? "o registro"}.`)
       }
       await fetchLogs()
     } catch {

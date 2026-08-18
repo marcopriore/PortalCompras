@@ -3,24 +3,42 @@ import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
 import {
   buildErpErrorMessage,
   duplicateExternalCodeMessage,
-  erpHttpErrorMessage,
   ERP_ERROR_KIND,
+  formatErpHttpFailure,
   parseErpErrorMessage,
   statusForErpErrorKind,
   type PurchaseOrderIntegrationStatus,
 } from "@/lib/integrations/erp-errors"
 import { dispatchOutboundIntegration } from "@/lib/integrations/dispatch"
 import { loadPurchaseOrderOutboundPayload } from "@/lib/integrations/trigger-outbound"
+import type { OutboundIntegrationAction } from "@/lib/integrations/types"
+
+export type PurchaseOrderErpOperation = "create" | "update" | "delete"
 
 export type IntegratePurchaseOrderResult = {
   success: boolean
   skipped: boolean
-  status: "processing" | "completed" | "error" | "integration_error"
+  status:
+    | "processing"
+    | "completed"
+    | "error"
+    | "integration_error"
+    | "cancelled"
   externalCode?: string | null
   errorMessage?: string | null
 }
 
-const INTEGRATABLE_STATUSES = new Set(["processing", "error", "integration_error"])
+const OPERATION_ACTION: Record<PurchaseOrderErpOperation, OutboundIntegrationAction> = {
+  create: "purchase_order.create",
+  update: "purchase_order.update",
+  delete: "purchase_order.delete",
+}
+
+const INTEGRATABLE_STATUSES: Record<PurchaseOrderErpOperation, Set<string>> = {
+  create: new Set(["processing", "error", "integration_error"]),
+  update: new Set(["processing", "error", "integration_error"]),
+  delete: new Set(["completed", "integration_error"]),
+}
 
 type ServiceClient = ReturnType<typeof createServiceRoleClient>
 
@@ -57,7 +75,11 @@ function formatPersistError(
   )
 }
 
-function failureStatusForMessage(message: string): PurchaseOrderIntegrationStatus {
+function failureStatusForMessage(
+  operation: PurchaseOrderErpOperation,
+  message: string,
+): PurchaseOrderIntegrationStatus {
+  if (operation === "delete") return "integration_error"
   const { kind } = parseErpErrorMessage(message)
   return kind ? statusForErpErrorKind(kind) : "integration_error"
 }
@@ -66,9 +88,10 @@ async function markIntegrationFailure(
   service: ServiceClient,
   orderId: string,
   companyId: string,
+  operation: PurchaseOrderErpOperation,
   message: string,
 ): Promise<PurchaseOrderIntegrationStatus> {
-  const status = failureStatusForMessage(message)
+  const status = failureStatusForMessage(operation, message)
   await updatePurchaseOrder(service, orderId, companyId, {
     status,
     erp_error_message: message,
@@ -76,15 +99,43 @@ async function markIntegrationFailure(
   return status
 }
 
+function buildDispatchErrorMessage(
+  operation: PurchaseOrderErpOperation,
+  result: {
+    errorMessage?: string | null
+    responseStatus?: number | null
+    responseBody?: string | null
+  },
+): string {
+  if (result.errorMessage?.trim()) {
+    return buildErpErrorMessage(ERP_ERROR_KIND.ERP_HTTP, result.errorMessage.trim())
+  }
+  if (result.responseStatus != null) {
+    return buildErpErrorMessage(
+      ERP_ERROR_KIND.ERP_HTTP,
+      formatErpHttpFailure(result.responseStatus, result.responseBody ?? null),
+    )
+  }
+  const fallback =
+    operation === "delete"
+      ? "Falha ao cancelar o pedido no ERP."
+      : operation === "update"
+        ? "Falha ao atualizar o pedido no ERP."
+        : "Falha na integração com o ERP."
+  return buildErpErrorMessage(ERP_ERROR_KIND.ERP_HTTP, fallback)
+}
+
 export async function integratePurchaseOrderWithErp(
   companyId: string,
   orderId: string,
+  operation: PurchaseOrderErpOperation = "create",
+  options?: { cancellationReason?: string | null },
 ): Promise<IntegratePurchaseOrderResult> {
   const service = createServiceRoleClient()
 
   const { data: order, error: loadError } = await service
     .from("purchase_orders")
-    .select("id, status, company_id")
+    .select("id, status, company_id, external_code")
     .eq("id", orderId)
     .eq("company_id", companyId)
     .maybeSingle()
@@ -98,45 +149,70 @@ export async function integratePurchaseOrderWithErp(
     }
   }
 
-  if (!INTEGRATABLE_STATUSES.has(String(order.status))) {
+  const currentStatus = String(order.status)
+  if (!INTEGRATABLE_STATUSES[operation].has(currentStatus)) {
     return {
       success: false,
       skipped: false,
-      status: String(order.status) as IntegratePurchaseOrderResult["status"],
+      status: currentStatus as IntegratePurchaseOrderResult["status"],
       errorMessage: "Pedido não está elegível para integração com o ERP.",
     }
   }
 
   const enabled = await isTenantFeatureEnabled(companyId, "api_integrations")
   if (!enabled) {
-    const skipUpdate = await updatePurchaseOrder(service, orderId, companyId, {
-      status: "completed",
+    if (operation === "create") {
+      const skipUpdate = await updatePurchaseOrder(service, orderId, companyId, {
+        status: "completed",
+        erp_error_message: null,
+      })
+      if (!skipUpdate.ok) {
+        return {
+          success: false,
+          skipped: true,
+          status: "processing",
+          errorMessage: formatPersistError(skipUpdate.message),
+        }
+      }
+      return { success: true, skipped: true, status: "completed" }
+    }
+
+    if (operation === "update") {
+      return { success: true, skipped: true, status: "completed" }
+    }
+
+    const cancelUpdate = await updatePurchaseOrder(service, orderId, companyId, {
+      status: "cancelled",
+      cancellation_reason:
+        options?.cancellationReason?.trim() || "Pedido cancelado pelo comprador",
       erp_error_message: null,
     })
-    if (!skipUpdate.ok) {
+    if (!cancelUpdate.ok) {
       return {
         success: false,
         skipped: true,
-        status: "processing",
-        errorMessage: formatPersistError(skipUpdate.message),
+        status: "completed",
+        errorMessage: formatPersistError(cancelUpdate.message),
       }
     }
-
-    return { success: true, skipped: true, status: "completed" }
+    return { success: true, skipped: true, status: "cancelled" }
   }
 
-  const processingUpdate = await updatePurchaseOrder(service, orderId, companyId, {
-    status: "processing",
-    erp_error_message: null,
-  })
-  if (!processingUpdate.ok) {
-    const errorMessage = formatPersistError(processingUpdate.message)
-    const status = await markIntegrationFailure(service, orderId, companyId, errorMessage)
-    return {
-      success: false,
-      skipped: false,
-      status,
-      errorMessage,
+  if (operation === "create") {
+    const processingUpdate = await updatePurchaseOrder(service, orderId, companyId, {
+      status: "processing",
+      erp_error_message: null,
+    })
+    if (!processingUpdate.ok) {
+      const errorMessage = formatPersistError(processingUpdate.message)
+      const status = await markIntegrationFailure(
+        service,
+        orderId,
+        companyId,
+        operation,
+        errorMessage,
+      )
+      return { success: false, skipped: false, status, errorMessage }
     }
   }
 
@@ -146,13 +222,13 @@ export async function integratePurchaseOrderWithErp(
       ERP_ERROR_KIND.PAYLOAD,
       "Não foi possível montar o payload do pedido.",
     )
-    const status = await markIntegrationFailure(service, orderId, companyId, message)
+    const status = await markIntegrationFailure(service, orderId, companyId, operation, message)
     return { success: false, skipped: false, status, errorMessage: message }
   }
 
   const result = await dispatchOutboundIntegration({
     companyId,
-    action: "purchase_order.create",
+    action: OPERATION_ACTION[operation],
     entity: "purchase_orders",
     entityId: orderId,
     entityCode: payload.code,
@@ -160,46 +236,77 @@ export async function integratePurchaseOrderWithErp(
   })
 
   if (result.success) {
-    const completedUpdate = await updatePurchaseOrder(service, orderId, companyId, {
-      status: "completed",
-      external_code: result.externalCode ?? null,
-      erp_error_message: null,
-    })
-
-    if (!completedUpdate.ok) {
-      const errorMessage = formatPersistError(completedUpdate.message, {
-        externalCode: result.externalCode,
-        code: completedUpdate.code,
+    if (operation === "create") {
+      const completedUpdate = await updatePurchaseOrder(service, orderId, companyId, {
+        status: "completed",
+        external_code: result.externalCode ?? null,
+        erp_error_message: null,
       })
-      const status = await markIntegrationFailure(service, orderId, companyId, errorMessage)
+
+      if (!completedUpdate.ok) {
+        const errorMessage = formatPersistError(completedUpdate.message, {
+          externalCode: result.externalCode,
+          code: completedUpdate.code,
+        })
+        const status = await markIntegrationFailure(
+          service,
+          orderId,
+          companyId,
+          operation,
+          errorMessage,
+        )
+        return { success: false, skipped: false, status, errorMessage }
+      }
 
       return {
-        success: false,
+        success: true,
         skipped: false,
-        status,
-        errorMessage,
+        status: "completed",
+        externalCode: result.externalCode ?? null,
       }
     }
 
-    return {
-      success: true,
-      skipped: false,
-      status: "completed",
-      externalCode: result.externalCode ?? null,
+    if (operation === "update") {
+      const updateOk = await updatePurchaseOrder(service, orderId, companyId, {
+        status: "completed",
+        erp_error_message: null,
+      })
+      if (!updateOk.ok) {
+        const errorMessage = formatPersistError(updateOk.message)
+        const status = await markIntegrationFailure(
+          service,
+          orderId,
+          companyId,
+          operation,
+          errorMessage,
+        )
+        return { success: false, skipped: false, status, errorMessage }
+      }
+      return { success: true, skipped: false, status: "completed" }
     }
+
+    const cancelUpdate = await updatePurchaseOrder(service, orderId, companyId, {
+      status: "cancelled",
+      cancellation_reason:
+        options?.cancellationReason?.trim() || "Pedido cancelado pelo comprador",
+      erp_error_message: null,
+    })
+    if (!cancelUpdate.ok) {
+      const errorMessage = formatPersistError(cancelUpdate.message)
+      const status = await markIntegrationFailure(
+        service,
+        orderId,
+        companyId,
+        operation,
+        errorMessage,
+      )
+      return { success: false, skipped: false, status, errorMessage }
+    }
+    return { success: true, skipped: false, status: "cancelled" }
   }
 
-  const errorMessage =
-    result.errorMessage != null
-      ? buildErpErrorMessage(ERP_ERROR_KIND.ERP_HTTP, result.errorMessage)
-      : result.responseStatus != null
-        ? erpHttpErrorMessage(result.responseStatus)
-        : buildErpErrorMessage(
-            ERP_ERROR_KIND.ERP_HTTP,
-            "Falha na integração com o ERP.",
-          )
-
-  const status = await markIntegrationFailure(service, orderId, companyId, errorMessage)
+  const errorMessage = buildDispatchErrorMessage(operation, result)
+  const status = await markIntegrationFailure(service, orderId, companyId, operation, errorMessage)
 
   return {
     success: false,
@@ -207,4 +314,13 @@ export async function integratePurchaseOrderWithErp(
     status,
     errorMessage,
   }
+}
+
+export function outboundActionToPurchaseOrderOperation(
+  action: string,
+): PurchaseOrderErpOperation | null {
+  if (action === "purchase_order.create") return "create"
+  if (action === "purchase_order.update") return "update"
+  if (action === "purchase_order.delete") return "delete"
+  return null
 }

@@ -363,8 +363,8 @@ Revisado em 18/08/2026. **Foco atual:** consolidar **integrações outbound oper
 | # | Item | Status | Notas |
 |---|------|--------|-------|
 | **A** | **Integração outbound — pedidos (ERP)** | ✅ v1 | Aceite fornecedor → `processing` → ERP → `completed` / `error` / `integration_error`. Ver **§10.10** |
-| **B** | **Integração outbound — requisições** | ❌ Próximo | Disparar `requisition.*` nos eventos do portal (criação, aprovação, cancelamento). Mesmo padrão operacional do §10.10 |
-| **C** | **Integração outbound — pedido update/delete** | ❌ Pendente | `purchase_order.update` / `.delete` ao editar/cancelar pedido já integrado (`completed`) |
+| **B** | **Integração — requisições (inbound)** | ✅ v1 | ERP → Valore via `POST /api/v1/requisitions`. Outbound REQ **não** disparado (infra pronta). Ver **§10.11** |
+| **C** | **Integração outbound — pedido update/delete** | ✅ v2.19.80 | Editar `completed` → `processing` + `purchase_order.update`; cancelar só após ERP OK. Ver **§10.10** |
 
 ### 9.1 Prioridade imediata (paralelo — não bloqueia integrações)
 
@@ -381,7 +381,7 @@ Revisado em 18/08/2026. **Foco atual:** consolidar **integrações outbound oper
 | # | Item | Status | Notas |
 |---|------|--------|-------|
 | 6 | **Módulo de Recebimento** | ❌ Futuro | Entrada parcial, embarque, entrega; base para consumo de REQ/contrato. Nota: pedido cancelado → liberar saldo restante no contrato (dentro do módulo) |
-| 7 | **API Store — implementação** | 🟡 Parcial | Inbound v1 + UI admin integrações + monitor + docs públicas ✅. Outbound pedidos ✅. Falta: REQ outbound, PO update/delete, retry/idempotência avançada |
+| 7 | **API Store — implementação** | 🟡 Parcial | Inbound v1 + outbound pedidos (create/update/delete) + monitor + docs públicas ✅. Falta: REQ outbound (se necessário), retry/idempotência avançada |
 | 8 | **Controle de consumo por item de requisição** | ❌ Futuro | Parcial / Total / Aberta — depende do módulo de Recebimento |
 | 9 | **Login fornecedor + usuários por fornecedor** | ❌ Futuro | Redesign `/fornecedor/login`; gestão de múltiplos logins por `supplier_id` (hoje 1 perfil `supplier` por fornecedor) |
 | 10 | **"Agir como" (impersonation) no comprador** | ❌ Futuro | Admin/Master assume visão de comprador, gerente, requisitante, aprovador etc.; UI na tela de Usuários; audit log obrigatório |
@@ -780,12 +780,44 @@ Fallback aceito: `external_code` (legado). Gravado em `purchase_orders.external_
 | `components/integrations/integration-monitor.tsx` | UI do monitor |
 | `lib/po-status.ts` | Labels comprador/fornecedor |
 
-#### Próxima extensão (mesmo padrão)
+#### Update e delete (`purchase_order.update` / `purchase_order.delete`)
 
-1. **Requisições outbound** — `requisition.created|updated|approved|rejected|cancelled` nos eventos do portal
-2. **Pedido update/delete** — ao editar/cancelar pedido `completed` com `external_code`
-3. Reutilizar: `dispatchOutboundIntegration`, monitor, `external-id-response`, elegibilidade de reenvio por entidade
+**Implementado em v2.19.80.**
+
+| Operação | Gatilho | Status |
+|----------|---------|--------|
+| **Update** | Fornecedor aceita pedido reenviado (`sent` → `processing`) com `external_code` | `purchase_order.update` no aceite; sucesso → `completed` |
+| **Edição comprador** | Editar em `completed` → **Salvar** → `draft` (sem ERP) → **Reenviar ao fornecedor** → `sent` | — |
+| **Delete** | Comprador cancela pedido integrado (`completed`) | Cancelamento no Valore **somente** após HTTP 2xx do ERP; falha → `integration_error` + mensagem do body (4xx) |
+
+Erros HTTP 4xx/5xx: mensagem extraída do body JSON (`message`, `error`, `error_message`, `detail`, `description`) quando presente.
+
+Reenvio cancelamento com falha: Monitor → `operation: "delete"`.
+
+#### Próxima extensão
+
+1. Idempotência outbound (`Idempotency-Key` + dedup no ERP)
+2. Requisições outbound (se necessário no futuro — infra já no código)
 
 ---
 
-*Última revisão: 18/08/2026 (v2.19.78 — integração operacional de pedidos + monitor v2).*
+### 10.11 Fluxo operacional — requisições (ERP → Valore)
+
+**Inbound only.** Requisições são criadas no ERP e enviadas ao Valore; **não** há disparo outbound do portal por enquanto.
+
+#### Inbound
+
+| Método | Endpoint | Uso |
+|--------|----------|-----|
+| POST | `/api/v1/requisitions` | Criação unitária + itens |
+| POST | `/api/v1/requisitions/batch` | Criação em lote |
+
+Autenticação: API key (header `Authorization: Bearer` ou `X-Api-Key`).
+
+#### Outbound (futuro — infra pronta, não wired)
+
+Código em `lib/integrations/integrate-requisition-with-erp.ts` e tipos `requisition.*` permanecem no repositório para ativação futura, mas **sem gatilhos** nas telas do portal.
+
+---
+
+*Última revisão: 18/08/2026 (v2.19.80 — PO update/delete; REQ inbound only).*

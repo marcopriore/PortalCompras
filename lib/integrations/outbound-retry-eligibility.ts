@@ -5,21 +5,61 @@ const RETRYABLE_PO_STATUSES_AFTER_ERP_OK = new Set([
   "error",
 ])
 
-export function isPurchaseOrderCreateLog(log: {
+const PURCHASE_ORDER_OUTBOUND_ACTIONS = new Set([
+  "purchase_order.create",
+  "purchase_order.update",
+  "purchase_order.delete",
+])
+
+export function isPurchaseOrderOutboundLog(log: {
   action: string
   entity: string | null
   entity_id: string | null
 }): boolean {
   return (
-    log.action === "purchase_order.create" &&
     log.entity === "purchase_orders" &&
-    Boolean(log.entity_id)
+    Boolean(log.entity_id) &&
+    PURCHASE_ORDER_OUTBOUND_ACTIONS.has(log.action)
   )
+}
+
+/** @deprecated Use isPurchaseOrderOutboundLog */
+export function isPurchaseOrderCreateLog(log: {
+  action: string
+  entity: string | null
+  entity_id: string | null
+}): boolean {
+  return isPurchaseOrderOutboundLog(log) && log.action === "purchase_order.create"
+}
+
+function isPurchaseOrderCreateRetryEligible(log: {
+  success: boolean
+  entity_status?: string | null
+}): boolean {
+  if (!log.success) return true
+  if (log.entity_status === "completed") return false
+  if (!log.entity_status) return false
+  return RETRYABLE_PO_STATUSES_AFTER_ERP_OK.has(log.entity_status)
+}
+
+function isPurchaseOrderEventRetryEligible(log: {
+  success: boolean
+  action: string
+  entity_status?: string | null
+}): boolean {
+  if (!log.success) return true
+  if (log.action === "purchase_order.delete") {
+    return log.entity_status !== "cancelled"
+  }
+  if (log.action === "purchase_order.update") {
+    return RETRYABLE_PO_STATUSES_AFTER_ERP_OK.has(log.entity_status ?? "")
+  }
+  return false
 }
 
 /**
  * Reenvio no monitor só quando ainda há pendência real.
- * ERP 200 + pedido completed no Valore → não reenvia (evita duplicidade no ERP).
+ * ERP 200 + entidade sincronizada no Valore → não reenvia (evita duplicidade no ERP).
  */
 export function isOutboundRetryEligible(log: {
   action: string
@@ -27,13 +67,14 @@ export function isOutboundRetryEligible(log: {
   entity_id: string | null
   success: boolean
   entity_status?: string | null
+  entity_external_code?: string | null
 }): boolean {
-  if (!isPurchaseOrderCreateLog(log)) return false
+  if (isPurchaseOrderOutboundLog(log)) {
+    if (log.action === "purchase_order.create") {
+      return isPurchaseOrderCreateRetryEligible(log)
+    }
+    return isPurchaseOrderEventRetryEligible(log)
+  }
 
-  if (!log.success) return true
-
-  if (log.entity_status === "completed") return false
-  if (!log.entity_status) return false
-
-  return RETRYABLE_PO_STATUSES_AFTER_ERP_OK.has(log.entity_status)
+  return false
 }

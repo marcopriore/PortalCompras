@@ -148,25 +148,25 @@
   proposal-attachments (privado), contract-files (público)
 
 ## 6. BACKLOG PRIORIZADO
-Revisado 18/08/2026. **Foco atual:** estender integrações outbound (REQ → pedido update/delete).
+Revisado 18/08/2026. **Foco atual:** idempotência outbound e testes de integração.
 
 ### Em foco agora
 **A. Integração outbound — pedidos** ✅ v1 (SPEC §10.10)
 - Aceite fornecedor dispara `purchase_order.create`
+- Update/delete em pedidos integrados (`completed`)
 - Status: `processing` → `completed` | `error` | `integration_error`
 - Monitor com reenvio condicional (sem duplicar ERP OK + Valore OK)
 
-**B. Próximo: integração outbound — requisições**
-- Wire `requisition.*` nos eventos do portal (criar, aprovar, rejeitar, cancelar)
-- Mesmo padrão: orquestrador + status + monitor + IDs `external_requisition_id`
+**B. Requisições — inbound only** ✅ (SPEC §10.11)
+- ERP → Valore via `POST /api/v1/requisitions`
+- Outbound REQ não disparado (infra pronta no código)
 
-**C. Pedido update/delete outbound**
-- `purchase_order.update` ao editar pedido `completed`
-- `purchase_order.delete` ao cancelar pedido integrado
+**C. Próximo: idempotência outbound**
+- Header `Idempotency-Key` + dedup no ERP
 
 ### Loja de API — Fase 1 (base)
 - ✅ Passos 1–8 SPEC §10.8 (inbound, UI admin, monitor, docs)
-- 🟡 Outbound: pedido create ✅; REQ e PO update/delete pendentes
+- 🟡 Outbound: pedido create/update/delete ✅; REQ inbound only; idempotência pendente
 
 ### Imediato (paralelo)
 1. **Fechar enforcement de permissões** — `created_by`, `edit_own`, `view_all`, `portal.solicitante`

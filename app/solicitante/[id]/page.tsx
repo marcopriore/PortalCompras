@@ -7,7 +7,6 @@ import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
-import { triggerOutbound } from "@/lib/integrations/trigger-outbound-client"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -508,8 +507,6 @@ export default function SolicitanteDetailPage({
       .update({ status: "cancelled", rejection_reason: "Cancelado pelo solicitante" })
       .eq("id", requisition.id)
       .eq("requester_id", user.id)
-
-    triggerOutbound("requisition.cancelled", requisition.id)
 
     setCancelOpen(false)
     setCancelling(false)

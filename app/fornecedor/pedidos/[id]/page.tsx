@@ -372,15 +372,13 @@ export default function FornecedorPedidoDetalhePage({
         status?: string
       }
       if (!integrationRes.ok || integrationJson.success === false) {
-        toast.error(
-          integrationJson.errorMessage ??
-            "Pedido aceito, mas a integração com o ERP falhou. O comprador pode reenviar.",
+        console.error(
+          "[supplier accept] ERP integration failed:",
+          integrationJson.errorMessage ?? integrationRes.status,
         )
-      } else if (integrationJson.skipped) {
-        toast.success("Pedido aceito com sucesso.")
-      } else {
-        toast.success("Pedido aceito e integrado ao ERP com sucesso.")
       }
+
+      toast.success("Pedido aceito com sucesso.")
 
       setTermsDialogOpen(false)
       setActiveTerm(null)
@@ -712,7 +710,7 @@ export default function FornecedorPedidoDetalhePage({
         </div>
       ) : null}
 
-      {["draft", "error", "integration_error"].includes(order.status) ? (
+      {order.status === "draft" ? (
         <p className="text-sm text-muted-foreground mb-4">
           Este pedido não está disponível para ações do fornecedor neste status.
         </p>

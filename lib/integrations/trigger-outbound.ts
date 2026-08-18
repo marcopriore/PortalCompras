@@ -1,6 +1,10 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
 import {
+  integrateRequisitionWithErp,
+  isRequisitionIntegrationAction,
+} from "@/lib/integrations/integrate-requisition-with-erp"
+import {
   mapPurchaseOrderToApi,
   type PurchaseOrderItemRow,
 } from "@/lib/api/external/mappers/purchase-order"
@@ -122,24 +126,17 @@ export async function triggerOutboundIntegration(
   }
 
   if (action.startsWith("requisition.")) {
-    const payload = await loadRequisitionOutboundPayload(companyId, entityId)
-    if (!payload) {
-      return { skipped: false, dispatched: false, errorMessage: "Requisição não encontrada." }
+    if (!isRequisitionIntegrationAction(action)) {
+      return { skipped: false, dispatched: false, errorMessage: "Ação não suportada." }
     }
 
-    const result = await dispatchOutboundIntegration({
-      companyId,
-      action,
-      entity: "requisitions",
-      entityId,
-      entityCode: payload.code,
-      payload,
-    })
+    const result = await integrateRequisitionWithErp(companyId, entityId, action)
 
     return {
-      skipped: false,
-      dispatched: true,
+      skipped: result.skipped,
+      dispatched: !result.skipped,
       success: result.success,
+      externalCode: result.externalCode ?? null,
       errorMessage: result.errorMessage,
     }
   }

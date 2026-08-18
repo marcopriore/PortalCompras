@@ -1,5 +1,21 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.80] — 2026-08-18
+
+### Integração ERP — pedidos update/delete + edição pós-integração
+- `purchase_order.update` no aceite do fornecedor quando pedido já tem `external_code` (reedição)
+- `purchase_order.delete` ao cancelar pedido integrado: Valore só cancela após HTTP 2xx do ERP
+- Falha no cancelamento → `integration_error`; parser de erro HTTP 4xx com body JSON
+- Fluxo comprador: editar `completed` → **Salvar** (`draft`) → **Reenviar fornecedor** → aceite → ERP
+- Monitor: reenvio por operação (`create` / `update` / `delete`)
+- Banners: só integração (sucesso view-once, erro persistente); fornecedor não vê falha ERP no aceite
+
+### Requisições — inbound only
+- Sem gatilhos outbound REQ no portal; infra mantida (`integrate-requisition-with-erp.ts`) para futuro
+- Fluxo ativo: ERP → Valore (`POST /api/v1/requisitions`); SPEC §10.11
+
+---
+
 ## [v2.19.78] — 2026-08-18
 
 ### Integração ERP — pedidos (outbound operacional)

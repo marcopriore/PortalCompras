@@ -93,6 +93,7 @@ type PurchaseOrder = {
   estimated_delivery_date: string | null
   delivery_date_change_reason: string | null
   accepted_at: string | null
+  accepted_by_supplier: boolean | null
   observations: string | null
   created_at: string
   updated_at: string | null
@@ -122,6 +123,42 @@ type EditItem = {
   tax_percent: number | null
   quantity: number
   max_quantity: number | null
+}
+
+function useViewOnceBanner(storageKey: string, active: boolean) {
+  const [visible, setVisible] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!active) {
+      setVisible(false)
+      return
+    }
+    const alreadyViewed = localStorage.getItem(storageKey) === "1"
+    if (alreadyViewed) {
+      setVisible(false)
+      return
+    }
+    setVisible(true)
+    localStorage.setItem(storageKey, "1")
+  }, [active, storageKey])
+
+  return visible
+}
+
+function ViewOnceBanner({
+  storageKey,
+  active,
+  className,
+  children,
+}: {
+  storageKey: string
+  active: boolean
+  className: string
+  children: React.ReactNode
+}) {
+  const visible = useViewOnceBanner(storageKey, active)
+  if (!visible) return null
+  return <div className={className}>{children}</div>
 }
 
 async function notifySupplierOrderSent(order: {
@@ -456,6 +493,8 @@ export default function PurchaseOrderDetailPage({
   const [cancellingRefused, setCancellingRefused] = React.useState(false)
   const [resendingOrder, setResendingOrder] = React.useState(false)
   const [retryingIntegration, setRetryingIntegration] = React.useState(false)
+  const [cancelIntegratedOpen, setCancelIntegratedOpen] = React.useState(false)
+  const [cancellingIntegrated, setCancellingIntegrated] = React.useState(false)
 
   const [isEditing, setIsEditing] = React.useState(false)
   const [editForm, setEditForm] = React.useState({
@@ -465,6 +504,10 @@ export default function PurchaseOrderDetailPage({
     observations: "",
   })
   const [editItems, setEditItems] = React.useState<EditItem[]>([])
+  const [editSnapshot, setEditSnapshot] = React.useState<{
+    form: typeof editForm
+    items: EditItem[]
+  } | null>(null)
   const [savingEdit, setSavingEdit] = React.useState(false)
 
   const fetchOrderData = React.useCallback(
@@ -624,11 +667,14 @@ export default function PurchaseOrderDetailPage({
 
   React.useEffect(() => {
     if (!order) return
-    if (order.status !== "refused" && order.status !== "error") setIsEditing(false)
-  }, [order])
+    if (["cancelled", "sent"].includes(order.status)) {
+      setIsEditing(false)
+    }
+  }, [order?.status])
 
   React.useEffect(() => {
     if (!order || order.status !== "processing" || !id || !companyId) return
+    if (order.external_code?.trim()) return
 
     const supabase = createClient()
     const channel = supabase
@@ -743,7 +789,13 @@ export default function PurchaseOrderDetailPage({
       const supabase = createClient()
       const { error } = await supabase
         .from("purchase_orders")
-        .update({ status: "sent" })
+        .update({
+          status: "sent",
+          accepted_by_supplier: false,
+          accepted_at: null,
+          estimated_delivery_date: null,
+          erp_error_message: null,
+        })
         .eq("id", order.id)
         .eq("company_id", companyId)
       if (error) throw error
@@ -766,25 +818,28 @@ export default function PurchaseOrderDetailPage({
   }
 
   const handleStartEdit = async () => {
-    if (!order) return
-    setEditForm({
+    if (!order || !companyId) return
+
+    const initialForm = {
       payment_condition: order.payment_condition ?? "",
       delivery_days: order.delivery_days != null ? String(order.delivery_days) : "",
       delivery_address: order.delivery_address ?? "",
       observations: order.observations ?? "",
-    })
-    setEditItems(
-      items.map((item) => ({
-        id: item.id,
-        material_code: item.material_code,
-        material_description: item.material_description,
-        unit_of_measure: item.unit_of_measure ?? "",
-        unit_price: Number(item.unit_price),
-        tax_percent: item.tax_percent != null ? Number(item.tax_percent) : null,
-        quantity: Number(item.quantity),
-        max_quantity: null,
-      })),
-    )
+    }
+    const initialItems = items.map((item) => ({
+      id: item.id,
+      material_code: item.material_code,
+      material_description: item.material_description,
+      unit_of_measure: item.unit_of_measure ?? "",
+      unit_price: Number(item.unit_price),
+      tax_percent: item.tax_percent != null ? Number(item.tax_percent) : null,
+      quantity: Number(item.quantity),
+      max_quantity: null as number | null,
+    }))
+
+    setEditSnapshot({ form: initialForm, items: initialItems })
+    setEditForm(initialForm)
+    setEditItems(initialItems)
     setIsEditing(true)
 
     if (!order.requisition_code?.trim()) return
@@ -817,14 +872,30 @@ export default function PurchaseOrderDetailPage({
     )
   }
 
-  const handleRetryErpIntegration = async () => {
+  const handleCancelEdit = () => {
+    if (editSnapshot) {
+      setEditForm(editSnapshot.form)
+      setEditItems(editSnapshot.items)
+    }
+    setEditSnapshot(null)
+    setIsEditing(false)
+  }
+
+  const handleRetryErpIntegration = async (
+    operation: "create" | "update" | "delete" = "create",
+    options?: { cancellationReason?: string },
+  ) => {
     if (!order) return
     setRetryingIntegration(true)
     try {
       const res = await fetch(`/api/purchase-orders/${order.id}/erp-integration`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: "buyer" }),
+        body: JSON.stringify({
+          source: "buyer",
+          operation,
+          cancellation_reason: options?.cancellationReason,
+        }),
       })
       const json = (await res.json()) as {
         success?: boolean
@@ -833,26 +904,78 @@ export default function PurchaseOrderDetailPage({
       }
       if (!res.ok || json.success === false) {
         toast.error(json.errorMessage ?? json.error ?? "Falha ao reenviar integração com o ERP.")
+        return false
+      }
+      if (operation === "delete") {
+        toast.success("Pedido cancelado no ERP e no Valore.")
+      } else if (operation === "update") {
+        toast.success("Pedido atualizado no ERP. Reenvie ao fornecedor para novo aceite.")
       } else {
         toast.success("Integração reenviada ao ERP com sucesso.")
       }
       await fetchOrderData({ silent: true })
+      return true
     } catch (e) {
       console.error(e)
       toast.error("Não foi possível reenviar a integração.")
+      return false
     } finally {
       setRetryingIntegration(false)
     }
   }
 
-  const handleSaveAndRetryIntegration = async () => {
-    if (!order || !companyId) return
+  const handleCancelIntegratedOrder = async () => {
+    if (!order) return
+    setCancellingIntegrated(true)
+    try {
+      const ok = await handleRetryErpIntegration("delete", {
+        cancellationReason: "Pedido cancelado pelo comprador",
+      })
+      if (ok) setCancelIntegratedOpen(false)
+    } finally {
+      setCancellingIntegrated(false)
+    }
+  }
 
+  const persistOrderEdits = async () => {
+    if (!order || !companyId) return false
+
+    const supabase = createClient()
+    const { error: orderError } = await supabase
+      .from("purchase_orders")
+      .update({
+        payment_condition: editForm.payment_condition.trim() || null,
+        delivery_days: editForm.delivery_days.trim()
+          ? (() => {
+              const n = parseInt(editForm.delivery_days, 10)
+              return Number.isNaN(n) ? null : n
+            })()
+          : null,
+        delivery_address: editForm.delivery_address.trim() || null,
+        observations: editForm.observations.trim() || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", order.id)
+      .eq("company_id", companyId)
+
+    if (orderError) throw orderError
+
+    const itemResults = await Promise.all(
+      editItems.map((row) =>
+        supabase.from("purchase_order_items").update({ quantity: row.quantity }).eq("id", row.id),
+      ),
+    )
+    const firstItemErr = itemResults.find((r) => r.error)?.error
+    if (firstItemErr) throw firstItemErr
+    return true
+  }
+
+  const validateEditForm = () => {
     if (editForm.delivery_days.trim()) {
       const d = parseInt(editForm.delivery_days, 10)
       if (Number.isNaN(d) || d < 1) {
         toast.error("Prazo de entrega deve ser um número inteiro a partir de 1.")
-        return
+        return false
       }
     }
 
@@ -861,18 +984,43 @@ export default function PurchaseOrderDetailPage({
         toast.error(
           `${item.material_code}: quantidade excede a requisição (máx: ${item.max_quantity})`,
         )
-        return
+        return false
       }
       if (item.quantity <= 0 || !Number.isFinite(item.quantity)) {
         toast.error(`${item.material_code}: quantidade deve ser maior que zero`)
-        return
+        return false
       }
     }
+
+    return true
+  }
+
+  const handleSaveAndRetryIntegration = async () => {
+    if (!order || !companyId) return
+    if (!validateEditForm()) return
+
+    setSavingEdit(true)
+    try {
+      await persistOrderEdits()
+      setIsEditing(false)
+      await fetchOrderData({ silent: true })
+      setSavingEdit(false)
+      await handleRetryErpIntegration(order.external_code?.trim() ? "update" : "create")
+    } catch (err) {
+      console.error(err)
+      toast.error("Erro ao salvar: " + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const handleSaveIntegratedEdit = async () => {
+    if (!order || !companyId) return
+    if (!validateEditForm()) return
 
     setSavingEdit(true)
     try {
       const supabase = createClient()
-
       const { error: orderError } = await supabase
         .from("purchase_orders")
         .update({
@@ -885,6 +1033,11 @@ export default function PurchaseOrderDetailPage({
             : null,
           delivery_address: editForm.delivery_address.trim() || null,
           observations: editForm.observations.trim() || null,
+          status: "draft",
+          accepted_by_supplier: false,
+          accepted_at: null,
+          estimated_delivery_date: null,
+          erp_error_message: null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", order.id)
@@ -900,10 +1053,10 @@ export default function PurchaseOrderDetailPage({
       const firstItemErr = itemResults.find((r) => r.error)?.error
       if (firstItemErr) throw firstItemErr
 
+      setEditSnapshot(null)
       setIsEditing(false)
+      toast.success("Alterações salvas. Reenvie ao fornecedor quando estiver pronto.")
       await fetchOrderData({ silent: true })
-      setSavingEdit(false)
-      await handleRetryErpIntegration()
     } catch (err) {
       console.error(err)
       toast.error("Erro ao salvar: " + (err instanceof Error ? err.message : String(err)))
@@ -1204,6 +1357,7 @@ export default function PurchaseOrderDetailPage({
 
   const statusDisplay = getPOStatusForBuyer(order.status)
   const erpCode = order.external_code ?? order.erp_code ?? null
+  const integratedOrder = Boolean(erpCode?.trim())
 
   const totalItemsCount = items.length
 
@@ -1230,7 +1384,7 @@ export default function PurchaseOrderDetailPage({
             ) : null}
             {statusDisplay.label}
           </span>
-          {order.status === "draft" && (
+          {order.status === "draft" && !integratedOrder && (
             <>
               <Button
                 variant="default"
@@ -1274,6 +1428,84 @@ export default function PurchaseOrderDetailPage({
               </AlertDialog>
             </>
           )}
+          {order.status === "draft" && integratedOrder && (
+            <>
+              {!isEditing ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={resendingOrder || savingEdit}
+                    onClick={() => void handleStartEdit()}
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Editar
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={resendingOrder || savingEdit}
+                    onClick={() => setResendOpen(true)}
+                  >
+                    Reenviar ao Fornecedor
+                  </Button>
+                  <AlertDialog open={cancelIntegratedOpen} onOpenChange={setCancelIntegratedOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        disabled={cancellingIntegrated || savingEdit}
+                      >
+                        <X className="mr-2 h-4 w-4" />
+                        Cancelar Pedido
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Cancelar pedido no ERP?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          O cancelamento só será concluído no Valore após confirmação do ERP.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel disabled={cancellingIntegrated}>Voltar</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          disabled={cancellingIntegrated}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            void handleCancelIntegratedOrder()
+                          }}
+                        >
+                          {cancellingIntegrated ? "Cancelando..." : "Confirmar cancelamento"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={savingEdit}
+                    onClick={handleCancelEdit}
+                  >
+                    Cancelar Edição
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={savingEdit}
+                    className="bg-green-600 text-white hover:bg-green-700"
+                    onClick={() => void handleSaveIntegratedEdit()}
+                  >
+                    {savingEdit ? "Salvando..." : "Salvar"}
+                  </Button>
+                </>
+              )}
+            </>
+          )}
           {order.status === "refused" && (
             <>
               <AlertDialog open={cancelRefusedOpen} onOpenChange={setCancelRefusedOpen}>
@@ -1295,28 +1527,6 @@ export default function PurchaseOrderDetailPage({
                       }}
                     >
                       {cancellingRefused ? "Cancelando..." : "Confirmar cancelamento"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-              <AlertDialog open={resendOpen} onOpenChange={setResendOpen}>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Reenviar ao fornecedor?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Reenviar pedido {order.code} ao fornecedor?
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel disabled={resendingOrder}>Voltar</AlertDialogCancel>
-                    <AlertDialogAction
-                      disabled={resendingOrder}
-                      onClick={(e) => {
-                        e.preventDefault()
-                        void handleResendToSupplier()
-                      }}
-                    >
-                      {resendingOrder ? "Enviando..." : "Confirmar reenvio"}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -1389,7 +1599,9 @@ export default function PurchaseOrderDetailPage({
                   <Button
                     size="sm"
                     disabled={retryingIntegration || savingEdit}
-                    onClick={() => void handleRetryErpIntegration()}
+                    onClick={() =>
+                      void handleRetryErpIntegration(integratedOrder ? "update" : "create")
+                    }
                   >
                     {retryingIntegration ? "Reenviando..." : "Reenviar integração"}
                   </Button>
@@ -1418,6 +1630,98 @@ export default function PurchaseOrderDetailPage({
               )}
             </>
           )}
+          {order.status === "completed" && integratedOrder && (
+            <>
+              {!isEditing ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={cancellingIntegrated || savingEdit}
+                    onClick={() => void handleStartEdit()}
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Editar
+                  </Button>
+                  <AlertDialog open={cancelIntegratedOpen} onOpenChange={setCancelIntegratedOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        disabled={cancellingIntegrated || retryingIntegration || savingEdit}
+                      >
+                        <X className="mr-2 h-4 w-4" />
+                        Cancelar Pedido
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Cancelar pedido no ERP?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          O cancelamento só será concluído no Valore após confirmação do ERP.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel disabled={cancellingIntegrated}>Voltar</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          disabled={cancellingIntegrated}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            void handleCancelIntegratedOrder()
+                          }}
+                        >
+                          {cancellingIntegrated ? "Cancelando..." : "Confirmar cancelamento"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={savingEdit}
+                    onClick={handleCancelEdit}
+                  >
+                    Cancelar Edição
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={savingEdit}
+                    className="bg-green-600 text-white hover:bg-green-700"
+                    onClick={() => void handleSaveIntegratedEdit()}
+                  >
+                    {savingEdit ? "Salvando..." : "Salvar"}
+                  </Button>
+                </>
+              )}
+            </>
+          )}
+          <AlertDialog open={resendOpen} onOpenChange={setResendOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reenviar ao fornecedor?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Reenviar pedido {order.code} ao fornecedor para novo aceite?
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={resendingOrder}>Voltar</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={resendingOrder}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    void handleResendToSupplier()
+                  }}
+                >
+                  {resendingOrder ? "Enviando..." : "Confirmar reenvio"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Button
             variant="default"
             size="sm"
@@ -1434,18 +1738,6 @@ export default function PurchaseOrderDetailPage({
           </Button>
         </div>
       </div>
-
-      {order.status === "processing" && (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 flex gap-3 items-start">
-          <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-blue-900">Processando integração com o ERP</p>
-            <p className="text-sm text-blue-800/90 mt-1">
-              Aguardando resposta do ERP. A página atualiza automaticamente ao concluir.
-            </p>
-          </div>
-        </div>
-      )}
 
       {(order.status === "error" || order.status === "integration_error") && (
         <div className="bg-destructive/10 border border-destructive/40 rounded-xl p-4 flex gap-3 items-start">
@@ -1474,45 +1766,20 @@ export default function PurchaseOrderDetailPage({
         </div>
       )}
 
-      {order.status === "refused" && (
-        <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex gap-3 items-start">
-          <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5 shrink-0" />
-          <div className="space-y-1 text-sm text-orange-900">
-            <p className="font-medium">Este pedido foi recusado pelo fornecedor.</p>
-            {order.cancellation_reason?.trim() ? (
-              <p className="text-orange-800">Motivo: {order.cancellation_reason}</p>
-            ) : null}
-            <p className="text-orange-800/90">
-              Revise as condições e reenvie, ou cancele o pedido.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {order.status === "cancelled" && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex gap-3 items-start">
-          <X className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-red-900">Pedido cancelado</p>
-            {order.cancellation_reason?.trim() ? (
-              <p className="text-sm text-red-800/90 mt-1">{order.cancellation_reason}</p>
-            ) : (
-              <p className="text-sm text-red-800/90 mt-1">Este pedido não seguirá no fluxo.</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {erpCode && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-start gap-3">
-          <CheckCircle2 className="h-5 w-5 text-emerald-600 mt-0.5" />
+      {order.status === "completed" && erpCode ? (
+        <ViewOnceBanner
+          active
+          storageKey={`valore:po-banner:${order.id}:erp-success`}
+          className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-start gap-3"
+        >
+          <CheckCircle2 className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
           <div>
             <p className="text-sm font-medium text-emerald-800">
               Pedido integrado ao ERP com sucesso. Código ERP: {erpCode}
             </p>
           </div>
-        </div>
-      )}
+        </ViewOnceBanner>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>

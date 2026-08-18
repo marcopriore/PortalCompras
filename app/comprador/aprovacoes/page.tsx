@@ -12,7 +12,6 @@ import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { toast } from "sonner"
-import { triggerOutbound } from "@/lib/integrations/trigger-outbound-client"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -437,7 +436,6 @@ export default function AprovacoesPage() {
               emailPrefKey: "order_approved_email",
             })
           }
-          triggerOutbound("requisition.approved", entityId)
         }
       }
 
@@ -509,7 +507,6 @@ export default function AprovacoesPage() {
             emailPrefKey: "order_approved_email",
           })
         }
-        triggerOutbound("requisition.rejected", rejectTarget.entityId)
       }
 
       toast.success(

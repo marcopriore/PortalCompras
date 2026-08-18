@@ -164,6 +164,7 @@ export async function fetchOutboundLogs(
         r.response_body != null ? String(r.response_body) : null,
       ),
       entity_status: null,
+      entity_external_code: null,
       retry_eligible: false,
     }
   })
@@ -172,6 +173,14 @@ export async function fetchOutboundLogs(
     ...new Set(
       logs
         .filter((log) => log.entity === "purchase_orders" && log.entity_id)
+        .map((log) => log.entity_id as string),
+    ),
+  ]
+
+  const requisitionIds = [
+    ...new Set(
+      logs
+        .filter((log) => log.entity === "requisitions" && log.entity_id)
         .map((log) => log.entity_id as string),
     ),
   ]
@@ -195,9 +204,36 @@ export async function fetchOutboundLogs(
     }
   }
 
+  const requisitionMetaById = new Map<string, { status: string; external_code: string | null }>()
+  if (requisitionIds.length > 0) {
+    let reqQuery = service
+      .from("requisitions")
+      .select("id, status, external_code")
+      .in("id", requisitionIds)
+
+    if (companyId) {
+      reqQuery = reqQuery.eq("company_id", companyId)
+    }
+
+    const { data: requisitions, error: reqError } = await reqQuery
+    if (reqError) throw reqError
+
+    for (const req of requisitions ?? []) {
+      requisitionMetaById.set(String(req.id), {
+        status: String(req.status),
+        external_code: req.external_code != null ? String(req.external_code) : null,
+      })
+    }
+  }
+
   for (const log of logs) {
     if (log.entity === "purchase_orders" && log.entity_id) {
       log.entity_status = purchaseOrderStatusById.get(log.entity_id) ?? null
+    }
+    if (log.entity === "requisitions" && log.entity_id) {
+      const meta = requisitionMetaById.get(log.entity_id)
+      log.entity_status = meta?.status ?? null
+      log.entity_external_code = meta?.external_code ?? null
     }
     log.retry_eligible = isOutboundRetryEligible({
       action: log.action,
@@ -205,6 +241,7 @@ export async function fetchOutboundLogs(
       entity_id: log.entity_id,
       success: log.success,
       entity_status: log.entity_status,
+      entity_external_code: log.entity_external_code,
     })
   }
 

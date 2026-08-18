@@ -5,6 +5,7 @@ import type {
   OutboundIntegrationAction,
 } from "@/lib/integrations/types"
 import { parseExternalIdFromErpResponse } from "@/lib/integrations/external-id-response"
+import { formatErpHttpFailure } from "@/lib/integrations/erp-errors"
 
 type DispatchInput = {
   companyId: string
@@ -132,7 +133,7 @@ export async function dispatchOutboundIntegration(
     success = response.ok
 
     if (!success) {
-      errorMessage = `ERP respondeu ${response.status}`
+      errorMessage = formatErpHttpFailure(response.status, responseBody)
     } else {
       externalCode = parseExternalIdFromErpResponse(input.action, responseBody)
     }
