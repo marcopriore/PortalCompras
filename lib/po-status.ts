@@ -8,9 +8,10 @@ export function getPOStatusForSupplier(status: string): {
     case "sent":
       return { label: "Pendente Aceite", color: "amber" }
     case "processing":
-      return { label: "Pedido Aceito", color: "blue" }
     case "completed":
-      return { label: "Pedido Finalizado", color: "green" }
+    case "error":
+    case "integration_error":
+      return { label: "Pedido Aceito", color: "blue" }
     case "cancelled":
       return { label: "Pedido Cancelado", color: "red" }
     case "refused":
@@ -32,11 +33,13 @@ export function getPOStatusForBuyer(status: string): {
     case "processing":
       return { label: "Processando Integração", color: "blue" }
     case "completed":
-      return { label: "Concluído", color: "green" }
+      return { label: "Pedido Criado", color: "green" }
+    case "integration_error":
+      return { label: "Erro de Integração", color: "red" }
     case "cancelled":
       return { label: "Cancelado", color: "red" }
     case "error":
-      return { label: "Erro Integração", color: "red" }
+      return { label: "Pedido Reprovado", color: "red" }
     case "refused":
       return { label: "Recusado pelo Fornecedor", color: "red" }
     default:

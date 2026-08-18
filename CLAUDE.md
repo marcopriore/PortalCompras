@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.75
+- Versão atual: v2.19.78
 
 ---
 
@@ -82,6 +82,18 @@
 
 ### Termos de fornecimento
 - Aceite persistido com **IP**, **versão** e **data** do termo; página pública `/termos/[company_id]` sem autenticação
+
+### Integrações ERP (api_integrations)
+- **Spec operacional:** `SPEC.md` §10.10 — referência única de gatilhos, status e reenvio
+- **Gatilho pedido:** somente aceite do fornecedor → `integratePurchaseOrderWithErp` via `/api/purchase-orders/[id]/erp-integration`
+- **Status pedido:** `processing` → `completed` | `error` (ERP reprovou) | `integration_error` (Valore não concluiu)
+- **IDs externos ERP:** resposta JSON usa `external_purchase_order_id` (fallback `external_code`); parser em `lib/integrations/external-id-response.ts`
+- **Unicidade:** `external_code` único por `(company_id)` em cada tabela — não confundir entre tenants
+- **Reenvio monitor:** só se pendência real (`lib/integrations/outbound-retry-eligibility.ts`); não reenviar se ERP OK + pedido `completed`
+- **Reenvio comprador:** só status `error` (reprovado ERP); `integration_error` → admin/monitor
+- **Config integrações:** chaves + endpoints em `/admin/integracoes`; comprador só `/comprador/integracoes/monitor` (popup)
+- **Labels fornecedor:** `processing`/`completed`/`error`/`integration_error` → sempre "Pedido Aceito"
+- **INSERT outbound log:** `await` em `dispatch.ts` (nunca `void insert()`)
 
 ---
 
@@ -189,6 +201,19 @@
 - `lib/hooks/use-polling-interval.ts`
 - `lib/hooks/use-tenant-settings.ts`
 - `lib/settings/tenant-settings-registry.ts`, `lib/settings/tenant-settings.ts`
+- `lib/integrations/integrate-purchase-order.ts`
+- `lib/integrations/dispatch.ts`
+- `lib/integrations/external-id-response.ts`
+- `lib/integrations/erp-errors.ts`
+- `lib/integrations/outbound-retry-eligibility.ts`
+- `lib/integrations/integration-logs-query.ts`
+- `lib/integrations/trigger-outbound.ts`
+- `components/integrations/integration-monitor.tsx`
+- `components/admin/integrations-settings.tsx`
+- `app/api/purchase-orders/[id]/erp-integration/route.ts`
+- `app/api/comprador/integration-logs/route.ts`
+- `app/api/admin/integration-logs/route.ts`
+- `app/comprador/integracoes/monitor/`
 - `lib/proxy/background-tasks.ts`, `lib/proxy/load-background-tasks-cooldown.ts`
 - `components/admin/tenant-settings-tab.tsx`
 - `app/api/admin/tenant-settings/route.ts`, `app/api/tenant-settings/route.ts`
@@ -287,6 +312,7 @@
 | v2.19.72 | Consumo de saldo de contrato via pedido (Fase 1), notificação fornecedor→comprador, item contrato sequencial |
 | v2.19.73 | Equalização com vínculo automático a contrato (Fase 2), premium contract_balance, configuração do aviso |
 | v2.19.75 | Configurações técnicas por tenant (admin), proxy cooldown background tasks, hooks useTenantSettings |
+| v2.19.78 | Integração ERP pedidos outbound operacional, monitor v2, status integration_error, SPEC §10.10 |
 
 ---
 
@@ -305,6 +331,9 @@
 - `023_saving_module_item_prices.sql` — `target_price`, `last_purchase_price`, `average_price`; triggers `trg_update_item_prices`, `trg_inherit_item_prices`.
 - `024_supplier_terms.sql` — `supplier_terms`, `supplier_term_acceptances`, RLS; sem policy `USING (true)` em aceites (service role ignora RLS).
 - `025_supplier_categories.sql` — `supplier_categories`, índices, RLS por tenant.
+- `040_api_store.sql` — API keys, integration endpoints/logs, `external_code` em REQ/PO.
+- `041_purchase_order_erp_integration.sql` — `purchase_orders.erp_error_message`.
+- `042_purchase_order_integration_error_status.sql` — status `integration_error` + trigger contrato.
 
 ### RLS (referência)
 - **requisitions: requester cancela proprias** — UPDATE: `USING (requester_id = auth.uid() AND status = 'pending')` + `WITH CHECK (status = 'cancelled' …)`.
@@ -328,7 +357,8 @@
 | /comprador/cotacoes/** | ✅ |
 | /comprador/cotacoes/[id]/equalizacao | ✅ complexo; benchmark % vs alvo / % vs média histórica; prefs em localStorage |
 | /comprador/pedidos | ✅ |
-| /comprador/pedidos/[id] | ✅ inclui PDF do pedido |
+| /comprador/pedidos/[id] | ✅ PDF + integração ERP (status processing/completed/error/integration_error) |
+| /comprador/integracoes/monitor | ✅ Monitor outbound/inbound (popup; admin tenant) |
 | /comprador/itens | ✅ somente leitura, expansível, import/export Excel, sync ERP |
 | /comprador/fornecedores | ✅ modal detalhes, score fornecedor, categorias atendidas (`supplier_categories`), contagem pedidos, import/export Excel |
 | /comprador/relatorios | ✅ BI: Saving → Spend → Pedidos → Cotações; filtros globais; 4 exports Excel |
@@ -337,6 +367,8 @@
 | /admin/tenants/** | ✅ |
 | /admin/tenants/[id] | ✅ layout 3 blocos, métricas com período, funcionalidades inline |
 | /admin/logs | ✅ paginação server-side, filtros combinados |
+| /admin/integracoes | ✅ API keys + endpoints + monitor (superadmin) |
+| /docs/api | ✅ Documentação pública Loja de API |
 | /fornecedor | ✅ Dashboard com gráficos (donut + barras) |
 | /fornecedor/cotacoes | ✅ Listagem completa com filtros |
 | /fornecedor/cotacoes/[id] | ✅ Resposta proposta + wizard Excel |

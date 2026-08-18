@@ -18,16 +18,35 @@ function isProtectedFornecedorPath(pathname: string): boolean {
   return pathname.startsWith("/fornecedor") && !isPublicFornecedorPath(pathname)
 }
 
+function createProxyResponse(requestHeaders: Headers): NextResponse {
+  return NextResponse.next({
+    request: {
+      headers: requestHeaders,
+    },
+  })
+}
+
+function mergeResponseCookies(source: NextResponse, target: NextResponse): void {
+  source.cookies.getAll().forEach((cookie) => {
+    target.cookies.set(cookie)
+  })
+}
+
+function redirectWithSessionCookies(
+  url: URL,
+  sessionResponse: NextResponse,
+): NextResponse {
+  const redirectResponse = NextResponse.redirect(url)
+  mergeResponseCookies(sessionResponse, redirectResponse)
+  return redirectResponse
+}
+
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set("x-pathname", pathname)
 
-  const response = NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
-  })
+  let response = createProxyResponse(requestHeaders)
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,6 +57,10 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value)
+          })
+          response = createProxyResponse(requestHeaders)
           cookiesToSet.forEach(({ name, value, options }) => {
             response.cookies.set(name, value, options)
           })
@@ -45,8 +68,6 @@ export async function proxy(request: NextRequest) {
       },
     },
   )
-
-  await supabase.auth.getSession()
 
   const {
     data: { user },
@@ -70,7 +91,7 @@ export async function proxy(request: NextRequest) {
       redirectUrl.pathname = "/login"
       redirectUrl.searchParams.set("redirectTo", pathname)
     }
-    return NextResponse.redirect(redirectUrl)
+    return redirectWithSessionCookies(redirectUrl, response)
   }
 
   const { data: profileRow, error: profileError } = await supabase
@@ -128,28 +149,28 @@ export async function proxy(request: NextRequest) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname =
       profileType === "supplier" ? "/fornecedor" : "/comprador"
-    return NextResponse.redirect(redirectUrl)
+    return redirectWithSessionCookies(redirectUrl, response)
   }
 
   if (isFornecedorLoginRoute) {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname =
       profileType === "supplier" ? "/fornecedor" : "/comprador"
-    return NextResponse.redirect(redirectUrl)
+    return redirectWithSessionCookies(redirectUrl, response)
   }
 
   if (isProtectedComprador && profileType === "supplier") {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/fornecedor"
     redirectUrl.searchParams.set("error", "unauthorized_portal")
-    return NextResponse.redirect(redirectUrl)
+    return redirectWithSessionCookies(redirectUrl, response)
   }
 
   if (isProtectedFornecedor && profileType !== "supplier") {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/comprador"
     redirectUrl.searchParams.set("error", "unauthorized_portal")
-    return NextResponse.redirect(redirectUrl)
+    return redirectWithSessionCookies(redirectUrl, response)
   }
 
   return response

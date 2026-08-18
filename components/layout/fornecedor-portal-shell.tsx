@@ -24,7 +24,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { createClient } from "@/lib/supabase/client"
@@ -60,12 +59,17 @@ export default function FornecedorPortalShell({
   const router = useRouter()
   const searchParams = useSearchParams()
   const [collapsed, setCollapsed] = React.useState(false)
+  const [mounted, setMounted] = React.useState(false)
   const unauthorizedToastShown = React.useRef(false)
 
   const isActive = (href: string) =>
     href === "/fornecedor"
       ? pathname === "/fornecedor"
       : pathname === href || pathname.startsWith(`${href}/`)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   React.useEffect(() => {
     if (searchParams.get("error") !== "unauthorized_portal" || unauthorizedToastShown.current) {
@@ -104,8 +108,7 @@ export default function FornecedorPortalShell({
   }
 
   return (
-    <TooltipProvider delayDuration={0}>
-      <div className="flex h-screen w-full overflow-hidden">
+    <div className="flex h-screen w-full overflow-hidden">
         <aside
           className={cn(
             "flex h-screen flex-col text-white transition-all duration-300",
@@ -115,7 +118,12 @@ export default function FornecedorPortalShell({
         >
           <div className="flex h-16 flex-shrink-0 items-center border-b border-white/10 px-4">
             <Link href="/fornecedor" className="inline-flex items-center">
-              <ValoreLogo size={28} showName={!collapsed} nameColor="#ffffff" />
+              <ValoreLogo
+                instance="fornecedor-sidebar"
+                size={28}
+                showName={!collapsed}
+                nameColor="#ffffff"
+              />
             </Link>
           </div>
 
@@ -193,40 +201,48 @@ export default function FornecedorPortalShell({
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <header className="flex h-16 flex-shrink-0 items-center justify-end gap-2 border-b border-border bg-card px-6">
-            <NotificationBell />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted"
-                >
-                  <Avatar className="h-8 w-8">
-                    <AvatarFallback className="bg-primary text-xs text-primary-foreground">
-                      {userInitials}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="hidden flex-col items-start md:flex">
-                    <span className="text-sm font-medium text-foreground">{userName}</span>
-                    <span className="text-xs text-muted-foreground">{userEmail}</span>
-                  </div>
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem
-                  className="cursor-pointer text-destructive focus:text-destructive"
-                  onClick={() => void handleLogout()}
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sair
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {mounted ? (
+              <>
+                <NotificationBell />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted"
+                    >
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback className="bg-primary text-xs text-primary-foreground">
+                          {userInitials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="hidden flex-col items-start md:flex">
+                        <span className="text-sm font-medium text-foreground">{userName}</span>
+                        <span className="text-xs text-muted-foreground">{userEmail}</span>
+                      </div>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem
+                      className="cursor-pointer text-destructive focus:text-destructive"
+                      onClick={() => void handleLogout()}
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Sair
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
+            ) : (
+              <div className="flex items-center gap-2" aria-hidden="true">
+                <div className="h-9 w-9 rounded-md bg-muted/40 animate-pulse" />
+                <div className="hidden h-9 w-32 rounded-md bg-muted/40 animate-pulse md:block" />
+              </div>
+            )}
           </header>
 
           <main className="flex-1 overflow-auto bg-background p-8">{children}</main>
         </div>
-      </div>
-    </TooltipProvider>
+    </div>
   )
 }

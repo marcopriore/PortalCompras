@@ -20,12 +20,25 @@ export function TenantSelector({
   selectedCompanyId: string | null
 }) {
   const { companyId, setCompanyId } = useTenant()
+  const [mounted, setMounted] = React.useState(false)
 
-  // Usa o companyId do context; fallback para a prop inicial
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
+
   const currentValue = companyId ?? selectedCompanyId ?? ''
 
   const handleChange = (value: string) => {
     setCompanyId(value)
+  }
+
+  if (!mounted) {
+    return (
+      <div
+        className="h-9 w-[220px] rounded-md border border-input bg-muted/40 animate-pulse"
+        aria-hidden="true"
+      />
+    )
   }
 
   return (

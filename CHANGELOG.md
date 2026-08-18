@@ -1,5 +1,25 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.78] — 2026-08-18
+
+### Integração ERP — pedidos (outbound operacional)
+- Integração dispara **somente no aceite do fornecedor** (não em rascunho/envio)
+- Orquestrador `integratePurchaseOrderWithErp` + API `POST /api/purchase-orders/[id]/erp-integration`
+- Status: `processing` → `completed` | `error` (reprovado ERP) | `integration_error` (erro Valore)
+- Resposta ERP: `external_purchase_order_id` (fallback `external_code`); unicidade por tenant
+- Migration **042**: status `integration_error`
+- Comprador: edita/reenvia só em `error`; `integration_error` → orientação TI/monitor
+- Monitor v2: reenvio condicional (oculto se ERP OK + pedido `completed`)
+- Config API keys/endpoints: **admin** (`/admin/integracoes`); comprador só monitor (popup)
+- Spec operacional: **SPEC.md §10.10**
+
+### Arquivos novos
+- `lib/integrations/integrate-purchase-order.ts`, `erp-errors.ts`, `external-id-response.ts`, `outbound-retry-eligibility.ts`
+- `components/integrations/integration-monitor.tsx`, `components/admin/integrations-settings.tsx`
+- Migrations **040**, **041**, **042**
+
+---
+
 ## [v2.19.77] — 2026-08-13
 
 ### Política de senhas por tenant

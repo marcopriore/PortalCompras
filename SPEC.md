@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.77
+## Versão atual: v2.19.78
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -354,12 +354,84 @@ Persistência em `company_settings` (`company_id`, `key`, `value`). Catálogo ti
 
 ---
 
-## 9. Backlog (estado atual — v2.19.77)
+## 9. Backlog (estado atual — v2.19.78)
 
-1. Recebimento parcial ERP / liberação de reserva
-2. Migrar documentação de implantação para Notion
+Revisado em 18/08/2026. **Foco atual:** consolidar **integrações outbound operacionais** (pedido ✅; requisições e demais eventos em sequência) e manter a Loja de API alinhada ao §10.
+
+### 9.0 Em foco agora
+
+| # | Item | Status | Notas |
+|---|------|--------|-------|
+| **A** | **Integração outbound — pedidos (ERP)** | ✅ v1 | Aceite fornecedor → `processing` → ERP → `completed` / `error` / `integration_error`. Ver **§10.10** |
+| **B** | **Integração outbound — requisições** | ❌ Próximo | Disparar `requisition.*` nos eventos do portal (criação, aprovação, cancelamento). Mesmo padrão operacional do §10.10 |
+| **C** | **Integração outbound — pedido update/delete** | ❌ Pendente | `purchase_order.update` / `.delete` ao editar/cancelar pedido já integrado (`completed`) |
+
+### 9.1 Prioridade imediata (paralelo — não bloqueia integrações)
+
+| # | Item | Status | Notas |
+|---|------|--------|-------|
+| 1 | **Fechar enforcement de permissões no frontend** | 🟡 Parcial | Sidebar + route guard ✅ (v2.19.76). Falta: `created_by` em cotações/pedidos; usar `quotation.edit`, `order.edit_own`, `order.view_all`, `quotation.view_all`; `hasPermission()` em botões críticos restantes |
+| 2 | **Unificar Configurações por abas** | 🟡 Parcial | `/comprador/configuracoes` tem Empresa, Perfil, Notificações, Aprovações, Segurança, Campos, Termos. Trazer **Usuários** e **Perfis de Acesso** para o mesmo shell; aba **Integrações** abrigará a Loja de API |
+| 3 | **Permissões do Admin configuráveis pelo Master** | ❌ Pendente | Hoje `role_permissions` só em `/comprador/configuracoes/permissoes` (admin do tenant). Master edita `tenant_features` e settings em `/admin/tenants/[id]` — falta matriz de permissões por tenant no admin |
+| 4 | **Ampliar cobertura de testes** | 🟡 Parcial | E2E críticos + `contract-flows` + unitários pontuais (`password-policy`, helpers). Falta: permissões, `created_by`, fluxos de configuração |
+| 5 | **Rotina de atualização de documentação** | ❌ Pendente | Manter `SPEC.md`, `HANDOFF.md`, `CHANGELOG.md`, `CLAUDE.md` alinhados a cada release (processo formal no repo) |
+
+### 9.2 Médio prazo
+
+| # | Item | Status | Notas |
+|---|------|--------|-------|
+| 6 | **Módulo de Recebimento** | ❌ Futuro | Entrada parcial, embarque, entrega; base para consumo de REQ/contrato. Nota: pedido cancelado → liberar saldo restante no contrato (dentro do módulo) |
+| 7 | **API Store — implementação** | 🟡 Parcial | Inbound v1 + UI admin integrações + monitor + docs públicas ✅. Outbound pedidos ✅. Falta: REQ outbound, PO update/delete, retry/idempotência avançada |
+| 8 | **Controle de consumo por item de requisição** | ❌ Futuro | Parcial / Total / Aberta — depende do módulo de Recebimento |
+| 9 | **Login fornecedor + usuários por fornecedor** | ❌ Futuro | Redesign `/fornecedor/login`; gestão de múltiplos logins por `supplier_id` (hoje 1 perfil `supplier` por fornecedor) |
+| 10 | **"Agir como" (impersonation) no comprador** | ❌ Futuro | Admin/Master assume visão de comprador, gerente, requisitante, aprovador etc.; UI na tela de Usuários; audit log obrigatório |
+| 11 | **Importação massiva de requisições (Excel)** | ❌ Futuro | Para clientes sem integração ERP; template + validação + upsert em lote; log em `item_import_logs` ou equivalente |
+| 12 | **Monitor de Integração** | ✅ v2 | `/comprador/integracoes/monitor` (popup) + `/admin/integracoes`; reenvio inteligente (sem duplicar ERP OK + Valore OK). Ver §10.10 |
+| 13 | **Documentação pública da Loja de API** | ✅ v1 | `/docs/api` + `/api/v1/openapi.json` |
+
+### 9.3 Baixa prioridade
+
+| # | Item | Notas |
+|---|------|-------|
+| 14 | **Migrar documentação de implantação para Notion** | Go-to-market; menos urgente que itens técnicos e de negócio acima |
+
+### 9.4 Mapa de validação (lista de produto)
+
+| Item | Status | Observação |
+|------|--------|------------|
+| Módulo de Negociação por IA | ✅ | `QuotationAIAnalysis`, feature `ai_negotiation`, `/api/quotation-ai-analysis` |
+| API Store / gestão módulo+tenant | 🟡 | Inbound v1 + outbound pedidos + monitor v2 |
+| Monitor de Integração | ✅ | Reenvio condicional; admin-only config |
+| Documentação pública API | ✅ | `/docs/api` |
+| Consumo por item de REQ | ❌ | Backlog médio prazo |
+| Configurações por abas | 🟡 | Ver §9.1 item 2 |
+| Permissões Admin pelo Master | ❌ | Ver §9.1 item 3 |
+| `hasPermission()` em ações | 🟡 | Cobertura parcial |
+| `created_by` cotações/pedidos | ❌ | Campo existe; regra de edição não aplicada |
+| Filtro `requester_id` (solicitante) | ✅ | Listagem, detalhe e edição + RLS |
+| `portal.solicitante` por role | ❌ | Chave na matriz; login usa só `profile_type` |
+| Sidebar dinâmica por permissões | ✅ | v2.19.76 |
+| Cobertura de testes | 🟡 | Ver §9.1 item 4 |
+| Política de senhas | ✅ | v2.19.77, migration 039 |
+| Rotina de docs | ❌ | Ver §9.1 item 5 |
+
+### 9.5 Escala (6–12 meses)
+
+| Item | Nota |
+|------|------|
+| Negociação assistida por IA (evolução) | Primeira versão ✅; chat, contraproposta, histórico |
+| Previsão de demanda | Roadmap |
+| Compra recorrente / templates | Roadmap |
+| API Store / integrações ERP | Evolução de `tenant_features` + conectores |
+| Precificação por spend | Roadmap comercial |
+| Motor de compliance | Infraestrutura |
+| SSO / SAML | Infraestrutura |
+| White-label | Infraestrutura |
 
 ### Concluído recentemente
+- **Integração ERP — pedidos (outbound operacional)** — v2.19.78: gatilho no aceite do fornecedor; status `processing` → `completed` / `error` / `integration_error`; IDs externos por entidade (`external_purchase_order_id`); monitor com reenvio condicional; config integrações só no admin (§10.10)
+- **Fix auth refresh + hydration mismatch** — `proxy.ts` cookies corretos; singleton Supabase
+  client; `ValoreLogo` com IDs estáveis; Radix (Select/Dropdown) só após mount
 - **Política de senhas por tenant** — aba Segurança no admin, expiração, histórico,
   enforcement comprador/fornecedor (migration 039)
 - **Enforcement de permissões** no frontend (sidebar + route guard, v2.19.76)
@@ -385,4 +457,335 @@ Persistência em `company_settings` (`company_id`, `key`, `value`). Catálogo ti
 
 ---
 
-*Última revisão: v2.19.77.*
+## 10. Loja de API — catálogo e modelagem
+
+**Validado em 17/08/2026** (Fase 1). Objetivo: integrações estáveis para ERPs, com governança por tenant. Rotas atuais em `/app/api/*` são **internas**; a Loja de API usa **`/api/v1/...`** com API key.
+
+### 10.1 Convenção de direção
+
+| Símbolo | Significado |
+|---------|-------------|
+| **Externo → Valore** | ERP/sistema externo chama a API REST do Valore (inbound) |
+| **Valore → Externo** | Valore **executa HTTP ativo** contra URL do ERP (`integration_endpoints`); ERP responde sucesso/falha e devolve ID externo da entidade (ex.: `external_purchase_order_id`). Não é webhook passivo — é integração com ação e resposta |
+
+Pedidos na Fase 1: **GET** inbound; **POST/PUT/DELETE** outbound via `dispatchOutboundIntegration` — o portal dispara, o ERP cria/atualiza/cancela e retorna status (+ ID externo no create).
+
+**IDs externos na resposta do ERP (por entidade):**
+
+| Entidade | Campo preferencial na resposta JSON | Fallback legado | Coluna no Valore |
+|----------|--------------------------------------|-----------------|------------------|
+| Pedido de compra | `external_purchase_order_id` | `external_code` | `purchase_orders.external_code` |
+| Requisição | `external_requisition_id` | `external_code` | `requisitions.external_code` |
+
+Unicidade: **sempre por tenant** — índice `(company_id, external_code)` em cada tabela. O mesmo número ERP pode existir em empresas diferentes.
+
+Parser: `lib/integrations/external-id-response.ts` + `dispatchOutboundIntegration`.
+
+Requisições: inbound (ERP → Valore) + outbound quando o portal altera (ERP executa a ação na URL configurada).
+
+### 10.2 Princípios técnicos
+
+| Princípio | Decisão |
+|-----------|---------|
+| Autenticação inbound | `Authorization: Bearer <api_key>` ou `X-Api-Key`; hash no banco (nunca plaintext) |
+| Escopo | `company_id` fixo na chave |
+| Autorização | `tenant_features` + escopos da chave (`items:read`, `requisitions:write`, etc.) |
+| Versionamento | Prefixo `/api/v1/` |
+| Chave natural cadastros | `code` (único por `company_id`) — mesmo padrão do Excel/ERP |
+| POST vs PUT (itens/fornecedores) | **POST** = criação em lote (registros novos); **PUT** = atualização explícita de registro existente (ERP enviou mudança). Sem upsert silencioso no POST |
+| Idempotência | Header `Idempotency-Key` em POST/PUT de requisições e pedidos outbound |
+| Resposta | JSON `{ data }` / erro `{ error, code, details? }` |
+| Auditoria | `api_request_logs` (inbound) + `audit_logs` (`api.*`) + `webhook_delivery_logs` (outbound) |
+| Rate limit | Por chave/tenant em `company_settings` |
+
+### 10.3 Modelo de dados (proposto)
+
+```
+api_keys, api_request_logs
+integration_endpoints   -- URL + auth + actions (HTTP ativo para ERP)
+integration_delivery_logs
+requisitions.external_code, purchase_orders.external_code, purchase_orders.erp_error_message
+```
+
+Migrations integração: **040** (API store + `external_code`), **041** (`erp_error_message`), **042** (`integration_error` status + trigger contrato).
+
+Feature: `api_integrations`. Pepper opcional: `API_KEY_PEPPER` no `.env`.
+
+Feature key no admin: `api_integrations` (módulo inteiro). Sub-features alinhadas a `tenant_features` existentes: `items`, `suppliers`, `requisitions`, `quotations`, `orders`.
+
+---
+
+### 10.4 Fase 1 — Catálogo validado
+
+#### Itens (`items`)
+
+| Direção | Método | Endpoint | Descrição |
+|---------|--------|----------|-----------|
+| Externo → Valore | GET | `/api/v1/items` | Listar catálogo (paginação, filtro `code`, descrição, `updated_since`) |
+| Externo → Valore | GET | `/api/v1/items/{code}` | Detalhe por código |
+| Externo → Valore | POST | `/api/v1/items/batch` | **Criação em lote** — apenas registros novos; rejeita `code` duplicado (409) |
+| Externo → Valore | PUT | `/api/v1/items/{code}` | **Atualização unitária** de registro existente |
+| Externo → Valore | PUT | `/api/v1/items/batch` | **Atualização em lote** (array com `code` obrigatório) |
+
+Campos mínimos: `code`, `description`, `unit_of_measure`, `commodity_group`; opcionais Saving: `target_price`, `last_purchase_price`, `average_price`, `long_description`. Origem: `source: 'erp'`.
+
+#### Fornecedores (`suppliers`)
+
+| Direção | Método | Endpoint | Descrição |
+|---------|--------|----------|-----------|
+| Externo → Valore | GET | `/api/v1/suppliers` | Listar (paginação, filtro `code`, nome, `updated_since`) |
+| Externo → Valore | GET | `/api/v1/suppliers/{code}` | Detalhe por código |
+| Externo → Valore | POST | `/api/v1/suppliers/batch` | **Criação em lote** — rejeita `code` duplicado |
+| Externo → Valore | PUT | `/api/v1/suppliers/{code}` | **Atualização unitária** |
+| Externo → Valore | PUT | `/api/v1/suppliers/batch` | **Atualização em lote** |
+
+Campos mínimos: `code`, `name`; opcionais: CNPJ, e-mail, telefone, condição pagamento, categorias (`supplier_categories`).
+
+#### Requisições (`requisitions`)
+
+| Direção | Método | Endpoint | Descrição |
+|---------|--------|----------|-----------|
+| Externo → Valore | GET | `/api/v1/requisitions` | Listar (status, datas, `requester_code`, paginação) |
+| Externo → Valore | GET | `/api/v1/requisitions/{id}` | Detalhe + itens (aceita `id` UUID ou `code` externo se mapeado) |
+| Externo → Valore | POST | `/api/v1/requisitions` | **Criação unitária** + itens |
+| Externo → Valore | POST | `/api/v1/requisitions/batch` | **Criação em lote** (espelho futuro da importação Excel) |
+| Externo → Valore | PUT | `/api/v1/requisitions/{id}` | **Atualização** cabeçalho/itens (regras de status: só `pending`/`rejected` editável pelo ERP) |
+| Externo → Valore | DELETE | `/api/v1/requisitions/{id}` | **Cancelamento** pelo ERP → status `cancelled` (não DELETE físico) |
+| Valore → Externo | HTTP POST/PUT/DELETE | `integration_endpoints` + `dispatchOutboundIntegration` | Pedido criado/alterado/cancelado no portal |
+| Valore → Externo | HTTP POST/PUT | idem | Requisição alterada/cancelada no portal |
+
+Identificador externo opcional: `external_code` em `requisitions` (migration futura) para PUT/DELETE idempotente pelo ERP.
+
+#### Cotações (`quotations`) — somente leitura inbound
+
+| Direção | Método | Endpoint | Descrição |
+|---------|--------|----------|-----------|
+| Externo → Valore | GET | `/api/v1/quotations` | Listar (status, datas, paginação) |
+| Externo → Valore | GET | `/api/v1/quotations/{id}` | Detalhe: itens, rodadas, fornecedores convidados |
+| Externo → Valore | GET | `/api/v1/quotations/{id}/proposals` | Propostas por **rodada** → fornecedor → itens respondidos (todos os status) |
+
+Sem POST/PUT/DELETE na Fase 1 — cotações são operadas no portal Valore.
+
+**Contrato `GET .../proposals`** (agrupado por rodada):
+
+```json
+{
+  "data": {
+    "quotation": { "id", "code", "status", "description", "created_at" },
+    "rounds": [{
+      "id", "round_number", "status", "response_deadline", "created_at", "closed_at",
+      "proposals": [{
+        "id", "status", "submitted_at", "payment_condition", "delivery_days",
+        "total_price", "validity_date", "observations",
+        "supplier": { "id", "code", "name", "cnpj" },
+        "items": [{
+          "quotation_item_id", "material_code", "material_description", "long_description",
+          "unit_of_measure", "quantity", "unit_price", "tax_percent", "delivery_days",
+          "item_status", "observations", "line_total"
+        }]
+      }]
+    }]
+  }
+}
+```
+
+Query: `round_number`, `supplier_code`, `status`. Status default: todos (`invited`, `submitted`, `selected`, `rejected`).
+
+#### Requisições inbound (próximo passo — revisão de campos)
+
+| Campo API | Obrigatório | DB / regra |
+|-----------|-------------|------------|
+| `external_code` | **Sim** (ERP) | `requisitions.external_code` — UNIQUE por tenant |
+| `code` | Não (gerado) | Valore gera `REQ-XXXX` internamente |
+| `title` | Sim | `requisitions.title` |
+| `description` | Não | `requisitions.description` (máx 500) |
+| `cost_center` | Não | usado no fluxo de aprovação |
+| `needed_by` | Não | `YYYY-MM-DD` |
+| `priority` | Não | `normal` \| `urgent` \| `critical` (default `normal`) |
+| `requester_name` | Não | texto livre do ERP |
+| `origin` | Fixo | `'erp'` |
+| `items[]` | Sim (≥1) | ver abaixo |
+
+**Item da requisição:**
+
+| Campo API | Obrigatório | DB |
+|-----------|-------------|-----|
+| `material_code` | Não | `requisition_items.material_code` |
+| `material_description` | Sim | `requisition_items.material_description` |
+| `quantity` | Sim | `> 0` |
+| `unit_of_measure` | Não | |
+| `estimated_price` | Não | |
+| `commodity_group` | Não | |
+| `observations` | Não | |
+
+**Regras write:** POST cria `pending`; PUT só se `pending` ou `rejected`; DELETE → `cancelled`. Identificador na URL: UUID, `code` ou `external_code`.
+
+#### Pedidos (`purchase_orders`)
+
+| Direção | Método | Endpoint | Descrição |
+|---------|--------|----------|-----------|
+| Externo → Valore | GET | `/api/v1/purchase-orders` | Listar pedidos (status, fornecedor, datas) |
+| Externo → Valore | GET | `/api/v1/purchase-orders/{id}` | Detalhe + itens + status + datas entrega |
+| Externo → Valore | GET | `/api/v1/purchase-orders/{id}/pdf` | PDF do pedido (stream ou URL assinada temporária) |
+| Valore → Externo | HTTP POST | `purchase_order.create` | Pedido criado no Valore |
+| Valore → Externo | HTTP PUT | `purchase_order.update` | Pedido alterado no Valore |
+| Valore → Externo | HTTP DELETE | `purchase_order.delete` | Pedido cancelado no Valore |
+
+---
+
+### 10.5 Fase 2 (backlog — não escopo Fase 1)
+
+| Domínio | Endpoints |
+|---------|-----------|
+| Contratos | GET list/detail, saldo, aceites |
+| Aprovações | GET pendentes; POST approve/reject inbound |
+| Cotações | POST convite fornecedor (se demanda ERP) |
+| Relatórios | GET saving/spend JSON |
+| Anexos | POST upload requisição |
+
+### 10.6 O que NÃO expor
+
+- Rotas admin, IA, e-mail transacional, manutenção interna (`scheduled-maintenance`, etc.)
+- Service role nunca exposto ao cliente externo
+
+### 10.7 UI operacional (Loja de API — tenant logado)
+
+| Onde | O quê |
+|------|-------|
+| `/admin/integracoes` (+ `?company_id=`) | API keys, endpoints outbound, monitor (superadmin) |
+| `/comprador/configuracoes` | Link para **Monitor de Integração** (popup; sem gestão de chaves) |
+| `/comprador/integracoes/monitor` | Monitor outbound/inbound (admin do tenant; feature `api_integrations`) |
+
+### 10.9 Backlog UI — Monitor + Documentação pública
+
+#### Monitor de Integração
+
+**Objetivo:** visibilidade operacional de todas as chamadas da Loja de API e dos disparos outbound para o ERP.
+
+| Aspecto | Comprador (tenant) | Superadmin |
+|---------|-------------------|------------|
+| Rota sugerida | `/comprador/integracoes/monitor` (ou aba **Logs** em Configurações → Integrações) | `/admin/integracoes` (ou aba em tenant existente) |
+| Escopo de dados | Apenas `company_id` do tenant ativo | Todos os tenants; **filtro por empresa** obrigatório |
+| Feature gate | `api_integrations` | `api_integrations` + superadmin |
+
+**Fontes de dados (migration 040):**
+
+| Direção | Tabela | Campos principais para exibição |
+|---------|--------|--------------------------------|
+| Inbound (ERP → Valore) | `api_request_logs` | `created_at`, `method`, `path`, `status_code`, `duration_ms`, `api_key_id`, `ip_address` |
+| Outbound (Valore → ERP) | `integration_delivery_logs` | `created_at`, `action`, `entity`, `entity_id`, `entity_code`, `success`, `response_status`, `error_message`, `attempts` |
+
+**UI mínima v1:**
+
+- Tabela paginada (PAGE_SIZE 25, padrão audit logs)
+- Filtros: período, direção (inbound/outbound), status HTTP/sucesso, path ou `action`, busca por `entity_code`
+- Detalhe expandível: request/response payload (mascarar segredos), duração, mensagem de erro
+- **Reenviar** (outbound `purchase_order.create`): só quando ainda há pendência — falha HTTP **ou** ERP OK mas pedido no Valore em `processing` / `integration_error` / `error`. **Oculto** se log OK e pedido `completed` (evita duplicidade no ERP). Lógica: `lib/integrations/outbound-retry-eligibility.ts`; custo: 1 query em lote por página (≤25 IDs)
+- Sem exposição de API key em claro (só prefixo ou `api_key_id`)
+
+#### Documentação pública da Loja de API
+
+**Objetivo:** documentação de produto acessível a **qualquer usuário externo sem autenticação** — referência para times de integração ERP.
+
+| Aspecto | Decisão proposta |
+|---------|------------------|
+| Rota pública sugerida | `/docs/api` (alias `/developers`) |
+| Autenticação | Nenhuma (conteúdo público); link na landing page e no rodapé |
+| Conteúdo por endpoint | Nome, descrição, método, path, escopos exigidos, feature gate do tenant |
+| Modelo de dados | Campos com **nome**, **tipo**, **obrigatório/opcional**, **descrição**, **exemplo** |
+| Exemplos | Request/response JSON completos (copiáveis) |
+| Geração | OpenAPI 3.1 em `/api/v1/openapi.json` como fonte; UI renderizada (Redoc/Swagger UI ou página custom Valore) |
+| Distinção | **Não** substitui Configurações → Integrações (gestão de chaves/endpoints); é **somente leitura** |
+
+**Seções da documentação pública:**
+
+1. Introdução (autenticação Bearer / `X-Api-Key`, ambientes, rate limit)
+2. Catálogo por domínio (itens, fornecedores, requisições, cotações, pedidos)
+3. Códigos de erro (`UNAUTHORIZED`, `FORBIDDEN`, `VALIDATION_ERROR`, `CONFLICT`, etc.)
+4. Webhooks/outbound (modelo de payload que o ERP deve aceitar; IDs externos por entidade — §10.1)
+5. Changelog da API (`/docs/api/changelog` ou seção na mesma página)
+
+### 10.8 Ordem de implementação (Fase 1)
+
+1. ✅ **Migration 040** + auth middleware + `GET /api/v1/health`  
+2. ✅ **GET** itens, fornecedores, requisições, cotações e pedidos (+ PDF)
+3. ✅ **POST/PUT** itens e fornecedores (batch + unitário)
+4. ✅ **POST/PUT/DELETE** requisições inbound (v1)
+5. ✅ **Outbound pedidos — create** (`integratePurchaseOrderWithErp` no aceite fornecedor; §10.10)
+6. ✅ **UI Integrações** (admin: chaves + endpoints; comprador: monitor) + OpenAPI  
+7. ✅ **Monitor de Integração** v2 (§10.9 + reenvio condicional)
+8. ✅ **Documentação pública** `/docs/api` (§10.9)
+9. ❌ **Outbound pedidos — update/delete** (editar/cancelar pedido integrado)
+10. ❌ **Outbound requisições** (eventos do portal → ERP)
+
+---
+
+### 10.10 Fluxo operacional — integração de pedidos (ERP)
+
+**Implementado em v2.19.78.** Referência única para não se perder nas ações.
+
+#### Gatilho
+
+| Evento | Dispara integração? |
+|--------|---------------------|
+| Criar pedido (rascunho / equalização / contrato) | **Não** |
+| Enviar ao fornecedor (`sent`) | **Não** |
+| **Aceite do fornecedor** | **Sim** → `POST /api/purchase-orders/[id]/erp-integration` `{ source: "supplier" }` |
+| Editar pedido reprovado pelo ERP | Comprador salva → `{ source: "buyer" }` |
+| Reenvio pelo monitor | Admin → `{ source: "monitor" }` |
+
+Orquestração: `lib/integrations/integrate-purchase-order.ts` → `dispatchOutboundIntegration` → log em `integration_delivery_logs`.
+
+#### Status do pedido (comprador)
+
+| Status DB | Label comprador | Significado | Ação na UI |
+|-----------|-----------------|-------------|------------|
+| `sent` | Aguardando Aceite | Aguardando fornecedor | — |
+| `processing` | Processando Integração | ERP em andamento | Banner informativo; polling 2s |
+| `completed` | Pedido Criado | ERP OK + Valore OK | Exibe `external_code` |
+| `error` | **Pedido Reprovado** | ERP rejeitou (HTTP ≠ 2xx) | Comprador **edita** e **reenvia integração** |
+| `integration_error` | **Erro de Integração** | Valore não concluiu (ex.: código ERP duplicado no tenant) | Sem ação do comprador; TI/admin reenvia no **Monitor** |
+| `refused` | Recusado pelo Fornecedor | — | Editar / reenviar ao fornecedor |
+
+Fornecedor: `processing`, `completed`, `error` e `integration_error` → label **Pedido Aceito** (não expõe integração ERP).
+
+#### Resposta esperada do ERP (`purchase_order.create`)
+
+```json
+{
+  "external_purchase_order_id": "ERP-12345"
+}
+```
+
+Fallback aceito: `external_code` (legado). Gravado em `purchase_orders.external_code` (único por `company_id`).
+
+#### Reenvio (quem pode)
+
+| Origem | Quem | Elegível quando |
+|--------|------|-----------------|
+| Monitor — botão **Reenviar** | Admin tenant / superadmin | Ver regra §10.9 (não reenvia se ERP OK + pedido `completed`) |
+| Tela do pedido — **Reenviar integração** | Comprador (admin) | Somente status `error` (reprovado pelo ERP) |
+| Aceite fornecedor | Automático | Primeira tentativa (`processing`) |
+
+#### Arquivos principais
+
+| Arquivo | Função |
+|---------|--------|
+| `lib/integrations/integrate-purchase-order.ts` | Orquestra status + persistência |
+| `lib/integrations/dispatch.ts` | HTTP ao ERP + log outbound |
+| `lib/integrations/external-id-response.ts` | Parser de ID externo por ação |
+| `lib/integrations/erp-errors.ts` | Mensagens + mapeamento erro → status |
+| `lib/integrations/outbound-retry-eligibility.ts` | Regra do botão Reenviar no monitor |
+| `app/api/purchase-orders/[id]/erp-integration/route.ts` | API de reenvio (supplier / buyer / monitor) |
+| `components/integrations/integration-monitor.tsx` | UI do monitor |
+| `lib/po-status.ts` | Labels comprador/fornecedor |
+
+#### Próxima extensão (mesmo padrão)
+
+1. **Requisições outbound** — `requisition.created|updated|approved|rejected|cancelled` nos eventos do portal
+2. **Pedido update/delete** — ao editar/cancelar pedido `completed` com `external_code`
+3. Reutilizar: `dispatchOutboundIntegration`, monitor, `external-id-response`, elegibilidade de reenvio por entidade
+
+---
+
+*Última revisão: 18/08/2026 (v2.19.78 — integração operacional de pedidos + monitor v2).*

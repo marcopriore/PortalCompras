@@ -1909,7 +1909,7 @@ export default function EqualizacaoPage({
         if (quotationProposalsRejectedBatchError) throw quotationProposalsRejectedBatchError
       }
 
-      const createdOrdersList: { code: string; supplierName: string }[] = []
+      const createdOrdersList: { id: string; code: string; supplierName: string }[] = []
 
       async function reserveContractBalanceForOrder(orderId: string) {
         const res = await fetch(
@@ -2046,7 +2046,11 @@ export default function EqualizacaoPage({
           }
         }
 
-        createdOrdersList.push({ code: orderCode, supplierName: p.supplier_name })
+        createdOrdersList.push({
+          id: purchaseOrderId,
+          code: orderCode,
+          supplierName: p.supplier_name,
+        })
       }
 
       if (createdOrdersList.length === 0) {

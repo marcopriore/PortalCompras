@@ -19,6 +19,7 @@ export type FeatureKey =
   | "ai_negotiation"
   | "contracts"
   | "contract_balance"
+  | "api_integrations"
 
 export type PermissionKey =
   | "nav.dashboard"
@@ -79,6 +80,7 @@ const ALL_FEATURES: FeatureKey[] = [
   "ai_negotiation",
   "contracts",
   "contract_balance",
+  "api_integrations",
 ]
 
 const ALL_PERMISSIONS: PermissionKey[] = [

@@ -1,0 +1,436 @@
+{
+  "info": {
+    "name": "Valore — API v1 (Loja de API)",
+    "description": "Integração inbound (ERP → Valore). Autenticação via API key no header Authorization Bearer ou X-Api-Key.\n\nVariáveis de ambiente: base_url, api_key, item_code, supplier_code, requisition_id, quotation_id, purchase_order_id.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{api_key}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Valida API key, feature api_integrations e escopos da chave."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Itens",
+      "item": [
+        {
+          "name": "GET Listar itens",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/items?page=1&page_size=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "items"],
+              "query": [
+                { "key": "page", "value": "1", "description": "Página (1-based)" },
+                { "key": "page_size", "value": "10", "description": "Máx. 100" },
+                { "key": "code", "value": "", "description": "Filtro exato por código", "disabled": true },
+                { "key": "search", "value": "", "description": "Busca em code/descrição", "disabled": true },
+                { "key": "updated_since", "value": "", "description": "ISO 8601", "disabled": true }
+              ]
+            },
+            "description": "Escopo necessário: items:read. Módulo tenant: items."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Item por código",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/items/{{item_code}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "items", "{{item_code}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST Criar itens (batch)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"code\": \"API-ITEM-001\",\n      \"short_description\": \"Item teste API\",\n      \"unit_of_measure\": \"UN\",\n      \"commodity_group\": \"MRO\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/items/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "items", "batch"]
+            },
+            "description": "Escopo: items:write. Retorna 409 se code já existir."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT Atualizar itens (batch)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"code\": \"API-ITEM-001\",\n      \"short_description\": \"Item teste API atualizado\",\n      \"unit_of_measure\": \"UN\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/items/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "items", "batch"]
+            },
+            "description": "Escopo: items:write."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT Atualizar item unitário",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"short_description\": \"Item atualizado\",\n  \"unit_of_measure\": \"UN\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/items/{{item_code}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "items", "{{item_code}}"]
+            },
+            "description": "Escopo: items:write. code vem da URL."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Fornecedores",
+      "item": [
+        {
+          "name": "GET Listar fornecedores",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/suppliers?page=1&page_size=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "suppliers"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "10" },
+                { "key": "code", "value": "", "disabled": true },
+                { "key": "search", "value": "", "disabled": true },
+                { "key": "updated_since", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Escopo necessário: suppliers:read. Módulo tenant: suppliers."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Fornecedor por código",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/suppliers/{{supplier_code}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "suppliers", "{{supplier_code}}"]
+            },
+            "description": "Inclui array categories (supplier_categories)."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Criar fornecedores (batch)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"suppliers\": [\n    {\n      \"code\": \"API-SUP-001\",\n      \"name\": \"Fornecedor Teste API\",\n      \"cnpj\": \"00.000.000/0001-00\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/suppliers/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "suppliers", "batch"]
+            },
+            "description": "Escopo: suppliers:write. Body usa campo items (mesmo formato do batch de itens)."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT Atualizar fornecedores (batch)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"suppliers\": [\n    {\n      \"code\": \"API-SUP-001\",\n      \"name\": \"Fornecedor Teste API Atualizado\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/suppliers/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "suppliers", "batch"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT Atualizar fornecedor unitário",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Fornecedor atualizado\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/suppliers/{{supplier_code}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "suppliers", "{{supplier_code}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Requisições",
+      "item": [
+        {
+          "name": "GET Listar requisições",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/requisitions?page=1&page_size=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "requisitions"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "10" },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "external_code", "value": "", "disabled": true },
+                { "key": "requester_name", "value": "", "disabled": true },
+                { "key": "created_since", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Escopo: requisitions:read. Módulo tenant: requisitions."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Requisição por id/code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/requisitions/{{requisition_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "requisitions", "{{requisition_id}}"]
+            },
+            "description": "Aceita UUID, code ou external_code."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Criar requisição",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_code\": \"ERP-REQ-001\",\n  \"title\": \"Requisição teste API\",\n  \"description\": \"Criada via integração\",\n  \"cost_center\": \"CC-100\",\n  \"needed_by\": \"2026-09-01\",\n  \"priority\": \"normal\",\n  \"requester_name\": \"Sistema ERP\",\n  \"items\": [\n    {\n      \"material_code\": \"MAT-001\",\n      \"material_description\": \"Parafuso M8\",\n      \"quantity\": 100,\n      \"unit_of_measure\": \"UN\",\n      \"estimated_price\": 1.5\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/requisitions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "requisitions"]
+            },
+            "description": "Escopo: requisitions:write. external_code obrigatório. Valore gera code REQ-XXXX."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Criar requisições (batch)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requisitions\": [\n    {\n      \"external_code\": \"ERP-REQ-002\",\n      \"title\": \"Requisição lote 1\",\n      \"items\": [\n        {\n          \"material_description\": \"Item lote\",\n          \"quantity\": 10,\n          \"unit_of_measure\": \"UN\"\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/requisitions/batch",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "requisitions", "batch"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT Atualizar requisição",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_code\": \"ERP-REQ-001\",\n  \"title\": \"Requisição atualizada\",\n  \"items\": [\n    {\n      \"material_description\": \"Parafuso M8 atualizado\",\n      \"quantity\": 120,\n      \"unit_of_measure\": \"UN\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/requisitions/{{requisition_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "requisitions", "{{requisition_id}}"]
+            },
+            "description": "Somente status pending ou rejected. rejected volta para pending."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE Cancelar requisição",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/requisitions/{{requisition_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "requisitions", "{{requisition_id}}"]
+            },
+            "description": "Soft cancel → status cancelled. Não permitido em in_quotation/completed."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Cotações",
+      "item": [
+        {
+          "name": "GET Listar cotações",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/quotations?page=1&page_size=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "quotations"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "10" },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Escopo: quotations:read. Módulo tenant: quotations."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Cotação por id/code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/quotations/{{quotation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "quotations", "{{quotation_id}}"]
+            },
+            "description": "Inclui itens, rodadas e fornecedores convidados."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Propostas da cotação",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/quotations/{{quotation_id}}/proposals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "quotations", "{{quotation_id}}", "proposals"]
+            },
+            "description": "Retorna quotation + rounds[] com proposals[] e items[] por fornecedor. Filtros: round_number, supplier_code, status."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Pedidos",
+      "item": [
+        {
+          "name": "GET Listar pedidos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/purchase-orders?page=1&page_size=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "purchase-orders"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "10" },
+                { "key": "status", "value": "", "disabled": true },
+                { "key": "supplier_code", "value": "", "disabled": true }
+              ]
+            },
+            "description": "Escopo: orders:read. Módulo tenant: orders."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Pedido por id/code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/purchase-orders/{{purchase_order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "purchase-orders", "{{purchase_order_id}}"]
+            },
+            "description": "Aceita UUID, code ou external_code."
+          },
+          "response": []
+        },
+        {
+          "name": "GET PDF do pedido",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/purchase-orders/{{purchase_order_id}}/pdf",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "purchase-orders", "{{purchase_order_id}}", "pdf"]
+            },
+            "description": "Retorna application/pdf (stream)."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -32,7 +32,6 @@ import { ValoreLogo } from "@/components/ui/valore-logo"
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
@@ -70,12 +69,17 @@ interface SidebarProps {
 
 export function Sidebar({ type }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const [pendingApprovals, setPendingApprovals] = useState<number | null>(null)
   const pathname = usePathname()
   const { userId, companyId, hasRole, isSuperAdmin, loading: userLoading } = useUser()
   const { hasPermission, hasFeature, loading: permissionsLoading } = usePermissions()
 
-  const isLoading = userLoading || permissionsLoading
+  const isLoading = !mounted || userLoading || permissionsLoading
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const accessCtx = useMemo<CompradorAccessContext>(
     () => ({
@@ -123,8 +127,7 @@ export function Sidebar({ type }: SidebarProps) {
   }, [type, companyId, userId, hasRole])
 
   return (
-    <TooltipProvider delayDuration={0}>
-      <aside
+    <aside
         className={cn(
           "flex h-screen flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border transition-all duration-300",
           collapsed ? "w-16" : "w-64"
@@ -133,12 +136,22 @@ export function Sidebar({ type }: SidebarProps) {
         <div className="flex h-16 items-center justify-between px-4 border-b border-sidebar-border">
           {!collapsed && (
             <Link href={homeHref} className="flex items-center gap-2">
-              <ValoreLogo size={28} showName={true} nameColor="#ffffff" />
+              <ValoreLogo
+                instance="sidebar"
+                size={28}
+                showName={true}
+                nameColor="#ffffff"
+              />
             </Link>
           )}
           {collapsed && (
             <Link href={homeHref} className="mx-auto">
-              <ValoreLogo size={28} showName={false} nameColor="#ffffff" />
+              <ValoreLogo
+                instance="sidebar-icon"
+                size={28}
+                showName={false}
+                nameColor="#ffffff"
+              />
             </Link>
           )}
         </div>
@@ -242,6 +255,5 @@ export function Sidebar({ type }: SidebarProps) {
           </Button>
         </div>
       </aside>
-    </TooltipProvider>
   )
 }

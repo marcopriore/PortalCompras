@@ -49,6 +49,7 @@ import {
   Download,
   BrainCircuit,
   Sparkles,
+  Plug2,
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 import { TenantSettingsTab } from '@/components/admin/tenant-settings-tab'
@@ -100,6 +101,7 @@ type FeatureKey =
   | 'ai_negotiation'
   | 'contracts'
   | 'contract_balance'
+  | 'api_integrations'
 
 const CORE_FEATURES: Array<{
   key: FeatureKey
@@ -222,6 +224,13 @@ const PREMIUM_FEATURES: Array<{
     description:
       'Criar pedido a partir do contrato, reserva/consumo de saldo e vínculo na equalização',
     icon: <ShoppingCart className="h-5 w-5 text-violet-500" />,
+  },
+  {
+    key: 'api_integrations',
+    label: 'Loja de API / Integrações',
+    description:
+      'API REST inbound (ERP → Valore) e integrações HTTP outbound (Valore → ERP)',
+    icon: <Plug2 className="h-5 w-5 text-violet-500" />,
   },
 ]
 

@@ -50,7 +50,7 @@ type PurchaseOrderDetail = {
   code: string
   quotation_code: string | null
   requisition_code: string | null
-  erp_code: string | null
+  external_code: string | null
   supplier_name: string
   supplier_cnpj: string | null
   payment_condition: string | null
@@ -181,7 +181,7 @@ export default function FornecedorPedidoDetalhePage({
         .from("purchase_orders")
         .select(
           `
-          id, code, quotation_code, requisition_code, erp_code,
+          id, code, quotation_code, requisition_code, external_code,
           supplier_name, supplier_cnpj, payment_condition,
           delivery_address, total_price, status, observations,
           created_at, created_by, quotation_id,
@@ -360,7 +360,28 @@ export default function FornecedorPedidoDetalhePage({
         console.error("notify order.accepted:", e)
       }
 
-      toast.success("Pedido aceito com sucesso.")
+      const integrationRes = await fetch(`/api/purchase-orders/${order.id}/erp-integration`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "supplier" }),
+      })
+      const integrationJson = (await integrationRes.json()) as {
+        success?: boolean
+        skipped?: boolean
+        errorMessage?: string
+        status?: string
+      }
+      if (!integrationRes.ok || integrationJson.success === false) {
+        toast.error(
+          integrationJson.errorMessage ??
+            "Pedido aceito, mas a integração com o ERP falhou. O comprador pode reenviar.",
+        )
+      } else if (integrationJson.skipped) {
+        toast.success("Pedido aceito com sucesso.")
+      } else {
+        toast.success("Pedido aceito e integrado ao ERP com sucesso.")
+      }
+
       setTermsDialogOpen(false)
       setActiveTerm(null)
       await fetchAll()
@@ -600,7 +621,9 @@ export default function FornecedorPedidoDetalhePage({
             </div>
           ) : null}
 
-          {order.status === "processing" ? (
+          {order.status === "processing" ||
+          order.status === "completed" ||
+          order.status === "error" || order.status === "integration_error" ? (
             <div className="flex items-center gap-3 shrink-0 flex-wrap justify-end">
               <div className="flex flex-col gap-1">
                 <label htmlFor="header-update-date" className="text-xs text-muted-foreground">
@@ -653,17 +676,13 @@ export default function FornecedorPedidoDetalhePage({
         </div>
       ) : null}
 
-      {order.status === "processing" ? (
+      {order.status === "processing" ||
+      order.status === "completed" ||
+      order.status === "error" ||
+      order.status === "integration_error" ? (
         <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 mb-4 text-sm text-blue-700">
           <CheckCircle className="w-4 h-4 shrink-0" aria-hidden />
           Pedido aceito em {formatDateBR(order.accepted_at)}. Prepare a entrega conforme acordado.
-        </div>
-      ) : null}
-
-      {order.status === "completed" ? (
-        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2 mb-4 text-sm text-green-700">
-          <Package className="w-4 h-4 shrink-0" aria-hidden />
-          Pedido finalizado.
         </div>
       ) : null}
 
@@ -693,7 +712,7 @@ export default function FornecedorPedidoDetalhePage({
         </div>
       ) : null}
 
-      {["draft", "error"].includes(order.status) ? (
+      {["draft", "error", "integration_error"].includes(order.status) ? (
         <p className="text-sm text-muted-foreground mb-4">
           Este pedido não está disponível para ações do fornecedor neste status.
         </p>
@@ -713,7 +732,7 @@ export default function FornecedorPedidoDetalhePage({
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Código ERP</p>
-              <p>{order.erp_code ?? "Aguardando integração"}</p>
+              <p>{order.external_code ?? "Aguardando integração"}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Condição de Pagamento</p>

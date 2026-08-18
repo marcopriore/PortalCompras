@@ -12,7 +12,8 @@
     "test:e2e:critical": "playwright test --project=critical-flows",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
-    "test:unit:ui": "vitest --ui"
+    "test:unit:ui": "vitest --ui",
+    "api-key:create": "node scripts/create-api-key.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { TenantProvider } from "@/contexts/tenant-context"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
@@ -72,6 +72,18 @@ export default async function CompradorLayout({
     cookieStore.get("selected_company_id")?.value ||
     (profile as any)?.company_id ||
     null
+
+  const headersList = await headers()
+  const pathname = headersList.get("x-pathname") ?? ""
+  const isStandaloneIntegrationsMonitor = pathname.startsWith(
+    "/comprador/integracoes/monitor",
+  )
+
+  if (isStandaloneIntegrationsMonitor) {
+    return (
+      <TenantProvider initialCompanyId={selectedCompanyId}>{children}</TenantProvider>
+    )
+  }
 
   return (
     <TenantProvider initialCompanyId={selectedCompanyId}>

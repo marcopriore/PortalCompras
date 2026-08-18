@@ -31,6 +31,7 @@ import {
   X,
 } from "lucide-react"
 import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
+import { getBuyerOrderErrorCopy } from "@/lib/integrations/erp-errors"
 
 type PurchaseOrderStatus =
   | "draft"
@@ -38,6 +39,7 @@ type PurchaseOrderStatus =
   | "sent"
   | "refused"
   | "error"
+  | "integration_error"
   | "completed"
   | "cancelled"
 
@@ -77,7 +79,7 @@ export default function PedidosPage() {
   const [loading, setLoading] = React.useState(true)
   const [filters, setFilters] = React.useState<Filters>({
     search: "",
-    status: ["draft", "sent", "refused", "processing", "error", "completed", "cancelled"],
+    status: ["draft", "sent", "refused", "processing", "error", "integration_error", "completed", "cancelled"],
     dateFrom: "",
     dateTo: "",
   })
@@ -141,7 +143,7 @@ export default function PedidosPage() {
   const clearFilters = () => {
     setFilters({
       search: "",
-      status: ["draft", "sent", "refused", "processing", "error", "completed", "cancelled"],
+      status: ["draft", "sent", "refused", "processing", "error", "integration_error", "completed", "cancelled"],
       dateFrom: "",
       dateTo: "",
     })
@@ -289,7 +291,8 @@ export default function PedidosPage() {
                   { value: "sent", label: "Aguardando Aceite" },
                   { value: "refused", label: "Recusado pelo Fornecedor" },
                   { value: "processing", label: "Processando Integração" },
-                  { value: "error", label: "Erro Integração" },
+                  { value: "integration_error", label: "Erro de Integração" },
+                  { value: "error", label: "Pedido Reprovado" },
                   { value: "completed", label: "Concluído" },
                   { value: "cancelled", label: "Cancelado" },
                 ]}
@@ -427,12 +430,21 @@ export default function PedidosPage() {
                             </Button>
                           </TableCell>
                         </TableRow>
-                        {order.status === "error" && order.erp_error_message && (
+                        {(order.status === "error" || order.status === "integration_error") &&
+                          order.erp_error_message && (
                           <TableRow>
                             <TableCell colSpan={8}>
-                              <div className="mt-1 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
-                                {order.erp_error_message}
-                              </div>
+                              {(() => {
+                                const copy = getBuyerOrderErrorCopy(
+                                  order.status,
+                                  order.erp_error_message,
+                                )
+                                return (
+                                  <div className="mt-1 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                                    {copy.title}: {copy.body}
+                                  </div>
+                                )
+                              })()}
                             </TableCell>
                           </TableRow>
                         )}

@@ -1,18 +1,18 @@
-import { useId } from 'react'
-
 interface ValoreLogoProps {
   size?: number
   showName?: boolean
   nameColor?: string
+  /** ID estável do gradiente SVG — evita mismatch de hidratação com useId() */
+  instance?: string
 }
 
 export function ValoreLogo({
   size = 32,
   showName = true,
   nameColor,
+  instance = 'default',
 }: ValoreLogoProps) {
-  const id = useId()
-  const gradId = `valore-grad-${id.replace(/:/g, '')}`
+  const gradId = `valore-grad-${instance}`
 
   const iconSize = size
   const fontSize = size * 0.75
@@ -26,6 +26,7 @@ export function ValoreLogo({
         viewBox="0 0 32 32"
         xmlns="http://www.w3.org/2000/svg"
         style={{ flexShrink: 0 }}
+        aria-hidden="true"
       >
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
@@ -60,4 +61,3 @@ export function ValoreLogo({
     </div>
   )
 }
-

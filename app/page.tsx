@@ -162,7 +162,7 @@ export default function HomePage() {
             }}
           >
             <div className="mx-auto flex h-16 max-w-6xl items-center px-4 sm:px-6">
-              <ValoreLogo showName nameColor="#ffffff" size={36} />
+              <ValoreLogo showName nameColor="#ffffff" size={36} instance="landing-nav" />
             </div>
           </header>
 
@@ -341,12 +341,20 @@ export default function HomePage() {
               style={{ color: "rgba(255,255,255,0.3)" }}
             >
               <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
-                <ValoreLogo showName nameColor="#ffffff" size={28} />
+                <ValoreLogo showName nameColor="#ffffff" size={28} instance="landing-footer" />
                 <span>© 2026 Valore. Todos os direitos reservados.</span>
               </div>
-              <p className="text-center sm:text-right">
-                Sistema de Gestão de Compras Corporativas
-              </p>
+              <div className="flex flex-col items-center gap-2 sm:items-end">
+                <a
+                  href="/docs/api"
+                  className="text-[#00C2FF] hover:underline"
+                >
+                  Documentação da API
+                </a>
+                <p className="text-center sm:text-right">
+                  Sistema de Gestão de Compras Corporativas
+                </p>
+              </div>
             </div>
           </footer>
         </div>

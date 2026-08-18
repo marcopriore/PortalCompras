@@ -1,7 +1,7 @@
 # Valore — Handoff para Novo Chat
 
-## Data: 13/08/2026
-## Versão: v2.19.77
+## Data: 18/08/2026
+## Versão: v2.19.78
 
 ## 1. CONTEXTO DO PROJETO
 - Valore é um SaaS de procurement B2B com portal comprador,
@@ -76,7 +76,13 @@
 - IA: ANTHROPIC_API_KEY, ai_analysis_logs, audit_logs ia_analysis
 - Storage: company-logos, profile-avatars, proposal-attachments,
   contract-files (todos públicos exceto proposal-attachments)
-- Migrations: 020–031
+- Migrations: 020–042 (ver §5)
+
+### Integrações ERP (v2.19.78)
+- Outbound pedidos: aceite fornecedor → integração ERP → status final
+- Monitor: `/comprador/integracoes/monitor` (popup) + `/admin/integracoes`
+- Config chaves/endpoints: **somente admin** (`/admin/integracoes`)
+- Spec operacional completa: **SPEC.md §10.10**
 
 ## 4. PADRÕES CRÍTICOS
 - Isolamento tenant: useTenant() + companyId nas deps do useEffect
@@ -109,6 +115,9 @@
 - 030: contract_acceptance + pending_acceptance status
 - 031: contracts nullable fields (supplier_id, start_date, end_date)
 - 032: ai_analysis_logs
+- 040: API Store (api_keys, integration_endpoints, integration_delivery_logs, external_code)
+- 041: purchase_orders.erp_error_message
+- 042: purchase_orders status `integration_error` + trigger contrato
 
 ### Tabelas novas (v2.19.67–v2.19.70)
 - contracts: company_id, supplier_id (nullable), code, title,
@@ -132,17 +141,68 @@
 - Core: quotations, equalization, orders, requisitions, suppliers,
   items, reports, users, settings, logs, approval_requisition,
   approval_order
-- Premium: ai_analytics, ai_negotiation, contracts, contract_balance
+- Premium: ai_analytics, ai_negotiation, contracts, contract_balance, **api_integrations**
 
 ### Storage buckets
 - company-logos (público), profile-avatars (público),
   proposal-attachments (privado), contract-files (público)
 
 ## 6. BACKLOG PRIORIZADO
-1. Recebimento parcial ERP / liberação de reserva não utilizada
-2. Migrar documentação de implantação para Notion
+Revisado 18/08/2026. **Foco atual:** estender integrações outbound (REQ → pedido update/delete).
+
+### Em foco agora
+**A. Integração outbound — pedidos** ✅ v1 (SPEC §10.10)
+- Aceite fornecedor dispara `purchase_order.create`
+- Status: `processing` → `completed` | `error` | `integration_error`
+- Monitor com reenvio condicional (sem duplicar ERP OK + Valore OK)
+
+**B. Próximo: integração outbound — requisições**
+- Wire `requisition.*` nos eventos do portal (criar, aprovar, rejeitar, cancelar)
+- Mesmo padrão: orquestrador + status + monitor + IDs `external_requisition_id`
+
+**C. Pedido update/delete outbound**
+- `purchase_order.update` ao editar pedido `completed`
+- `purchase_order.delete` ao cancelar pedido integrado
+
+### Loja de API — Fase 1 (base)
+- ✅ Passos 1–8 SPEC §10.8 (inbound, UI admin, monitor, docs)
+- 🟡 Outbound: pedido create ✅; REQ e PO update/delete pendentes
+
+### Imediato (paralelo)
+1. **Fechar enforcement de permissões** — `created_by`, `edit_own`, `view_all`, `portal.solicitante`
+2. **Unificar Configurações por abas** — Usuários + Permissões + **Integrações** (Loja de API)
+3. **Permissões do Admin pelo Master** — matriz em `/admin/tenants/[id]`
+4. **Ampliar testes**
+5. **Rotina de docs no repo**
+
+### Médio prazo
+6. **Módulo de Recebimento** + consumo REQ/contrato
+7. **Consumo por item de requisição** (Parcial/Total/Aberta)
+8. **Login fornecedor redesign + gestão de usuários por fornecedor**
+9. **"Agir como"** no comprador
+10. **Importação massiva de requisições (Excel)**
+11. **Idempotência outbound** (header `Idempotency-Key` + dedup no ERP)
+12. **Alertas de integração** (e-mail/in-app quando `integration_error`)
+
+### Baixa prioridade
+13. Migrar documentação de implantação para Notion
+
+### Já implementado (validação da lista)
+- Loja de API inbound v1 + docs públicas + monitor v2
+- Outbound pedidos operacional (§10.10)
+- Negociação por IA (`ai_negotiation`, equalização)
+- Sidebar + route guard por permissões (v2.19.76)
+- Filtro `requester_id` no portal solicitante
+- Política de senhas por tenant (v2.19.77)
+- Config parcial por abas (falta unificar Usuários/Permissões)
+
+### Escala 6–12 meses
+IA negociação v2, previsão de demanda, compra recorrente, API Store/ERP,
+precificação por spend, compliance, SSO/SAML, white-label
 
 ### Concluído recentemente
+- **Integração ERP — pedidos outbound** (v2.19.78): fluxo completo §10.10; status `integration_error` vs `error`; IDs `external_purchase_order_id`; monitor com reenvio inteligente; config integrações só admin
+- **Fix auth refresh + hydration** (proxy cookies, singleton Supabase, ValoreLogo, Radix mount)
 - **Política de senhas por tenant** (aba Segurança admin, expiração, histórico,
   mesma regra comprador/solicitante/fornecedor, migration 039)
 - **Enforcement de permissões no frontend** (v2.19.76): `comprador-nav.ts`,
@@ -169,6 +229,7 @@
 - NEXT_PUBLIC_SUPABASE_URL
 - NEXT_PUBLIC_SUPABASE_ANON_KEY
 - SUPABASE_SERVICE_ROLE_KEY
+- API_KEY_PEPPER (opcional; hash das API keys da Loja de API)
 - ANTHROPIC_API_KEY (sem NEXT_PUBLIC_)
 - RESEND_API_KEY
 - RESEND_FROM_EMAIL

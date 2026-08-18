@@ -57,6 +57,7 @@ import {
   Settings2,
   User,
   Workflow,
+  Radio,
 } from "lucide-react"
 
 import {
@@ -1713,7 +1714,7 @@ export default function ConfiguracoesPage() {
           Gerencie as configurações do sistema de compras
         </p>
         {canManageCompany && (
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -1722,6 +1723,32 @@ export default function ConfiguracoesPage() {
               <Shield className="mr-2 h-4 w-4" />
               Perfis de Acesso
             </Button>
+            {hasFeature("api_integrations") && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    window.open(
+                      "/comprador/integracoes/monitor",
+                      "_blank",
+                      "noopener,noreferrer",
+                    )
+                  }
+                >
+                  <Radio className="mr-2 h-4 w-4" />
+                  Monitor de Integração
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open("/docs/api", "_blank")}
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Documentação API
+                </Button>
+              </>
+            )}
           </div>
         )}
       </div>

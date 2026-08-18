@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { LogOut, Building2, ScrollText } from "lucide-react"
+import { LogOut, Building2, ScrollText, Radio } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -44,12 +44,14 @@ export default function AdminLayout({
 
   const getTitle = () => {
     if (pathname.startsWith("/admin/tenants")) return "Tenants"
+    if (pathname.startsWith("/admin/integracoes")) return "Integrações"
     if (pathname.startsWith("/admin/logs")) return "Logs do Sistema"
     return "Admin"
   }
 
   const navItems = [
     { href: "/admin/tenants", label: "Tenants", icon: Building2 },
+    { href: "/admin/integracoes", label: "Integrações", icon: Radio },
     { href: "/admin/logs", label: "Logs", icon: ScrollText },
   ]
 
@@ -58,7 +60,7 @@ export default function AdminLayout({
       <aside className="flex h-screen w-60 flex-col overflow-hidden bg-[oklch(0.12_0.02_250)] text-white">
         <div className="flex h-16 flex-shrink-0 items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            <ValoreLogo size={24} showName={true} nameColor="#ffffff" />
+            <ValoreLogo size={24} showName={true} nameColor="#ffffff" instance="admin" />
             <span className="text-xs bg-red-600 text-white px-1.5 py-0.5 rounded font-medium ml-1">
               Admin
             </span>

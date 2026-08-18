@@ -28,30 +28,29 @@ export function useUser() {
 
   useEffect(() => {
     const supabase = createClient()
+    let cancelled = false
 
-    supabase.auth.getUser().then(async ({ data }) => {
-      const user = data.user
-      if (!user) {
-        setUserId(null)
-        setSupplierId(null)
-        setCompanyName(null)
-        setProfileType(null)
-        setFullName(null)
-        setRoles([])
-        setIsSuperAdmin(false)
-        setLoading(false)
-        return
-      }
+    const clearUser = () => {
+      setUserId(null)
+      setSupplierId(null)
+      setCompanyName(null)
+      setProfileType(null)
+      setFullName(null)
+      setRoles([])
+      setIsSuperAdmin(false)
+    }
 
-      setUserId(user.id)
-
+    const loadProfile = async (userId: string) => {
       const { data: profile } = await supabase
         .from('profiles')
         .select(
           'company_id, supplier_id, is_superadmin, role, roles, profile_type, full_name, companies(name)',
         )
-        .eq('id', user.id)
+        .eq('id', userId)
         .single()
+
+      if (cancelled) return
+
       const p = profile as ProfileRow | null
       const rawType = p?.profile_type ?? 'buyer'
       const pt =
@@ -71,16 +70,60 @@ export function useUser() {
         embeddedName = String((co as { name: string }).name)
       }
       setCompanyName(embeddedName)
-      const superFlag = Boolean(p?.is_superadmin)
-      setIsSuperAdmin(superFlag)
-      const rolesArray = Array.isArray(p?.roles)
-        ? p.roles
-        : p?.role
-          ? [p.role]
-          : []
-      setRoles(rolesArray)
+      setIsSuperAdmin(Boolean(p?.is_superadmin))
+      setRoles(
+        Array.isArray(p?.roles) ? p.roles : p?.role ? [p.role] : [],
+      )
       setLoading(false)
+    }
+
+    const syncFromSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        const user = session?.user
+
+        if (cancelled) return
+
+        if (!user) {
+          clearUser()
+          setLoading(false)
+          return
+        }
+
+        setUserId(user.id)
+        await loadProfile(user.id)
+      } catch {
+        if (!cancelled) {
+          clearUser()
+          setLoading(false)
+        }
+      }
+    }
+
+    void syncFromSession()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (cancelled) return
+
+      const user = session?.user
+      if (!user) {
+        clearUser()
+        setLoading(false)
+        return
+      }
+
+      setUserId(user.id)
+      void loadProfile(user.id)
     })
+
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
   }, [])
 
   const role = roles[0] ?? ''

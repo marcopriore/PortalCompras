@@ -58,6 +58,7 @@ import {
 import { toast } from "sonner"
 import type { LucideIcon } from "lucide-react"
 import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
+import { getBuyerOrderErrorCopy } from "@/lib/integrations/erp-errors"
 import { formatDateBR, formatDateTimeBR } from "@/lib/utils/date-helpers"
 import { buildContractItemLineNumberMap } from "@/lib/contracts/contract-balance-helpers"
 
@@ -67,6 +68,7 @@ type PurchaseOrderStatus =
   | "sent"
   | "refused"
   | "error"
+  | "integration_error"
   | "completed"
   | "cancelled"
 
@@ -75,6 +77,7 @@ type PurchaseOrder = {
   company_id: string
   code: string
   erp_code: string | null
+  external_code: string | null
   supplier_id: string | null
   supplier_name: string
   supplier_cnpj: string | null
@@ -291,13 +294,14 @@ function buildTimeline(order: PurchaseOrder, logs: AuditLog[]): TimelineEvent[] 
     })
   }
 
-  if (order.status === "error") {
+  if (order.status === "error" || order.status === "integration_error") {
     const d = order.updated_at ?? order.created_at
+    const copy = getBuyerOrderErrorCopy(order.status, order.erp_error_message)
     inferred.push({
       id: "inf-error",
       date: d,
-      title: "Erro na integração ERP",
-      description: order.erp_error_message ?? undefined,
+      title: copy.title,
+      description: copy.body,
       type: "error",
       icon: AlertTriangle,
       iconColor: "text-red-500",
@@ -451,6 +455,7 @@ export default function PurchaseOrderDetailPage({
   const [resendOpen, setResendOpen] = React.useState(false)
   const [cancellingRefused, setCancellingRefused] = React.useState(false)
   const [resendingOrder, setResendingOrder] = React.useState(false)
+  const [retryingIntegration, setRetryingIntegration] = React.useState(false)
 
   const [isEditing, setIsEditing] = React.useState(false)
   const [editForm, setEditForm] = React.useState({
@@ -619,8 +624,38 @@ export default function PurchaseOrderDetailPage({
 
   React.useEffect(() => {
     if (!order) return
-    if (order.status !== "refused") setIsEditing(false)
+    if (order.status !== "refused" && order.status !== "error") setIsEditing(false)
   }, [order])
+
+  React.useEffect(() => {
+    if (!order || order.status !== "processing" || !id || !companyId) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`purchase-order-status-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "purchase_orders",
+          filter: `id=eq.${id}`,
+        },
+        () => {
+          void fetchOrderData({ silent: true })
+        },
+      )
+      .subscribe()
+
+    const timer = window.setInterval(() => {
+      void fetchOrderData({ silent: true })
+    }, 2000)
+
+    return () => {
+      window.clearInterval(timer)
+      void supabase.removeChannel(channel)
+    }
+  }, [order?.status, id, companyId, fetchOrderData])
 
   const timeline = React.useMemo(
     () => (order ? buildTimeline(order, orderLogs) : []),
@@ -782,6 +817,101 @@ export default function PurchaseOrderDetailPage({
     )
   }
 
+  const handleRetryErpIntegration = async () => {
+    if (!order) return
+    setRetryingIntegration(true)
+    try {
+      const res = await fetch(`/api/purchase-orders/${order.id}/erp-integration`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "buyer" }),
+      })
+      const json = (await res.json()) as {
+        success?: boolean
+        errorMessage?: string
+        error?: string
+      }
+      if (!res.ok || json.success === false) {
+        toast.error(json.errorMessage ?? json.error ?? "Falha ao reenviar integração com o ERP.")
+      } else {
+        toast.success("Integração reenviada ao ERP com sucesso.")
+      }
+      await fetchOrderData({ silent: true })
+    } catch (e) {
+      console.error(e)
+      toast.error("Não foi possível reenviar a integração.")
+    } finally {
+      setRetryingIntegration(false)
+    }
+  }
+
+  const handleSaveAndRetryIntegration = async () => {
+    if (!order || !companyId) return
+
+    if (editForm.delivery_days.trim()) {
+      const d = parseInt(editForm.delivery_days, 10)
+      if (Number.isNaN(d) || d < 1) {
+        toast.error("Prazo de entrega deve ser um número inteiro a partir de 1.")
+        return
+      }
+    }
+
+    for (const item of editItems) {
+      if (item.max_quantity != null && item.quantity > item.max_quantity) {
+        toast.error(
+          `${item.material_code}: quantidade excede a requisição (máx: ${item.max_quantity})`,
+        )
+        return
+      }
+      if (item.quantity <= 0 || !Number.isFinite(item.quantity)) {
+        toast.error(`${item.material_code}: quantidade deve ser maior que zero`)
+        return
+      }
+    }
+
+    setSavingEdit(true)
+    try {
+      const supabase = createClient()
+
+      const { error: orderError } = await supabase
+        .from("purchase_orders")
+        .update({
+          payment_condition: editForm.payment_condition.trim() || null,
+          delivery_days: editForm.delivery_days.trim()
+            ? (() => {
+                const n = parseInt(editForm.delivery_days, 10)
+                return Number.isNaN(n) ? null : n
+              })()
+            : null,
+          delivery_address: editForm.delivery_address.trim() || null,
+          observations: editForm.observations.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", order.id)
+        .eq("company_id", companyId)
+
+      if (orderError) throw orderError
+
+      const itemResults = await Promise.all(
+        editItems.map((row) =>
+          supabase.from("purchase_order_items").update({ quantity: row.quantity }).eq("id", row.id),
+        ),
+      )
+      const firstItemErr = itemResults.find((r) => r.error)?.error
+      if (firstItemErr) throw firstItemErr
+
+      setIsEditing(false)
+      await fetchOrderData({ silent: true })
+      setSavingEdit(false)
+      await handleRetryErpIntegration()
+    } catch (err) {
+      console.error(err)
+      toast.error("Erro ao salvar: " + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   const handleSaveAndResend = async () => {
     if (!order || !companyId) return
 
@@ -884,7 +1014,7 @@ export default function PurchaseOrderDetailPage({
 
       const infoRows: Array<[string, string]> = [
         ["Nº Pedido:", order.code],
-        ["Código ERP:", order.erp_code ?? "—"],
+        ["Código ERP:", erpCode ?? "—"],
         ["Fornecedor:", order.supplier_name],
         ["CNPJ:", order.supplier_cnpj ?? "—"],
         ["Condição de Pagamento:", order.payment_condition ?? "—"],
@@ -1073,6 +1203,7 @@ export default function PurchaseOrderDetailPage({
     : "—"
 
   const statusDisplay = getPOStatusForBuyer(order.status)
+  const erpCode = order.external_code ?? order.erp_code ?? null
 
   const totalItemsCount = items.length
 
@@ -1242,6 +1373,51 @@ export default function PurchaseOrderDetailPage({
               )}
             </>
           )}
+          {order.status === "error" && (
+            <>
+              {!isEditing ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={retryingIntegration || savingEdit}
+                    onClick={() => void handleStartEdit()}
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Editar
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={retryingIntegration || savingEdit}
+                    onClick={() => void handleRetryErpIntegration()}
+                  >
+                    {retryingIntegration ? "Reenviando..." : "Reenviar integração"}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={savingEdit || retryingIntegration}
+                    onClick={() => setIsEditing(false)}
+                  >
+                    Cancelar Edição
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={savingEdit || retryingIntegration}
+                    className="bg-green-600 text-white hover:bg-green-700"
+                    onClick={() => void handleSaveAndRetryIntegration()}
+                  >
+                    {savingEdit || retryingIntegration
+                      ? "Salvando..."
+                      : "Salvar e reenviar integração"}
+                  </Button>
+                </>
+              )}
+            </>
+          )}
           <Button
             variant="default"
             size="sm"
@@ -1259,12 +1435,41 @@ export default function PurchaseOrderDetailPage({
         </div>
       </div>
 
-      {order.status === "error" && order.erp_error_message && (
-        <div className="bg-destructive/10 border border-destructive/40 rounded-xl p-4 flex gap-3 items-start">
-          <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
+      {order.status === "processing" && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 flex gap-3 items-start">
+          <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm font-medium text-destructive">Erro ao integrar com o ERP</p>
-            <p className="text-sm text-destructive/90">{order.erp_error_message}</p>
+            <p className="text-sm font-medium text-blue-900">Processando integração com o ERP</p>
+            <p className="text-sm text-blue-800/90 mt-1">
+              Aguardando resposta do ERP. A página atualiza automaticamente ao concluir.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {(order.status === "error" || order.status === "integration_error") && (
+        <div className="bg-destructive/10 border border-destructive/40 rounded-xl p-4 flex gap-3 items-start">
+          <AlertCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
+          <div>
+            {(() => {
+              const copy = getBuyerOrderErrorCopy(order.status, order.erp_error_message)
+              return (
+                <>
+                  <p className="text-sm font-medium text-destructive">{copy.title}</p>
+                  <p className="text-sm text-destructive/90 mt-1">{copy.body}</p>
+                  {!copy.allowBuyerRetry ? (
+                    <p className="text-sm text-destructive/80 mt-2">
+                      Entre em contato com a TI ou com o administrador do portal para regularizar a
+                      integração pelo Monitor de Integração.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-destructive/80 mt-2">
+                      Revise os dados do pedido, edite se necessário e reenvie a integração ao ERP.
+                    </p>
+                  )}
+                </>
+              )
+            })()}
           </div>
         </div>
       )}
@@ -1298,12 +1503,12 @@ export default function PurchaseOrderDetailPage({
         </div>
       )}
 
-      {order.erp_code && (
+      {erpCode && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-start gap-3">
           <CheckCircle2 className="h-5 w-5 text-emerald-600 mt-0.5" />
           <div>
             <p className="text-sm font-medium text-emerald-800">
-              Pedido integrado ao ERP com sucesso. Código ERP: {order.erp_code}
+              Pedido integrado ao ERP com sucesso. Código ERP: {erpCode}
             </p>
           </div>
         </div>
@@ -1425,7 +1630,7 @@ export default function PurchaseOrderDetailPage({
             <div>
               <p className="text-xs text-muted-foreground">Código ERP</p>
               <p className="text-sm text-muted-foreground">
-                {order.erp_code ?? "Aguardando integração"}
+                {erpCode ?? "Aguardando integração"}
               </p>
             </div>
             <div className="space-y-2">

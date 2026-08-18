@@ -7,7 +7,6 @@ import { ptBR } from "date-fns/locale"
 import {
   CheckCircle,
   Clock,
-  Package,
   Search,
   X,
   XCircle,
@@ -39,6 +38,8 @@ import {
   getPOStatusForSupplier,
   poStatusBadgeClass,
 } from "@/lib/po-status"
+
+const SUPPLIER_ACCEPTED_STATUSES = ["processing", "completed", "error", "integration_error"] as const
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -157,8 +158,9 @@ export default function FornecedorPedidosPage() {
   const metrics = React.useMemo(() => {
     return {
       pending: rows.filter((r) => r.status === "sent").length,
-      accepted: rows.filter((r) => r.status === "processing").length,
-      done: rows.filter((r) => r.status === "completed").length,
+      accepted: rows.filter((r) =>
+        SUPPLIER_ACCEPTED_STATUSES.includes(r.status as (typeof SUPPLIER_ACCEPTED_STATUSES)[number]),
+      ).length,
       cancelled: rows.filter((r) => r.status === "cancelled" || r.status === "refused").length,
     }
   }, [rows])
@@ -167,7 +169,11 @@ export default function FornecedorPedidosPage() {
     const term = search.trim().toLowerCase()
     const start = getPeriodStartDays(period)
     return rows.filter((r) => {
-      if (statusFilter !== "all" && r.status !== statusFilter) return false
+      if (statusFilter === "processing") {
+        if (!SUPPLIER_ACCEPTED_STATUSES.includes(r.status as (typeof SUPPLIER_ACCEPTED_STATUSES)[number])) {
+          return false
+        }
+      } else if (statusFilter !== "all" && r.status !== statusFilter) return false
       if (start && r.created_at < start) return false
       if (!term) return true
       const code = (r.code ?? "").toLowerCase()
@@ -217,11 +223,11 @@ export default function FornecedorPedidosPage() {
       ) : null}
 
       <div
-        className="grid w-full grid-cols-2 gap-4 lg:grid-cols-4 mb-2"
-        style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}
+        className="grid w-full grid-cols-2 gap-4 lg:grid-cols-3 mb-2"
+        style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
       >
         {loading ? (
-          Array.from({ length: 4 }).map((_, i) => (
+          Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="h-[100px] animate-pulse rounded-xl bg-muted" />
           ))
         ) : (
@@ -242,15 +248,6 @@ export default function FornecedorPedidosPage() {
               </div>
               <div className="bg-blue-100 p-3 rounded-full shrink-0">
                 <CheckCircle className="w-6 h-6 text-blue-600" />
-              </div>
-            </div>
-            <div className="min-w-0 bg-white border border-green-100 rounded-xl p-5 flex items-center justify-between">
-              <div>
-                <p className="text-sm text-green-600 font-medium">Finalizados</p>
-                <p className="text-3xl font-bold text-green-700 mt-1">{metrics.done}</p>
-              </div>
-              <div className="bg-green-100 p-3 rounded-full shrink-0">
-                <Package className="w-6 h-6 text-green-600" />
               </div>
             </div>
             <div className="min-w-0 bg-white border border-red-100 rounded-xl p-5 flex items-center justify-between">
@@ -307,7 +304,6 @@ export default function FornecedorPedidosPage() {
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="sent">Pendente Aceite</SelectItem>
                 <SelectItem value="processing">Aceito</SelectItem>
-                <SelectItem value="completed">Finalizado</SelectItem>
                 <SelectItem value="refused">Pedido Recusado</SelectItem>
                 <SelectItem value="cancelled">Cancelado</SelectItem>
               </SelectContent>
