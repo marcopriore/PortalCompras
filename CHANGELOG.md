@@ -1,5 +1,16 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.84] — 2026-08-19
+
+### Testes unitários e documentação
+
+- 6 novos arquivos de teste + 1 expandido: `outbound-idempotency`, `external-id-response`, `outbound-retry-eligibility`, `erp-errors`, `integration-types`, `comprador-nav`, `po-status`
+- Total: 143 testes em 14 arquivos (anteriormente 42 em 8 arquivos)
+- SPEC.md atualizado para v2.19.84: §9.1 concluído, §9.4 mapa de validação atualizado
+- HANDOFF.md, CLAUDE.md e CHANGELOG.md sincronizados com estado real do código
+
+---
+
 ## [v2.19.83] — 2026-08-19
 
 ### Configurações unificadas por abas

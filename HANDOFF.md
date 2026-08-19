@@ -1,7 +1,7 @@
 # Valore — Handoff para Novo Chat
 
 ## Data: 19/08/2026
-## Versão: v2.19.83
+## Versão: v2.19.84
 
 ## 1. CONTEXTO DO PROJETO
 - Valore é um SaaS de procurement B2B com portal comprador,
@@ -148,7 +148,7 @@
   proposal-attachments (privado), contract-files (público)
 
 ## 6. BACKLOG PRIORIZADO
-Revisado 18/08/2026. **Foco atual:** idempotência outbound e testes de integração.
+Revisado 19/08/2026. **Foco atual:** alertas de integração e módulo de recebimento.
 
 ### Em foco agora
 **A. Integração outbound — pedidos** ✅ v1 (SPEC §10.10)
@@ -168,12 +168,12 @@ Revisado 18/08/2026. **Foco atual:** idempotência outbound e testes de integra�
 - ✅ Passos 1–8 SPEC §10.8 (inbound, UI admin, monitor, docs)
 - 🟡 Outbound: pedido create/update/delete ✅; REQ inbound only; idempotência pendente
 
-### Imediato (paralelo)
-1. **Fechar enforcement de permissões** — `created_by`, `edit_own`, `view_all`, `portal.solicitante`
-2. **Unificar Configurações por abas** — Usuários + Permissões + **Integrações** (Loja de API)
-3. **Permissões do Admin pelo Master** — matriz em `/admin/tenants/[id]`
-4. **Ampliar testes**
-5. **Rotina de docs no repo**
+### Imediato (paralelo) — concluído
+1. ✅ **Enforcement de permissões** — `order.view_all`, `order.edit_own`, `quotation.edit`, `equalize.select` (v2.19.82)
+2. ✅ **Configurações unificadas por abas** — Usuários, Perfis de Acesso, Integrações; deep link `?tab=` (v2.19.83)
+3. ✅ **Permissões do Admin pelo Master** — via `/comprador/configuracoes?tab=permissoes`
+4. ✅ **Testes ampliados** — 143 testes unitários em 14 arquivos (v2.19.84)
+5. ✅ **Rotina de docs** — SPEC/HANDOFF/CLAUDE/CHANGELOG alinhados (v2.19.84)
 
 ### Médio prazo
 6. **Módulo de Recebimento** + consumo REQ/contrato
@@ -201,12 +201,14 @@ IA negociação v2, previsão de demanda, compra recorrente, API Store/ERP,
 precificação por spend, compliance, SSO/SAML, white-label
 
 ### Concluído recentemente
-- **Integração ERP — pedidos outbound** (v2.19.78): fluxo completo §10.10; status `integration_error` vs `error`; IDs `external_purchase_order_id`; monitor com reenvio inteligente; config integrações só admin
-- **Fix auth refresh + hydration** (proxy cookies, singleton Supabase, ValoreLogo, Radix mount)
-- **Política de senhas por tenant** (aba Segurança admin, expiração, histórico,
-  mesma regra comprador/solicitante/fornecedor, migration 039)
-- **Enforcement de permissões no frontend** (v2.19.76): `comprador-nav.ts`,
-  sidebar filtrada, route guard, toast `?error=sem_permissao`
+- **Testes unitários ampliados** (v2.19.84): 143 testes em 14 arquivos — integração ERP (idempotência, retry, erros, IDs externos), permissões nav, po-status, helpers
+- **Rotina de docs** (v2.19.84): SPEC/HANDOFF/CLAUDE/CHANGELOG sincronizados com o estado real do código
+- **Configurações unificadas** (v2.19.83): abas Usuários, Perfis de Acesso, Integrações no shell `/comprador/configuracoes`; Monitor abre em nova aba
+- **Enforcement de permissões no frontend** (v2.19.82): `order.view_all`, `order.edit_own` (com `created_by`), `quotation.edit`, `quotation.equalize.select`
+- **Idempotência outbound + contrato ERP** (v2.19.81): header `Idempotency-Key`; `contract.create` outbound; monitor de contratos
+- **Integração ERP — pedidos outbound** (v2.19.78–v2.19.80): fluxo completo §10.10; update/delete; status `integration_error`; IDs `external_purchase_order_id`; monitor v2
+- **Política de senhas por tenant** (v2.19.77, migration 039)
+- **Enforcement de permissões sidebar** (v2.19.76): `comprador-nav.ts`, route guard, toast `?error=sem_permissao`
 - **Indicador visual na equalização** (contrato compatível por célula fornecedor,
   tooltip com saldo, feature `contract_balance`)
 - **E2E fluxos críticos contrato/pedido**: `e2e/contract-flows.spec.ts` +

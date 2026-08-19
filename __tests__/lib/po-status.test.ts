@@ -8,8 +8,8 @@ describe("getPOStatusForSupplier", () => {
   it("mapeia processing para Pedido Aceito", () => {
     expect(getPOStatusForSupplier("processing").label).toBe("Pedido Aceito")
   })
-  it("mapeia completed para Pedido Finalizado", () => {
-    expect(getPOStatusForSupplier("completed").label).toBe("Pedido Finalizado")
+  it("mapeia completed para Pedido Aceito (fornecedor não vê status ERP)", () => {
+    expect(getPOStatusForSupplier("completed").label).toBe("Pedido Aceito")
   })
   it("mapeia cancelled para Pedido Cancelado", () => {
     expect(getPOStatusForSupplier("cancelled").label).toBe("Pedido Cancelado")
@@ -35,7 +35,30 @@ describe("getPOStatusForBuyer", () => {
   it("mapeia refused para Recusado pelo Fornecedor", () => {
     expect(getPOStatusForBuyer("refused").label).toBe("Recusado pelo Fornecedor")
   })
-  it("mapeia error para Erro Integração", () => {
-    expect(getPOStatusForBuyer("error").label).toBe("Erro Integração")
+  it("mapeia error para Pedido Reprovado", () => {
+    expect(getPOStatusForBuyer("error").label).toBe("Pedido Reprovado")
   })
+  it("mapeia completed para Pedido Criado", () => {
+    expect(getPOStatusForBuyer("completed").label).toBe("Pedido Criado")
+    expect(getPOStatusForBuyer("completed").color).toBe("green")
+  })
+  it("mapeia integration_error para Erro de Integração", () => {
+    expect(getPOStatusForBuyer("integration_error").label).toBe("Erro de Integração")
+    expect(getPOStatusForBuyer("integration_error").color).toBe("red")
+  })
+  it("mapeia cancelled para Cancelado", () => {
+    expect(getPOStatusForBuyer("cancelled").label).toBe("Cancelado")
+  })
+  it("retorna o status original para status desconhecido", () => {
+    expect(getPOStatusForBuyer("xyz").label).toBe("xyz")
+    expect(getPOStatusForBuyer("xyz").color).toBe("slate")
+  })
+})
+
+describe("getPOStatusForSupplier - integration statuses show as Pedido Aceito", () => {
+  for (const s of ["processing", "completed", "error", "integration_error"]) {
+    it(`${s} → Pedido Aceito`, () => {
+      expect(getPOStatusForSupplier(s).label).toBe("Pedido Aceito")
+    })
+  }
 })

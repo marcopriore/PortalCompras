@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.78
+## Versão atual: v2.19.84
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -354,9 +354,9 @@ Persistência em `company_settings` (`company_id`, `key`, `value`). Catálogo ti
 
 ---
 
-## 9. Backlog (estado atual — v2.19.78)
+## 9. Backlog (estado atual — v2.19.84)
 
-Revisado em 18/08/2026. **Foco atual:** consolidar **integrações outbound operacionais** (pedido ✅; requisições e demais eventos em sequência) e manter a Loja de API alinhada ao §10.
+Revisado em 19/08/2026. **Foco atual:** cobertura de testes, alertas de integração e módulo de recebimento.
 
 ### 9.0 Em foco agora
 
@@ -371,11 +371,11 @@ Revisado em 18/08/2026. **Foco atual:** consolidar **integrações outbound oper
 
 | # | Item | Status | Notas |
 |---|------|--------|-------|
-| 1 | **Fechar enforcement de permissões no frontend** | 🟡 Parcial | Sidebar + route guard ✅ (v2.19.76). Falta: `created_by` em cotações/pedidos; usar `quotation.edit`, `order.edit_own`, `order.view_all`, `quotation.view_all`; `hasPermission()` em botões críticos restantes |
-| 2 | **Unificar Configurações por abas** | 🟡 Parcial | `/comprador/configuracoes` tem Empresa, Perfil, Notificações, Aprovações, Segurança, Campos, Termos. Trazer **Usuários** e **Perfis de Acesso** para o mesmo shell; aba **Integrações** abrigará a Loja de API |
-| 3 | **Permissões do Admin configuráveis pelo Master** | ❌ Pendente | Hoje `role_permissions` só em `/comprador/configuracoes/permissoes` (admin do tenant). Master edita `tenant_features` e settings em `/admin/tenants/[id]` — falta matriz de permissões por tenant no admin |
-| 4 | **Ampliar cobertura de testes** | 🟡 Parcial | E2E críticos + `contract-flows` + unitários pontuais (`password-policy`, helpers). Falta: permissões, `created_by`, fluxos de configuração |
-| 5 | **Rotina de atualização de documentação** | ❌ Pendente | Manter `SPEC.md`, `HANDOFF.md`, `CHANGELOG.md`, `CLAUDE.md` alinhados a cada release (processo formal no repo) |
+| 1 | **Fechar enforcement de permissões no frontend** | ✅ v2.19.82 | `order.view_all`, `order.edit_own` (com `created_by`), `quotation.edit`, `quotation.equalize.select` aplicados nos botões críticos |
+| 2 | **Unificar Configurações por abas** | ✅ v2.19.83 | `/comprador/configuracoes` com abas Usuários, Perfis de Acesso, Integrações; deep link `?tab=`; rotas antigas redirecionam; Monitor abre em nova aba |
+| 3 | **Permissões do Admin configuráveis pelo Master** | ✅ | Master edita `role_permissions` via `/comprador/configuracoes?tab=permissoes` após selecionar tenant no header |
+| 4 | **Ampliar cobertura de testes** | ✅ v2.19.84 | 14 arquivos, 143 testes unitários: integração ERP (idempotência, retry, erros, IDs externos), permissões (`comprador-nav`), po-status, helpers |
+| 5 | **Rotina de atualização de documentação** | ✅ v2.19.84 | SPEC/HANDOFF/CLAUDE/CHANGELOG alinhados a cada release |
 
 ### 9.2 Médio prazo
 
@@ -405,16 +405,16 @@ Revisado em 18/08/2026. **Foco atual:** consolidar **integrações outbound oper
 | Monitor de Integração | ✅ | Reenvio condicional; admin-only config |
 | Documentação pública API | ✅ | `/docs/api` |
 | Consumo por item de REQ | ❌ | Backlog médio prazo |
-| Configurações por abas | 🟡 | Ver §9.1 item 2 |
-| Permissões Admin pelo Master | ❌ | Ver §9.1 item 3 |
-| `hasPermission()` em ações | 🟡 | Cobertura parcial |
-| `created_by` cotações/pedidos | ❌ | Campo existe; regra de edição não aplicada |
+| Configurações por abas | ✅ v2.19.83 | Abas Usuários, Perfis de Acesso, Integrações; deep link `?tab=` |
+| Permissões Admin pelo Master | ✅ | Master edita via `/comprador/configuracoes?tab=permissoes` |
+| `hasPermission()` em ações | ✅ v2.19.82 | Botões críticos cobertos |
+| `created_by` cotações/pedidos | ✅ v2.19.82 | `order.edit_own` lê `created_by` na listagem e detalhe |
 | Filtro `requester_id` (solicitante) | ✅ | Listagem, detalhe e edição + RLS |
 | `portal.solicitante` por role | ❌ | Chave na matriz; login usa só `profile_type` |
 | Sidebar dinâmica por permissões | ✅ | v2.19.76 |
-| Cobertura de testes | 🟡 | Ver §9.1 item 4 |
+| Cobertura de testes | ✅ v2.19.84 | 143 testes unitários (14 arquivos) |
 | Política de senhas | ✅ | v2.19.77, migration 039 |
-| Rotina de docs | ❌ | Ver §9.1 item 5 |
+| Rotina de docs | ✅ v2.19.84 | Alinhada nesta revisão |
 
 ### 9.5 Escala (6–12 meses)
 
