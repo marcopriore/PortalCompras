@@ -85,6 +85,7 @@ const ACTION_LABELS: Record<string, string> = {
   "purchase_order.create": "Pedido criado",
   "purchase_order.update": "Pedido atualizado",
   "purchase_order.delete": "Pedido cancelado",
+  "contract.create": "Contrato comercial criado",
   "requisition.created": "Requisição criada",
   "requisition.updated": "Requisição atualizada",
   "requisition.approved": "Requisição aprovada",

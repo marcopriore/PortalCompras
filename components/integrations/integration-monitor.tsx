@@ -209,18 +209,23 @@ export function IntegrationMonitor({
     setRetryingLogId(log.id)
     try {
       const isPurchaseOrder = log.action.startsWith("purchase_order.")
+      const isContract = log.action.startsWith("contract.")
       const poOperation = outboundActionToPurchaseOrderOperation(log.action)
       const res = await fetch(
         isPurchaseOrder
           ? `/api/purchase-orders/${log.entity_id}/erp-integration`
-          : "/api/integrations/outbound",
+          : isContract
+            ? `/api/contracts/${log.entity_id}/erp-integration`
+            : "/api/integrations/outbound",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
             isPurchaseOrder
               ? { source: "monitor", operation: poOperation ?? "create" }
-              : { action: log.action, entity_id: log.entity_id, source: "monitor" },
+              : isContract
+                ? { source: "monitor" }
+                : { action: log.action, entity_id: log.entity_id, source: "monitor" },
           ),
         },
       )

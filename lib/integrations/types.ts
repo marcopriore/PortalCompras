@@ -3,6 +3,7 @@ export const OUTBOUND_INTEGRATION_ACTIONS = [
   "purchase_order.create",
   "purchase_order.update",
   "purchase_order.delete",
+  "contract.create",
   "requisition.created",
   "requisition.updated",
   "requisition.approved",

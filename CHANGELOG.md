@@ -1,5 +1,22 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.81] — 2026-08-19
+
+### Integração ERP — contratos outbound + idempotência
+- `contract.create` no aceite do fornecedor → criação de contrato comercial no ERP
+- Orquestrador `integrateContractWithErp` + API `POST /api/contracts/[id]/erp-integration` (monitor)
+- Resposta ERP: `external_contract_id` (fallback `external_code`) → `contracts.erp_code`
+- Contrato permanece ativo no Valore se integração falhar; reenvio pelo monitor
+- Idempotência outbound: header `Idempotency-Key` estável por tenant/ação/entidade
+- SPEC §10.10 (idempotência) e §10.12 (contratos)
+
+### Arquivos novos
+- `lib/integrations/integrate-contract-with-erp.ts`, `outbound-idempotency.ts`
+- `lib/api/external/mappers/contract.ts`
+- `app/api/contracts/[id]/erp-integration/route.ts`
+
+---
+
 ## [v2.19.80] — 2026-08-18
 
 ### Integração ERP — pedidos update/delete + edição pós-integração

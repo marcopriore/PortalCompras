@@ -10,6 +10,7 @@ export const ERP_RESPONSE_EXTERNAL_ID_KEYS: Partial<
 > = {
   "purchase_order.create": ["external_purchase_order_id", "external_code"],
   "purchase_order.update": ["external_purchase_order_id", "external_code"],
+  "contract.create": ["external_contract_id", "external_code"],
   "requisition.created": ["external_requisition_id", "external_code"],
   "requisition.updated": ["external_requisition_id", "external_code"],
   "requisition.approved": ["external_requisition_id", "external_code"],

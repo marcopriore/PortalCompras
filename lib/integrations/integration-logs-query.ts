@@ -185,6 +185,14 @@ export async function fetchOutboundLogs(
     ),
   ]
 
+  const contractIds = [
+    ...new Set(
+      logs
+        .filter((log) => log.entity === "contracts" && log.entity_id)
+        .map((log) => log.entity_id as string),
+    ),
+  ]
+
   const purchaseOrderStatusById = new Map<string, string>()
   if (purchaseOrderIds.length > 0) {
     let poQuery = service
@@ -226,6 +234,28 @@ export async function fetchOutboundLogs(
     }
   }
 
+  const contractMetaById = new Map<string, { status: string; erp_code: string | null }>()
+  if (contractIds.length > 0) {
+    let contractQuery = service
+      .from("contracts")
+      .select("id, status, erp_code")
+      .in("id", contractIds)
+
+    if (companyId) {
+      contractQuery = contractQuery.eq("company_id", companyId)
+    }
+
+    const { data: contracts, error: contractError } = await contractQuery
+    if (contractError) throw contractError
+
+    for (const contract of contracts ?? []) {
+      contractMetaById.set(String(contract.id), {
+        status: String(contract.status),
+        erp_code: contract.erp_code != null ? String(contract.erp_code) : null,
+      })
+    }
+  }
+
   for (const log of logs) {
     if (log.entity === "purchase_orders" && log.entity_id) {
       log.entity_status = purchaseOrderStatusById.get(log.entity_id) ?? null
@@ -234,6 +264,11 @@ export async function fetchOutboundLogs(
       const meta = requisitionMetaById.get(log.entity_id)
       log.entity_status = meta?.status ?? null
       log.entity_external_code = meta?.external_code ?? null
+    }
+    if (log.entity === "contracts" && log.entity_id) {
+      const meta = contractMetaById.get(log.entity_id)
+      log.entity_status = meta?.status ?? null
+      log.entity_external_code = meta?.erp_code ?? null
     }
     log.retry_eligible = isOutboundRetryEligible({
       action: log.action,

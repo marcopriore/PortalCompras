@@ -365,6 +365,7 @@ Revisado em 18/08/2026. **Foco atual:** consolidar **integrações outbound oper
 | **A** | **Integração outbound — pedidos (ERP)** | ✅ v1 | Aceite fornecedor → `processing` → ERP → `completed` / `error` / `integration_error`. Ver **§10.10** |
 | **B** | **Integração — requisições (inbound)** | ✅ v1 | ERP → Valore via `POST /api/v1/requisitions`. Outbound REQ **não** disparado (infra pronta). Ver **§10.11** |
 | **C** | **Integração outbound — pedido update/delete** | ✅ v2.19.80 | Editar `completed` → `processing` + `purchase_order.update`; cancelar só após ERP OK. Ver **§10.10** |
+| **D** | **Integração outbound — contratos (ERP)** | ✅ v2.19.81 | Aceite fornecedor → `contract.create`; idempotência outbound. Ver **§10.12** |
 
 ### 9.1 Prioridade imediata (paralelo — não bloqueia integrações)
 
@@ -796,8 +797,57 @@ Reenvio cancelamento com falha: Monitor → `operation: "delete"`.
 
 #### Próxima extensão
 
-1. Idempotência outbound (`Idempotency-Key` + dedup no ERP)
-2. Requisições outbound (se necessário no futuro — infra já no código)
+1. Requisições outbound (se necessário no futuro — infra já no código)
+
+#### Idempotência outbound
+
+Todas as chamadas HTTP ao ERP incluem o header `Idempotency-Key`, gerado de forma estável por `(company_id, action, entity_id)` via SHA-256 (`lib/integrations/outbound-idempotency.ts`). Reenvios do monitor reutilizam a mesma chave para o ERP deduplicar (ex.: número de pedido já existente no SAP).
+
+---
+
+### 10.12 Fluxo operacional — integração de contratos (ERP)
+
+**Implementado em v2.19.81.**
+
+#### Gatilho
+
+| Evento | Dispara integração? |
+|--------|---------------------|
+| Criar / editar contrato (rascunho) | **Não** |
+| Enviar para aceite (`pending_acceptance`) | **Não** |
+| **Aceite do fornecedor** | **Sim** → `integrateContractWithErp` em `/api/contracts/[id]/accept` |
+| Reenvio pelo monitor | Admin → `POST /api/contracts/[id]/erp-integration` `{ source: "monitor" }` |
+
+Orquestração: `lib/integrations/integrate-contract-with-erp.ts` → `dispatchOutboundIntegration` → log em `integration_delivery_logs`.
+
+O contrato permanece **ativo** no Valore mesmo se a integração ERP falhar; falhas ficam no log outbound e podem ser reenviadas pelo monitor.
+
+#### Resposta esperada do ERP (`contract.create`)
+
+```json
+{
+  "external_contract_id": "CTR-ERP-001"
+}
+```
+
+Fallback aceito: `external_code` (legado). Gravado em `contracts.erp_code`.
+
+#### Reenvio (monitor)
+
+| Elegível quando |
+|-----------------|
+| Log com `success: false` |
+| Log com `success: true` mas `contracts.erp_code` ainda vazio (ERP OK, Valore não persistiu) |
+| **Não** reenvia se ERP OK + `erp_code` preenchido |
+
+#### Arquivos principais
+
+| Arquivo | Função |
+|---------|--------|
+| `lib/integrations/integrate-contract-with-erp.ts` | Orquestra payload + persistência `erp_code` |
+| `lib/api/external/mappers/contract.ts` | Mapper do payload outbound |
+| `app/api/contracts/[id]/accept/route.ts` | Gatilho no aceite |
+| `app/api/contracts/[id]/erp-integration/route.ts` | Reenvio pelo monitor |
 
 ---
 
@@ -820,4 +870,4 @@ Código em `lib/integrations/integrate-requisition-with-erp.ts` e tipos `requisi
 
 ---
 
-*Última revisão: 18/08/2026 (v2.19.80 — PO update/delete; REQ inbound only).*
+*Última revisão: 18/08/2026 (v2.19.81 — idempotência outbound; contract.create).*

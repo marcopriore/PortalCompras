@@ -13,6 +13,7 @@ import {
   type RequisitionItemRow,
 } from "@/lib/api/external/mappers/requisition"
 import { dispatchOutboundIntegration } from "@/lib/integrations/dispatch"
+import { integrateContractWithErp } from "@/lib/integrations/integrate-contract-with-erp"
 import type { OutboundIntegrationAction } from "@/lib/integrations/types"
 import type { RequisitionOutboundPayload } from "@/lib/integrations/requisition-outbound"
 
@@ -137,6 +138,18 @@ export async function triggerOutboundIntegration(
       dispatched: !result.skipped,
       success: result.success,
       externalCode: result.externalCode ?? null,
+      errorMessage: result.errorMessage,
+    }
+  }
+
+  if (action === "contract.create") {
+    const result = await integrateContractWithErp(companyId, entityId, { force: true })
+
+    return {
+      skipped: result.skipped,
+      dispatched: !result.skipped,
+      success: result.success,
+      externalCode: result.erpCode ?? null,
       errorMessage: result.errorMessage,
     }
   }

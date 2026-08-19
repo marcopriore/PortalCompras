@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.80
+- Versão atual: v2.19.81
 
 ---
 
@@ -86,6 +86,8 @@
 ### Integrações ERP (api_integrations)
 - **Spec operacional:** `SPEC.md` §10.10 — referência única de gatilhos, status e reenvio
 - **Gatilho pedido:** somente aceite do fornecedor → `integratePurchaseOrderWithErp` via `/api/purchase-orders/[id]/erp-integration`
+- **Gatilho contrato:** aceite do fornecedor → `integrateContractWithErp` em `/api/contracts/[id]/accept`; reenvio monitor via `/api/contracts/[id]/erp-integration`
+- **Idempotência:** header `Idempotency-Key` em `dispatch.ts` (`lib/integrations/outbound-idempotency.ts`)
 - **Status pedido:** `processing` → `completed` | `error` (ERP reprovou) | `integration_error` (Valore não concluiu)
 - **IDs externos ERP:** resposta JSON usa `external_purchase_order_id` (fallback `external_code`); parser em `lib/integrations/external-id-response.ts`
 - **Unicidade:** `external_code` único por `(company_id)` em cada tabela — não confundir entre tenants
@@ -312,6 +314,7 @@
 | v2.19.72 | Consumo de saldo de contrato via pedido (Fase 1), notificação fornecedor→comprador, item contrato sequencial |
 | v2.19.73 | Equalização com vínculo automático a contrato (Fase 2), premium contract_balance, configuração do aviso |
 | v2.19.75 | Configurações técnicas por tenant (admin), proxy cooldown background tasks, hooks useTenantSettings |
+| v2.19.81 | Idempotência outbound; contract.create no aceite fornecedor; SPEC §10.12 |
 | v2.19.80 | PO update/delete outbound, edição pós-integração, REQ inbound only, SPEC §10.10/§10.11 |
 | v2.19.78 | Integração ERP pedidos outbound operacional, monitor v2, status integration_error, SPEC §10.10 |
 

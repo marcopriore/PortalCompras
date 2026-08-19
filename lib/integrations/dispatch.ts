@@ -6,6 +6,7 @@ import type {
 } from "@/lib/integrations/types"
 import { parseExternalIdFromErpResponse } from "@/lib/integrations/external-id-response"
 import { formatErpHttpFailure } from "@/lib/integrations/erp-errors"
+import { buildOutboundIdempotencyKey } from "@/lib/integrations/outbound-idempotency"
 
 type DispatchInput = {
   companyId: string
@@ -103,6 +104,11 @@ export async function dispatchOutboundIntegration(
   const endpoint = endpoints[0] as IntegrationEndpointRow
   const method = actionToHttpMethod(input.action)
   const url = endpoint.base_url.replace(/\/$/, "")
+  const idempotencyKey = buildOutboundIdempotencyKey({
+    companyId: input.companyId,
+    action: input.action,
+    entityId: input.entityId,
+  })
   const controller = new AbortController()
   const timeout = windowOrDefaultTimeout(endpoint.timeout_ms)
 
@@ -117,7 +123,10 @@ export async function dispatchOutboundIntegration(
   try {
     const response = await fetch(url, {
       method,
-      headers: buildAuthHeaders(endpoint),
+      headers: {
+        ...buildAuthHeaders(endpoint),
+        "Idempotency-Key": idempotencyKey,
+      },
       body: JSON.stringify({
         action: input.action,
         entity: input.entity ?? null,

@@ -11,6 +11,20 @@ const PURCHASE_ORDER_OUTBOUND_ACTIONS = new Set([
   "purchase_order.delete",
 ])
 
+const CONTRACT_OUTBOUND_ACTIONS = new Set(["contract.create"])
+
+export function isContractOutboundLog(log: {
+  action: string
+  entity: string | null
+  entity_id: string | null
+}): boolean {
+  return (
+    log.entity === "contracts" &&
+    Boolean(log.entity_id) &&
+    CONTRACT_OUTBOUND_ACTIONS.has(log.action)
+  )
+}
+
 export function isPurchaseOrderOutboundLog(log: {
   action: string
   entity: string | null
@@ -57,6 +71,14 @@ function isPurchaseOrderEventRetryEligible(log: {
   return false
 }
 
+function isContractCreateRetryEligible(log: {
+  success: boolean
+  entity_external_code?: string | null
+}): boolean {
+  if (!log.success) return true
+  return !log.entity_external_code?.trim()
+}
+
 /**
  * Reenvio no monitor só quando ainda há pendência real.
  * ERP 200 + entidade sincronizada no Valore → não reenvia (evita duplicidade no ERP).
@@ -74,6 +96,12 @@ export function isOutboundRetryEligible(log: {
       return isPurchaseOrderCreateRetryEligible(log)
     }
     return isPurchaseOrderEventRetryEligible(log)
+  }
+
+  if (isContractOutboundLog(log)) {
+    if (log.action === "contract.create") {
+      return isContractCreateRetryEligible(log)
+    }
   }
 
   return false

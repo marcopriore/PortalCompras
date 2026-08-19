@@ -8,6 +8,7 @@ import {
   templateContractAccepted,
   templateContractRefused,
 } from "@/lib/email/templates"
+import { integrateContractWithErp } from "@/lib/integrations/integrate-contract-with-erp"
 
 async function getAuthedSupabase() {
   const cookieStore = await cookies()
@@ -166,6 +167,18 @@ export async function POST(request: Request, context: RouteCtx) {
 
       if (updErr) {
         return NextResponse.json({ error: updErr.message }, { status: 500 })
+      }
+
+      try {
+        const integration = await integrateContractWithErp(companyId, contractId)
+        if (!integration.success && !integration.skipped) {
+          console.error(
+            "[contract accept] ERP integration failed:",
+            integration.errorMessage,
+          )
+        }
+      } catch (integrationErr) {
+        console.error("[contract accept] ERP integration:", integrationErr)
       }
     } else {
       const { error: updErr } = await service
