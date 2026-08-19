@@ -53,6 +53,70 @@ type ImportPreviewRow = {
   observations: string | null
 }
 
+type CatalogItemRow = {
+  code: string
+  short_description: string
+  unit_of_measure: string | null
+  commodity_group: string | null
+  status: string
+}
+
+const CATALOG_BATCH_SIZE = 100
+
+async function loadCatalogByCodes(
+  companyId: string,
+  codes: string[],
+): Promise<Map<string, CatalogItemRow>> {
+  const catalogMap = new Map<string, CatalogItemRow>()
+  if (codes.length === 0) return catalogMap
+
+  const supabase = createClient()
+  for (let i = 0; i < codes.length; i += CATALOG_BATCH_SIZE) {
+    const chunk = codes.slice(i, i + CATALOG_BATCH_SIZE)
+    const { data } = await supabase
+      .from("items")
+      .select("code, short_description, unit_of_measure, commodity_group, status")
+      .eq("company_id", companyId)
+      .in("code", chunk)
+
+    for (const item of (data ?? []) as CatalogItemRow[]) {
+      catalogMap.set(item.code, item)
+    }
+  }
+
+  return catalogMap
+}
+
+function validateRowsAgainstCatalog(
+  rows: ImportPreviewRow[],
+  catalogMap: Map<string, CatalogItemRow>,
+  errors: string[],
+): ImportPreviewRow[] {
+  return rows.map((row) => {
+    const catalogItem = catalogMap.get(row.materialCode)
+    if (!catalogItem) {
+      errors.push(
+        `Linha ${row.rowNumber}: codigo_item "${row.materialCode}" não encontrado no catálogo.`,
+      )
+      return row
+    }
+    if (catalogItem.status !== "active") {
+      errors.push(
+        `Linha ${row.rowNumber}: item "${row.materialCode}" está inativo no catálogo.`,
+      )
+      return row
+    }
+
+    return {
+      ...row,
+      materialDescription:
+        row.materialDescription.trim() || catalogItem.short_description,
+      unitOfMeasure: row.unitOfMeasure?.trim() || catalogItem.unit_of_measure || null,
+      commodityGroup: row.commodityGroup?.trim() || catalogItem.commodity_group || null,
+    }
+  })
+}
+
 function parsePriority(raw: unknown): Priority | null {
   const s = raw == null ? "" : String(raw).trim().toLowerCase()
   if (!s) return null
@@ -219,6 +283,11 @@ export function RequisicoesImportExcelDialog({
   }
 
   async function handleFileChange(file: File) {
+    if (!companyId) {
+      toast.error("Empresa não identificada.")
+      return
+    }
+
     setImportErrors([])
     setImportPreview([])
 
@@ -282,8 +351,6 @@ export function RequisicoesImportExcelDialog({
       if (!neededByYmd) errors.push(`Linha ${rowNumber}: data_necessidade deve ser YYYY-MM-DD.`)
       if (!priority) errors.push(`Linha ${rowNumber}: prioridade deve ser normal|urgent|critical.`)
       if (!materialCode) errors.push(`Linha ${rowNumber}: codigo_item obrigatório.`)
-      if (!materialDescription)
-        errors.push(`Linha ${rowNumber}: descricao_item obrigatória.`)
       if (!Number.isFinite(quantity) || quantity <= 0)
         errors.push(`Linha ${rowNumber}: quantidade deve ser > 0.`)
 
@@ -327,7 +394,11 @@ export function RequisicoesImportExcelDialog({
       })
     })
 
-    setImportPreview(rows)
+    const uniqueCodes = [...new Set(rows.map((r) => r.materialCode).filter(Boolean))]
+    const catalogMap = await loadCatalogByCodes(companyId, uniqueCodes)
+    const validatedRows = validateRowsAgainstCatalog(rows, catalogMap, errors)
+
+    setImportPreview(validatedRows)
     setImportErrors(errors)
     setImportStep("preview")
   }
@@ -589,7 +660,8 @@ export function RequisicoesImportExcelDialog({
               </Button>
               <Separator />
               <span className="text-xs text-muted-foreground">
-                Use data no formato <code>YYYY-MM-DD</code>.
+                Use data no formato <code>YYYY-MM-DD</code>. O{" "}
+                <code>codigo_item</code> deve existir e estar ativo no catálogo.
               </span>
             </div>
 
@@ -657,6 +729,7 @@ export function RequisicoesImportExcelDialog({
                     <TableHead>Cód. Requisição</TableHead>
                     <TableHead>Título</TableHead>
                     <TableHead>Cód. Item</TableHead>
+                    <TableHead>Descrição</TableHead>
                     <TableHead>Qtd</TableHead>
                     <TableHead>Prioridade</TableHead>
                     <TableHead>Data</TableHead>
@@ -668,6 +741,7 @@ export function RequisicoesImportExcelDialog({
                       <TableCell>{row.groupKey}</TableCell>
                       <TableCell className="max-w-60 truncate">{row.requisitionTitle}</TableCell>
                       <TableCell>{row.materialCode}</TableCell>
+                      <TableCell className="max-w-48 truncate">{row.materialDescription}</TableCell>
                       <TableCell>{row.quantity}</TableCell>
                       <TableCell>{row.priority}</TableCell>
                       <TableCell>{row.neededByYmd}</TableCell>
@@ -675,7 +749,7 @@ export function RequisicoesImportExcelDialog({
                   ))}
                   {importPreview.length > 10 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-muted-foreground text-xs">
+                      <TableCell colSpan={7} className="text-muted-foreground text-xs">
                         ...e mais {importPreview.length - 10} linha(s)
                       </TableCell>
                     </TableRow>
