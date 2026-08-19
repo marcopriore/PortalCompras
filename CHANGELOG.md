@@ -1,5 +1,17 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.83] — 2026-08-19
+
+### Configurações unificadas por abas
+
+- Abas **Usuários**, **Perfis de Acesso** e **Integrações** adicionadas ao shell `/comprador/configuracoes` (visíveis para admin)
+- `/configuracoes/usuarios` e `/configuracoes/permissoes` agora redirecionam para `?tab=usuarios` / `?tab=permissoes`
+- Deep link por `?tab=...` na URL — links externos chegam direto na aba correta
+- Botões redundantes do cabeçalho (Perfis de Acesso, Monitor de Integração, Documentação API) removidos
+- Aba Integrações: botão para Monitor de Integração + botão para Documentação da API
+
+---
+
 ## [v2.19.82] — 2026-08-19
 
 ### Enforcement de permissões no frontend

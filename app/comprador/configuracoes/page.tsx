@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
+import { ConfiguracoesUsuariosTab } from "@/components/comprador/configuracoes-usuarios-tab"
+import { ConfiguracoesPermissoesTab } from "@/components/comprador/configuracoes-permissoes-tab"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -56,8 +58,12 @@ import {
   Upload,
   Settings2,
   User,
+  Users,
   Workflow,
   Radio,
+  ShieldCheck,
+  Zap,
+  ExternalLink,
 } from "lucide-react"
 
 import {
@@ -289,6 +295,14 @@ type ActiveTab =
   | "seguranca"
   | "campos"
   | "termos"
+  | "usuarios"
+  | "permissoes"
+  | "integracoes"
+
+const VALID_TABS = new Set<ActiveTab>([
+  "empresa", "perfil", "notificacoes", "aprovacoes",
+  "seguranca", "campos", "termos", "usuarios", "permissoes", "integracoes",
+])
 
 type SupplierTerm = {
   id: string
@@ -364,8 +378,20 @@ function getAvatarColor(name: string): string {
 
 export default function ConfiguracoesPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
-  const [activeTab, setActiveTab] = React.useState<ActiveTab>("empresa")
+
+  const initialTab = React.useMemo<ActiveTab>(() => {
+    const t = searchParams.get("tab") as ActiveTab | null
+    return t && VALID_TABS.has(t) ? t : "empresa"
+  }, [searchParams])
+
+  const [activeTab, setActiveTab] = React.useState<ActiveTab>(initialTab)
+
+  React.useEffect(() => {
+    const t = searchParams.get("tab") as ActiveTab | null
+    if (t && VALID_TABS.has(t)) setActiveTab(t)
+  }, [searchParams])
 
   const canManageCompany = Boolean(isSuperAdmin || hasRole("admin"))
   const canManageApprovals = canManageCompany
@@ -1713,44 +1739,6 @@ export default function ConfiguracoesPage() {
         <p className="text-muted-foreground">
           Gerencie as configurações do sistema de compras
         </p>
-        {canManageCompany && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push("/comprador/configuracoes/permissoes")}
-            >
-              <Shield className="mr-2 h-4 w-4" />
-              Perfis de Acesso
-            </Button>
-            {hasFeature("api_integrations") && (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    window.open(
-                      "/comprador/integracoes/monitor",
-                      "_blank",
-                      "noopener,noreferrer",
-                    )
-                  }
-                >
-                  <Radio className="mr-2 h-4 w-4" />
-                  Monitor de Integração
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.open("/docs/api", "_blank")}
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  Documentação API
-                </Button>
-              </>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Abas (mesmo padrão visual do detalhe do tenant) */}
@@ -1764,6 +1752,11 @@ export default function ConfiguracoesPage() {
             ["seguranca", "Segurança", Shield],
             ["campos", "Configuração de Campos", Settings2],
             ["termos", "Termos de Fornecimento", FileText],
+            ...(canManageCompany ? [
+              ["usuarios", "Usuários", Users],
+              ["permissoes", "Perfis de Acesso", ShieldCheck],
+              ["integracoes", "Integrações", Zap],
+            ] as const : []),
           ] as const
         ).map(([key, label, Icon]) => (
           <button
@@ -3202,6 +3195,54 @@ export default function ConfiguracoesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ABA USUÁRIOS */}
+      {activeTab === "usuarios" && canManageCompany && (
+        <ConfiguracoesUsuariosTab />
+      )}
+
+      {/* ABA PERFIS DE ACESSO */}
+      {activeTab === "permissoes" && canManageCompany && (
+        <ConfiguracoesPermissoesTab />
+      )}
+
+      {/* ABA INTEGRAÇÕES */}
+      {activeTab === "integracoes" && canManageCompany && (
+        <div className="grid gap-6 max-w-2xl">
+          <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Monitor de Integração</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Visualize e reprocesse logs de integração com o ERP (outbound e inbound).
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push("/comprador/integracoes/monitor")}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <Zap className="h-4 w-4" />
+              Abrir Monitor de Integração
+            </button>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Loja de API</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Documentação pública das APIs disponíveis para integração com sistemas externos.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.open("/docs/api", "_blank")}
+              className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Ver Documentação da API
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
