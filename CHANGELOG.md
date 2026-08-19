@@ -1,5 +1,16 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.82] — 2026-08-19
+
+### Enforcement de permissões no frontend
+
+- **Pedidos (listagem):** sem `order.view_all` → filtra por `created_by = userId`; comprador vê apenas os próprios pedidos
+- **Pedidos (detalhe):** `created_by` lido do banco; botões Confirmar, Editar, Cancelar, Reenviar exigem `order.edit` ou `order.edit_own` (próprios)
+- **Cotações (detalhe):** botões Editar e Enviar exigem `quotation.edit`; botão Equalizar exige `quotation.equalize.view` ou `quotation.equalize.select`
+- **Equalização:** `isReadOnly` passa a incluir falta de `quotation.equalize.select`; sem ela, seleção de itens, "Selecionar Todos", Criar Pedido e Finalizar Cotação ficam desativados
+
+---
+
 ## [v2.19.81] — 2026-08-19
 
 ### Integração ERP — contratos outbound + idempotência

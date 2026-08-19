@@ -7,6 +7,7 @@ import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -97,6 +98,7 @@ type PurchaseOrder = {
   observations: string | null
   created_at: string
   updated_at: string | null
+  created_by: string | null
 }
 
 type PurchaseOrderItem = {
@@ -477,6 +479,7 @@ export default function PurchaseOrderDetailPage({
 }) {
   const router = useRouter()
   const { companyId, userId, loading: userLoading } = useUser()
+  const { hasPermission } = usePermissions()
   const { id } = React.use(params)
 
   const [order, setOrder] = React.useState<PurchaseOrder | null>(null)
@@ -1359,6 +1362,11 @@ export default function PurchaseOrderDetailPage({
   const erpCode = order.external_code ?? order.erp_code ?? null
   const integratedOrder = Boolean(erpCode?.trim())
 
+  // Permissão de edição: order.edit = edita qualquer pedido; order.edit_own = só os que criou
+  const canEditOrder =
+    hasPermission("order.edit") ||
+    (hasPermission("order.edit_own") && order.created_by === userId)
+
   const totalItemsCount = items.length
 
   const displayedOrderTotal = isEditing
@@ -1384,7 +1392,7 @@ export default function PurchaseOrderDetailPage({
             ) : null}
             {statusDisplay.label}
           </span>
-          {order.status === "draft" && !integratedOrder && (
+          {order.status === "draft" && !integratedOrder && canEditOrder && (
             <>
               <Button
                 variant="default"
@@ -1428,7 +1436,7 @@ export default function PurchaseOrderDetailPage({
               </AlertDialog>
             </>
           )}
-          {order.status === "draft" && integratedOrder && (
+          {order.status === "draft" && integratedOrder && canEditOrder && (
             <>
               {!isEditing ? (
                 <>
@@ -1506,7 +1514,7 @@ export default function PurchaseOrderDetailPage({
               )}
             </>
           )}
-          {order.status === "refused" && (
+          {order.status === "refused" && canEditOrder && (
             <>
               <AlertDialog open={cancelRefusedOpen} onOpenChange={setCancelRefusedOpen}>
                 <AlertDialogContent>
@@ -1583,7 +1591,7 @@ export default function PurchaseOrderDetailPage({
               )}
             </>
           )}
-          {order.status === "error" && (
+          {order.status === "error" && canEditOrder && (
             <>
               {!isEditing ? (
                 <>
@@ -1630,7 +1638,7 @@ export default function PurchaseOrderDetailPage({
               )}
             </>
           )}
-          {order.status === "completed" && integratedOrder && (
+          {order.status === "completed" && integratedOrder && canEditOrder && (
             <>
               {!isEditing ? (
                 <>

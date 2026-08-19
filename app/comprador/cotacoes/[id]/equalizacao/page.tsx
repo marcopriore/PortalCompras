@@ -619,7 +619,8 @@ export default function EqualizacaoPage({
     selectedRound != null &&
     maxRoundNumber != null &&
     selectedRound.round_number === maxRoundNumber
-  const isReadOnly = quotation?.status === "completed" || !isLastRound
+  const canSelect = hasPermission("quotation.equalize.select")
+  const isReadOnly = quotation?.status === "completed" || !isLastRound || !canSelect
 
   const hasSelection = Object.values(itemSelections).filter(Boolean).length > 0
 

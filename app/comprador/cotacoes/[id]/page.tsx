@@ -474,7 +474,8 @@ export default function QuotationDetailsPage({
             )
           )}
           {quotation &&
-            ['waiting', 'analysis', 'completed'].includes(quotation.status) && (
+            ['waiting', 'analysis', 'completed'].includes(quotation.status) &&
+            (hasPermission('quotation.equalize.view') || hasPermission('quotation.equalize.select')) && (
             <Button
               type="button"
               variant="default"
@@ -484,7 +485,7 @@ export default function QuotationDetailsPage({
               Equalizar Propostas
             </Button>
           )}
-          {quotation && (quotation.status === 'draft' || quotation.status === 'rejected') && (
+          {quotation && (quotation.status === 'draft' || quotation.status === 'rejected') && hasPermission('quotation.edit') && (
             <>
               <Button
                 type="button"

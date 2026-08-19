@@ -6,6 +6,7 @@ import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { LastUpdated } from "@/components/ui/last-updated"
@@ -56,6 +57,7 @@ type PurchaseOrder = {
   erp_error_message: string | null
   created_at: string
   updated_at: string | null
+  created_by: string | null
   purchase_order_items: { id: string }[]
 }
 
@@ -73,7 +75,8 @@ const money = new Intl.NumberFormat("pt-BR", {
 
 export default function PedidosPage() {
   const router = useRouter()
-  const { companyId, loading: userLoading } = useUser()
+  const { companyId, userId, loading: userLoading } = useUser()
+  const { hasPermission, loading: permLoading } = usePermissions()
 
   const [orders, setOrders] = React.useState<PurchaseOrder[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -91,26 +94,30 @@ export default function PedidosPage() {
 
   const loadOrders = React.useCallback(
     async (silent = false) => {
-      if (userLoading || !companyId) return
+      if (userLoading || permLoading || !companyId) return
       const started = companyId
       const stillHere = () => companyIdRef.current === started
 
       if (!silent) setLoading(true)
       const supabase = createClient()
-      const { data } = await supabase
+      const viewAll = hasPermission("order.view_all")
+      let query = supabase
         .from("purchase_orders")
         .select(
-          "id, code, supplier_name, supplier_cnpj, total_price, delivery_days, payment_condition, quotation_code, status, erp_error_message, created_at, updated_at, purchase_order_items(id)",
+          "id, code, supplier_name, supplier_cnpj, total_price, delivery_days, payment_condition, quotation_code, status, erp_error_message, created_at, updated_at, created_by, purchase_order_items(id)",
         )
         .eq("company_id", companyId)
-        .order("created_at", { ascending: false })
+      if (!viewAll && userId) {
+        query = query.eq("created_by", userId)
+      }
+      const { data } = await query.order("created_at", { ascending: false })
 
       if (!stillHere()) return
       setOrders(((data as unknown) as PurchaseOrder[]) ?? [])
       setLastUpdated(new Date())
       if (!silent) setLoading(false)
     },
-    [companyId, userLoading],
+    [companyId, userId, userLoading, permLoading, hasPermission],
   )
 
   React.useEffect(() => {

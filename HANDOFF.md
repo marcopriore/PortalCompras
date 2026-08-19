@@ -1,7 +1,7 @@
 # Valore — Handoff para Novo Chat
 
 ## Data: 19/08/2026
-## Versão: v2.19.81
+## Versão: v2.19.82
 
 ## 1. CONTEXTO DO PROJETO
 - Valore é um SaaS de procurement B2B com portal comprador,
