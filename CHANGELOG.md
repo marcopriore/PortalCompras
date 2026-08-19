@@ -1,5 +1,20 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.85] — 2026-08-19
+
+### Importação massiva de requisições (Excel)
+
+- Wizard **Importar Excel** na listagem `/comprador/requisicoes` (permissão `import.excel`)
+- Template com agrupamento por `codigo_requisicao`; validação inline; preview antes de importar
+- Cria `requisitions` + `requisition_items` em lote; fluxo de aprovação automática alinhado à criação manual
+- Log em `item_import_logs`; audit `requisition.created`
+
+### Fix
+
+- Aba Integrações: Monitor de Integração abre em nova aba (`window.open`)
+
+---
+
 ## [v2.19.84] — 2026-08-19
 
 ### Testes unitários e documentação

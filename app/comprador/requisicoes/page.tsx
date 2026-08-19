@@ -9,6 +9,8 @@ import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 
+import { RequisicoesImportExcelDialog } from "@/components/comprador/requisicoes-import-excel-dialog"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -96,12 +98,12 @@ export default function RequisicoesPage() {
     setPage(1)
   }, [search, status, priority, dateFrom, dateTo])
 
-  React.useEffect(() => {
+  const loadRequisitions = React.useCallback(async () => {
     if (userLoading || !companyId) return
-    const supabase = createClient()
 
-    const run = async () => {
-      setLoading(true)
+    const supabase = createClient()
+    setLoading(true)
+    try {
       const { data } = await supabase
         .from("requisitions")
         .select("*, requisition_items(id)")
@@ -109,11 +111,14 @@ export default function RequisicoesPage() {
         .order("created_at", { ascending: false })
 
       setRequisitions(((data ?? []) as unknown) as Requisition[])
+    } finally {
       setLoading(false)
     }
-
-    run()
   }, [companyId, userLoading])
+
+  React.useEffect(() => {
+    void loadRequisitions()
+  }, [loadRequisitions])
 
   const hasActiveFilters =
     !!search.trim() || status.length > 0 || priority.length > 0 || !!dateFrom || !!dateTo
@@ -175,14 +180,23 @@ export default function RequisicoesPage() {
           </p>
         </div>
 
-        <Button
-          onClick={() => router.push("/comprador/requisicoes/nova")}
-          disabled={!hasPermission("requisition.create.buyer")}
-          title={!hasPermission("requisition.create.buyer") ? "Sem permissão" : undefined}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          + Nova Requisição
-        </Button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <RequisicoesImportExcelDialog
+            canImportExcel={hasPermission("import.excel")}
+            onImported={() => loadRequisitions()}
+          />
+
+          <Button
+            onClick={() => router.push("/comprador/requisicoes/nova")}
+            disabled={!hasPermission("requisition.create.buyer")}
+            title={
+              !hasPermission("requisition.create.buyer") ? "Sem permissão" : undefined
+            }
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            + Nova Requisição
+          </Button>
+        </div>
       </div>
 
       <div

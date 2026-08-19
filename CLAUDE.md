@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.84
+- Versão atual: v2.19.85
 
 ---
 
@@ -314,6 +314,7 @@
 | v2.19.72 | Consumo de saldo de contrato via pedido (Fase 1), notificação fornecedor→comprador, item contrato sequencial |
 | v2.19.73 | Equalização com vínculo automático a contrato (Fase 2), premium contract_balance, configuração do aviso |
 | v2.19.75 | Configurações técnicas por tenant (admin), proxy cooldown background tasks, hooks useTenantSettings |
+| v2.19.85 | Importação massiva de requisições via Excel; monitor integração em nova aba |
 | v2.19.84 | Testes unitários ampliados (143/14 arquivos) e rotina de docs sincronizada |
 | v2.19.83 | Configurações unificadas: abas Usuários, Perfis de Acesso, Integrações; deep link ?tab= |
 | v2.19.82 | Enforcement permissões: order.view_all, order.edit_own, quotation.edit, equalize.select |
