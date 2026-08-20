@@ -14,6 +14,7 @@ const PUBLIC_FORNECEDOR_ROUTES = [
   "/fornecedor/login",
   "/fornecedor/cadastro",
   "/fornecedor/recuperar-senha",
+  "/fornecedor/alterar-senha",
 ] as const
 
 function isPublicFornecedorPath(pathname: string): boolean {
@@ -83,7 +84,11 @@ export async function proxy(request: NextRequest) {
 
   const isAuthRoute = pathname === "/login"
   const isRecuperarSenhaRoute = pathname === "/recuperar-senha"
-  const isAuthConfirmRoute = pathname === "/auth/confirm" || pathname.startsWith("/auth/confirm/")
+  const isAuthPublicRoute =
+    pathname === "/auth/confirm" ||
+    pathname.startsWith("/auth/confirm/") ||
+    pathname === "/auth/redefinir-senha" ||
+    pathname.startsWith("/auth/redefinir-senha/")
   const isFornecedorLoginRoute = pathname === "/fornecedor/login"
   const isProtectedComprador = pathname.startsWith("/comprador")
   const isProtectedFornecedor = isProtectedFornecedorPath(pathname)
@@ -96,7 +101,7 @@ export async function proxy(request: NextRequest) {
       !isProtectedRoute ||
       isAuthRoute ||
       isRecuperarSenhaRoute ||
-      isAuthConfirmRoute ||
+      isAuthPublicRoute ||
       isPublicFornecedorPath(pathname)
     ) {
       return response
@@ -127,7 +132,7 @@ export async function proxy(request: NextRequest) {
   if (
     !isAuthRoute &&
     !isRecuperarSenhaRoute &&
-    !isAuthConfirmRoute &&
+    !isAuthPublicRoute &&
     !isPublicFornecedorPath(pathname)
   ) {
     let companyIdForTasks = profileRow?.company_id as string | undefined

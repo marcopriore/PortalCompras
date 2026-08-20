@@ -16,7 +16,8 @@ export default async function FornecedorLayout({
   const isPublicRoute =
     pathname.includes("/fornecedor/login") ||
     pathname.includes("/fornecedor/cadastro") ||
-    pathname.includes("/fornecedor/recuperar-senha")
+    pathname.includes("/fornecedor/recuperar-senha") ||
+    pathname.includes("/fornecedor/alterar-senha")
 
   if (isPublicRoute) {
     return <>{children}</>

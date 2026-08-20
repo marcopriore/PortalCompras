@@ -6,7 +6,7 @@ import {
   templatePasswordReset,
 } from "@/lib/email/templates"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
-import { formatCnpj, normalizeCnpj, looksLikeCnpjInput } from "@/lib/utils/cnpj"
+import { normalizeCnpj, looksLikeCnpjInput } from "@/lib/utils/cnpj"
 import { normalizeImportedEmail } from "@/lib/utils/excel-cell"
 
 type Portal = "fornecedor" | "comprador"
@@ -24,7 +24,6 @@ function authAdmin() {
   )
 }
 
-/** Resposta genérica — não revela se a conta existe (fluxo por e-mail). */
 function okResponse() {
   return NextResponse.json({
     success: true,
@@ -39,42 +38,43 @@ async function emailForUserId(userId: string): Promise<string | null> {
 }
 
 /**
- * Resolve e-mail do admin do fornecedor a partir do CNPJ.
- * Tenta login_cnpj (dígitos/mascarado) e, em fallback, suppliers.cnpj.
+ * Resolve e-mail do admin pelo CNPJ (somente dígitos na query — máscara quebra o filtro PostgREST).
  */
 async function resolveEmailForSupplierCnpj(
   cnpjDigits: string,
 ): Promise<{ email: string } | { error: string; status: number; multiple?: boolean }> {
   const service = createServiceRoleClient()
-  const formatted = formatCnpj(cnpjDigits)
 
-  const { data: byLogin } = await service
+  // 1) Mesma lógica do login: login_cnpj = só dígitos
+  const { data: byLogin, error: loginErr } = await service
     .from("profiles")
     .select("id, company_id, supplier_id")
     .eq("profile_type", "supplier")
     .eq("is_supplier_admin", true)
     .eq("status", "active")
-    .or(`login_cnpj.eq.${cnpjDigits},login_cnpj.eq.${formatted}`)
+    .eq("login_cnpj", cnpjDigits)
+
+  if (loginErr) {
+    console.error("[request-password-reset] login_cnpj query:", loginErr.message)
+  }
 
   let adminIds = (byLogin ?? []).map((p) => p.id)
 
+  // 2) Fallback: suppliers.cnpj (normaliza em memória — valores podem ter máscara)
   if (adminIds.length === 0) {
-    const { data: suppliers } = await service
+    const { data: suppliers, error: supErr } = await service
       .from("suppliers")
-      .select("id, company_id, cnpj")
-      .eq("status", "active")
-      .or(`cnpj.eq.${cnpjDigits},cnpj.eq.${formatted}`)
+      .select("id, company_id, cnpj, status")
 
-    const matched =
-      suppliers?.length
-        ? suppliers
-        : (
-            await service
-              .from("suppliers")
-              .select("id, company_id, cnpj")
-              .eq("status", "active")
-              .limit(2000)
-          ).data?.filter((s) => normalizeCnpj(s.cnpj) === cnpjDigits) ?? []
+    if (supErr) {
+      console.error("[request-password-reset] suppliers query:", supErr.message)
+    }
+
+    const matched = (suppliers ?? []).filter(
+      (s) =>
+        (s.status == null || s.status === "active") &&
+        normalizeCnpj(s.cnpj) === cnpjDigits,
+    )
 
     if (matched.length === 0) {
       return {
@@ -100,11 +100,11 @@ async function resolveEmailForSupplierCnpj(
     if (admins.length === 0) {
       return {
         error:
-          "Fornecedor encontrado, mas sem administrador ativo no portal. Conclua o convite ou use o e-mail do usuário.",
+          "Fornecedor encontrado, mas sem administrador ativo no portal. Use o e-mail do usuário ou conclua o convite.",
         status: 404,
       }
     }
-    adminIds = admins.map((a) => a.id)
+    adminIds = [...new Set(admins.map((a) => a.id))]
   }
 
   if (adminIds.length > 1) {
@@ -141,15 +141,12 @@ async function resolveEmailForSupplierLogin(
   return { email }
 }
 
-/**
- * Solicita recuperação de senha e envia o link via Resend.
- * O link aponta para /auth/confirm (verifyOtp no clique) — evita otp_expired por prefetch.
- */
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Body
     const portal: Portal = body.portal === "fornecedor" ? "fornecedor" : "comprador"
     const loginRaw = (body.login ?? body.email ?? "").trim()
+    const usedCnpj = portal === "fornecedor" && looksLikeCnpjInput(loginRaw)
 
     if (!loginRaw) {
       return NextResponse.json({ error: "Informe e-mail ou CNPJ." }, { status: 400 })
@@ -159,8 +156,7 @@ export async function POST(request: Request) {
     if (portal === "fornecedor") {
       const resolved = await resolveEmailForSupplierLogin(loginRaw)
       if ("error" in resolved) {
-        // CNPJ: erro explícito (usuário precisa saber). E-mail: resposta genérica.
-        if (looksLikeCnpjInput(loginRaw)) {
+        if (usedCnpj) {
           return NextResponse.json(
             { error: resolved.error, multiple: resolved.multiple },
             { status: resolved.status },
@@ -182,8 +178,8 @@ export async function POST(request: Request) {
     const baseUrl = getAppEmailBaseUrl().replace(/\/$/, "")
     const nextPath =
       portal === "fornecedor"
-        ? "/fornecedor/alterar-senha?recovery=1"
-        : "/comprador/alterar-senha?recovery=1"
+        ? "/auth/redefinir-senha?portal=fornecedor"
+        : "/auth/redefinir-senha?portal=comprador"
 
     const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
       type: "recovery",
@@ -195,9 +191,11 @@ export async function POST(request: Request) {
       if (linkError) {
         console.error("[request-password-reset] generateLink:", linkError.message)
       }
-      if (portal === "fornecedor" && looksLikeCnpjInput(loginRaw)) {
+      if (usedCnpj) {
         return NextResponse.json(
-          { error: "Não foi possível gerar o link. Tente novamente ou use o e-mail." },
+          {
+            error: `E-mail encontrado (${email.replace(/(.{2}).+(@.+)/, "$1***$2")}), mas falhou ao gerar o link. Tente novamente.`,
+          },
           { status: 500 },
         )
       }
@@ -211,11 +209,23 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (!profile || profile.status !== "active") {
+      if (usedCnpj) {
+        return NextResponse.json(
+          { error: "Conta do administrador inativa ou indisponível." },
+          { status: 404 },
+        )
+      }
       return okResponse()
     }
 
     const profileType = String(profile.profile_type)
     if (portal === "fornecedor" && profileType !== "supplier") {
+      if (usedCnpj) {
+        return NextResponse.json(
+          { error: "CNPJ não corresponde a um usuário do portal fornecedor." },
+          { status: 400 },
+        )
+      }
       return okResponse()
     }
     if (portal === "comprador" && profileType === "supplier") {

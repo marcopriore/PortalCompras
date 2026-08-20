@@ -21,9 +21,11 @@ function ConfirmRecoveryContent() {
 
   const tokenHash = searchParams.get("token_hash") ?? ""
   const type = searchParams.get("type") ?? "recovery"
-  const next = searchParams.get("next") || "/fornecedor/alterar-senha?recovery=1"
+  const next = searchParams.get("next") || "/auth/redefinir-senha?portal=fornecedor"
 
-  const loginHref = next.startsWith("/comprador") ? "/login" : "/fornecedor/login"
+  const loginHref = next.includes("portal=comprador") || next.startsWith("/comprador") || next.startsWith("/login")
+    ? "/login"
+    : "/fornecedor/login"
 
   async function handleConfirm() {
     if (!tokenHash) {

@@ -113,19 +113,8 @@ export function RecoveryPasswordForm({ portal, loginHref }: RecoveryPasswordForm
       }
       toast.success("Senha redefinida com sucesso.")
       const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      let target = portal === "fornecedor" ? "/fornecedor" : "/comprador"
-      if (user && portal === "comprador") {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("profile_type")
-          .eq("id", user.id)
-          .maybeSingle()
-        if (profile?.profile_type === "requester") target = "/solicitante"
-      }
-      router.replace(target)
+      await supabase.auth.signOut()
+      router.replace(loginHref)
       router.refresh()
     } finally {
       setSaving(false)
