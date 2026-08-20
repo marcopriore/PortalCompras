@@ -56,6 +56,9 @@ describe("statusForErpErrorKind", () => {
   it("PERSIST returns integration_error", () => {
     expect(statusForErpErrorKind(ERP_ERROR_KIND.PERSIST)).toBe("integration_error")
   })
+  it("TRANSIENT returns integration_error", () => {
+    expect(statusForErpErrorKind(ERP_ERROR_KIND.TRANSIENT)).toBe("integration_error")
+  })
 })
 
 describe("duplicateExternalCodeMessage", () => {

@@ -12,6 +12,9 @@ type ServerAuditEventType =
   | "supplier.user_cancelled"
   | "supplier.import_excel"
   | "impersonation"
+  | "integration.auto_retry_scheduled"
+  | "integration.auto_retry"
+  | "integration.auto_retry_exhausted"
 
 type LogAuditServerParams = {
   eventType: ServerAuditEventType

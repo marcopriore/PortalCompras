@@ -43,4 +43,6 @@ export type OutboundDispatchResult = {
   responseBody: string | null
   errorMessage: string | null
   externalCode?: string | null
+  /** Número da tentativa gravada no log (1-based). */
+  attempts?: number
 }

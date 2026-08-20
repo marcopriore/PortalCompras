@@ -356,7 +356,7 @@ Persistência em `company_settings` (`company_id`, `key`, `value`). Catálogo ti
 
 ## 9. Backlog (estado atual — v2.19.84)
 
-Revisado em 19/08/2026. **Foco atual:** cobertura de testes, alertas de integração e módulo de recebimento.
+Revisado em 20/08/2026. **Foco atual:** diferenciação de produto e escala; Recebimento adiado.
 
 ### 9.0 Em foco agora
 
@@ -381,20 +381,22 @@ Revisado em 19/08/2026. **Foco atual:** cobertura de testes, alertas de integra�
 
 | # | Item | Status | Notas |
 |---|------|--------|-------|
-| 6 | **Módulo de Recebimento** | ❌ Futuro | Entrada parcial, embarque, entrega; base para consumo de REQ/contrato. Nota: pedido cancelado → liberar saldo restante no contrato (dentro do módulo) |
-| 7 | **API Store — implementação** | 🟡 Parcial | Inbound v1 + outbound pedidos/contratos + monitor + docs + idempotência avançada + alertas `integration_error` ✅. Falta: REQ outbound (opcional), auto-retry |
-| 8 | **Controle de consumo por item de requisição** | ❌ Futuro | Parcial / Total / Aberta — depende do módulo de Recebimento |
-| 9 | **Login fornecedor + usuários por fornecedor** | ❌ Futuro | Redesign `/fornecedor/login`; gestão de múltiplos logins por `supplier_id` (hoje 1 perfil `supplier` por fornecedor) |
-| 10 | **"Agir como" (impersonation) no comprador** | ❌ Futuro | Admin/Master assume visão de comprador, gerente, requisitante, aprovador etc.; UI na tela de Usuários; audit log obrigatório |
-| 11 | **Importação massiva de requisições (Excel)** | ❌ Futuro | Para clientes sem integração ERP; template + validação + upsert em lote; log em `item_import_logs` ou equivalente |
-| 12 | **Monitor de Integração** | ✅ v2 | `/comprador/integracoes/monitor` (popup) + `/admin/integracoes`; reenvio inteligente (sem duplicar ERP OK + Valore OK). Ver §10.10 |
+| 6 | **Módulo de Recebimento** | ⏸️ Adiado (longo prazo) | Entrada parcial, embarque, entrega; base para consumo de REQ/contrato. **Não iniciar agora** — produto/empresas ainda não preparados; manter no backlog para não esquecer |
+| 7 | **API Store — implementação** | 🟡 Parcial | Inbound v1 + outbound pedidos/contratos + monitor + docs + idempotência avançada + alertas `integration_error` + **auto-retry com backoff** ✅. Falta: REQ outbound (opcional) |
+| 8 | **Controle de consumo por item de requisição** | ⏸️ Adiado (longo prazo) | Parcial / Total / Aberta — **parte do Recebimento** (item 6); adiar junto |
+| 9 | **Login fornecedor + usuários por fornecedor** | ✅ | Convite, CNPJ admin, multi-user (máx. 5), gestão no portal fornecedor |
+| 10 | **"Agir como" (impersonation) no comprador** | ✅ | Permissão individual `user.impersonate`; banner; auditoria |
+| 11 | **Importação massiva de requisições (Excel)** | ✅ v2.19.85 | Template + validação + upsert em lote |
+| 12 | **Monitor de Integração** | ✅ v2 | `/comprador/integracoes/monitor` + `/admin/integracoes`; reenvio inteligente. Ver §10.10 |
 | 13 | **Documentação pública da Loja de API** | ✅ v1 | `/docs/api` + `/api/v1/openapi.json` |
 
-### 9.3 Baixa prioridade
+### 9.3 Baixa prioridade / longo prazo
 
 | # | Item | Notas |
 |---|------|-------|
-| 14 | **Migrar documentação de implantação para Notion** | Go-to-market; menos urgente que itens técnicos e de negócio acima |
+| 14 | **Migrar documentação de implantação para Notion** | Go-to-market |
+| 15 | **Auto-retry outbound com backoff** | ✅ v2.19.87 | Transient (rede/5xx/timeout); audit; Monitor após esgotar |
+| 16 | **Módulo de Recebimento + consumo por item REQ** | Adiado conscientemente; retomar muito à frente |
 
 ### 9.4 Mapa de validação (lista de produto)
 
@@ -810,9 +812,19 @@ Todas as chamadas HTTP ao ERP incluem o header `Idempotency-Key`, gerado de form
 - Logs órfãos “Em andamento” (> 3 min) são liberados automaticamente
 - Docs públicas: `/docs/api` § Outbound Idempotency-Key
 
-**Ainda fora de escopo:** auto-retry com backoff, idempotência inbound `/api/v1`.
+**Auto-retry com backoff (v2.19.87):**
+- Só falhas **transitórias**: sem HTTP (timeout/rede) ou status `408/425/429/500/502/503/504`
+- **Não** retenta 4xx de negócio (vira `error` / Pedido Reprovado)
+- Até **4 tentativas** no total; backoff **1 min → 5 min → 15 min**
+- Pedido permanece em `processing` (delete: mantém `completed`) até sucesso ou esgotar → `integration_error` + alerta admin
+- Job: `POST /api/integrations/auto-retry` (proxy, cooldown ~45s; mesma chave `CONTRACT_MAINTENANCE_SECRET`)
+- Auditoria: `integration.auto_retry_scheduled`, `integration.auto_retry`, `integration.auto_retry_exhausted`
+- Mesma `Idempotency-Key` em todas as tentativas
+- Reenvio manual no Monitor continua disponível após esgotar
 
-**Alertas `integration_error` (v2.19.86):** admins do tenant recebem sino + e-mail (prefs `integration_error_*`, padrão ligado). Disparo ao transicionar pedido para `integration_error` ou falha de `contract.create`. Dedup 60 min. Status `error` (reprovação ERP) **não** gera este alerta.
+**Ainda fora de escopo:** idempotência inbound `/api/v1`.
+
+**Alertas `integration_error` (v2.19.86):** admins do tenant recebem sino + e-mail (prefs `integration_error_*`, padrão ligado). Disparo ao transicionar pedido para `integration_error` ou falha de `contract.create` (não dispara enquanto auto-retry ainda pode tentar). Dedup 60 min. Status `error` (reprovação ERP) **não** gera este alerta.
 
 ---
 

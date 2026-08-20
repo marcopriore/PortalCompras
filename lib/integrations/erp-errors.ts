@@ -1,6 +1,8 @@
 export const ERP_ERROR_KIND = {
   DUPLICATE_EXTERNAL_CODE: "duplicate_external_code",
   ERP_HTTP: "erp_http",
+  /** Rede / timeout / 5xx — auto-retry; ao esgotar → integration_error */
+  TRANSIENT: "transient",
   PAYLOAD: "payload",
   PERSIST: "persist",
 } as const
@@ -39,7 +41,31 @@ export function parseErpErrorMessage(raw: string | null | undefined): {
 }
 
 export function statusForErpErrorKind(kind: ErpErrorKind): PurchaseOrderIntegrationStatus {
+  // Reprovação de negócio (4xx típico) → comprador pode corrigir
   return kind === ERP_ERROR_KIND.ERP_HTTP ? "error" : "integration_error"
+}
+
+/** Monta mensagem tipada a partir do resultado do dispatch (transitório vs negócio). */
+export function buildOutboundDispatchFailureMessage(
+  result: {
+    errorMessage?: string | null
+    responseStatus?: number | null
+    responseBody?: string | null
+  },
+  fallback: string,
+  isTransient: boolean,
+): string {
+  const kind = isTransient ? ERP_ERROR_KIND.TRANSIENT : ERP_ERROR_KIND.ERP_HTTP
+  if (result.errorMessage?.trim()) {
+    return buildErpErrorMessage(kind, result.errorMessage.trim())
+  }
+  if (result.responseStatus != null) {
+    return buildErpErrorMessage(
+      kind,
+      formatErpHttpFailure(result.responseStatus, result.responseBody ?? null),
+    )
+  }
+  return buildErpErrorMessage(kind, fallback)
 }
 
 export function duplicateExternalCodeMessage(externalCode: string): string {

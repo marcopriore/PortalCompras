@@ -1,14 +1,20 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
+import { logAuditServer } from "@/lib/audit-server"
 import {
   buildErpErrorMessage,
+  buildOutboundDispatchFailureMessage,
   duplicateExternalCodeMessage,
   ERP_ERROR_KIND,
-  formatErpHttpFailure,
   parseErpErrorMessage,
   statusForErpErrorKind,
   type PurchaseOrderIntegrationStatus,
 } from "@/lib/integrations/erp-errors"
+import {
+  isOutboundAutoRetryExhausted,
+  isTransientOutboundFailure,
+  outboundAutoRetryDelayMs,
+} from "@/lib/integrations/outbound-auto-retry"
 import { dispatchOutboundIntegration } from "@/lib/integrations/dispatch"
 import { loadPurchaseOrderOutboundPayload } from "@/lib/integrations/trigger-outbound"
 import type { OutboundIntegrationAction } from "@/lib/integrations/types"
@@ -130,22 +136,66 @@ function buildDispatchErrorMessage(
     responseBody?: string | null
   },
 ): string {
-  if (result.errorMessage?.trim()) {
-    return buildErpErrorMessage(ERP_ERROR_KIND.ERP_HTTP, result.errorMessage.trim())
-  }
-  if (result.responseStatus != null) {
-    return buildErpErrorMessage(
-      ERP_ERROR_KIND.ERP_HTTP,
-      formatErpHttpFailure(result.responseStatus, result.responseBody ?? null),
-    )
-  }
+  const transient = isTransientOutboundFailure({
+    responseStatus: result.responseStatus ?? null,
+    errorMessage: result.errorMessage,
+  })
   const fallback =
     operation === "delete"
       ? "Falha ao cancelar o pedido no ERP."
       : operation === "update"
         ? "Falha ao atualizar o pedido no ERP."
         : "Falha na integração com o ERP."
-  return buildErpErrorMessage(ERP_ERROR_KIND.ERP_HTTP, fallback)
+  return buildOutboundDispatchFailureMessage(result, fallback, transient)
+}
+
+async function auditAutoRetryScheduled(input: {
+  companyId: string
+  orderId: string
+  code?: string | null
+  operation: PurchaseOrderErpOperation
+  attempts: number
+  errorMessage: string
+  responseStatus: number | null
+}): Promise<void> {
+  const delay = outboundAutoRetryDelayMs(input.attempts)
+  await logAuditServer({
+    eventType: "integration.auto_retry_scheduled",
+    companyId: input.companyId,
+    entity: "purchase_orders",
+    entityId: input.orderId,
+    description: `Auto-retry agendado para pedido ${input.code ?? input.orderId} (${input.operation}) após tentativa ${input.attempts}${delay != null ? ` — próxima em ${Math.round(delay / 1000)}s` : ""}.`,
+    metadata: {
+      operation: input.operation,
+      attempts: input.attempts,
+      delayMs: delay,
+      responseStatus: input.responseStatus,
+      errorMessage: input.errorMessage,
+      trigger: "transient_failure",
+    },
+  })
+}
+
+async function auditAutoRetryExhausted(input: {
+  companyId: string
+  orderId: string
+  code?: string | null
+  operation: PurchaseOrderErpOperation
+  attempts: number
+  errorMessage: string
+}): Promise<void> {
+  await logAuditServer({
+    eventType: "integration.auto_retry_exhausted",
+    companyId: input.companyId,
+    entity: "purchase_orders",
+    entityId: input.orderId,
+    description: `Auto-retry esgotado para pedido ${input.code ?? input.orderId} (${input.operation}) após ${input.attempts} tentativas — intervenção manual no Monitor.`,
+    metadata: {
+      operation: input.operation,
+      attempts: input.attempts,
+      errorMessage: input.errorMessage,
+    },
+  })
 }
 
 export async function integratePurchaseOrderWithErp(
@@ -339,7 +389,63 @@ export async function integratePurchaseOrderWithErp(
     return { success: true, skipped: false, status: "cancelled" }
   }
 
+  // Concorrência local — não altera status do pedido
+  if (
+    result.responseStatus === 409 &&
+    (result.errorMessage ?? "").toLowerCase().includes("em andamento")
+  ) {
+    return {
+      success: false,
+      skipped: false,
+      status: currentStatus as IntegratePurchaseOrderResult["status"],
+      errorMessage: result.errorMessage,
+    }
+  }
+
   const errorMessage = buildDispatchErrorMessage(operation, result)
+  const attempts = result.attempts ?? 1
+  const transient = isTransientOutboundFailure({
+    responseStatus: result.responseStatus ?? null,
+    errorMessage: result.errorMessage,
+  })
+
+  const { data: orderMeta } = await service
+    .from("purchase_orders")
+    .select("code")
+    .eq("id", orderId)
+    .eq("company_id", companyId)
+    .maybeSingle()
+
+  // Falha transitória: mantém em processamento e agenda auto-retry (até o teto)
+  if (transient && !isOutboundAutoRetryExhausted(attempts)) {
+    const pendingStatus =
+      operation === "delete"
+        ? (currentStatus === "completed" ? "completed" : "integration_error")
+        : "processing"
+
+    await updatePurchaseOrder(service, orderId, companyId, {
+      status: pendingStatus,
+      erp_error_message: errorMessage,
+    })
+
+    void auditAutoRetryScheduled({
+      companyId,
+      orderId,
+      code: orderMeta?.code != null ? String(orderMeta.code) : null,
+      operation,
+      attempts,
+      errorMessage,
+      responseStatus: result.responseStatus ?? null,
+    })
+
+    return {
+      success: false,
+      skipped: false,
+      status: pendingStatus as IntegratePurchaseOrderResult["status"],
+      errorMessage,
+    }
+  }
+
   const status = await markIntegrationFailure(
     service,
     orderId,
@@ -348,6 +454,17 @@ export async function integratePurchaseOrderWithErp(
     errorMessage,
     currentStatus,
   )
+
+  if (transient && isOutboundAutoRetryExhausted(attempts)) {
+    void auditAutoRetryExhausted({
+      companyId,
+      orderId,
+      code: orderMeta?.code != null ? String(orderMeta.code) : null,
+      operation,
+      attempts,
+      errorMessage,
+    })
+  }
 
   return {
     success: false,

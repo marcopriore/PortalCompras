@@ -148,7 +148,7 @@
   proposal-attachments (privado), contract-files (público)
 
 ## 6. BACKLOG PRIORIZADO
-Revisado 19/08/2026. **Foco atual:** alertas de integração e módulo de recebimento.
+Revisado 20/08/2026. **Foco atual:** diferenciação de produto e escala. Recebimento adiado (longo prazo).
 
 ### Em foco agora
 **A. Integração outbound — pedidos** ✅ v1 (SPEC §10.10)
@@ -167,7 +167,7 @@ Revisado 19/08/2026. **Foco atual:** alertas de integração e módulo de recebi
 
 ### Loja de API — Fase 1 (base)
 - ✅ Passos 1–8 SPEC §10.8 (inbound, UI admin, monitor, docs)
-- 🟡 Outbound: pedido create/update/delete ✅; contrato ✅; REQ inbound only; auto-retry pendente
+- 🟡 Outbound: pedido create/update/delete ✅; contrato ✅; REQ inbound only; **auto-retry ✅** (v2.19.87)
 - ✅ Alertas `integration_error` (sino + e-mail para admins)
 
 ### Imediato (paralelo) — concluído
@@ -178,16 +178,22 @@ Revisado 19/08/2026. **Foco atual:** alertas de integração e módulo de recebi
 5. ✅ **Rotina de docs** — SPEC/HANDOFF/CLAUDE/CHANGELOG alinhados (v2.19.84)
 
 ### Médio prazo
-6. **Módulo de Recebimento** + consumo REQ/contrato
-7. **Consumo por item de requisição** (Parcial/Total/Aberta)
+6. ⏸️ **Módulo de Recebimento** + consumo REQ/contrato — **adiado (longo prazo)**; manter no backlog para não esquecer. Empresas ainda não estão preparadas para esse nível de integração/controle.
+7. ⏸️ **Consumo por item de requisição** (Parcial/Total/Aberta) — **adiado** junto com o Recebimento (depende do item 6).
 8. ✅ **Login fornecedor redesign + gestão de usuários por fornecedor**
 9. ✅ **"Agir como"** no comprador
 10. ✅ **Importação massiva de requisições (Excel)**
 11. ✅ **Idempotência outbound** (header + attempts + trava + docs)
 12. ✅ **Alertas de integração** (e-mail/in-app quando `integration_error`)
 
+### Longo prazo (adiado — não esquecer)
+- **Módulo de Recebimento** (entrada parcial, embarque, entrega) + liberação de saldo de contrato em cancelamento
+- **Consumo por item de requisição** (Parcial / Total / Aberta)
+
 ### Baixa prioridade
 13. Migrar documentação de implantação para Notion
+14. ✅ **Auto-retry outbound com backoff** (falhas transitórias; audit; Monitor após esgotar)
+15. REQ outbound (se necessário)
 
 ### Já implementado (validação da lista)
 - Loja de API inbound v1 + docs públicas + monitor v2

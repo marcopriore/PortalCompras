@@ -161,6 +161,7 @@ export async function dispatchOutboundIntegration(
       responseStatus: null,
       responseBody: null,
       errorMessage,
+      attempts,
     }
   }
 
@@ -197,6 +198,7 @@ export async function dispatchOutboundIntegration(
         responseBody: null,
         errorMessage:
           "Integração já em andamento para esta entidade. Aguarde e tente novamente.",
+        attempts,
       }
     }
     console.error(
@@ -208,6 +210,7 @@ export async function dispatchOutboundIntegration(
       responseStatus: null,
       responseBody: null,
       errorMessage: pendingError?.message ?? "Falha ao registrar despacho.",
+      attempts,
     }
   }
 
@@ -273,6 +276,7 @@ export async function dispatchOutboundIntegration(
     responseBody,
     errorMessage,
     externalCode,
+    attempts,
   }
 }
 

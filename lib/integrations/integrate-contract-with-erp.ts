@@ -1,15 +1,21 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
+import { logAuditServer } from "@/lib/audit-server"
 import {
   mapContractToOutboundPayload,
   type ContractItemRow,
 } from "@/lib/api/external/mappers/contract"
 import {
   buildErpErrorMessage,
+  buildOutboundDispatchFailureMessage,
   duplicateExternalCodeMessage,
   ERP_ERROR_KIND,
-  formatErpHttpFailure,
 } from "@/lib/integrations/erp-errors"
+import {
+  isOutboundAutoRetryExhausted,
+  isTransientOutboundFailure,
+  outboundAutoRetryDelayMs,
+} from "@/lib/integrations/outbound-auto-retry"
 import { dispatchOutboundIntegration } from "@/lib/integrations/dispatch"
 
 export type IntegrateContractResult = {
@@ -77,19 +83,33 @@ function buildDispatchErrorMessage(result: {
   responseStatus?: number | null
   responseBody?: string | null
 }): string {
-  if (result.errorMessage?.trim()) {
-    return buildErpErrorMessage(ERP_ERROR_KIND.ERP_HTTP, result.errorMessage.trim())
-  }
-  if (result.responseStatus != null) {
-    return buildErpErrorMessage(
-      ERP_ERROR_KIND.ERP_HTTP,
-      formatErpHttpFailure(result.responseStatus, result.responseBody ?? null),
-    )
-  }
-  return buildErpErrorMessage(
-    ERP_ERROR_KIND.ERP_HTTP,
+  const transient = isTransientOutboundFailure({
+    responseStatus: result.responseStatus ?? null,
+    errorMessage: result.errorMessage,
+  })
+  return buildOutboundDispatchFailureMessage(
+    result,
     "Falha na integração do contrato com o ERP.",
+    transient,
   )
+}
+
+async function notifyContractIntegrationFailure(input: {
+  companyId: string
+  contractId: string
+  code: string
+  message: string
+}): Promise<void> {
+  const { notifyIntegrationError } = await import(
+    "@/lib/integrations/notify-integration-error"
+  )
+  void notifyIntegrationError({
+    companyId: input.companyId,
+    entity: "contract",
+    entityId: input.contractId,
+    code: input.code,
+    message: input.message,
+  })
 }
 
 export async function integrateContractWithErp(
@@ -170,16 +190,58 @@ export async function integrateContractWithErp(
 
   if (!result.success) {
     const errorMessage = buildDispatchErrorMessage(result)
-    const { notifyIntegrationError } = await import(
-      "@/lib/integrations/notify-integration-error"
-    )
-    void notifyIntegrationError({
+    const attempts = result.attempts ?? 1
+    const transient = isTransientOutboundFailure({
+      responseStatus: result.responseStatus ?? null,
+      errorMessage: result.errorMessage,
+    })
+
+    if (transient && !isOutboundAutoRetryExhausted(attempts)) {
+      const delay = outboundAutoRetryDelayMs(attempts)
+      void logAuditServer({
+        eventType: "integration.auto_retry_scheduled",
+        companyId,
+        entity: "contracts",
+        entityId: contractId,
+        description: `Auto-retry agendado para contrato ${contract.code} após tentativa ${attempts}${delay != null ? ` — próxima em ${Math.round(delay / 1000)}s` : ""}.`,
+        metadata: {
+          operation: "create",
+          attempts,
+          delayMs: delay,
+          responseStatus: result.responseStatus ?? null,
+          errorMessage,
+          trigger: "transient_failure",
+        },
+      })
+      return {
+        success: false,
+        skipped: false,
+        errorMessage,
+      }
+    }
+
+    void notifyContractIntegrationFailure({
       companyId,
-      entity: "contract",
-      entityId: contractId,
+      contractId,
       code: String(contract.code),
       message: errorMessage,
     })
+
+    if (transient && isOutboundAutoRetryExhausted(attempts)) {
+      void logAuditServer({
+        eventType: "integration.auto_retry_exhausted",
+        companyId,
+        entity: "contracts",
+        entityId: contractId,
+        description: `Auto-retry esgotado para contrato ${contract.code} após ${attempts} tentativas — intervenção manual no Monitor.`,
+        metadata: {
+          operation: "create",
+          attempts,
+          errorMessage,
+        },
+      })
+    }
+
     return {
       success: false,
       skipped: false,

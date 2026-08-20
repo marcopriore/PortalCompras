@@ -5,6 +5,10 @@ import {
   shouldRunBackgroundTasks,
 } from "@/lib/proxy/background-tasks"
 import { getBackgroundTasksCooldownMs } from "@/lib/proxy/load-background-tasks-cooldown"
+import {
+  markOutboundAutoRetryRun,
+  shouldRunOutboundAutoRetry,
+} from "@/lib/proxy/outbound-auto-retry-tasks"
 
 const PUBLIC_FORNECEDOR_ROUTES = [
   "/fornecedor/login",
@@ -146,6 +150,23 @@ export async function proxy(request: NextRequest) {
       })
 
       markBackgroundTasksRun(response, cooldownMs)
+    }
+
+    if (shouldRunOutboundAutoRetry(request)) {
+      const maintenanceSecret = process.env.CONTRACT_MAINTENANCE_SECRET ?? ""
+      const autoRetryUrl = new URL(
+        "/api/integrations/auto-retry",
+        request.nextUrl.origin,
+      )
+      void fetch(autoRetryUrl.toString(), {
+        method: "POST",
+        headers: maintenanceSecret
+          ? { "x-maintenance-key": maintenanceSecret }
+          : undefined,
+      }).catch(() => {
+        // auto-retry não deve bloquear o usuário
+      })
+      markOutboundAutoRetryRun(response)
     }
   }
 

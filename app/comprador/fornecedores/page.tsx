@@ -633,12 +633,12 @@ export default function FornecedoresPage() {
           if (!open) setSelectedSupplier(null)
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[85vh] flex-col gap-4 overflow-hidden sm:max-w-2xl">
+          <DialogHeader className="shrink-0">
             <DialogTitle>{selectedSupplier?.name}</DialogTitle>
           </DialogHeader>
           {selectedSupplier && (
-            <div className="space-y-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-1">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Código ERP</p>
@@ -743,7 +743,7 @@ export default function FornecedoresPage() {
               )}
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button type="button" variant="outline" onClick={() => setSelectedSupplier(null)}>
               Fechar
             </Button>
