@@ -317,8 +317,17 @@ const VALID_TABS = new Set<ActiveTab>([
   "seguranca", "campos", "termos", "usuarios", "permissoes", "integracoes",
 ])
 
-const RESTRICTED_SETTINGS_TABS = new Set<ActiveTab>([
-  "perfil", "notificacoes", "seguranca",
+const PERSONAL_SETTINGS_TABS = new Set<ActiveTab>([
+  "perfil",
+  "notificacoes",
+  "seguranca",
+])
+
+const IMPERSONATE_SETTINGS_TABS = new Set<ActiveTab>([
+  "perfil",
+  "notificacoes",
+  "seguranca",
+  "usuarios",
 ])
 
 type SupplierTerm = {
@@ -403,37 +412,39 @@ export default function ConfiguracoesPage() {
   const canManageSettings = canManageCompany || hasPermission("settings.manage")
   const canImpersonateUsers = hasPermission("user.impersonate")
   const canAccessUsersTab = canManageCompany || canImpersonateUsers
-  const impersonateOnly = canImpersonateUsers && !canManageCompany
-  const isRestrictedSettingsUser = !impersonateOnly && !canManageSettings
+  // Impersonação sem admin: pode gerenciar usuários, mas também precisa das abas pessoais
+  const impersonateOnly = canImpersonateUsers && !canManageSettings
+  const isPersonalSettingsOnly = !canManageSettings && !canImpersonateUsers
 
   const initialTab = React.useMemo<ActiveTab>(() => {
     const t = searchParams.get("tab") as ActiveTab | null
     if (impersonateOnly) {
-      return t === "usuarios" ? "usuarios" : "usuarios"
+      if (t && IMPERSONATE_SETTINGS_TABS.has(t)) return t
+      return "perfil"
     }
-    if (isRestrictedSettingsUser) {
-      if (t && RESTRICTED_SETTINGS_TABS.has(t)) return t
+    if (isPersonalSettingsOnly) {
+      if (t && PERSONAL_SETTINGS_TABS.has(t)) return t
       return "perfil"
     }
     if (t && VALID_TABS.has(t)) return t
     return "empresa"
-  }, [searchParams, impersonateOnly, isRestrictedSettingsUser])
+  }, [searchParams, impersonateOnly, isPersonalSettingsOnly])
 
   const [activeTab, setActiveTab] = React.useState<ActiveTab>(initialTab)
 
   React.useEffect(() => {
     const t = searchParams.get("tab") as ActiveTab | null
     if (impersonateOnly) {
-      if (t !== "usuarios") {
-        setActiveTab("usuarios")
-        router.replace("/comprador/configuracoes?tab=usuarios")
+      if (t && IMPERSONATE_SETTINGS_TABS.has(t)) {
+        setActiveTab(t)
       } else {
-        setActiveTab("usuarios")
+        setActiveTab("perfil")
+        router.replace("/comprador/configuracoes?tab=perfil")
       }
       return
     }
-    if (isRestrictedSettingsUser) {
-      if (t && RESTRICTED_SETTINGS_TABS.has(t)) {
+    if (isPersonalSettingsOnly) {
+      if (t && PERSONAL_SETTINGS_TABS.has(t)) {
         setActiveTab(t)
       } else {
         setActiveTab("perfil")
@@ -445,7 +456,7 @@ export default function ConfiguracoesPage() {
       setActiveTab(t)
       return
     }
-  }, [searchParams, impersonateOnly, isRestrictedSettingsUser, router])
+  }, [searchParams, impersonateOnly, isPersonalSettingsOnly, router])
 
   const canManageApprovals = canManageCompany
 
@@ -1797,15 +1808,20 @@ export default function ConfiguracoesPage() {
       </div>
 
       {/* Abas (mesmo padrão visual do detalhe do tenant) */}
-      <div className="flex gap-1 border-b border-border mb-4">
+      <div className="flex gap-1 border-b border-border mb-4 overflow-x-auto">
         {(
-          impersonateOnly
-            ? ([["usuarios", "Usuários", Users]] as const)
-            : isRestrictedSettingsUser
+          isPersonalSettingsOnly
+            ? ([
+                ["perfil", "Perfil", User],
+                ["notificacoes", "Notificações", Bell],
+                ["seguranca", "Segurança", Shield],
+              ] as const)
+            : impersonateOnly
               ? ([
                   ["perfil", "Perfil", User],
                   ["notificacoes", "Notificações", Bell],
                   ["seguranca", "Segurança", Shield],
+                  ["usuarios", "Usuários", Users],
                 ] as const)
               : ([
             ["empresa", "Empresa", Building2],
@@ -1830,7 +1846,7 @@ export default function ConfiguracoesPage() {
               router.replace(`/comprador/configuracoes?tab=${key}`)
             }}
             className={[
-              "px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2",
+              "px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 shrink-0",
               activeTab === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
             ].join(" ")}
           >
