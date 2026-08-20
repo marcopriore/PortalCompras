@@ -549,3 +549,29 @@ export function templateSupplierPortalInvite(data: {
     html: emailBase(content, "Convite Portal do Fornecedor"),
   }
 }
+
+export function templatePasswordReset(data: {
+  resetUrl: string
+  portalLabel: string
+}): { subject: string; html: string } {
+  const content = `
+    <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 8px;">
+      Redefinição de senha
+    </h2>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 24px;">
+      Recebemos um pedido para redefinir a senha de acesso ao
+      <strong>${data.portalLabel}</strong> Valore.
+    </p>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
+      Clique no botão abaixo para criar uma nova senha. O link é válido por tempo limitado.
+    </p>
+    ${emailButton("Redefinir senha", data.resetUrl)}
+    <p style="color:#9ca3af;font-size:13px;margin:24px 0 0;">
+      Se você não solicitou esta alteração, ignore este e-mail. Sua senha permanecerá a mesma.
+    </p>
+  `
+  return {
+    subject: "Redefinição de senha — Valore",
+    html: emailBase(content, "Redefinição de senha"),
+  }
+}

@@ -40,30 +40,44 @@ export async function PATCH(request: Request, context: RouteCtx) {
           { status: 400 },
         )
       }
-      if (body.action === "update" || body.email) {
-        if (!body.email?.trim()) {
-          return NextResponse.json({ error: "Informe o e-mail." }, { status: 400 })
-        }
-        const emailResult = await updateSupplierPortalUserEmail(id, body.email)
-        if (emailResult.error) {
-          return NextResponse.json({ error: emailResult.error }, { status: 400 })
+      if (body.action === "update" || body.email || body.newPassword) {
+        if (body.email?.trim()) {
+          const emailResult = await updateSupplierPortalUserEmail(id, body.email)
+          if (emailResult.error) {
+            return NextResponse.json({ error: emailResult.error }, { status: 400 })
+          }
         }
         if (body.fullName?.trim()) {
           await updateSupplierPortalUserProfile(id, { fullName: body.fullName })
         }
+        if (body.newPassword) {
+          const r = await resetSupplierPortalUserPassword(id, ctx.companyId, body.newPassword)
+          if (r.error) return NextResponse.json({ error: r.error }, { status: 400 })
+        }
+        if (!body.email?.trim() && !body.fullName?.trim() && !body.newPassword) {
+          return NextResponse.json(
+            { error: "Informe e-mail e/ou nova senha para atualizar o administrador." },
+            { status: 400 },
+          )
+        }
         await logAuditServer({
           eventType: "supplier.user_updated",
-          description: "E-mail do administrador atualizado",
+          description: body.newPassword
+            ? "Administrador atualizado (e-mail e/ou senha)"
+            : "E-mail do administrador atualizado",
           userId: ctx.userId,
           companyId: ctx.companyId,
           entity: "profile",
           entityId: id,
-          metadata: { supplierId: ctx.supplierId },
+          metadata: {
+            supplierId: ctx.supplierId,
+            passwordReset: Boolean(body.newPassword),
+          },
         })
         return NextResponse.json({ success: true })
       }
       return NextResponse.json(
-        { error: "Administrador: apenas atualização de e-mail permitida." },
+        { error: "Administrador: apenas atualização de e-mail/senha permitida." },
         { status: 400 },
       )
     }

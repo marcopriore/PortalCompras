@@ -82,6 +82,7 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const isAuthRoute = pathname === "/login"
+  const isRecuperarSenhaRoute = pathname === "/recuperar-senha"
   const isFornecedorLoginRoute = pathname === "/fornecedor/login"
   const isProtectedComprador = pathname.startsWith("/comprador")
   const isProtectedFornecedor = isProtectedFornecedorPath(pathname)
@@ -90,7 +91,14 @@ export async function proxy(request: NextRequest) {
     isProtectedComprador || isProtectedFornecedor || isProtectedAdmin
 
   if (!user) {
-    if (!isProtectedRoute || isAuthRoute || isPublicFornecedorPath(pathname)) return response
+    if (
+      !isProtectedRoute ||
+      isAuthRoute ||
+      isRecuperarSenhaRoute ||
+      isPublicFornecedorPath(pathname)
+    ) {
+      return response
+    }
     const redirectUrl = request.nextUrl.clone()
     if (pathname.startsWith("/fornecedor")) {
       redirectUrl.pathname = "/fornecedor/login"
@@ -114,7 +122,7 @@ export async function proxy(request: NextRequest) {
 
   const profileType = profileRow?.profile_type ?? "buyer"
 
-  if (!isAuthRoute && !isPublicFornecedorPath(pathname)) {
+  if (!isAuthRoute && !isRecuperarSenhaRoute && !isPublicFornecedorPath(pathname)) {
     let companyIdForTasks = profileRow?.company_id as string | undefined
     if (profileRow?.is_superadmin) {
       const selected = request.cookies.get("selected_company_id")?.value

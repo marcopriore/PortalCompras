@@ -4,7 +4,7 @@ import * as React from "react"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { Mail, Plus, UserPlus, Users } from "lucide-react"
+import { Mail, Plus, KeyRound, UserPlus, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -78,9 +78,22 @@ export function SupplierPortalUsers({
     password: "",
   })
   const [creatingUser, setCreatingUser] = React.useState(false)
+  const [resetUser, setResetUser] = React.useState<SupplierPortalUser | null>(null)
+  const [resetPassword, setResetPassword] = React.useState("")
+  const [resettingPassword, setResettingPassword] = React.useState(false)
 
   const hasAdmin = users.some((u) => u.is_supplier_admin && u.status === "active")
   const pendingInvite = invites.find((i) => i.status === "pending")
+
+  const DEFAULT_POLICY: PasswordPolicy = {
+    minLength: 10,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireDigit: true,
+    requireSpecial: true,
+    expiryDays: 0,
+    historyCount: 0,
+  }
 
   const loadPortalData = React.useCallback(async () => {
     setLoading(true)
@@ -200,16 +213,48 @@ export function SupplierPortalUsers({
   }
 
   function suggestPassword() {
-    const policy: PasswordPolicy = {
-      minLength: 10,
-      requireUppercase: true,
-      requireLowercase: true,
-      requireDigit: true,
-      requireSpecial: true,
-      expiryDays: 0,
-      historyCount: 0,
+    setNewUserForm((f) => ({ ...f, password: generatePasswordForPolicy(DEFAULT_POLICY) }))
+  }
+
+  function openResetPassword(user: SupplierPortalUser) {
+    setResetUser(user)
+    setResetPassword(generatePasswordForPolicy(DEFAULT_POLICY))
+  }
+
+  function suggestResetPassword() {
+    setResetPassword(generatePasswordForPolicy(DEFAULT_POLICY))
+  }
+
+  async function handleResetPassword() {
+    if (!resetUser || !resetPassword.trim()) {
+      toast.error("Informe a nova senha.")
+      return
     }
-    setNewUserForm((f) => ({ ...f, password: generatePasswordForPolicy(policy) }))
+
+    setResettingPassword(true)
+    try {
+      const res = await fetch(`/api/supplier-users/${resetUser.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reset_password",
+          supplierId,
+          newPassword: resetPassword,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error ?? "Erro ao redefinir senha.")
+        return
+      }
+      toast.success(
+        `Senha redefinida para ${resetUser.full_name ?? "usuário"}. Anote e compartilhe com segurança.`,
+      )
+      setResetUser(null)
+      setResetPassword("")
+    } finally {
+      setResettingPassword(false)
+    }
   }
 
   return (
@@ -267,7 +312,7 @@ export function SupplierPortalUsers({
                   <TableHead>Nome</TableHead>
                   <TableHead>Login</TableHead>
                   <TableHead>Status</TableHead>
-                  {canManage ? <TableHead className="w-24" /> : null}
+                  {canManage ? <TableHead className="w-40" /> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -291,18 +336,27 @@ export function SupplierPortalUsers({
                     </TableCell>
                     {canManage ? (
                       <TableCell>
-                        {!u.is_supplier_admin ? (
+                        <div className="flex flex-wrap items-center justify-end gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
                             className="text-xs h-7"
-                            onClick={() => void toggleUserStatus(u.id, u.status)}
+                            onClick={() => openResetPassword(u)}
                           >
-                            {u.status === "active" ? "Desativar" : "Reativar"}
+                            <KeyRound className="h-3.5 w-3.5 mr-1" />
+                            Resetar senha
                           </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                          {!u.is_supplier_admin ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-xs h-7"
+                              onClick={() => void toggleUserStatus(u.id, u.status)}
+                            >
+                              {u.status === "active" ? "Desativar" : "Reativar"}
+                            </Button>
+                          ) : null}
+                        </div>
                       </TableCell>
                     ) : null}
                   </TableRow>
@@ -401,6 +455,56 @@ export function SupplierPortalUsers({
             </Button>
             <Button disabled={creatingUser} onClick={() => void handleCreateUser()}>
               {creatingUser ? "Criando..." : "Criar usuário"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={!!resetUser}
+        onOpenChange={(open) => {
+          if (!open) {
+            setResetUser(null)
+            setResetPassword("")
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Resetar senha</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Defina uma nova senha para{" "}
+              <strong>{resetUser?.full_name ?? "o usuário"}</strong>
+              {resetUser?.is_supplier_admin ? " (administrador — login por CNPJ)" : ""}.
+              Compartilhe a senha com o fornecedor de forma segura.
+            </p>
+            <div className="grid gap-2">
+              <Label>Nova senha</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                />
+                <Button type="button" variant="outline" size="icon" onClick={suggestResetPassword}>
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setResetUser(null)
+                setResetPassword("")
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button disabled={resettingPassword || !resetPassword} onClick={() => void handleResetPassword()}>
+              {resettingPassword ? "Salvando..." : "Confirmar nova senha"}
             </Button>
           </DialogFooter>
         </DialogContent>

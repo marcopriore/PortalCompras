@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
@@ -137,6 +138,14 @@ function LoginForm({
           className="bg-white/10 border-white/20 text-white placeholder:text-white/40
                      focus:border-white/50 focus:ring-white/20"
         />
+      </div>
+      <div className="flex justify-end">
+        <Link
+          href="/recuperar-senha"
+          className="text-xs text-white/70 hover:text-white underline underline-offset-2"
+        >
+          Esqueci minha senha
+        </Link>
       </div>
       <Button
         type="submit"

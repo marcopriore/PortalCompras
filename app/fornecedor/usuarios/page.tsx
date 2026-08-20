@@ -163,12 +163,13 @@ export default function FornecedorUsuariosPage() {
     try {
       const payload: Record<string, string> = { action: "update" }
       if (editUser.is_supplier_admin) {
-        if (!form.email.trim()) {
-          toast.error("Informe o e-mail.")
+        if (!form.email.trim() && !form.newPassword) {
+          toast.error("Informe o e-mail e/ou a nova senha.")
           return
         }
-        payload.email = form.email.trim()
+        if (form.email.trim()) payload.email = form.email.trim()
         if (form.fullName.trim()) payload.fullName = form.fullName.trim()
+        if (form.newPassword) payload.newPassword = form.newPassword
       } else {
         if (form.fullName.trim()) payload.fullName = form.fullName.trim()
         if (form.email.trim()) payload.email = form.email.trim()
@@ -412,8 +413,8 @@ export default function FornecedorUsuariosPage() {
           {editUser?.is_supplier_admin ? (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                O login do administrador é pelo CNPJ. Você pode atualizar apenas o e-mail
-                vinculado (recuperação de senha e notificações).
+                O login do administrador é pelo CNPJ. Você pode atualizar o e-mail
+                vinculado e redefinir a senha.
               </p>
               <div className="grid gap-2">
                 <Label>E-mail</Label>
@@ -422,6 +423,20 @@ export default function FornecedorUsuariosPage() {
                   value={form.email}
                   onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label>Nova senha (opcional)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    value={form.newPassword}
+                    onChange={(e) => setForm((f) => ({ ...f, newPassword: e.target.value }))}
+                    placeholder="Deixe vazio para manter"
+                  />
+                  <Button type="button" variant="outline" size="icon" onClick={suggestNewPassword}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
           ) : (
