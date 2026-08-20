@@ -82,7 +82,7 @@ export async function fetchOutboundLogs(
   let dbQuery = service
     .from("integration_delivery_logs")
     .select(
-      "id, company_id, created_at, action, entity, entity_id, entity_code, success, response_status, error_message, attempts, request_payload, response_body, endpoint_id",
+      "id, company_id, created_at, action, entity, entity_id, entity_code, success, response_status, error_message, attempts, idempotency_key, request_payload, response_body, endpoint_id",
       { count: "exact" },
     )
     .order("created_at", { ascending: false })
@@ -158,6 +158,7 @@ export async function fetchOutboundLogs(
       response_status: r.response_status != null ? Number(r.response_status) : null,
       error_message: r.error_message != null ? String(r.error_message) : null,
       attempts: Number(r.attempts ?? 1),
+      idempotency_key: r.idempotency_key != null ? String(r.idempotency_key) : null,
       endpoint_name: endpointName ?? null,
       request_payload: payload,
       response_body: truncateText(
@@ -277,6 +278,7 @@ export async function fetchOutboundLogs(
       success: log.success,
       entity_status: log.entity_status,
       entity_external_code: log.entity_external_code,
+      error_message: log.error_message,
     })
   }
 
@@ -310,7 +312,7 @@ export async function fetchOutboundLogDetail(
   let query = service
     .from("integration_delivery_logs")
     .select(
-      "id, company_id, created_at, action, entity, entity_id, entity_code, success, response_status, error_message, attempts, request_payload, response_body, endpoint_id",
+      "id, company_id, created_at, action, entity, entity_id, entity_code, success, response_status, error_message, attempts, idempotency_key, request_payload, response_body, endpoint_id",
     )
     .eq("id", logId)
 

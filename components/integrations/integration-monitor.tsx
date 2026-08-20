@@ -78,7 +78,18 @@ function statusBadgeInbound(code: number | null) {
   return <Badge variant="secondary">{code}</Badge>
 }
 
-function statusBadgeOutbound(success: boolean, code: number | null) {
+function statusBadgeOutbound(
+  success: boolean,
+  code: number | null,
+  errorMessage?: string | null,
+) {
+  if (errorMessage === "Em andamento") {
+    return (
+      <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">
+        Em andamento
+      </Badge>
+    )
+  }
   if (success) {
     return (
       <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
@@ -364,6 +375,7 @@ export function IntegrationMonitor({
                   <TableHead>Action</TableHead>
                   <TableHead>Entidade</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="text-center">Tentativas</TableHead>
                 </>
               )}
               <TableHead className="w-[180px]" />
@@ -373,7 +385,7 @@ export function IntegrationMonitor({
             {loading && (
               <TableRow>
                 <TableCell
-                  colSpan={mode === "admin" ? 7 : 6}
+                  colSpan={mode === "admin" ? (direction === "outbound" ? 8 : 7) : direction === "outbound" ? 7 : 6}
                   className="py-10 text-center text-muted-foreground"
                 >
                   <Loader2 className="mx-auto h-5 w-5 animate-spin" />
@@ -383,7 +395,7 @@ export function IntegrationMonitor({
             {!loading && fetchError && (
               <TableRow>
                 <TableCell
-                  colSpan={mode === "admin" ? 7 : 6}
+                  colSpan={mode === "admin" ? (direction === "outbound" ? 8 : 7) : direction === "outbound" ? 7 : 6}
                   className="py-10 text-center text-destructive"
                 >
                   {fetchError}
@@ -393,7 +405,7 @@ export function IntegrationMonitor({
             {!loading && !fetchError && (data?.logs.length ?? 0) === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={mode === "admin" ? 7 : 6}
+                  colSpan={mode === "admin" ? (direction === "outbound" ? 8 : 7) : direction === "outbound" ? 7 : 6}
                   className="py-10 text-center text-muted-foreground"
                 >
                   Nenhum log encontrado.
@@ -448,11 +460,19 @@ export function IntegrationMonitor({
                       {outbound.entity_code ?? outbound.entity ?? "—"}
                     </TableCell>
                     <TableCell>
-                      {statusBadgeOutbound(outbound.success, outbound.response_status)}
+                      {statusBadgeOutbound(
+                        outbound.success,
+                        outbound.response_status,
+                        outbound.error_message,
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center text-sm tabular-nums">
+                      {outbound.attempts}
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
-                        {outbound.retry_eligible && (
+                        {outbound.retry_eligible &&
+                          outbound.error_message !== "Em andamento" && (
                           <Button
                             variant="outline"
                             size="sm"

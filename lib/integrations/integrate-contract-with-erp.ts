@@ -138,13 +138,24 @@ export async function integrateContractWithErp(
 
   const payload = await loadContractOutboundPayload(companyId, contractId)
   if (!payload) {
+    const errorMessage = buildErpErrorMessage(
+      ERP_ERROR_KIND.PAYLOAD,
+      "Não foi possível montar o payload do contrato.",
+    )
+    const { notifyIntegrationError } = await import(
+      "@/lib/integrations/notify-integration-error"
+    )
+    void notifyIntegrationError({
+      companyId,
+      entity: "contract",
+      entityId: contractId,
+      code: String(contract.code),
+      message: errorMessage,
+    })
     return {
       success: false,
       skipped: false,
-      errorMessage: buildErpErrorMessage(
-        ERP_ERROR_KIND.PAYLOAD,
-        "Não foi possível montar o payload do contrato.",
-      ),
+      errorMessage,
     }
   }
 
@@ -158,10 +169,21 @@ export async function integrateContractWithErp(
   })
 
   if (!result.success) {
+    const errorMessage = buildDispatchErrorMessage(result)
+    const { notifyIntegrationError } = await import(
+      "@/lib/integrations/notify-integration-error"
+    )
+    void notifyIntegrationError({
+      companyId,
+      entity: "contract",
+      entityId: contractId,
+      code: String(contract.code),
+      message: errorMessage,
+    })
     return {
       success: false,
       skipped: false,
-      errorMessage: buildDispatchErrorMessage(result),
+      errorMessage,
     }
   }
 
@@ -181,6 +203,16 @@ export async function integrateContractWithErp(
               ERP_ERROR_KIND.PERSIST,
               `Falha ao gravar código ERP do contrato: ${persist.message}`,
             )
+      const { notifyIntegrationError } = await import(
+        "@/lib/integrations/notify-integration-error"
+      )
+      void notifyIntegrationError({
+        companyId,
+        entity: "contract",
+        entityId: contractId,
+        code: String(contract.code),
+        message,
+      })
       return { success: false, skipped: false, errorMessage: message }
     }
 

@@ -90,12 +90,35 @@ async function markIntegrationFailure(
   companyId: string,
   operation: PurchaseOrderErpOperation,
   message: string,
+  previousStatus?: string | null,
 ): Promise<PurchaseOrderIntegrationStatus> {
   const status = failureStatusForMessage(operation, message)
+  const { data: orderMeta } = await service
+    .from("purchase_orders")
+    .select("code")
+    .eq("id", orderId)
+    .eq("company_id", companyId)
+    .maybeSingle()
+
   await updatePurchaseOrder(service, orderId, companyId, {
     status,
     erp_error_message: message,
   })
+
+  if (status === "integration_error") {
+    const { notifyIntegrationError } = await import(
+      "@/lib/integrations/notify-integration-error"
+    )
+    void notifyIntegrationError({
+      companyId,
+      entity: "purchase_order",
+      entityId: orderId,
+      code: orderMeta?.code != null ? String(orderMeta.code) : orderId,
+      message,
+      previousStatus: previousStatus ?? null,
+    })
+  }
+
   return status
 }
 
@@ -211,6 +234,7 @@ export async function integratePurchaseOrderWithErp(
         companyId,
         operation,
         errorMessage,
+        currentStatus,
       )
       return { success: false, skipped: false, status, errorMessage }
     }
@@ -222,7 +246,14 @@ export async function integratePurchaseOrderWithErp(
       ERP_ERROR_KIND.PAYLOAD,
       "Não foi possível montar o payload do pedido.",
     )
-    const status = await markIntegrationFailure(service, orderId, companyId, operation, message)
+    const status = await markIntegrationFailure(
+      service,
+      orderId,
+      companyId,
+      operation,
+      message,
+      currentStatus,
+    )
     return { success: false, skipped: false, status, errorMessage: message }
   }
 
@@ -254,6 +285,7 @@ export async function integratePurchaseOrderWithErp(
           companyId,
           operation,
           errorMessage,
+          currentStatus,
         )
         return { success: false, skipped: false, status, errorMessage }
       }
@@ -279,6 +311,7 @@ export async function integratePurchaseOrderWithErp(
           companyId,
           operation,
           errorMessage,
+          currentStatus,
         )
         return { success: false, skipped: false, status, errorMessage }
       }
@@ -299,6 +332,7 @@ export async function integratePurchaseOrderWithErp(
         companyId,
         operation,
         errorMessage,
+        currentStatus,
       )
       return { success: false, skipped: false, status, errorMessage }
     }
@@ -306,7 +340,14 @@ export async function integratePurchaseOrderWithErp(
   }
 
   const errorMessage = buildDispatchErrorMessage(operation, result)
-  const status = await markIntegrationFailure(service, orderId, companyId, operation, errorMessage)
+  const status = await markIntegrationFailure(
+    service,
+    orderId,
+    companyId,
+    operation,
+    errorMessage,
+    currentStatus,
+  )
 
   return {
     success: false,

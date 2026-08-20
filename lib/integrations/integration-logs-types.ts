@@ -29,6 +29,8 @@ export type OutboundLogRow = {
   response_status: number | null
   error_message: string | null
   attempts: number
+  /** Chave SHA-256 enviada ao ERP (header Idempotency-Key). */
+  idempotency_key: string | null
   endpoint_name: string | null
   request_payload: Record<string, unknown> | null
   response_body: string | null

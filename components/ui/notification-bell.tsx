@@ -91,12 +91,14 @@ function getNotificationIcon(type: string) {
     "quotation.invited": { icon: FileText, color: "text-blue-500" },
     "quotation.new_round": { icon: FileText, color: "text-indigo-500" },
     "order.received": { icon: ShoppingCart, color: "text-blue-500" },
+    "order.integration_error": { icon: AlertTriangle, color: "text-red-600" },
     "contract.sent_for_acceptance": { icon: FileText, color: "text-purple-500" },
     "contract.accepted": { icon: CheckCircle, color: "text-green-500" },
     "contract.refused": { icon: XCircle, color: "text-red-500" },
     "contract.expiring_soon": { icon: Calendar, color: "text-amber-500" },
     "contract.expired": { icon: Calendar, color: "text-red-500" },
     "contract.low_balance": { icon: AlertTriangle, color: "text-amber-600" },
+    "contract.integration_error": { icon: AlertTriangle, color: "text-red-600" },
   }
   return map[type] ?? { icon: Bell, color: "text-muted-foreground" }
 }

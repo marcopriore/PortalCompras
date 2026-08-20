@@ -184,6 +184,9 @@ export default function ApiDocsPage() {
               <a href="#auth" className="block py-1 text-white/70 hover:text-white">
                 Autenticação
               </a>
+              <a href="#outbound-idempotency" className="block py-1 text-white/70 hover:text-white">
+                Outbound Idempotency-Key
+              </a>
               <a href="#errors" className="block py-1 text-white/70 hover:text-white">
                 Códigos de erro
               </a>
@@ -241,6 +244,37 @@ export default function ApiDocsPage() {
               <br />
               Erros: <code className="text-white/70">{`{ "error": "...", "code": "FORBIDDEN" }`}</code>
             </p>
+          </section>
+
+          <section id="outbound-idempotency" className="scroll-mt-24 rounded-xl border border-white/10 bg-white/5 p-6">
+            <h2 className="text-lg font-semibold">Outbound Valore → ERP (Idempotency-Key)</h2>
+            <p className="mt-2 text-sm text-white/60">
+              Chamadas do Valore ao ERP (pedidos e contratos) enviam o header{" "}
+              <code className="text-cyan-300">Idempotency-Key</code>. A chave é estável por
+              tenant + ação + entidade (SHA-256). Reenvios do monitor reutilizam a mesma chave
+              para o ERP deduplicar (ex.: pedido já criado no SAP).
+            </p>
+            <div className="mt-4 space-y-3">
+              <CodeBlock
+                code={`Idempotency-Key: <sha256(company_id:action:entity_id)>`}
+                label="Header enviado pelo Valore"
+              />
+              <CodeBlock
+                code={`{
+  "action": "purchase_order.create",
+  "entity": "purchase_orders",
+  "entity_id": "uuid",
+  "entity_code": "PO-2026-0001",
+  "data": { "...": "payload do pedido" }
+}`}
+                label="Corpo JSON típico"
+              />
+            </div>
+            <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-white/50">
+              <li>Cada tentativa incrementa o contador <code className="text-white/70">attempts</code> no log.</li>
+              <li>Despachos concorrentes para a mesma entidade são bloqueados (HTTP 409 no Valore).</li>
+              <li>O ERP deve tratar a mesma chave como a mesma operação de negócio.</li>
+            </ul>
           </section>
 
           <section id="errors" className="scroll-mt-24">

@@ -476,6 +476,50 @@ export function templateContractLowBalance(data: {
   }
 }
 
+export function templateIntegrationError(data: {
+  adminName: string
+  entityLabel: string
+  code: string
+  message: string
+  detailUrl: string
+  monitorUrl: string
+}): { subject: string; html: string } {
+  const content = `
+    <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 8px;">
+      Erro de integração ERP
+    </h2>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
+      Olá, ${data.adminName}! A integração com o ERP falhou e requer atenção da equipe técnica.
+    </p>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;
+                padding:16px;margin-bottom:24px;">
+      <p style="color:#991b1b;font-weight:600;margin:0;font-size:15px;">
+        ${data.entityLabel} ${data.code}
+      </p>
+      <p style="color:#7f1d1d;font-size:13px;margin:8px 0 0;word-break:break-word;">
+        ${data.message}
+      </p>
+    </div>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+      <tr><td>
+        <table width="100%">
+          ${emailInfoRow(data.entityLabel, data.code)}
+          ${emailInfoRow("Ação sugerida", "Reenviar pelo Monitor de Integrações")}
+        </table>
+      </td></tr>
+    </table>
+    ${emailButton("Abrir Monitor", data.monitorUrl)}
+    <p style="color:#9ca3af;font-size:13px;margin:16px 0 0;">
+      <a href="${data.detailUrl}" style="color:#4F3EF5;">Ver ${data.entityLabel.toLowerCase()}</a>
+    </p>
+  `
+  return {
+    subject: `[Valore] Erro de integração — ${data.code}`,
+    html: emailBase(content, "Erro de integração ERP"),
+  }
+}
+
 export function templateSupplierPortalInvite(data: {
   supplierName: string
   buyerCompanyName: string

@@ -134,6 +134,8 @@ type NotificationForm = {
   delivery_done_email: boolean
   daily_summary_bell: boolean
   daily_summary_email: boolean
+  integration_error_bell: boolean
+  integration_error_email: boolean
 }
 
 function defaultNotificationForm(): NotificationForm {
@@ -157,6 +159,8 @@ function defaultNotificationForm(): NotificationForm {
     delivery_done_email: false,
     daily_summary_bell: false,
     daily_summary_email: false,
+    integration_error_bell: true,
+    integration_error_email: true,
   }
 }
 
@@ -187,6 +191,8 @@ function notificationFormFromRow(raw: Record<string, unknown>): NotificationForm
     delivery_done_email: Boolean(n.delivery_done_email ?? false),
     daily_summary_bell: Boolean(n.daily_summary_bell ?? false),
     daily_summary_email: Boolean(n.daily_summary_email ?? legDaily),
+    integration_error_bell: Boolean(n.integration_error_bell ?? true),
+    integration_error_email: Boolean(n.integration_error_email ?? true),
   }
 }
 
@@ -245,6 +251,13 @@ const notificationTypes: {
     description: "Receba um resumo diário das atividades por e-mail",
     bellKey: "daily_summary_bell",
     emailKey: "daily_summary_email",
+  },
+  {
+    key: "integration_error",
+    label: "Erro de Integração ERP",
+    description: "Quando um pedido ou contrato falhar na integração (ação no Monitor)",
+    bellKey: "integration_error_bell",
+    emailKey: "integration_error_email",
   },
 ]
 
@@ -1231,6 +1244,8 @@ export default function ConfiguracoesPage() {
       delivery_done_email: notifForm.delivery_done_email,
       daily_summary_bell: notifForm.daily_summary_bell,
       daily_summary_email: notifForm.daily_summary_email,
+      integration_error_bell: notifForm.integration_error_bell,
+      integration_error_email: notifForm.integration_error_email,
     }
     const preferencesPayload = { ...legacyFlags, ...channelPayload }
     try {

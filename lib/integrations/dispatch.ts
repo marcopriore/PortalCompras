@@ -6,7 +6,13 @@ import type {
 } from "@/lib/integrations/types"
 import { parseExternalIdFromErpResponse } from "@/lib/integrations/external-id-response"
 import { formatErpHttpFailure } from "@/lib/integrations/erp-errors"
-import { buildOutboundIdempotencyKey } from "@/lib/integrations/outbound-idempotency"
+import {
+  OUTBOUND_DISPATCH_IN_PROGRESS,
+  OUTBOUND_IN_FLIGHT_STALE_MS,
+  buildOutboundIdempotencyKey,
+  isOutboundInFlightConflict,
+  nextOutboundAttempt,
+} from "@/lib/integrations/outbound-idempotency"
 
 type DispatchInput = {
   companyId: string
@@ -55,14 +61,70 @@ function actionToHttpMethod(action: OutboundIntegrationAction): "POST" | "PUT" |
   return "POST"
 }
 
+async function resolveNextAttempts(
+  companyId: string,
+  action: OutboundIntegrationAction,
+  entityId: string | undefined,
+): Promise<number> {
+  if (!entityId) return 1
+  const service = createServiceRoleClient()
+  const { data } = await service
+    .from("integration_delivery_logs")
+    .select("attempts")
+    .eq("company_id", companyId)
+    .eq("action", action)
+    .eq("entity_id", entityId)
+    .neq("error_message", OUTBOUND_DISPATCH_IN_PROGRESS)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return nextOutboundAttempt(data?.attempts)
+}
+
+async function releaseStaleInFlight(
+  companyId: string,
+  action: OutboundIntegrationAction,
+  entityId: string,
+): Promise<void> {
+  const service = createServiceRoleClient()
+  const staleBefore = new Date(Date.now() - OUTBOUND_IN_FLIGHT_STALE_MS).toISOString()
+  await service
+    .from("integration_delivery_logs")
+    .update({
+      error_message: "Timeout: despacho interrompido",
+      success: false,
+    })
+    .eq("company_id", companyId)
+    .eq("action", action)
+    .eq("entity_id", entityId)
+    .eq("error_message", OUTBOUND_DISPATCH_IN_PROGRESS)
+    .lt("created_at", staleBefore)
+}
+
 /**
  * Dispara integração HTTP ativa para o ERP (não é webhook passivo).
- * Implementação completa na fase de pedidos/requisições outbound (passo 5).
+ * Persiste Idempotency-Key, contabiliza attempts e bloqueia reenvio concorrente.
  */
 export async function dispatchOutboundIntegration(
   input: DispatchInput,
 ): Promise<OutboundDispatchResult> {
   const service = createServiceRoleClient()
+  const idempotencyKey = buildOutboundIdempotencyKey({
+    companyId: input.companyId,
+    action: input.action,
+    entityId: input.entityId,
+  })
+
+  if (input.entityId) {
+    await releaseStaleInFlight(input.companyId, input.action, input.entityId)
+  }
+
+  const attempts = await resolveNextAttempts(
+    input.companyId,
+    input.action,
+    input.entityId,
+  )
 
   const { data: endpoints, error } = await service
     .from("integration_endpoints")
@@ -87,7 +149,8 @@ export async function dispatchOutboundIntegration(
       response_body: null,
       success: false,
       error_message: errorMessage,
-      attempts: 1,
+      attempts,
+      idempotency_key: idempotencyKey,
     })
     if (logError) {
       console.error("[dispatch] integration_delivery_logs insert:", logError.message)
@@ -104,14 +167,52 @@ export async function dispatchOutboundIntegration(
   const endpoint = endpoints[0] as IntegrationEndpointRow
   const method = actionToHttpMethod(input.action)
   const url = endpoint.base_url.replace(/\/$/, "")
-  const idempotencyKey = buildOutboundIdempotencyKey({
-    companyId: input.companyId,
-    action: input.action,
-    entityId: input.entityId,
-  })
-  const controller = new AbortController()
   const timeout = windowOrDefaultTimeout(endpoint.timeout_ms)
 
+  const { data: pendingLog, error: pendingError } = await service
+    .from("integration_delivery_logs")
+    .insert({
+      company_id: input.companyId,
+      endpoint_id: endpoint.id,
+      action: input.action,
+      entity: input.entity ?? null,
+      entity_id: input.entityId ?? null,
+      entity_code: input.entityCode ?? null,
+      request_payload: input.payload,
+      response_status: null,
+      response_body: null,
+      success: false,
+      error_message: OUTBOUND_DISPATCH_IN_PROGRESS,
+      attempts,
+      idempotency_key: idempotencyKey,
+    })
+    .select("id")
+    .single()
+
+  if (pendingError || !pendingLog?.id) {
+    if (isOutboundInFlightConflict(pendingError)) {
+      return {
+        success: false,
+        responseStatus: 409,
+        responseBody: null,
+        errorMessage:
+          "Integração já em andamento para esta entidade. Aguarde e tente novamente.",
+      }
+    }
+    console.error(
+      "[dispatch] integration_delivery_logs pending insert:",
+      pendingError?.message,
+    )
+    return {
+      success: false,
+      responseStatus: null,
+      responseBody: null,
+      errorMessage: pendingError?.message ?? "Falha ao registrar despacho.",
+    }
+  }
+
+  const logId = pendingLog.id as string
+  const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeout)
 
   let responseStatus: number | null = null
@@ -152,22 +253,18 @@ export async function dispatchOutboundIntegration(
     clearTimeout(timer)
   }
 
-  const { error: logError } = await service.from("integration_delivery_logs").insert({
-    company_id: input.companyId,
-    endpoint_id: endpoint.id,
-    action: input.action,
-    entity: input.entity ?? null,
-    entity_id: input.entityId ?? null,
-    entity_code: input.entityCode ?? null,
-    request_payload: input.payload,
-    response_status: responseStatus,
-    response_body: responseBody,
-    success,
-    error_message: errorMessage,
-    attempts: 1,
-  })
-  if (logError) {
-    console.error("[dispatch] integration_delivery_logs insert:", logError.message)
+  const { error: updateError } = await service
+    .from("integration_delivery_logs")
+    .update({
+      response_status: responseStatus,
+      response_body: responseBody,
+      success,
+      error_message: errorMessage,
+    })
+    .eq("id", logId)
+
+  if (updateError) {
+    console.error("[dispatch] integration_delivery_logs update:", updateError.message)
   }
 
   return {

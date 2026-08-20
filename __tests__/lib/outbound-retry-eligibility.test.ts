@@ -109,6 +109,14 @@ describe("isOutboundRetryEligible", () => {
     })
   })
 
+  describe("in-flight dispatch", () => {
+    it("returns false while Em andamento", () => {
+      expect(
+        isOutboundRetryEligible(poLog({ success: false, error_message: "Em andamento" })),
+      ).toBe(false)
+    })
+  })
+
   describe("unknown action", () => {
     it("returns false", () => {
       expect(isOutboundRetryEligible({

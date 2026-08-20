@@ -90,7 +90,10 @@ export function isOutboundRetryEligible(log: {
   success: boolean
   entity_status?: string | null
   entity_external_code?: string | null
+  error_message?: string | null
 }): boolean {
+  if (log.error_message === "Em andamento") return false
+
   if (isPurchaseOrderOutboundLog(log)) {
     if (log.action === "purchase_order.create") {
       return isPurchaseOrderCreateRetryEligible(log)

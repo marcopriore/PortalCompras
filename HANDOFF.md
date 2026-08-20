@@ -161,12 +161,14 @@ Revisado 19/08/2026. **Foco atual:** alertas de integração e módulo de recebi
 - ERP → Valore via `POST /api/v1/requisitions`
 - Outbound REQ não disparado (infra pronta no código)
 
-**C. Próximo: idempotência outbound**
+**C. Idempotência outbound** ✅ (básica v2.19.81 + avançada v2.19.86)
 - Header `Idempotency-Key` + dedup no ERP
+- Persistência da chave, `attempts`, trava concorrente, docs públicas
 
 ### Loja de API — Fase 1 (base)
 - ✅ Passos 1–8 SPEC §10.8 (inbound, UI admin, monitor, docs)
-- 🟡 Outbound: pedido create/update/delete ✅; REQ inbound only; idempotência pendente
+- 🟡 Outbound: pedido create/update/delete ✅; contrato ✅; REQ inbound only; auto-retry pendente
+- ✅ Alertas `integration_error` (sino + e-mail para admins)
 
 ### Imediato (paralelo) — concluído
 1. ✅ **Enforcement de permissões** — `order.view_all`, `order.edit_own`, `quotation.edit`, `equalize.select` (v2.19.82)
@@ -178,11 +180,11 @@ Revisado 19/08/2026. **Foco atual:** alertas de integração e módulo de recebi
 ### Médio prazo
 6. **Módulo de Recebimento** + consumo REQ/contrato
 7. **Consumo por item de requisição** (Parcial/Total/Aberta)
-8. **Login fornecedor redesign + gestão de usuários por fornecedor**
-9. **"Agir como"** no comprador
-10. **Importação massiva de requisições (Excel)**
-11. **Idempotência outbound** (header `Idempotency-Key` + dedup no ERP)
-12. **Alertas de integração** (e-mail/in-app quando `integration_error`)
+8. ✅ **Login fornecedor redesign + gestão de usuários por fornecedor**
+9. ✅ **"Agir como"** no comprador
+10. ✅ **Importação massiva de requisições (Excel)**
+11. ✅ **Idempotência outbound** (header + attempts + trava + docs)
+12. ✅ **Alertas de integração** (e-mail/in-app quando `integration_error`)
 
 ### Baixa prioridade
 13. Migrar documentação de implantação para Notion

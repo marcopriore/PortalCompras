@@ -382,7 +382,7 @@ Revisado em 19/08/2026. **Foco atual:** cobertura de testes, alertas de integra�
 | # | Item | Status | Notas |
 |---|------|--------|-------|
 | 6 | **Módulo de Recebimento** | ❌ Futuro | Entrada parcial, embarque, entrega; base para consumo de REQ/contrato. Nota: pedido cancelado → liberar saldo restante no contrato (dentro do módulo) |
-| 7 | **API Store — implementação** | 🟡 Parcial | Inbound v1 + outbound pedidos (create/update/delete) + monitor + docs públicas ✅. Falta: REQ outbound (se necessário), retry/idempotência avançada |
+| 7 | **API Store — implementação** | 🟡 Parcial | Inbound v1 + outbound pedidos/contratos + monitor + docs + idempotência avançada + alertas `integration_error` ✅. Falta: REQ outbound (opcional), auto-retry |
 | 8 | **Controle de consumo por item de requisição** | ❌ Futuro | Parcial / Total / Aberta — depende do módulo de Recebimento |
 | 9 | **Login fornecedor + usuários por fornecedor** | ❌ Futuro | Redesign `/fornecedor/login`; gestão de múltiplos logins por `supplier_id` (hoje 1 perfil `supplier` por fornecedor) |
 | 10 | **"Agir como" (impersonation) no comprador** | ❌ Futuro | Admin/Master assume visão de comprador, gerente, requisitante, aprovador etc.; UI na tela de Usuários; audit log obrigatório |
@@ -802,6 +802,17 @@ Reenvio cancelamento com falha: Monitor → `operation: "delete"`.
 #### Idempotência outbound
 
 Todas as chamadas HTTP ao ERP incluem o header `Idempotency-Key`, gerado de forma estável por `(company_id, action, entity_id)` via SHA-256 (`lib/integrations/outbound-idempotency.ts`). Reenvios do monitor reutilizam a mesma chave para o ERP deduplicar (ex.: número de pedido já existente no SAP).
+
+**Avançado (v2.19.86):**
+- Chave persistida em `integration_delivery_logs.idempotency_key`
+- Contador `attempts` incrementado a cada reenvio da mesma entidade/ação
+- Trava de concorrência: no máximo um despacho “Em andamento” por `(company_id, action, entity_id)`; concorrente → 409
+- Logs órfãos “Em andamento” (> 3 min) são liberados automaticamente
+- Docs públicas: `/docs/api` § Outbound Idempotency-Key
+
+**Ainda fora de escopo:** auto-retry com backoff, idempotência inbound `/api/v1`.
+
+**Alertas `integration_error` (v2.19.86):** admins do tenant recebem sino + e-mail (prefs `integration_error_*`, padrão ligado). Disparo ao transicionar pedido para `integration_error` ou falha de `contract.create`. Dedup 60 min. Status `error` (reprovação ERP) **não** gera este alerta.
 
 ---
 
