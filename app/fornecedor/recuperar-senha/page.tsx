@@ -24,7 +24,13 @@ export default function RecuperarSenhaPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ login, portal: "fornecedor" }),
       })
-      const data = (await res.json()) as { error?: string; message?: string }
+      const data = (await res.json()) as {
+        error?: string
+        message?: string
+        emailedTo?: string
+        multiple?: boolean
+        options?: Array<{ email: string; companyName: string }>
+      }
 
       if (!res.ok) {
         toast.error(data.error ?? "Erro ao solicitar recuperação de senha.")
@@ -32,7 +38,11 @@ export default function RecuperarSenhaPage() {
       }
 
       setSent(true)
-      toast.success(data.message ?? "Verifique seu e-mail.")
+      if (data.emailedTo) {
+        toast.success(`Link enviado para ${data.emailedTo}`)
+      } else {
+        toast.success(data.message ?? "Verifique seu e-mail.")
+      }
     } catch {
       toast.error("Erro ao solicitar recuperação de senha.")
     } finally {
@@ -64,7 +74,8 @@ export default function RecuperarSenhaPage() {
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 Se existir uma conta ativa, enviamos um link para redefinição de senha.
-                Verifique a caixa de entrada e o spam.
+                No login por CNPJ, o e-mail é o cadastrado no convite do administrador
+                (pode ser diferente do e-mail de outros usuários). Verifique também a pasta de spam.
               </p>
               <Button asChild className="w-full">
                 <Link href="/fornecedor/login">Voltar ao login</Link>

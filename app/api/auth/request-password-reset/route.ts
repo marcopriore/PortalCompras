@@ -25,12 +25,17 @@ function authAdmin() {
   )
 }
 
-function okResponse() {
+function okResponse(extra?: { emailedTo?: string }) {
   return NextResponse.json({
     success: true,
     message:
       "Se existir uma conta ativa com esses dados, enviamos um e-mail com o link de redefinição.",
+    ...extra,
   })
+}
+
+function maskEmail(email: string): string {
+  return email.replace(/(.{1,2}).+(@.+)/, "$1***$2")
 }
 
 export async function POST(request: Request) {
@@ -163,7 +168,7 @@ export async function POST(request: Request) {
       )
     }
 
-    return okResponse()
+    return okResponse(usedCnpj ? { emailedTo: maskEmail(email) } : undefined)
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro interno"
     console.error("[request-password-reset]", message)

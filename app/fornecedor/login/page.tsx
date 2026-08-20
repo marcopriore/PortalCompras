@@ -61,11 +61,18 @@ export default function LoginPage() {
     window.location.href = "/fornecedor"
   }
 
-  async function signInWithResolvedEmail(email: string) {
+  async function signInWithResolvedEmail(email: string, fromCnpj = false) {
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      toast.error(error.message || "Credenciais inválidas.")
+      if (fromCnpj) {
+        const masked = email.replace(/(.{1,2}).+(@.+)/, "$1***$2")
+        toast.error(
+          `Senha inválida para o CNPJ (conta ${masked}). Use a senha dessa conta ou redefina a senha.`,
+        )
+      } else {
+        toast.error(error.message || "Credenciais inválidas.")
+      }
       return
     }
 
@@ -134,7 +141,7 @@ export default function LoginPage() {
           toast.error("CNPJ não encontrado.")
           return
         }
-        await signInWithResolvedEmail(data.email as string)
+        await signInWithResolvedEmail(data.email as string, true)
         return
       }
 

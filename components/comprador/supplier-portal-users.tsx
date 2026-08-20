@@ -311,6 +311,7 @@ export function SupplierPortalUsers({
                 <TableRow>
                   <TableHead>Nome</TableHead>
                   <TableHead>Login</TableHead>
+                  <TableHead>E-mail</TableHead>
                   <TableHead>Status</TableHead>
                   {canManage ? <TableHead className="w-40" /> : null}
                 </TableRow>
@@ -328,6 +329,9 @@ export function SupplierPortalUsers({
                           Admin
                         </Badge>
                       ) : null}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {u.email ?? "—"}
                     </TableCell>
                     <TableCell>
                       <Badge variant={u.status === "active" ? "default" : "outline"}>
