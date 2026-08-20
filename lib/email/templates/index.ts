@@ -475,3 +475,33 @@ export function templateContractLowBalance(data: {
     html: emailBase(content, "Saldo baixo no contrato"),
   }
 }
+
+export function templateSupplierPortalInvite(data: {
+  supplierName: string
+  buyerCompanyName: string
+  inviteUrl: string
+  expiresAtLabel: string
+}): { subject: string; html: string } {
+  const content = `
+    <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 8px;">
+      Convite para o Portal do Fornecedor
+    </h2>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
+      Olá! <strong>${data.buyerCompanyName}</strong> convidou
+      <strong>${data.supplierName}</strong> a acessar o portal Valore.
+    </p>
+    <p style="color:#6c757d;font-size:15px;margin:0 0 24px;">
+      Conclua seu cadastro para responder cotações, aceitar pedidos e
+      acompanhar contratos. Você precisará confirmar o CNPJ cadastrado
+      no portal do comprador.
+    </p>
+    ${emailButton("Concluir cadastro", data.inviteUrl)}
+    <p style="color:#9ca3af;font-size:13px;margin:24px 0 0;">
+      Este convite expira em ${data.expiresAtLabel}.
+    </p>
+  `
+  return {
+    subject: `Convite — Portal do Fornecedor Valore`,
+    html: emailBase(content, "Convite Portal do Fornecedor"),
+  }
+}

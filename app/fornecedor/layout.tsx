@@ -10,19 +10,25 @@ export default async function FornecedorLayout({
 }: {
   children: React.ReactNode
 }) {
+  const headersList = await headers()
+  const pathname =
+    headersList.get("x-pathname") ?? headersList.get("x-invoke-path") ?? ""
+  const isPublicRoute =
+    pathname.includes("/fornecedor/login") ||
+    pathname.includes("/fornecedor/cadastro") ||
+    pathname.includes("/fornecedor/recuperar-senha")
+
+  if (isPublicRoute) {
+    return <>{children}</>
+  }
+
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   if (!user) {
-    const headersList = await headers()
-    const pathname =
-      headersList.get("x-pathname") ?? headersList.get("x-invoke-path") ?? ""
-    const isPublicRoute =
-      pathname.includes("/fornecedor/login") || pathname.includes("/fornecedor/cadastro")
-    if (!isPublicRoute) redirect("/fornecedor/login")
-    return <>{children}</>
+    redirect("/fornecedor/login")
   }
 
   const { data: profile } = await supabase

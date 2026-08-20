@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/client'
+import { getClientImpersonationSession } from '@/lib/impersonation/client-store'
+import { withImpersonationAuditMetadata } from '@/lib/impersonation/audit-metadata'
 
 type AuditEventType =
   | 'user.login'
@@ -74,7 +76,10 @@ export async function logAudit(params: LogAuditParams): Promise<void> {
       user_name: resolvedName,
       entity: params.entity ?? null,
       entity_id: params.entityId ?? null,
-      metadata: params.metadata ?? null,
+      metadata: withImpersonationAuditMetadata(
+        params.metadata,
+        getClientImpersonationSession(),
+      ) ?? null,
     })
   } catch {
     // Log não deve quebrar o fluxo principal

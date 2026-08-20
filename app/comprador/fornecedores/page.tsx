@@ -9,7 +9,9 @@ import { useTenantSetting } from '@/lib/hooks/use-tenant-settings'
 import { useSupplierScores } from '@/lib/hooks/use-supplier-score'
 import { SupplierScoreBadge } from '@/components/ui/supplier-score-badge'
 import { SupplierCategories } from '@/components/comprador/supplier-categories'
+import { SupplierPortalUsers } from '@/components/comprador/supplier-portal-users'
 import { cn } from '@/lib/utils'
+import { excelCellToString, normalizeImportedEmail, displayContactEmail } from '@/lib/utils/excel-cell'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import MultiSelectFilter from '@/components/ui/multi-select-filter'
@@ -318,19 +320,16 @@ export default function FornecedoresPage() {
 
     ws.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return
-      const values = row.values as (string | number | undefined)[]
       const obj: ImportPreviewRow = {
-        code: String(values[1] ?? '').trim(),
-        name: String(values[2] ?? '').trim(),
-        cnpj: String(values[3] ?? '').trim(),
-        email: String(values[4] ?? '').trim(),
-        phone: String(values[5] ?? '').trim(),
-        category: String(values[6] ?? '').trim(),
-        city: String(values[7] ?? '').trim(),
-        state: String(values[8] ?? '').trim(),
-        status: String(values[9] ?? '')
-          .trim()
-          .toLowerCase(),
+        code: excelCellToString(row.getCell(1)),
+        name: excelCellToString(row.getCell(2)),
+        cnpj: excelCellToString(row.getCell(3)),
+        email: normalizeImportedEmail(excelCellToString(row.getCell(4))) ?? '',
+        phone: excelCellToString(row.getCell(5)),
+        category: excelCellToString(row.getCell(6)),
+        city: excelCellToString(row.getCell(7)),
+        state: excelCellToString(row.getCell(8)),
+        status: excelCellToString(row.getCell(9)).toLowerCase(),
       }
 
       const isEmptyRow =
@@ -361,37 +360,59 @@ export default function FornecedoresPage() {
 
   async function handleImport() {
     if (!companyId || importPreview.length === 0) return
-    const supabase = createClient()
 
     setImporting(true)
 
-    for (const row of importPreview) {
-      const { error } = await supabase
-        .from('suppliers')
-        .upsert(
-          {
-            company_id: companyId,
+    try {
+      const res = await fetch('/api/comprador/suppliers/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rows: importPreview.map((row) => ({
             code: row.code,
             name: row.name,
-            cnpj: row.cnpj || null,
-            email: row.email || null,
-            phone: row.phone || null,
-            category: row.category || null,
-            city: row.city || null,
-            state: row.state || null,
+            cnpj: row.cnpj,
+            email: row.email,
+            phone: row.phone,
+            category: row.category,
+            city: row.city,
+            state: row.state,
             status: row.status === 'ativo' ? 'active' : 'inactive',
-          },
-          { onConflict: 'company_id,code' },
-        )
+          })),
+        }),
+      })
 
-      if (error) {
-        console.error('import supplier:', row.code, error)
+      const data = (await res.json()) as {
+        success?: number
+        errors?: number
+        errorDetails?: string[]
+        error?: string
       }
-    }
 
-    setImporting(false)
-    setImportStep('done')
-    await loadSuppliers()
+      if (!res.ok) {
+        toast.error(data.error ?? 'Erro ao importar fornecedores.')
+        return
+      }
+
+      const errorDetails = data.errorDetails ?? []
+      const success = data.success ?? 0
+      const errorCount = data.errors ?? errorDetails.length
+
+      if (errorCount > 0) {
+        toast.error(
+          `${errorCount} fornecedor(es) com erro${success > 0 ? `; ${success} importado(s) com sucesso` : ''}.`,
+        )
+        setImportErrors(errorDetails.slice(0, 8))
+        setImportStep('preview')
+      } else {
+        toast.success(`${success} fornecedor(es) importado(s) com sucesso.`)
+        setImportStep('done')
+      }
+
+      await loadSuppliers()
+    } finally {
+      setImporting(false)
+    }
   }
 
   return (
@@ -612,7 +633,7 @@ export default function FornecedoresPage() {
           if (!open) setSelectedSupplier(null)
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{selectedSupplier?.name}</DialogTitle>
           </DialogHeader>
@@ -631,7 +652,7 @@ export default function FornecedoresPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-1">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">E-mail</p>
-                  <p className="text-sm">{selectedSupplier.email || '—'}</p>
+                  <p className="text-sm">{displayContactEmail(selectedSupplier.email)}</p>
                 </div>
                 <div className="grid gap-1">
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Telefone</p>
@@ -664,6 +685,13 @@ export default function FornecedoresPage() {
               <SupplierCategories
                 supplierId={selectedSupplier.id}
                 companyId={companyId ?? ''}
+              />
+              <SupplierPortalUsers
+                supplierId={selectedSupplier.id}
+                supplierName={selectedSupplier.name}
+                supplierEmail={selectedSupplier.email}
+                supplierCnpj={selectedSupplier.cnpj}
+                canManage={isMasterAdmin}
               />
               {supplierScores[selectedSupplier.id] && (
                 <div className="space-y-3 border-t border-border pt-4">

@@ -380,20 +380,35 @@ export default function ConfiguracoesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
+  const { hasPermission, loading: permissionsLoading } = usePermissions()
+
+  const canManageCompany = Boolean(isSuperAdmin || hasRole("admin"))
+  const canImpersonateUsers = hasPermission("user.impersonate")
+  const canAccessUsersTab = canManageCompany || canImpersonateUsers
+  const impersonateOnly = canImpersonateUsers && !canManageCompany
 
   const initialTab = React.useMemo<ActiveTab>(() => {
     const t = searchParams.get("tab") as ActiveTab | null
-    return t && VALID_TABS.has(t) ? t : "empresa"
-  }, [searchParams])
+    if (t && VALID_TABS.has(t)) return t
+    return impersonateOnly ? "usuarios" : "empresa"
+  }, [searchParams, impersonateOnly])
 
   const [activeTab, setActiveTab] = React.useState<ActiveTab>(initialTab)
 
   React.useEffect(() => {
     const t = searchParams.get("tab") as ActiveTab | null
-    if (t && VALID_TABS.has(t)) setActiveTab(t)
-  }, [searchParams])
+    if (t && VALID_TABS.has(t)) {
+      if (impersonateOnly && t !== "usuarios") {
+        setActiveTab("usuarios")
+        router.replace("/comprador/configuracoes?tab=usuarios")
+        return
+      }
+      setActiveTab(t)
+      return
+    }
+    if (impersonateOnly) setActiveTab("usuarios")
+  }, [searchParams, impersonateOnly, router])
 
-  const canManageCompany = Boolean(isSuperAdmin || hasRole("admin"))
   const canManageApprovals = canManageCompany
 
   const [authEmail, setAuthEmail] = React.useState<string | null>(null)
@@ -1716,7 +1731,7 @@ export default function ConfiguracoesPage() {
     return `${formatMoneyBR(min)} — ${formatMoneyBR(rule.max_value)}`
   }
 
-  if (userLoading) {
+  if (userLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
         Carregando...
@@ -1744,7 +1759,9 @@ export default function ConfiguracoesPage() {
       {/* Abas (mesmo padrão visual do detalhe do tenant) */}
       <div className="flex gap-1 border-b border-border mb-4">
         {(
-          [
+          impersonateOnly
+            ? ([["usuarios", "Usuários", Users]] as const)
+            : ([
             ["empresa", "Empresa", Building2],
             ["perfil", "Perfil", User],
             ["notificacoes", "Notificações", Bell],
@@ -1756,8 +1773,8 @@ export default function ConfiguracoesPage() {
               ["usuarios", "Usuários", Users],
               ["permissoes", "Perfis de Acesso", ShieldCheck],
               ["integracoes", "Integrações", Zap],
-            ] as const : []),
-          ] as const
+            ] as const : canAccessUsersTab ? [["usuarios", "Usuários", Users]] as const : []),
+          ] as const)
         ).map(([key, label, Icon]) => (
           <button
             key={key}
@@ -3197,8 +3214,8 @@ export default function ConfiguracoesPage() {
       </AlertDialog>
 
       {/* ABA USUÁRIOS */}
-      {activeTab === "usuarios" && canManageCompany && (
-        <ConfiguracoesUsuariosTab />
+      {activeTab === "usuarios" && canAccessUsersTab && (
+        <ConfiguracoesUsuariosTab impersonateOnly={impersonateOnly} />
       )}
 
       {/* ABA PERFIS DE ACESSO */}

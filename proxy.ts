@@ -6,7 +6,11 @@ import {
 } from "@/lib/proxy/background-tasks"
 import { getBackgroundTasksCooldownMs } from "@/lib/proxy/load-background-tasks-cooldown"
 
-const PUBLIC_FORNECEDOR_ROUTES = ["/fornecedor/login", "/fornecedor/cadastro"] as const
+const PUBLIC_FORNECEDOR_ROUTES = [
+  "/fornecedor/login",
+  "/fornecedor/cadastro",
+  "/fornecedor/recuperar-senha",
+] as const
 
 function isPublicFornecedorPath(pathname: string): boolean {
   return PUBLIC_FORNECEDOR_ROUTES.some(
@@ -152,7 +156,17 @@ export async function proxy(request: NextRequest) {
     return redirectWithSessionCookies(redirectUrl, response)
   }
 
+  if (
+    pathname.startsWith("/fornecedor/cadastro") ||
+    pathname.startsWith("/fornecedor/recuperar-senha")
+  ) {
+    return response
+  }
+
   if (isFornecedorLoginRoute) {
+    if (request.nextUrl.searchParams.get("cadastro") === "ok") {
+      return response
+    }
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname =
       profileType === "supplier" ? "/fornecedor" : "/comprador"

@@ -1,48 +1,129 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { Package, ArrowLeft, Upload, Check } from "lucide-react"
+import { useSearchParams } from "next/navigation"
+import { Package, ArrowLeft, Check, Eye, EyeOff } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
+import { createClient } from "@/lib/supabase/client"
+import { maskCnpjInput } from "@/lib/utils/cnpj"
 
-export default function CadastroPage() {
-  const router = useRouter()
-  const [step, setStep] = useState(1)
-  const [isLoading, setIsLoading] = useState(false)
+type InvitePreview = {
+  email: string
+  supplierName: string
+  supplierCode: string
+  cnpjMasked: string
+  buyerCompanyName: string
+}
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (step < 3) {
-      setStep(step + 1)
+function CadastroContent() {
+  const searchParams = useSearchParams()
+  const token = searchParams.get("token")?.trim() ?? ""
+
+  const [loadingInvite, setLoadingInvite] = useState(true)
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  const [invite, setInvite] = useState<InvitePreview | null>(null)
+  const [sessionCleared, setSessionCleared] = useState(false)
+
+  const [fullName, setFullName] = useState("")
+  const [cnpj, setCnpj] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    void (async () => {
+      const supabase = createClient()
+      await supabase.auth.signOut()
+      setSessionCleared(true)
+    })()
+  }, [])
+
+  useEffect(() => {
+    if (!sessionCleared || !token) {
+      if (!token) {
+        setInviteError("Link de convite inválido. Solicite um novo convite ao comprador.")
+        setLoadingInvite(false)
+      }
       return
     }
-    setIsLoading(true)
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    router.push("/fornecedor")
+
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/supplier-invites/validate?token=${encodeURIComponent(token)}`,
+        )
+        const data = await res.json()
+        if (!res.ok) {
+          setInviteError(data.error ?? "Convite inválido.")
+          return
+        }
+        setInvite({
+          email: data.email,
+          supplierName: data.supplierName,
+          supplierCode: data.supplierCode,
+          cnpjMasked: data.cnpjMasked,
+          buyerCompanyName: data.buyerCompanyName,
+        })
+      } catch {
+        setInviteError("Erro ao validar convite.")
+      } finally {
+        setLoadingInvite(false)
+      }
+    })()
+  }, [token, sessionCleared])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!token || !invite) return
+
+    if (password !== confirmPassword) {
+      toast.error("As senhas não coincidem.")
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const res = await fetch("/api/supplier-invites/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          fullName: fullName.trim(),
+          cnpj,
+          password,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error ?? "Erro ao concluir cadastro.")
+        return
+      }
+
+      const supabase = createClient()
+      await supabase.auth.signOut()
+      window.location.href = "/fornecedor/login?cadastro=ok"
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const steps = [
-    { number: 1, title: "Dados Básicos" },
-    { number: 2, title: "Empresa" },
-    { number: 3, title: "Documentos" },
-  ]
+  if (!sessionCleared) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
+        Preparando cadastro...
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-background p-4 py-8">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-lg mx-auto">
         <div className="flex items-center gap-4 mb-8">
           <Button variant="ghost" size="icon" asChild>
             <Link href="/fornecedor/login">
@@ -53,265 +134,146 @@ export default function CadastroPage() {
             <Package className="h-5 w-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-xl font-bold">Cadastro de Fornecedor</h1>
-            <p className="text-sm text-muted-foreground">Valore</p>
+            <h1 className="text-xl font-bold">Cadastro no Portal</h1>
+            <p className="text-sm text-muted-foreground">Valore — convite do comprador</p>
           </div>
-        </div>
-
-        <div className="flex items-center justify-center mb-8">
-          {steps.map((s, index) => (
-            <div key={s.number} className="flex items-center">
-              <div className="flex flex-col items-center">
-                <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-medium ${
-                    step > s.number
-                      ? "bg-success text-success-foreground"
-                      : step === s.number
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {step > s.number ? <Check className="h-5 w-5" /> : s.number}
-                </div>
-                <span className="mt-2 text-xs text-muted-foreground">{s.title}</span>
-              </div>
-              {index < steps.length - 1 && (
-                <div
-                  className={`h-0.5 w-16 mx-2 ${
-                    step > s.number ? "bg-success" : "bg-muted"
-                  }`}
-                />
-              )}
-            </div>
-          ))}
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>
-              {step === 1 && "Informações Básicas"}
-              {step === 2 && "Dados da Empresa"}
-              {step === 3 && "Documentação"}
-            </CardTitle>
+            <CardTitle>Concluir cadastro</CardTitle>
             <CardDescription>
-              {step === 1 && "Preencha os dados do responsável pelo cadastro"}
-              {step === 2 && "Informe os dados cadastrais da sua empresa"}
-              {step === 3 && "Envie os documentos necessários para homologação"}
+              Confirme os dados do fornecedor já cadastrado no portal do comprador.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {step === 1 && (
+            {loadingInvite ? (
+              <p className="text-sm text-muted-foreground">Validando convite...</p>
+            ) : inviteError ? (
+              <div className="space-y-4">
+                <p className="text-sm text-destructive">{inviteError}</p>
+                <Button asChild variant="outline" className="w-full">
+                  <Link href="/fornecedor/login">Ir para login</Link>
+                </Button>
+              </div>
+            ) : invite ? (
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-sm">
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Comprador</span>
+                    <span className="font-medium text-right">{invite.buyerCompanyName}</span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Fornecedor</span>
+                    <span className="font-medium text-right">{invite.supplierName}</span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Código</span>
+                    <span>{invite.supplierCode || "—"}</span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">CNPJ (cadastro)</span>
+                    <span>{invite.cnpjMasked}</span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">E-mail do convite</span>
+                    <span className="text-right break-all">{invite.email}</span>
+                  </div>
+                </div>
+
                 <FieldGroup>
                   <Field>
-                    <FieldLabel>Nome Completo</FieldLabel>
-                    <Input placeholder="Seu nome completo" required />
-                  </Field>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field>
-                      <FieldLabel>E-mail</FieldLabel>
-                      <Input type="email" placeholder="seu@email.com" required />
-                    </Field>
-                    <Field>
-                      <FieldLabel>Telefone</FieldLabel>
-                      <Input type="tel" placeholder="(00) 00000-0000" required />
-                    </Field>
-                  </div>
-
-                  <Field>
-                    <FieldLabel>Cargo</FieldLabel>
-                    <Input placeholder="Ex: Diretor Comercial" required />
-                  </Field>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field>
-                      <FieldLabel>Senha</FieldLabel>
-                      <Input type="password" placeholder="Mínimo 8 caracteres" required />
-                    </Field>
-                    <Field>
-                      <FieldLabel>Confirmar Senha</FieldLabel>
-                      <Input type="password" placeholder="Repita a senha" required />
-                    </Field>
-                  </div>
-                </FieldGroup>
-              )}
-
-              {step === 2 && (
-                <FieldGroup>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field>
-                      <FieldLabel>CNPJ</FieldLabel>
-                      <Input placeholder="00.000.000/0001-00" required />
-                    </Field>
-                    <Field>
-                      <FieldLabel>Inscrição Estadual</FieldLabel>
-                      <Input placeholder="000.000.000.000" />
-                    </Field>
-                  </div>
-
-                  <Field>
-                    <FieldLabel>Razão Social</FieldLabel>
-                    <Input placeholder="Razão social completa" required />
+                    <FieldLabel>Nome completo</FieldLabel>
+                    <Input
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Responsável pelo acesso"
+                      autoComplete="name"
+                      required
+                    />
                   </Field>
 
                   <Field>
-                    <FieldLabel>Nome Fantasia</FieldLabel>
-                    <Input placeholder="Nome fantasia" required />
+                    <FieldLabel>Confirme o CNPJ completo</FieldLabel>
+                    <Input
+                      value={cnpj}
+                      onChange={(e) => setCnpj(maskCnpjInput(e.target.value))}
+                      placeholder="Digite os 14 dígitos do CNPJ"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Deve ser idêntico ao CNPJ cadastrado por {invite.buyerCompanyName}{" "}
+                      (parcialmente oculto acima). A formatação é aplicada automaticamente.
+                    </p>
                   </Field>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field>
-                      <FieldLabel>Categoria Principal</FieldLabel>
-                      <Select required>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="tecnologia">Tecnologia</SelectItem>
-                          <SelectItem value="suprimentos">Suprimentos</SelectItem>
-                          <SelectItem value="servicos">Serviços</SelectItem>
-                          <SelectItem value="mobiliario">Mobiliário</SelectItem>
-                          <SelectItem value="logistica">Logística</SelectItem>
-                          <SelectItem value="outros">Outros</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field>
-                      <FieldLabel>Porte da Empresa</FieldLabel>
-                      <Select required>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="mei">MEI</SelectItem>
-                          <SelectItem value="me">Microempresa</SelectItem>
-                          <SelectItem value="epp">EPP</SelectItem>
-                          <SelectItem value="medio">Médio Porte</SelectItem>
-                          <SelectItem value="grande">Grande Porte</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                  </div>
-
                   <Field>
-                    <FieldLabel>Endereço Completo</FieldLabel>
-                    <Input placeholder="Rua, número, bairro" required />
+                    <FieldLabel>Senha</FieldLabel>
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        autoComplete="new-password"
+                        required
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </Button>
+                    </div>
                   </Field>
 
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <Field>
-                      <FieldLabel>Cidade</FieldLabel>
-                      <Input placeholder="Cidade" required />
-                    </Field>
-                    <Field>
-                      <FieldLabel>Estado</FieldLabel>
-                      <Select required>
-                        <SelectTrigger>
-                          <SelectValue placeholder="UF" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="SP">SP</SelectItem>
-                          <SelectItem value="RJ">RJ</SelectItem>
-                          <SelectItem value="MG">MG</SelectItem>
-                          <SelectItem value="PR">PR</SelectItem>
-                          <SelectItem value="SC">SC</SelectItem>
-                          <SelectItem value="RS">RS</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                    <Field>
-                      <FieldLabel>CEP</FieldLabel>
-                      <Input placeholder="00000-000" required />
-                    </Field>
-                  </div>
-
                   <Field>
-                    <FieldLabel>Descrição da Empresa</FieldLabel>
-                    <Textarea
-                      placeholder="Descreva os principais produtos/serviços oferecidos..."
-                      rows={3}
+                    <FieldLabel>Confirmar senha</FieldLabel>
+                    <Input
+                      type="password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      autoComplete="new-password"
+                      required
                     />
                   </Field>
                 </FieldGroup>
-              )}
 
-              {step === 3 && (
-                <div className="space-y-6">
-                  <div className="space-y-4">
-                    {[
-                      { name: "Contrato Social", required: true },
-                      { name: "Cartão CNPJ", required: true },
-                      { name: "Certidão Negativa de Débitos", required: true },
-                      { name: "Alvará de Funcionamento", required: false },
-                      { name: "Certificações (ISO, etc)", required: false },
-                    ].map((doc) => (
-                      <div
-                        key={doc.name}
-                        className="flex items-center justify-between p-4 rounded-lg border"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Upload className="h-5 w-5 text-muted-foreground" />
-                          <div>
-                            <p className="font-medium">
-                              {doc.name}
-                              {doc.required && (
-                                <span className="text-destructive ml-1">*</span>
-                              )}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              PDF, JPG ou PNG (máx. 5MB)
-                            </p>
-                          </div>
-                        </div>
-                        <Button variant="outline" size="sm">
-                          Selecionar
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="rounded-lg bg-muted/50 p-4">
-                    <div className="flex items-start gap-3">
-                      <Checkbox id="terms" required />
-                      <label htmlFor="terms" className="text-sm leading-relaxed">
-                        Li e aceito os{" "}
-                        <Link href="#" className="text-primary hover:underline">
-                          Termos de Uso
-                        </Link>{" "}
-                        e a{" "}
-                        <Link href="#" className="text-primary hover:underline">
-                          Política de Privacidade
-                        </Link>{" "}
-                        da plataforma Valore.
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-between pt-4 border-t">
-                {step > 1 ? (
-                  <Button type="button" variant="outline" onClick={() => setStep(step - 1)}>
-                    Voltar
-                  </Button>
-                ) : (
-                  <Button variant="outline" asChild>
-                    <Link href="/fornecedor/login">Cancelar</Link>
-                  </Button>
-                )}
-                <Button type="submit" disabled={isLoading}>
-                  {isLoading
-                    ? "Enviando..."
-                    : step < 3
-                    ? "Continuar"
-                    : "Finalizar Cadastro"}
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? "Concluindo..." : "Concluir cadastro"}
                 </Button>
-              </div>
-            </form>
+
+                <p className="text-xs text-center text-muted-foreground flex items-center justify-center gap-1">
+                  <Check className="h-3 w-3" />
+                  Após o cadastro, faça login com CNPJ + senha.
+                </p>
+              </form>
+            ) : null}
           </CardContent>
         </Card>
       </div>
     </div>
+  )
+}
+
+export default function CadastroPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-muted-foreground">
+          Carregando...
+        </div>
+      }
+    >
+      <CadastroContent />
+    </Suspense>
   )
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useTenant } from '@/contexts/tenant-context'
+import { useImpersonation } from '@/contexts/impersonation-context'
 
 type ProfileRow = {
   company_id?: string | null
@@ -17,6 +18,7 @@ type ProfileRow = {
 
 export function useUser() {
   const { companyId: tenantCompanyId } = useTenant()
+  const { isImpersonating, session: impersonationSession } = useImpersonation()
   const [userId, setUserId] = useState<string | null>(null)
   const [supplierId, setSupplierId] = useState<string | null>(null)
   const [companyName, setCompanyName] = useState<string | null>(null)
@@ -106,8 +108,14 @@ export function useUser() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return
+
+      // TOKEN_REFRESHED dispara ao focar a aba/janela — não recarregar perfil
+      // (evita flash de "Carregando…" e re-renders em cascata).
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") {
+        return
+      }
 
       const user = session?.user
       if (!user) {
@@ -129,17 +137,39 @@ export function useUser() {
   const role = roles[0] ?? ''
   const hasRole = useCallback((r: string) => roles.includes(r), [roles])
 
+  const effectiveRoles = isImpersonating
+    ? (impersonationSession?.impersonatedRoles ?? roles)
+    : roles
+
+  const effectiveProfileType = isImpersonating
+    ? (impersonationSession?.impersonatedProfileType ?? profileType)
+    : profileType
+
+  const effectiveFullName = isImpersonating
+    ? (impersonationSession?.impersonatedName ?? fullName)
+    : fullName
+
+  const effectiveIsSuperAdmin = isImpersonating ? false : isSuperAdmin
+
+  const effectiveHasRole = useCallback(
+    (r: string) => effectiveRoles.includes(r),
+    [effectiveRoles],
+  )
+
   return {
     userId,
+    actorUserId: userId,
+    impersonatedUserId: isImpersonating ? impersonationSession?.impersonatedUserId ?? null : null,
     supplierId,
     companyId: tenantCompanyId,
     companyName,
-    profileType,
-    fullName,
-    role,
-    roles,
-    hasRole,
-    isSuperAdmin,
+    profileType: effectiveProfileType,
+    fullName: effectiveFullName,
+    role: effectiveRoles[0] ?? role,
+    roles: effectiveRoles,
+    hasRole: effectiveHasRole,
+    isSuperAdmin: effectiveIsSuperAdmin,
+    isImpersonating,
     loading,
   }
 }

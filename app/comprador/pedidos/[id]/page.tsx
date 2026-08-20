@@ -174,30 +174,30 @@ async function notifySupplierOrderSent(order: {
 
   try {
     const supabase = createClient()
-    const { data: supplierProfile } = await supabase
+    const { data: supplierProfiles } = await supabase
       .from("profiles")
       .select("id, full_name")
       .eq("supplier_id", order.supplier_id)
       .eq("company_id", order.company_id)
       .eq("profile_type", "supplier")
-      .maybeSingle()
+      .eq("status", "active")
 
-    if (!supplierProfile) return
-
-    await notifyWithEmail({
-      userId: supplierProfile.id,
-      companyId: order.company_id,
-      type: "order.sent",
-      title: "Novo pedido de compra recebido",
-      body: `O pedido ${order.code} foi emitido para você. Acesse o portal para visualizar e aceitar.`,
-      entity: "purchase_order",
-      entityId: order.id,
-      subject: `Novo Pedido de Compra — ${order.code}`,
-      html: `<p>Olá, <strong>${supplierProfile.full_name ?? order.supplier_name}</strong>!</p>
+    for (const supplierProfile of supplierProfiles ?? []) {
+      await notifyWithEmail({
+        userId: supplierProfile.id,
+        companyId: order.company_id,
+        type: "order.sent",
+        title: "Novo pedido de compra recebido",
+        body: `O pedido ${order.code} foi emitido para você. Acesse o portal para visualizar e aceitar.`,
+        entity: "purchase_order",
+        entityId: order.id,
+        subject: `Novo Pedido de Compra — ${order.code}`,
+        html: `<p>Olá, <strong>${supplierProfile.full_name ?? order.supplier_name}</strong>!</p>
            <p>O pedido <strong>${order.code}</strong> foi emitido para você.</p>
            <p>Acesse o portal do fornecedor para visualizar os detalhes e confirmar o recebimento.</p>`,
-      emailPrefKey: "order_approved_email",
-    })
+        emailPrefKey: "order_approved_email",
+      })
+    }
   } catch {
     // notificação não deve interromper o fluxo do pedido
   }

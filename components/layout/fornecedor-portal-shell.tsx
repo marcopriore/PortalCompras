@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LogOut,
   ShoppingCart,
+  Users,
 } from "lucide-react"
 import { toast } from "sonner"
 import { ValoreLogo } from "@/components/ui/valore-logo"
@@ -40,6 +41,7 @@ const navItems = [
   { href: "/fornecedor/cotacoes", label: "Cotações", icon: FileText },
   { href: "/fornecedor/pedidos", label: "Pedidos", icon: ShoppingCart },
   { href: "/fornecedor/contratos", label: "Contratos", icon: FileSignature },
+  { href: "/fornecedor/usuarios", label: "Usuários", icon: Users },
 ] as const
 
 export interface FornecedorPortalShellProps {

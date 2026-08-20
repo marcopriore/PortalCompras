@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation"
 import { cookies, headers } from "next/headers"
 import { TenantProvider } from "@/contexts/tenant-context"
+import { ImpersonationProvider } from "@/contexts/impersonation-context"
 import { Sidebar } from "@/components/layout/sidebar"
 import { Header } from "@/components/layout/header"
+import { ImpersonationBanner } from "@/components/impersonation/impersonation-banner"
 import { TenantSelector } from "@/components/layout/tenant-selector"
 import { PortalUnauthorizedToast } from "@/components/layout/portal-unauthorized-toast"
 import { CompradorRouteGuard } from "@/components/comprador/comprador-route-guard"
@@ -87,10 +89,12 @@ export default async function CompradorLayout({
 
   return (
     <TenantProvider initialCompanyId={selectedCompanyId}>
-      <div className="flex h-screen overflow-hidden">
-        <Sidebar type="comprador" />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <Header
+      <ImpersonationProvider>
+        <div className="flex h-screen overflow-hidden">
+          <Sidebar type="comprador" />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <ImpersonationBanner />
+            <Header
             userName={userName}
             userEmail={userEmail}
             userInitials={initials}
@@ -114,6 +118,7 @@ export default async function CompradorLayout({
           </main>
         </div>
       </div>
+      </ImpersonationProvider>
     </TenantProvider>
   )
 }

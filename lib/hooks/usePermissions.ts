@@ -1,6 +1,7 @@
 import * as React from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { IMPERSONATION_PERMISSION } from "@/lib/impersonation/constants"
 
 export type FeatureKey =
   | "quotations"
@@ -51,6 +52,7 @@ export type PermissionKey =
   | "item.create"
   | "item.edit"
   | "user.manage"
+  | "user.impersonate"
   | "settings.manage"
   | "portal.solicitante"
   | "view_only"
@@ -113,13 +115,21 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "item.create",
   "item.edit",
   "user.manage",
+  "user.impersonate",
   "settings.manage",
   "portal.solicitante",
   "view_only",
 ]
 
 export function usePermissions(): UsePermissionsReturn {
-  const { userId, companyId, roles, isSuperAdmin, loading: userLoading } = useUser()
+  const {
+    userId,
+    companyId,
+    roles,
+    isSuperAdmin,
+    isImpersonating,
+    loading: userLoading,
+  } = useUser()
 
   const [loading, setLoading] = React.useState(true)
   const [features, setFeatures] = React.useState<Record<FeatureKey, boolean>>(
@@ -133,7 +143,7 @@ export function usePermissions(): UsePermissionsReturn {
     let alive = true
 
     const load = async () => {
-      if (isSuperAdmin) {
+      if (isSuperAdmin && !isImpersonating) {
         const f: Record<FeatureKey, boolean> = {} as Record<FeatureKey, boolean>
         const p: Record<PermissionKey, boolean> = {} as Record<PermissionKey, boolean>
         ALL_FEATURES.forEach((k) => {
@@ -168,11 +178,11 @@ export function usePermissions(): UsePermissionsReturn {
         return
       }
 
-      setLoading(true)
       const supabase = createClient()
 
       try {
-        const [tenantFeaturesRes, rolePermissionsRes] = await Promise.all([
+        const [tenantFeaturesRes, rolePermissionsRes, profilePermissionsRes] =
+          await Promise.all([
           supabase
             .from("tenant_features")
             .select("feature_key, enabled")
@@ -182,6 +192,12 @@ export function usePermissions(): UsePermissionsReturn {
             .select("permission_key, enabled")
             .eq("company_id", companyId)
             .in("role", roles),
+          supabase
+            .from("profile_permissions")
+            .select("permission_key, enabled")
+            .eq("company_id", companyId)
+            .eq("user_id", userId)
+            .eq("enabled", true),
         ])
 
         const tenantFeaturesData = (tenantFeaturesRes.data ?? []) as {
@@ -212,6 +228,16 @@ export function usePermissions(): UsePermissionsReturn {
           }
         })
 
+        const profilePermissionsData = (profilePermissionsRes.data ?? []) as {
+          permission_key: PermissionKey
+          enabled: boolean
+        }[]
+        profilePermissionsData.forEach((row) => {
+          if (row.permission_key === IMPERSONATION_PERMISSION && row.enabled) {
+            nextPermissions["user.impersonate"] = true
+          }
+        })
+
         if (!alive) return
         setFeatures(nextFeatures)
         setPermissions(nextPermissions)
@@ -227,7 +253,7 @@ export function usePermissions(): UsePermissionsReturn {
     return () => {
       alive = false
     }
-  }, [companyId, userId, roles, isSuperAdmin, userLoading])
+  }, [companyId, userId, roles, isSuperAdmin, isImpersonating, userLoading])
 
   const hasFeature = React.useCallback(
     (feature: FeatureKey) => Boolean(features[feature]),

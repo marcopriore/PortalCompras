@@ -36,8 +36,8 @@ export const COMPRADOR_NAV_RULES: NavEntryRule[] = [
   { href: "/comprador/itens", permissions: ["nav.items"] },
   { href: "/comprador/fornecedores", permissions: ["nav.suppliers"] },
   { href: "/comprador/relatorios", permissions: ["nav.reports"] },
-  { href: "/comprador/configuracoes/usuarios", permissions: ["user.manage"] },
-  { href: "/comprador/configuracoes", permissions: ["settings.manage"] },
+  { href: "/comprador/configuracoes/usuarios", permissions: ["user.manage", "user.impersonate"], anyPermission: true },
+  { href: "/comprador/configuracoes", permissions: ["settings.manage", "user.impersonate"], anyPermission: true },
 ]
 
 const COMPRADOR_ROUTE_RULES: RouteRule[] = [

@@ -5,9 +5,11 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
+import { useImpersonation } from '@/contexts/impersonation-context'
 import { logAudit } from '@/lib/audit'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -43,7 +45,10 @@ import {
   ChevronDown,
   KeyRound,
   CheckCircle2,
+  UserCog,
 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import MultiSelectFilter from '@/components/ui/multi-select-filter'
 import type { PasswordPolicy } from "@/lib/settings/password-policy-registry"
 import { generatePasswordForPolicy } from "@/lib/auth/generate-password"
 
@@ -61,6 +66,7 @@ type RoleValue = (typeof ROLES)[number]['value']
 type Profile = {
   id: string
   full_name: string
+  email?: string | null
   role: string
   roles?: string[] | null
   status: string
@@ -204,12 +210,18 @@ function RolesMultiSelect({
   )
 }
 
-export function ConfiguracoesUsuariosTab() {
+export function ConfiguracoesUsuariosTab({
+  impersonateOnly = false,
+}: {
+  impersonateOnly?: boolean
+}) {
   const { userId, companyId, isSuperAdmin, hasRole } = useUser()
+  const { canImpersonate, startImpersonation } = useImpersonation()
 
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState<string[]>([])
   const searchInputRef = React.useRef<HTMLDivElement>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
@@ -223,10 +235,16 @@ export function ConfiguracoesUsuariosTab() {
     roles: ['buyer'],
     status: 'active',
   })
-  const [editForm, setEditForm] = useState<{ roles: string[]; status: string }>({
+  const [editForm, setEditForm] = useState<{
+    roles: string[]
+    status: string
+    canImpersonate: boolean
+  }>({
     roles: ['buyer'],
     status: 'active',
+    canImpersonate: false,
   })
+  const [actingAsUserId, setActingAsUserId] = React.useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [importStep, setImportStep] = useState<
     'upload' | 'review' | 'importing' | 'done'
@@ -281,30 +299,98 @@ export function ConfiguracoesUsuariosTab() {
       .catch(() => {})
   }, [companyId])
 
-  useEffect(() => {
+  const loadProfiles = React.useCallback(async () => {
     if (!companyId) return
-    const fetchProfiles = async () => {
-      setLoading(true)
-      const supabase = createClient()
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, full_name, role, roles, status, created_at')
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
-      if (data) setProfiles(data as Profile[])
+    setLoading(true)
+    try {
+      const res = await fetch('/api/comprador/users', { cache: 'no-store' })
+      const data = await res.json()
+      if (res.ok) {
+        setProfiles((data.users ?? []) as Profile[])
+      } else {
+        const supabase = createClient()
+        const { data: rows } = await supabase
+          .from('profiles')
+          .select('id, full_name, role, roles, status, created_at, is_superadmin, profile_type')
+          .eq('company_id', companyId)
+          .eq('is_superadmin', false)
+          .neq('profile_type', 'supplier')
+          .order('created_at', { ascending: false })
+        if (rows) {
+          setProfiles(
+            (rows as (Profile & { is_superadmin?: boolean; profile_type?: string })[]).filter(
+              (p) =>
+                !p.is_superadmin &&
+                p.profile_type !== 'supplier' &&
+                p.role !== 'supplier' &&
+                !(Array.isArray(p.roles) && p.roles.includes('supplier')),
+            ),
+          )
+        }
+      }
+    } finally {
       setLoading(false)
     }
-    fetchProfiles()
   }, [companyId])
 
-  const currentIsAdmin =
-    isSuperAdmin || hasRole('admin') || hasRole('manager')
+  useEffect(() => {
+    if (!companyId) return
+    void loadProfiles()
+  }, [companyId, loadProfiles])
 
-  const filtered = profiles.filter((p) =>
-    !search
-      ? true
-      : p.full_name.toLowerCase().includes(search.toLowerCase()),
-  )
+  const currentIsAdmin =
+    !impersonateOnly && (isSuperAdmin || hasRole('admin') || hasRole('manager'))
+
+  const canManageImpersonatePermission = isSuperAdmin || hasRole('admin')
+
+  async function loadUserImpersonatePermission(profileId: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/admin/profile-permissions?userId=${profileId}`)
+      const data = await res.json()
+      if (!res.ok) return false
+      return Boolean(data.canImpersonate)
+    } catch {
+      return false
+    }
+  }
+
+  async function handleActAs(profile: Profile) {
+    if (profile.id === userId) return
+    if (profile.status !== 'active') {
+      toast.error('Não é possível agir em nome de usuário inativo.')
+      return
+    }
+    setActingAsUserId(profile.id)
+    try {
+      const result = await startImpersonation(profile.id)
+      if (result.error) {
+        toast.error(result.error)
+        return
+      }
+      toast.success(`Operando em nome de ${profile.full_name}`)
+      if (result.redirectTo) {
+        window.location.href = result.redirectTo
+      } else {
+        window.location.reload()
+      }
+    } finally {
+      setActingAsUserId(null)
+    }
+  }
+
+  const filtered = profiles.filter((p) => {
+    if (roleFilter.length > 0) {
+      const userRoles = p.roles ?? (p.role ? [p.role] : [])
+      const matchesRole = roleFilter.some((r) => userRoles.includes(r))
+      if (!matchesRole) return false
+    }
+    if (!search) return true
+    const q = search.toLowerCase()
+    return (
+      p.full_name.toLowerCase().includes(q) ||
+      (p.email ?? '').toLowerCase().includes(q)
+    )
+  })
 
   const handleCopy = async () => {
     if (!generatedPassword) return
@@ -354,13 +440,7 @@ export function ConfiguracoesUsuariosTab() {
         metadata: { email: form.email, roles: form.roles },
       })
 
-      const supabase = createClient()
-      const { data: updated } = await supabase
-        .from('profiles')
-        .select('id, full_name, role, roles, status, created_at')
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
-      if (updated) setProfiles(updated as Profile[])
+      await loadProfiles()
 
       setCreateOpen(false)
       setForm({
@@ -398,6 +478,19 @@ export function ConfiguracoesUsuariosTab() {
 
       if (data && data[0]) {
         const updated = data[0]
+
+        if (canManageImpersonatePermission) {
+          await fetch('/api/admin/profile-permissions', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: selectedProfile.id,
+              permissionKey: 'user.impersonate',
+              enabled: editForm.canImpersonate,
+            }),
+          })
+        }
+
         await logAudit({
           eventType: 'user.updated',
           description: `Usuário "${selectedProfile.full_name}" atualizado`,
@@ -815,14 +908,7 @@ export function ConfiguracoesUsuariosTab() {
         metadata: { created: createdCount, total: validRows.length },
       })
 
-      // recarregar lista de perfis
-      const supabase = createClient()
-      const { data: updated } = await supabase
-        .from('profiles')
-        .select('id, full_name, role, roles, status, created_at')
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
-      if (updated) setProfiles(updated as Profile[])
+      await loadProfiles()
     } catch {
       setImportStep('done')
     }
@@ -900,28 +986,37 @@ export function ConfiguracoesUsuariosTab() {
         )}
       </div>
 
-      {/* Barra de busca */}
-      <div ref={searchInputRef} className="relative bg-muted/40 border border-border rounded-xl p-3 max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Buscar por nome..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9 pr-8 border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent"
+      {/* Barra de busca + filtro de perfil */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div ref={searchInputRef} className="relative bg-muted/40 border border-border rounded-xl p-3 flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nome ou e-mail..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 pr-8 border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent"
+          />
+          {search.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('')
+                ;(searchInputRef.current?.querySelector('input') as HTMLInputElement)?.focus()
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
+              aria-label="Limpar busca"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <MultiSelectFilter
+          label="Perfil"
+          options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
+          selected={roleFilter}
+          onChange={setRoleFilter}
+          width="w-full sm:w-56"
         />
-        {search.length > 0 && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearch('')
-              ;(searchInputRef.current?.querySelector('input') as HTMLInputElement)?.focus()
-            }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
-            aria-label="Limpar busca"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
       </div>
 
       {/* Tabela */}
@@ -939,10 +1034,13 @@ export function ConfiguracoesUsuariosTab() {
             <TableHeader className="bg-muted/30">
               <TableRow>
                 <TableHead>Usuário</TableHead>
+                <TableHead>E-mail</TableHead>
                 <TableHead>Perfil</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Data de Cadastro</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                {(currentIsAdmin || canImpersonate) ? (
+                  <TableHead className="text-right">Ações</TableHead>
+                ) : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -967,6 +1065,9 @@ export function ConfiguracoesUsuariosTab() {
                         </p>
                       </div>
                     </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-2 align-top text-sm text-muted-foreground">
+                    {profile.email ?? '—'}
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top">
                     <div className="flex flex-wrap gap-1">
@@ -998,8 +1099,10 @@ export function ConfiguracoesUsuariosTab() {
                     })}
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top text-right">
-                    {currentIsAdmin && (
+                    {(currentIsAdmin || canImpersonate) && (
                       <div className="flex items-center justify-end gap-2">
+                        {currentIsAdmin ? (
+                          <>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -1018,13 +1121,15 @@ export function ConfiguracoesUsuariosTab() {
                           variant="outline"
                           size="sm"
                           className="gap-1.5"
-                          onClick={() => {
+                          onClick={async () => {
                             setSelectedProfile(profile)
+                            const canAct = await loadUserImpersonatePermission(profile.id)
                             setEditForm({
                               roles:
                                 profile.roles ??
                                 (profile.role ? [profile.role] : ['buyer']),
                               status: profile.status,
+                              canImpersonate: canAct,
                             })
                             setEditOpen(true)
                           }}
@@ -1032,6 +1137,21 @@ export function ConfiguracoesUsuariosTab() {
                           <Pencil className="w-3.5 h-3.5" />
                           Editar
                         </Button>
+                          </>
+                        ) : null}
+                        {canImpersonate && profile.id !== userId && profile.status === 'active' ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="gap-1.5"
+                            disabled={actingAsUserId === profile.id}
+                            onClick={() => void handleActAs(profile)}
+                          >
+                            <UserCog className="w-3.5 h-3.5" />
+                            Agir como
+                          </Button>
+                        ) : null}
                       </div>
                     )}
                   </TableCell>
@@ -1183,6 +1303,26 @@ export function ConfiguracoesUsuariosTab() {
                 <option value="inactive">Inativo</option>
               </select>
             </div>
+            {canManageImpersonatePermission && selectedProfile?.id !== userId ? (
+              <div className="flex items-start gap-3 rounded-md border border-border p-3">
+                <Checkbox
+                  id="can-impersonate"
+                  checked={editForm.canImpersonate}
+                  onCheckedChange={(checked) =>
+                    setEditForm((f) => ({ ...f, canImpersonate: checked === true }))
+                  }
+                />
+                <div className="space-y-1">
+                  <Label htmlFor="can-impersonate" className="cursor-pointer">
+                    Permitir &quot;Agir como&quot;
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Libera este usuário a operar em nome de outros usuários do tenant.
+                    Permissão individual — não vinculada ao perfil Comprador.
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
           <DialogFooter className="mt-4">
             <Button
