@@ -1,8 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { ChevronDown, LogOut, User } from "lucide-react"
+import Link from "next/link"
+import { ChevronDown, LogOut, User, Bell, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -29,7 +29,6 @@ export function Header({
   userInitials,
   tenantSelector,
 }: HeaderProps) {
-  const router = useRouter()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -83,14 +82,26 @@ export function Header({
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => router.push("/comprador/configuracoes?tab=perfil")}
-                >
-                  <User className="mr-2 h-4 w-4" />
-                  Perfil
+                <DropdownMenuItem asChild>
+                  <Link href="/comprador/configuracoes?tab=perfil">
+                    <User className="mr-2 h-4 w-4" />
+                    Perfil
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/comprador/configuracoes?tab=notificacoes">
+                    <Bell className="mr-2 h-4 w-4" />
+                    Notificações
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/comprador/configuracoes?tab=seguranca">
+                    <Shield className="mr-2 h-4 w-4" />
+                    Segurança
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive" onClick={handleLogout}>
+                <DropdownMenuItem className="text-destructive" onSelect={handleLogout}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Sair
                 </DropdownMenuItem>

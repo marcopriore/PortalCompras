@@ -93,7 +93,10 @@ export function canAccessCompradorNavHref(
   href: string,
   ctx: CompradorAccessContext,
 ): boolean {
-  const rule = COMPRADOR_NAV_RULES.find((r) => r.href === href)
+  const pathOnly = href.split("?")[0] ?? href
+  const rule =
+    COMPRADOR_NAV_RULES.find((r) => r.href === href) ??
+    COMPRADOR_NAV_RULES.find((r) => r.href === pathOnly)
   if (!rule) return true
   return evaluateRule(rule, ctx)
 }

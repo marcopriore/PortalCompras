@@ -50,7 +50,7 @@ const buyerNavItems: NavItem[] = [
   { title: "Itens", href: "/comprador/itens", icon: Package },
   { title: "Fornecedores", href: "/comprador/fornecedores", icon: Building2 },
   { title: "Relatórios", href: "/comprador/relatorios", icon: BarChart3 },
-  { title: "Configurações", href: "/comprador/configuracoes", icon: Settings },
+  { title: "Configurações", href: "/comprador/configuracoes?tab=perfil", icon: Settings },
 ]
 
 const supplierNavItems: NavItem[] = [
@@ -170,13 +170,14 @@ export function Sidebar({ type }: SidebarProps) {
             </p>
           ) : (
           navItems.map((item) => {
-            const isActive = item.href === "/comprador" || item.href === "/fornecedor"
-              ? pathname === item.href
-              : pathname === item.href || pathname.startsWith(item.href + "/")
+            const itemPath = item.href.split("?")[0] ?? item.href
+            const isActive = itemPath === "/comprador" || itemPath === "/fornecedor"
+              ? pathname === itemPath
+              : pathname === itemPath || pathname.startsWith(itemPath + "/")
             const NavIcon = item.icon
 
             const showApprovalsBadge =
-              item.href === "/comprador/aprovacoes" &&
+              itemPath === "/comprador/aprovacoes" &&
               type === "comprador" &&
               pendingApprovals != null &&
               pendingApprovals > 0

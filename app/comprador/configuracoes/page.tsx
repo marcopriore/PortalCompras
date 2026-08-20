@@ -437,9 +437,7 @@ export default function ConfiguracoesPage() {
         setActiveTab(t)
       } else {
         setActiveTab("perfil")
-        if (t && t !== "perfil") {
-          router.replace("/comprador/configuracoes?tab=perfil")
-        }
+        router.replace("/comprador/configuracoes?tab=perfil")
       }
       return
     }
@@ -1827,7 +1825,10 @@ export default function ConfiguracoesPage() {
           <button
             key={key}
             type="button"
-            onClick={() => setActiveTab(key)}
+            onClick={() => {
+              setActiveTab(key)
+              router.replace(`/comprador/configuracoes?tab=${key}`)
+            }}
             className={[
               "px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-2",
               activeTab === key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground",
