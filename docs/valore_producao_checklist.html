@@ -1,0 +1,141 @@
+
+<h2 class="sr-only">Checklist de produção para o Valore</h2>
+<div style="padding:1rem 0;font-family:var(--font-sans)">
+
+<style>
+.section{margin-bottom:2rem}
+.section-header{display:flex;align-items:center;gap:10px;margin-bottom:1rem;padding-bottom:0.5rem;border-bottom:0.5px solid var(--border)}
+.section-title{font-size:15px;font-weight:500;color:var(--text-primary)}
+.section-count{font-size:12px;color:var(--text-muted);margin-left:auto}
+.item{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;border-radius:var(--radius);cursor:pointer;transition:background 0.15s;margin-bottom:4px;border:0.5px solid transparent}
+.item:hover{background:var(--surface-1)}
+.item.done{opacity:0.55}
+.item.done .item-label{text-decoration:line-through;color:var(--text-muted)}
+.checkbox{width:20px;height:20px;border-radius:6px;border:0.5px solid var(--border-strong);flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-top:1px;transition:all 0.15s}
+.checkbox.checked{background:var(--fill-accent);border-color:var(--fill-accent)}
+.checkbox.checked::after{content:'';width:5px;height:9px;border:2px solid white;border-top:none;border-left:none;transform:rotate(45deg) translateY(-1px)}
+.item-label{font-size:14px;color:var(--text-primary);line-height:1.4}
+.item-sub{font-size:12px;color:var(--text-secondary);margin-top:3px;line-height:1.4}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;margin-left:8px;font-weight:500;vertical-align:middle}
+.badge-danger{background:var(--bg-danger);color:var(--text-danger)}
+.badge-warning{background:var(--bg-warning);color:var(--text-warning)}
+.badge-success{background:var(--bg-success);color:var(--text-success)}
+.progress-bar{height:6px;background:var(--surface-1);border-radius:3px;overflow:hidden;margin-bottom:2rem}
+.progress-fill{height:100%;background:var(--fill-accent);border-radius:3px;transition:width 0.3s}
+.progress-label{font-size:13px;color:var(--text-secondary);margin-bottom:8px}
+</style>
+
+<div class="progress-label" id="progress-label">0 de 24 itens concluídos</div>
+<div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+
+<!-- SEÇÃO 1 -->
+<div class="section">
+  <div class="section-header">
+    <i class="ti ti-server" style="font-size:18px;color:var(--text-accent)" aria-hidden="true"></i>
+    <span class="section-title">Vercel — configuração</span>
+    <span class="section-count" id="count-0"></span>
+  </div>
+  <div class="item" onclick="toggle(this,0)" data-sec="0"><div class="checkbox"></div><div><div class="item-label">Confirmar que o projeto está conectado ao repositório GitHub</div><div class="item-sub">Vercel → seu projeto → Settings → Git</div></div></div>
+  <div class="item" onclick="toggle(this,0)" data-sec="0"><div class="checkbox"></div><div><div class="item-label">Branch de produção definida como <code>main</code></div><div class="item-sub">Settings → Git → Production Branch</div></div></div>
+  <div class="item" onclick="toggle(this,0)" data-sec="0"><div class="checkbox"></div><div><div class="item-label">Framework detectado como Next.js</div><div class="item-sub">Settings → General → Framework Preset</div></div></div>
+  <div class="item" onclick="toggle(this,0)" data-sec="0"><div class="checkbox"></div><div><div class="item-label">Plano Pro ativo (necessário para uso comercial e SLA)<span class="badge badge-warning">recomendado</span></div><div class="item-sub">~$20/mês — garante uptime e suporte</div></div></div>
+</div>
+
+<!-- SEÇÃO 2 -->
+<div class="section">
+  <div class="section-header">
+    <i class="ti ti-key" style="font-size:18px;color:var(--text-accent)" aria-hidden="true"></i>
+    <span class="section-title">Variáveis de ambiente (Vercel)</span>
+    <span class="section-count" id="count-1"></span>
+  </div>
+  <div class="item" onclick="toggle(this,1)" data-sec="1"><div class="checkbox"></div><div><div class="item-label"><code>NEXT_PUBLIC_SUPABASE_URL</code><span class="badge badge-danger">crítico</span></div><div class="item-sub">Settings → Environment Variables → Environments: Production + Preview</div></div></div>
+  <div class="item" onclick="toggle(this,1)" data-sec="1"><div class="checkbox"></div><div><div class="item-label"><code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code><span class="badge badge-danger">crítico</span></div></div></div>
+  <div class="item" onclick="toggle(this,1)" data-sec="1"><div class="checkbox"></div><div><div class="item-label"><code>SUPABASE_SERVICE_ROLE_KEY</code><span class="badge badge-danger">crítico</span></div><div class="item-sub">Nunca expor no client — apenas server-side</div></div></div>
+  <div class="item" onclick="toggle(this,1)" data-sec="1"><div class="checkbox"></div><div><div class="item-label"><code>ANTHROPIC_API_KEY</code><span class="badge badge-danger">crítico</span></div><div class="item-sub">Sem prefixo NEXT_PUBLIC_</div></div></div>
+  <div class="item" onclick="toggle(this,1)" data-sec="1"><div class="checkbox"></div><div><div class="item-label"><code>RESEND_API_KEY</code> e <code>RESEND_FROM_EMAIL</code></div></div></div>
+  <div class="item" onclick="toggle(this,1)" data-sec="1"><div class="checkbox"></div><div><div class="item-label"><code>NEXT_PUBLIC_APP_URL</code> apontando para o domínio de produção<span class="badge badge-danger">crítico</span></div><div class="item-sub">Ex: https://app.axisstrategy.com.br — usado nos e-mails e redirects de auth</div></div></div>
+</div>
+
+<!-- SEÇÃO 3 -->
+<div class="section">
+  <div class="section-header">
+    <i class="ti ti-world" style="font-size:18px;color:var(--text-accent)" aria-hidden="true"></i>
+    <span class="section-title">Domínio</span>
+    <span class="section-count" id="count-2"></span>
+  </div>
+  <div class="item" onclick="toggle(this,2)" data-sec="2"><div class="checkbox"></div><div><div class="item-label">Domínio adicionado na Vercel</div><div class="item-sub">Settings → Domains → Add</div></div></div>
+  <div class="item" onclick="toggle(this,2)" data-sec="2"><div class="checkbox"></div><div><div class="item-label">DNS configurado no registrador (CNAME ou A record)</div><div class="item-sub">A Vercel mostra exatamente o que configurar</div></div></div>
+  <div class="item" onclick="toggle(this,2)" data-sec="2"><div class="checkbox"></div><div><div class="item-label">SSL/HTTPS ativo e válido</div><div class="item-sub">A Vercel provisiona automaticamente — verificar se aparece o cadeado</div></div></div>
+</div>
+
+<!-- SEÇÃO 4 -->
+<div class="section">
+  <div class="section-header">
+    <i class="ti ti-database" style="font-size:18px;color:var(--text-accent)" aria-hidden="true"></i>
+    <span class="section-title">Supabase — configuração de produção</span>
+    <span class="section-count" id="count-3"></span>
+  </div>
+  <div class="item" onclick="toggle(this,3)" data-sec="3"><div class="checkbox"></div><div><div class="item-label">URL do site configurada no Supabase Auth<span class="badge badge-danger">crítico</span></div><div class="item-sub">Supabase → Authentication → URL Configuration → Site URL = seu domínio de produção</div></div></div>
+  <div class="item" onclick="toggle(this,3)" data-sec="3"><div class="checkbox"></div><div><div class="item-label">Redirect URLs configuradas</div><div class="item-sub">Additional Redirect URLs: https://seudominio.com.br/**, https://seudominio.com.br/auth/callback</div></div></div>
+  <div class="item" onclick="toggle(this,3)" data-sec="3"><div class="checkbox"></div><div><div class="item-label">Plano Pro ativo no Supabase<span class="badge badge-warning">recomendado</span></div><div class="item-sub">~$25/mês — backups diários, sem pausa por inatividade, mais conexões</div></div></div>
+  <div class="item" onclick="toggle(this,3)" data-sec="3"><div class="checkbox"></div><div><div class="item-label">Backups automáticos ativados</div><div class="item-sub">Database → Backups</div></div></div>
+  <div class="item" onclick="toggle(this,3)" data-sec="3"><div class="checkbox"></div><div><div class="item-label">SMTP de e-mail configurado (Resend ou SendGrid)</div><div class="item-sub">Authentication → SMTP Settings — para e-mails de auth saírem do seu domínio</div></div></div>
+</div>
+
+<!-- SEÇÃO 5 -->
+<div class="section">
+  <div class="section-header">
+    <i class="ti ti-mail" style="font-size:18px;color:var(--text-accent)" aria-hidden="true"></i>
+    <span class="section-title">E-mail (Resend)</span>
+    <span class="section-count" id="count-4"></span>
+  </div>
+  <div class="item" onclick="toggle(this,4)" data-sec="4"><div class="checkbox"></div><div><div class="item-label">Domínio verificado no Resend</div><div class="item-sub">Resend → Domains → Add Domain → verificar registros DNS</div></div></div>
+  <div class="item" onclick="toggle(this,4)" data-sec="4"><div class="checkbox"></div><div><div class="item-label">RESEND_FROM_EMAIL usando domínio próprio</div><div class="item-sub">Ex: noreply@axisstrategy.com.br — não usar Gmail ou domínio genérico</div></div></div>
+  <div class="item" onclick="toggle(this,4)" data-sec="4"><div class="checkbox"></div><div><div class="item-label">Testar envio de e-mail de notificação em produção</div><div class="item-sub">Criar um pedido/cotação e verificar se o e-mail chega corretamente</div></div></div>
+</div>
+
+<!-- SEÇÃO 6 -->
+<div class="section">
+  <div class="section-header">
+    <i class="ti ti-shield-check" style="font-size:18px;color:var(--text-accent)" aria-hidden="true"></i>
+    <span class="section-title">Testes finais antes de liberar</span>
+    <span class="section-count" id="count-5"></span>
+  </div>
+  <div class="item" onclick="toggle(this,5)" data-sec="5"><div class="checkbox"></div><div><div class="item-label">Deploy de produção executado com sucesso</div><div class="item-sub">Vercel → Deployments → verificar que o último deploy está verde</div></div></div>
+  <div class="item" onclick="toggle(this,5)" data-sec="5"><div class="checkbox"></div><div><div class="item-label">Login e autenticação funcionando no domínio de produção</div></div></div>
+  <div class="item" onclick="toggle(this,5)" data-sec="5"><div class="checkbox"></div><div><div class="item-label">Fluxo completo testado: requisição → cotação → pedido</div></div></div>
+  <div class="item" onclick="toggle(this,5)" data-sec="5"><div class="checkbox"></div><div><div class="item-label">IA (Spend Analysis e Negociação) funcionando em produção</div><div class="item-sub">Verificar ANTHROPIC_API_KEY e créditos disponíveis</div></div></div>
+  <div class="item" onclick="toggle(this,5)" data-sec="5"><div class="checkbox"></div><div><div class="item-label">Tenant de teste criado para o primeiro cliente</div><div class="item-sub">Criar empresa, usuário comprador e usuário fornecedor de teste</div></div></div>
+</div>
+
+</div>
+
+<script>
+const state={done:new Set(),totals:[4,6,3,5,3,5],secs:6};
+function update(){
+  const done=state.done.size,total=24;
+  document.getElementById('progress-label').textContent=done+' de '+total+' itens concluídos';
+  document.getElementById('progress-fill').style.width=Math.round(done/total*100)+'%';
+  for(let s=0;s<state.secs;s++){
+    const items=document.querySelectorAll('[data-sec="'+s+'"]');
+    let c=0;items.forEach(i=>{if(i.classList.contains('done'))c++;});
+    const el=document.getElementById('count-'+s);
+    if(el)el.textContent=c+'/'+state.totals[s];
+  }
+}
+function toggle(el,sec){
+  const cb=el.querySelector('.checkbox');
+  const id=el.getAttribute('data-item')||el.innerHTML.slice(0,40);
+  if(el.classList.contains('done')){
+    el.classList.remove('done');
+    cb.classList.remove('checked');
+    state.done.delete(el);
+  }else{
+    el.classList.add('done');
+    cb.classList.add('checked');
+    state.done.add(el);
+  }
+  update();
+}
+update();
+</script>

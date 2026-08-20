@@ -18,8 +18,13 @@ import {
 import { dispatchOutboundIntegration } from "@/lib/integrations/dispatch"
 import { loadPurchaseOrderOutboundPayload } from "@/lib/integrations/trigger-outbound"
 import type { OutboundIntegrationAction } from "@/lib/integrations/types"
+import {
+  outboundActionToPurchaseOrderOperation,
+  type PurchaseOrderErpOperation,
+} from "@/lib/integrations/purchase-order-operations"
 
-export type PurchaseOrderErpOperation = "create" | "update" | "delete"
+export type { PurchaseOrderErpOperation }
+export { outboundActionToPurchaseOrderOperation }
 
 export type IntegratePurchaseOrderResult = {
   success: boolean
@@ -474,11 +479,3 @@ export async function integratePurchaseOrderWithErp(
   }
 }
 
-export function outboundActionToPurchaseOrderOperation(
-  action: string,
-): PurchaseOrderErpOperation | null {
-  if (action === "purchase_order.create") return "create"
-  if (action === "purchase_order.update") return "update"
-  if (action === "purchase_order.delete") return "delete"
-  return null
-}

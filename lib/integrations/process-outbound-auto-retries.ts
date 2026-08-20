@@ -7,8 +7,8 @@ import {
 } from "@/lib/integrations/outbound-auto-retry"
 import {
   integratePurchaseOrderWithErp,
-  outboundActionToPurchaseOrderOperation,
 } from "@/lib/integrations/integrate-purchase-order"
+import { outboundActionToPurchaseOrderOperation } from "@/lib/integrations/purchase-order-operations"
 import { integrateContractWithErp } from "@/lib/integrations/integrate-contract-with-erp"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 

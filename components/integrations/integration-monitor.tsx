@@ -15,7 +15,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { outboundActionToPurchaseOrderOperation } from "@/lib/integrations/integrate-purchase-order"
+import { outboundActionToPurchaseOrderOperation } from "@/lib/integrations/purchase-order-operations"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
