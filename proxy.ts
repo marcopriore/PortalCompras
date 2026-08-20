@@ -83,6 +83,7 @@ export async function proxy(request: NextRequest) {
 
   const isAuthRoute = pathname === "/login"
   const isRecuperarSenhaRoute = pathname === "/recuperar-senha"
+  const isAuthConfirmRoute = pathname === "/auth/confirm" || pathname.startsWith("/auth/confirm/")
   const isFornecedorLoginRoute = pathname === "/fornecedor/login"
   const isProtectedComprador = pathname.startsWith("/comprador")
   const isProtectedFornecedor = isProtectedFornecedorPath(pathname)
@@ -95,6 +96,7 @@ export async function proxy(request: NextRequest) {
       !isProtectedRoute ||
       isAuthRoute ||
       isRecuperarSenhaRoute ||
+      isAuthConfirmRoute ||
       isPublicFornecedorPath(pathname)
     ) {
       return response
@@ -122,7 +124,12 @@ export async function proxy(request: NextRequest) {
 
   const profileType = profileRow?.profile_type ?? "buyer"
 
-  if (!isAuthRoute && !isRecuperarSenhaRoute && !isPublicFornecedorPath(pathname)) {
+  if (
+    !isAuthRoute &&
+    !isRecuperarSenhaRoute &&
+    !isAuthConfirmRoute &&
+    !isPublicFornecedorPath(pathname)
+  ) {
     let companyIdForTasks = profileRow?.company_id as string | undefined
     if (profileRow?.is_superadmin) {
       const selected = request.cookies.get("selected_company_id")?.value

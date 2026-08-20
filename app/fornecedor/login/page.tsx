@@ -24,14 +24,28 @@ export default function LoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    if (params.get("cadastro") !== "ok") return
+    if (params.get("cadastro") === "ok") {
+      void (async () => {
+        const supabase = createClient()
+        await supabase.auth.signOut()
+        toast.success("Cadastro concluído! Entre com seu CNPJ e senha.")
+        window.history.replaceState({}, "", "/fornecedor/login")
+      })()
+      return
+    }
 
-    void (async () => {
-      const supabase = createClient()
-      await supabase.auth.signOut()
-      toast.success("Cadastro concluído! Entre com seu CNPJ e senha.")
-      window.history.replaceState({}, "", "/fornecedor/login")
-    })()
+    const hash = window.location.hash.replace(/^#/, "")
+    if (hash) {
+      const hashParams = new URLSearchParams(hash)
+      const errDesc = hashParams.get("error_description") ?? hashParams.get("error")
+      if (errDesc) {
+        toast.error(
+          decodeURIComponent(errDesc.replace(/\+/g, " ")) ||
+            "Link de recuperação inválido ou expirado. Solicite um novo.",
+        )
+        window.history.replaceState({}, "", "/fornecedor/login")
+      }
+    }
   }, [])
 
   async function completeLogin(email: string, userId: string, companyId: string | null) {

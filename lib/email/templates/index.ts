@@ -563,9 +563,10 @@ export function templatePasswordReset(data: {
       <strong>${data.portalLabel}</strong> Valore.
     </p>
     <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
-      Clique no botão abaixo para criar uma nova senha. O link é válido por tempo limitado.
+      Clique no botão abaixo. Na próxima tela, confirme para criar uma nova senha.
+      O link é válido por tempo limitado.
     </p>
-    ${emailButton("Redefinir senha", data.resetUrl)}
+    ${emailButton("Continuar redefinição", data.resetUrl)}
     <p style="color:#9ca3af;font-size:13px;margin:24px 0 0;">
       Se você não solicitou esta alteração, ignore este e-mail. Sua senha permanecerá a mesma.
     </p>

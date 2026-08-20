@@ -6,7 +6,7 @@ import {
   templatePasswordReset,
 } from "@/lib/email/templates"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
-import { normalizeCnpj, looksLikeCnpjInput } from "@/lib/utils/cnpj"
+import { formatCnpj, normalizeCnpj, looksLikeCnpjInput } from "@/lib/utils/cnpj"
 import { normalizeImportedEmail } from "@/lib/utils/excel-cell"
 
 type Portal = "fornecedor" | "comprador"
@@ -24,7 +24,7 @@ function authAdmin() {
   )
 }
 
-/** Resposta genérica — não revela se a conta existe. */
+/** Resposta genérica — não revela se a conta existe (fluxo por e-mail). */
 function okResponse() {
   return NextResponse.json({
     success: true,
@@ -33,40 +33,107 @@ function okResponse() {
   })
 }
 
+async function emailForUserId(userId: string): Promise<string | null> {
+  const { data } = await authAdmin().auth.admin.getUserById(userId)
+  return data.user?.email ?? null
+}
+
+/**
+ * Resolve e-mail do admin do fornecedor a partir do CNPJ.
+ * Tenta login_cnpj (dígitos/mascarado) e, em fallback, suppliers.cnpj.
+ */
+async function resolveEmailForSupplierCnpj(
+  cnpjDigits: string,
+): Promise<{ email: string } | { error: string; status: number; multiple?: boolean }> {
+  const service = createServiceRoleClient()
+  const formatted = formatCnpj(cnpjDigits)
+
+  const { data: byLogin } = await service
+    .from("profiles")
+    .select("id, company_id, supplier_id")
+    .eq("profile_type", "supplier")
+    .eq("is_supplier_admin", true)
+    .eq("status", "active")
+    .or(`login_cnpj.eq.${cnpjDigits},login_cnpj.eq.${formatted}`)
+
+  let adminIds = (byLogin ?? []).map((p) => p.id)
+
+  if (adminIds.length === 0) {
+    const { data: suppliers } = await service
+      .from("suppliers")
+      .select("id, company_id, cnpj")
+      .eq("status", "active")
+      .or(`cnpj.eq.${cnpjDigits},cnpj.eq.${formatted}`)
+
+    const matched =
+      suppliers?.length
+        ? suppliers
+        : (
+            await service
+              .from("suppliers")
+              .select("id, company_id, cnpj")
+              .eq("status", "active")
+              .limit(2000)
+          ).data?.filter((s) => normalizeCnpj(s.cnpj) === cnpjDigits) ?? []
+
+    if (matched.length === 0) {
+      return {
+        error: "CNPJ não encontrado. Confira o número ou use o e-mail cadastrado.",
+        status: 404,
+      }
+    }
+
+    const admins: { id: string }[] = []
+    for (const s of matched) {
+      const { data: admin } = await service
+        .from("profiles")
+        .select("id")
+        .eq("company_id", s.company_id)
+        .eq("supplier_id", s.id)
+        .eq("profile_type", "supplier")
+        .eq("is_supplier_admin", true)
+        .eq("status", "active")
+        .maybeSingle()
+      if (admin) admins.push(admin)
+    }
+
+    if (admins.length === 0) {
+      return {
+        error:
+          "Fornecedor encontrado, mas sem administrador ativo no portal. Conclua o convite ou use o e-mail do usuário.",
+        status: 404,
+      }
+    }
+    adminIds = admins.map((a) => a.id)
+  }
+
+  if (adminIds.length > 1) {
+    return {
+      error: "CNPJ vinculado a vários compradores. Use o e-mail cadastrado do administrador.",
+      status: 400,
+      multiple: true,
+    }
+  }
+
+  const email = await emailForUserId(adminIds[0]!)
+  if (!email) {
+    return {
+      error: "Administrador sem e-mail de autenticação. Contate o suporte.",
+      status: 404,
+    }
+  }
+  return { email }
+}
+
 async function resolveEmailForSupplierLogin(
   loginRaw: string,
 ): Promise<{ email: string } | { error: string; status: number; multiple?: boolean }> {
   if (looksLikeCnpjInput(loginRaw)) {
     const cnpj = normalizeCnpj(loginRaw)
     if (cnpj.length !== 14) {
-      return { error: "CNPJ inválido.", status: 400 }
+      return { error: "CNPJ inválido. Informe os 14 dígitos.", status: 400 }
     }
-
-    const service = createServiceRoleClient()
-    const admin = authAdmin()
-    const { data: profiles } = await service
-      .from("profiles")
-      .select("id, company_id")
-      .eq("profile_type", "supplier")
-      .eq("is_supplier_admin", true)
-      .eq("login_cnpj", cnpj)
-      .eq("status", "active")
-
-    if (!profiles?.length) {
-      return { error: "CNPJ não encontrado.", status: 404 }
-    }
-    if (profiles.length > 1) {
-      return {
-        error: "CNPJ vinculado a vários compradores. Use o e-mail cadastrado.",
-        status: 400,
-        multiple: true,
-      }
-    }
-
-    const { data: authUser } = await admin.auth.admin.getUserById(profiles[0]!.id)
-    const email = authUser?.user?.email
-    if (!email) return { error: "Usuário não encontrado.", status: 404 }
-    return { email }
+    return resolveEmailForSupplierCnpj(cnpj)
   }
 
   const email = normalizeImportedEmail(loginRaw)
@@ -75,7 +142,8 @@ async function resolveEmailForSupplierLogin(
 }
 
 /**
- * Solicita recuperação de senha e envia o link via Resend (não depende do SMTP do Supabase).
+ * Solicita recuperação de senha e envia o link via Resend.
+ * O link aponta para /auth/confirm (verifyOtp no clique) — evita otp_expired por prefetch.
  */
 export async function POST(request: Request) {
   try {
@@ -91,11 +159,14 @@ export async function POST(request: Request) {
     if (portal === "fornecedor") {
       const resolved = await resolveEmailForSupplierLogin(loginRaw)
       if ("error" in resolved) {
-        if (resolved.status === 404) return okResponse()
-        return NextResponse.json(
-          { error: resolved.error, multiple: resolved.multiple },
-          { status: resolved.status },
-        )
+        // CNPJ: erro explícito (usuário precisa saber). E-mail: resposta genérica.
+        if (looksLikeCnpjInput(loginRaw)) {
+          return NextResponse.json(
+            { error: resolved.error, multiple: resolved.multiple },
+            { status: resolved.status },
+          )
+        }
+        return okResponse()
       }
       email = resolved.email
     } else {
@@ -109,22 +180,26 @@ export async function POST(request: Request) {
     const service = createServiceRoleClient()
     const admin = authAdmin()
     const baseUrl = getAppEmailBaseUrl().replace(/\/$/, "")
-    const redirectPath =
+    const nextPath =
       portal === "fornecedor"
         ? "/fornecedor/alterar-senha?recovery=1"
         : "/comprador/alterar-senha?recovery=1"
-    const redirectTo = `${baseUrl}${redirectPath}`
 
     const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
       type: "recovery",
       email,
-      options: { redirectTo },
     })
 
-    if (linkError || !linkData?.properties?.action_link || !linkData.user?.id) {
-      // Conta inexistente ou falha — resposta genérica
+    const hashedToken = linkData?.properties?.hashed_token
+    if (linkError || !hashedToken || !linkData?.user?.id) {
       if (linkError) {
         console.error("[request-password-reset] generateLink:", linkError.message)
+      }
+      if (portal === "fornecedor" && looksLikeCnpjInput(loginRaw)) {
+        return NextResponse.json(
+          { error: "Não foi possível gerar o link. Tente novamente ou use o e-mail." },
+          { status: 500 },
+        )
       }
       return okResponse()
     }
@@ -154,8 +229,14 @@ export async function POST(request: Request) {
           ? "Portal do Solicitante"
           : "Portal do Comprador"
 
+    const resetUrl =
+      `${baseUrl}/auth/confirm` +
+      `?token_hash=${encodeURIComponent(hashedToken)}` +
+      `&type=recovery` +
+      `&next=${encodeURIComponent(nextPath)}`
+
     const { subject, html } = templatePasswordReset({
-      resetUrl: linkData.properties.action_link,
+      resetUrl,
       portalLabel,
     })
 
