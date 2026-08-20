@@ -2,6 +2,8 @@ import { Suspense } from "react"
 import { Loader2 } from "lucide-react"
 import { MonitorContent } from "./monitor-content"
 
+export const dynamic = 'force-dynamic'
+
 export default function AdminIntegracoesMonitorPage() {
   return (
     <Suspense fallback={
