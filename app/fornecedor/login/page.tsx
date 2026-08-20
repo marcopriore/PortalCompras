@@ -124,6 +124,11 @@ export default function LoginPage() {
         }
         if (data.multiple && Array.isArray(data.options)) {
           setTenantOptions(data.options as TenantOption[])
+          toast.message("Selecione o comprador vinculado a este CNPJ.")
+          return
+        }
+        if (!data.email) {
+          toast.error("CNPJ não encontrado.")
           return
         }
         await signInWithResolvedEmail(data.email as string)
