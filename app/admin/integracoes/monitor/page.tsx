@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { AdminIntegracoesSubnav } from "@/components/admin/integracoes-subnav"
@@ -15,7 +16,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Loader2 } from "lucide-react"
 
-export default function AdminIntegracoesMonitorPage() {
+function MonitorContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [tenants, setTenants] = React.useState<{ id: string; name: string }[]>([])
@@ -84,5 +85,19 @@ export default function AdminIntegracoesMonitorPage() {
         hideTitle
       />
     </div>
+  )
+}
+
+export default function AdminIntegracoesMonitorPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-64 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <MonitorContent />
+    </Suspense>
   )
 }
