@@ -27,6 +27,7 @@ export type PermissionKey =
   | "nav.requisitions"
   | "nav.quotations"
   | "nav.orders"
+  | "nav.contracts"
   | "nav.items"
   | "nav.suppliers"
   | "nav.reports"
@@ -40,9 +41,13 @@ export type PermissionKey =
   | "order.edit"
   | "order.edit_own"
   | "order.view_all"
+  | "contract.view"
+  | "contract.create"
+  | "contract.edit"
   | "requisition.create.buyer"
   | "requisition.create.requester"
   | "requisition.approve"
+  | "requisition.view_all"
   | "approval.requisition"
   | "approval.order"
   | "export.excel"
@@ -90,6 +95,7 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "nav.requisitions",
   "nav.quotations",
   "nav.orders",
+  "nav.contracts",
   "nav.items",
   "nav.suppliers",
   "nav.reports",
@@ -103,9 +109,13 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "order.edit",
   "order.edit_own",
   "order.view_all",
+  "contract.view",
+  "contract.create",
+  "contract.edit",
   "requisition.create.buyer",
   "requisition.create.requester",
   "requisition.approve",
+  "requisition.view_all",
   "approval.requisition",
   "approval.order",
   "export.excel",

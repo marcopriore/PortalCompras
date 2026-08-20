@@ -333,7 +333,7 @@ export async function GET(request: Request) {
       totalAlvo > 0 ? ((totalPago - totalAlvo) / totalAlvo) * 100 : null
 
     const anthropicPayload = {
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6",
       max_tokens: 1024,
       system:
         "Você é um analista de procurement especializado. Analise os dados fornecidos e gere um resumo executivo em português brasileiro com 4 a 6 insights acionáveis. Seja direto, objetivo e use linguagem de negócio. Formate a resposta como tópicos com emoji no início de cada insight. Não invente dados que não estejam no contexto.",

@@ -382,7 +382,7 @@ Regras:
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 4096,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
@@ -429,7 +429,7 @@ Regras:
           analysis_type: "quotation_negotiation",
           prompt: userPrompt,
           response: cleanText,
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           input_tokens: data.usage?.input_tokens ?? null,
           output_tokens: data.usage?.output_tokens ?? null,
           created_by: ctx.userId,
@@ -451,7 +451,7 @@ Regras:
         metadata: {
           analysis_type: "quotation_negotiation",
           round_id: roundId ?? null,
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           input_tokens: data.usage?.input_tokens,
           output_tokens: data.usage?.output_tokens,
           ai_log_id: insertedLog?.id ?? null,

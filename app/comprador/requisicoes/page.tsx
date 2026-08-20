@@ -80,8 +80,13 @@ function formatDateBR(iso: string | null): string {
 
 export default function RequisicoesPage() {
   const router = useRouter()
-  const { companyId, loading: userLoading } = useUser()
+  const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
   const { hasPermission } = usePermissions()
+
+  const canViewAll =
+    Boolean(isSuperAdmin) ||
+    hasRole("admin") ||
+    hasPermission("requisition.view_all")
 
   const [requisitions, setRequisitions] = React.useState<Requisition[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -104,17 +109,23 @@ export default function RequisicoesPage() {
     const supabase = createClient()
     setLoading(true)
     try {
-      const { data } = await supabase
+      let query = supabase
         .from("requisitions")
         .select("*, requisition_items(id)")
         .eq("company_id", companyId)
         .order("created_at", { ascending: false })
 
+      if (!canViewAll && userId) {
+        query = query.eq("requester_id", userId)
+      }
+
+      const { data } = await query
+
       setRequisitions(((data ?? []) as unknown) as Requisition[])
     } finally {
       setLoading(false)
     }
-  }, [companyId, userLoading])
+  }, [companyId, userLoading, canViewAll, userId])
 
   React.useEffect(() => {
     void loadRequisitions()
@@ -176,7 +187,7 @@ export default function RequisicoesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Requisições</h1>
           <p className="text-muted-foreground">
-            Gerencie as requisições de compra da empresa
+            Gerencie suas requisições de compra
           </p>
         </div>
 

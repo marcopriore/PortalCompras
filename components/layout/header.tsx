@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ChevronDown, LogOut, User, Settings } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { ChevronDown, LogOut, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -14,6 +15,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { NotificationBell } from "@/components/ui/notification-bell"
 import { logAudit } from "@/lib/audit"
+
 interface HeaderProps {
   userName: string
   userEmail: string
@@ -27,6 +29,7 @@ export function Header({
   userInitials,
   tenantSelector,
 }: HeaderProps) {
+  const router = useRouter()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -80,13 +83,11 @@ export function Header({
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>Minha Conta</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => router.push("/comprador/configuracoes?tab=perfil")}
+                >
                   <User className="mr-2 h-4 w-4" />
                   Perfil
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Settings className="mr-2 h-4 w-4" />
-                  Configurações
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="text-destructive" onClick={handleLogout}>

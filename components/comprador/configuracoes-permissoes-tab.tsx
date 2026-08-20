@@ -25,6 +25,7 @@ const PERMISSIONS = [
   { key: "nav.requisitions", label: "Requisições", group: "Navegação" },
   { key: "nav.quotations", label: "Cotações", group: "Navegação" },
   { key: "nav.orders", label: "Pedidos", group: "Navegação" },
+  { key: "nav.contracts", label: "Contratos", group: "Navegação" },
   { key: "nav.items", label: "Itens", group: "Navegação" },
   { key: "nav.suppliers", label: "Fornecedores", group: "Navegação" },
   { key: "nav.reports", label: "Relatórios", group: "Navegação" },
@@ -38,9 +39,13 @@ const PERMISSIONS = [
   { key: "order.edit", label: "Editar Qualquer Pedido", group: "Pedidos" },
   { key: "order.edit_own", label: "Editar Próprios Pedidos", group: "Pedidos" },
   { key: "order.view_all", label: "Ver Pedidos de Todos", group: "Pedidos" },
+  { key: "contract.view", label: "Visualizar Contratos", group: "Contratos" },
+  { key: "contract.create", label: "Criar Contratos", group: "Contratos" },
+  { key: "contract.edit", label: "Editar Contratos", group: "Contratos" },
   { key: "requisition.create.buyer", label: "Criar Requisição (Comprador)", group: "Requisições" },
   { key: "requisition.create.requester", label: "Criar Requisição (Solicitante)", group: "Requisições" },
   { key: "requisition.approve", label: "Aprovar Requisições", group: "Requisições" },
+  { key: "requisition.view_all", label: "Ver Requisições de Todos", group: "Requisições" },
   { key: "approval.requisition", label: "Fluxo Aprovação Requisição", group: "Aprovações" },
   { key: "approval.order", label: "Fluxo Aprovação Pedido", group: "Aprovações" },
   { key: "export.excel", label: "Exportar Excel", group: "Dados" },
@@ -50,7 +55,7 @@ const PERMISSIONS = [
   { key: "item.create", label: "Cadastrar Item", group: "Cadastros" },
   { key: "item.edit", label: "Editar Item", group: "Cadastros" },
   { key: "user.manage", label: "Gerenciar Usuários", group: "Administração" },
-  { key: "settings.manage", label: "Acessar Configurações", group: "Administração" },
+  { key: "settings.manage", label: "Gerenciar Configurações da Empresa", group: "Administração" },
   { key: "portal.solicitante", label: "Acessar Portal Solicitante", group: "Administração" },
   { key: "view_only", label: "Somente Visualização", group: "Geral" },
 ] as const
@@ -136,6 +141,25 @@ export function ConfiguracoesPermissoesTab() {
           if (!alive) return
         }
       }
+
+      // Garante chaves novas da matriz (ex.: contratos) para todos os perfis
+      const existingKeys = new Set(rows.map((r) => `${r.role}::${r.permission_key}`))
+      for (const role of ALL_ROLES) {
+        for (const p of PERMISSIONS) {
+          const key = `${role.value}::${p.key}`
+          if (existingKeys.has(key)) continue
+          await supabase.from("role_permissions").upsert(
+            {
+              company_id: companyId,
+              role: role.value,
+              permission_key: p.key,
+              enabled: role.value === "admin",
+            },
+            { onConflict: "company_id,role,permission_key" },
+          )
+        }
+      }
+      if (!alive) return
 
       const { data: dataAfter } = await supabase
         .from("role_permissions")

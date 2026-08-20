@@ -41,6 +41,16 @@ import { cn } from "@/lib/utils"
 
 type QuotationStatus = "draft" | "waiting" | "analysis" | "completed" | "cancelled"
 
+type RecentActivity = {
+  id: string
+  code: string
+  title: string
+  type: "Cotação" | "Pedido" | "Requisição" | "Contrato"
+  status: string
+  created_at: string
+  href: string
+}
+
 export default function CompradorDashboard() {
   const router = useRouter()
   const { companyId, loading: userLoading } = useUser()
@@ -50,17 +60,15 @@ export default function CompradorDashboard() {
   const [quotationsByStatus, setQuotationsByStatus] = useState<
     { name: string; value: number; color: string }[]
   >([])
-  const [recentQuotations, setRecentQuotations] = useState<
-    { id: string; code: string; description: string; status: QuotationStatus; created_at: string }[]
-  >([])
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([])
   const [dashLoading, setDashLoading] = useState(true)
   const [ordersInProgress, setOrdersInProgress] = useState<number | null>(null)
   const [avgLeadTime, setAvgLeadTime] = useState<number | null>(null)
   const [spendData, setSpendData] = useState<{ name: string; value: number }[]>([])
   const [leadTimeChartData, setLeadTimeChartData] = useState<{ month: string; days: number }[]>([])
-  const [quotationsChange, setQuotationsChange] = useState<number>(0)
-  const [ordersChange, setOrdersChange] = useState<number>(0)
-  const [leadTimeChange, setLeadTimeChange] = useState<number>(0)
+  const [quotationsChange, setQuotationsChange] = useState<number | null>(null)
+  const [ordersChange, setOrdersChange] = useState<number | null>(null)
+  const [leadTimeChange, setLeadTimeChange] = useState<number | null>(null)
   const [savingAcumulado, setSavingAcumulado] = useState<number | null>(null)
   const [savingChange, setSavingChange] = useState<number | null>(null)
   const [savingHistorico, setSavingHistorico] = useState<number | null>(null)
@@ -73,6 +81,48 @@ export default function CompradorDashboard() {
   type OrderWithReq = {
     created_at: string
     requisition_code: string | null
+  }
+
+  type OrderLeadRow = {
+    created_at: string
+    requisition_code: string | null
+    quotation_id: string | null
+  }
+
+  async function resolveOrdersWithReqCodes(
+    supabase: ReturnType<typeof createClient>,
+    companyId: string,
+    orders: OrderLeadRow[],
+  ): Promise<OrderWithReq[]> {
+    const missingQuoteIds = [
+      ...new Set(
+        orders
+          .filter((o) => !o.requisition_code?.trim() && o.quotation_id)
+          .map((o) => o.quotation_id as string),
+      ),
+    ]
+    const codeByQuotation = new Map<string, string>()
+    if (missingQuoteIds.length > 0) {
+      const { data } = await supabase
+        .from("quotation_items")
+        .select("quotation_id, source_requisition_code")
+        .in("quotation_id", missingQuoteIds)
+        .not("source_requisition_code", "is", null)
+      for (const row of (data ?? []) as {
+        quotation_id: string
+        source_requisition_code: string
+      }[]) {
+        if (!codeByQuotation.has(row.quotation_id) && row.source_requisition_code?.trim()) {
+          codeByQuotation.set(row.quotation_id, row.source_requisition_code.trim())
+        }
+      }
+    }
+    return orders.map((o) => ({
+      created_at: o.created_at,
+      requisition_code:
+        o.requisition_code?.trim() ||
+        (o.quotation_id ? (codeByQuotation.get(o.quotation_id) ?? null) : null),
+    }))
   }
 
   const calcLeadTimeFromReqMap = (
@@ -99,14 +149,14 @@ export default function CompradorDashboard() {
     // Reset dados ao trocar de tenant
     setQuotationsPending(0)
     setQuotationsByStatus([])
-    setRecentQuotations([])
+    setRecentActivities([])
     setOrdersInProgress(null)
     setAvgLeadTime(null)
     setSpendData([])
     setLeadTimeChartData([])
-    setQuotationsChange(0)
-    setOrdersChange(0)
-    setLeadTimeChange(0)
+    setQuotationsChange(null)
+    setOrdersChange(null)
+    setLeadTimeChange(null)
     setSavingAcumulado(null)
     setSavingChange(null)
     setSavingHistorico(null)
@@ -126,7 +176,10 @@ export default function CompradorDashboard() {
 
       const [
         quotationsRes,
-        recentRes,
+        recentQuotationsRes,
+        recentOrdersRes,
+        recentRequisitionsRes,
+        recentContractsRes,
         ordersInProgressRes,
         ordersWithReqRes,
         quotationsPendingCurrentMonthRes,
@@ -149,7 +202,25 @@ export default function CompradorDashboard() {
           .select("id, code, description, status, created_at")
           .eq("company_id", companyId)
           .order("created_at", { ascending: false })
-          .limit(5),
+          .limit(8),
+        supabase
+          .from("purchase_orders")
+          .select("id, code, supplier_name, status, created_at")
+          .eq("company_id", companyId)
+          .order("created_at", { ascending: false })
+          .limit(8),
+        supabase
+          .from("requisitions")
+          .select("id, code, title, status, created_at")
+          .eq("company_id", companyId)
+          .order("created_at", { ascending: false })
+          .limit(8),
+        supabase
+          .from("contracts")
+          .select("id, code, title, status, created_at")
+          .eq("company_id", companyId)
+          .order("created_at", { ascending: false })
+          .limit(8),
         supabase
           .from("purchase_orders")
           .select("*", { count: "exact", head: true })
@@ -157,11 +228,9 @@ export default function CompradorDashboard() {
           .in("status", ["sent", "processing"]),
         supabase
           .from("purchase_orders")
-          .select("created_at, requisition_code")
+          .select("created_at, requisition_code, quotation_id")
           .eq("company_id", companyId)
-          .eq("status", "completed")
-          .not("requisition_code", "is", null)
-          .neq("requisition_code", "")
+          .in("status", ["sent", "processing", "completed", "draft"])
           .gte("created_at", currentMonthStart),
         supabase
           .from("quotations")
@@ -191,19 +260,15 @@ export default function CompradorDashboard() {
           .lte("created_at", prevMonthEnd),
         supabase
           .from("purchase_orders")
-          .select("created_at, requisition_code")
+          .select("created_at, requisition_code, quotation_id")
           .eq("company_id", companyId)
-          .eq("status", "completed")
-          .not("requisition_code", "is", null)
-          .neq("requisition_code", "")
+          .in("status", ["sent", "processing", "completed", "draft"])
           .gte("created_at", currentMonthStart),
         supabase
           .from("purchase_orders")
-          .select("created_at, requisition_code")
+          .select("created_at, requisition_code, quotation_id")
           .eq("company_id", companyId)
-          .eq("status", "completed")
-          .not("requisition_code", "is", null)
-          .neq("requisition_code", "")
+          .in("status", ["sent", "processing", "completed", "draft"])
           .gte("created_at", prevMonthStart)
           .lte("created_at", prevMonthEnd),
         supabase
@@ -217,11 +282,9 @@ export default function CompradorDashboard() {
           .eq("company_id", companyId),
         supabase
           .from("purchase_orders")
-          .select("created_at, requisition_code")
+          .select("created_at, requisition_code, quotation_id")
           .eq("company_id", companyId)
-          .eq("status", "completed")
-          .not("requisition_code", "is", null)
-          .neq("requisition_code", "")
+          .in("status", ["sent", "processing", "completed", "draft"])
           .gte("created_at", sixMonthsAgo),
         supabase
           .from("purchase_order_items")
@@ -280,22 +343,80 @@ export default function CompradorDashboard() {
         setQuotationsByStatus(grouped.filter((s) => s.value > 0))
       }
 
-      if (recentRes.data) {
-        setRecentQuotations(
-          (recentRes.data as any[]).map((q) => ({
+      if (recentQuotationsRes.data || recentOrdersRes.data || recentRequisitionsRes.data || recentContractsRes.data) {
+        const activities: RecentActivity[] = [
+          ...((recentQuotationsRes.data ?? []) as {
+            id: string
+            code: string
+            description: string | null
+            status: string
+            created_at: string
+          }[]).map((q) => ({
             id: q.id,
             code: q.code,
-            description: q.description,
-            status: q.status as QuotationStatus,
+            title: q.description?.trim() || q.code,
+            type: "Cotação" as const,
+            status: q.status,
             created_at: q.created_at,
+            href: `/comprador/cotacoes/${q.id}`,
           })),
+          ...((recentOrdersRes.data ?? []) as {
+            id: string
+            code: string
+            supplier_name: string | null
+            status: string
+            created_at: string
+          }[]).map((o) => ({
+            id: o.id,
+            code: o.code,
+            title: o.supplier_name?.trim() || o.code,
+            type: "Pedido" as const,
+            status: o.status,
+            created_at: o.created_at,
+            href: `/comprador/pedidos/${o.id}`,
+          })),
+          ...((recentRequisitionsRes.data ?? []) as {
+            id: string
+            code: string
+            title: string | null
+            status: string
+            created_at: string
+          }[]).map((r) => ({
+            id: r.id,
+            code: r.code,
+            title: r.title?.trim() || r.code,
+            type: "Requisição" as const,
+            status: r.status,
+            created_at: r.created_at,
+            href: `/comprador/requisicoes/${r.id}`,
+          })),
+          ...((recentContractsRes.data ?? []) as {
+            id: string
+            code: string
+            title: string | null
+            status: string
+            created_at: string
+          }[]).map((c) => ({
+            id: c.id,
+            code: c.code,
+            title: c.title?.trim() || c.code,
+            type: "Contrato" as const,
+            status: c.status,
+            created_at: c.created_at,
+            href: `/comprador/contratos/${c.id}`,
+          })),
+        ]
+        activities.sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
         )
+        setRecentActivities(activities.slice(0, 8))
       }
 
       const ordersCount = ordersInProgressRes.count ?? 0
       setOrdersInProgress(ordersCount)
 
-      const ordersWithReq = (ordersWithReqRes.data as OrderWithReq[] | null) ?? []
+      const ordersWithReqRaw = (ordersWithReqRes.data as OrderLeadRow[] | null) ?? []
+      const ordersWithReq = await resolveOrdersWithReqCodes(supabase, companyId, ordersWithReqRaw)
       const reqCodesAll = [...new Set(ordersWithReq.map((o) => o.requisition_code).filter(Boolean))]
       let reqMapAll = new Map<string, string>()
       if (reqCodesAll.length > 0) {
@@ -320,7 +441,7 @@ export default function CompradorDashboard() {
           ? Math.round(
               ((quotationsPendingCurrentMonth - quotationsPendingPrev) / quotationsPendingPrev) * 100,
             )
-          : 0
+          : null
       setQuotationsChange(qChange)
 
       const ordersInProgressCurrentMonth = ordersInProgressCurrentMonthRes.count ?? 0
@@ -330,11 +451,21 @@ export default function CompradorDashboard() {
           ? Math.round(
               ((ordersInProgressCurrentMonth - ordersInProgressPrev) / ordersInProgressPrev) * 100,
             )
-          : 0
+          : null
       setOrdersChange(oChange)
 
-      const leadCurrentOrders = (leadCurrentWithReqRes.data as OrderWithReq[] | null) ?? []
-      const leadPrevOrders = (leadPrevWithReqRes.data as OrderWithReq[] | null) ?? []
+      const leadCurrentOrdersRaw = (leadCurrentWithReqRes.data as OrderLeadRow[] | null) ?? []
+      const leadPrevOrdersRaw = (leadPrevWithReqRes.data as OrderLeadRow[] | null) ?? []
+      const leadCurrentOrders = await resolveOrdersWithReqCodes(
+        supabase,
+        companyId,
+        leadCurrentOrdersRaw,
+      )
+      const leadPrevOrders = await resolveOrdersWithReqCodes(
+        supabase,
+        companyId,
+        leadPrevOrdersRaw,
+      )
       const reqCodesCurrent = [
         ...new Set(leadCurrentOrders.map((o) => o.requisition_code).filter(Boolean)),
       ] as string[]
@@ -358,7 +489,9 @@ export default function CompradorDashboard() {
       }
       const leadCurrent = calcLeadTimeFromReqMap(leadCurrentOrders, reqMapDelta)
       const leadPrev = calcLeadTimeFromReqMap(leadPrevOrders, reqMapDelta)
-      setLeadTimeChange((leadCurrent ?? 0) - (leadPrev ?? 0))
+      setLeadTimeChange(
+        leadCurrent != null && leadPrev != null ? leadCurrent - leadPrev : null,
+      )
 
       const quotationCategoryById = new Map<string, string>()
       ;(
@@ -398,7 +531,12 @@ export default function CompradorDashboard() {
         monthBuckets.push({ key, month: formattedMonth, values: [] })
       }
       const bucketByKey = new Map(monthBuckets.map((b) => [b.key, b]))
-      const monthlyOrders = (ltMonthlyRes.data as OrderWithReq[] | null) ?? []
+      const monthlyOrdersRaw = (ltMonthlyRes.data as OrderLeadRow[] | null) ?? []
+      const monthlyOrders = await resolveOrdersWithReqCodes(
+        supabase,
+        companyId,
+        monthlyOrdersRaw,
+      )
       const monthlyReqCodes = [
         ...new Set(monthlyOrders.map((o) => o.requisition_code).filter(Boolean)),
       ] as string[]
@@ -432,13 +570,16 @@ export default function CompradorDashboard() {
         )
         bucket.values.push(days)
       })
+      const hasLeadTimeData = monthBuckets.some((b) => b.values.length > 0)
       setLeadTimeChartData(
-        monthBuckets.map((b) => ({
-          month: b.month,
-          days: b.values.length
-            ? Math.round(b.values.reduce((acc, v) => acc + v, 0) / b.values.length)
-            : 0,
-        })),
+        hasLeadTimeData
+          ? monthBuckets.map((b) => ({
+              month: b.month,
+              days: b.values.length
+                ? Math.round(b.values.reduce((acc, v) => acc + v, 0) / b.values.length)
+                : 0,
+            }))
+          : [],
       )
 
       const allSavingItems = [
@@ -610,32 +751,26 @@ export default function CompradorDashboard() {
     fetchDashboard()
   }, [companyId, userLoading])
 
-  const mapStatusToBadge = (status: QuotationStatus) => {
-    switch (status) {
-      case "draft":
-        return { label: "Rascunho", variant: "secondary" as const, className: "" }
-      case "waiting":
-        return {
-          label: "Pendente",
-          variant: "outline" as const,
-          className: "bg-yellow-100 text-yellow-800",
-        }
-      case "analysis":
-        return {
-          label: "Em Análise",
-          variant: "outline" as const,
-          className: "bg-blue-100 text-blue-800",
-        }
-      case "completed":
-        return {
-          label: "Concluída",
-          variant: "outline" as const,
-          className: "bg-green-100 text-green-800",
-        }
-      case "cancelled":
-      default:
-        return { label: "Cancelada", variant: "destructive" as const, className: "" }
+  const mapActivityStatusLabel = (status: string): string => {
+    const labels: Record<string, string> = {
+      draft: "Rascunho",
+      waiting: "Pendente",
+      analysis: "Em análise",
+      completed: "Concluída",
+      cancelled: "Cancelada",
+      sent: "Enviado",
+      processing: "Processando",
+      refused: "Recusado",
+      error: "Erro",
+      integration_error: "Erro integração",
+      pending: "Pendente",
+      approved: "Aprovada",
+      rejected: "Rejeitada",
+      in_quotation: "Em cotação",
+      active: "Ativo",
+      expired: "Expirado",
     }
+    return labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ")
   }
 
   if (userLoading) {
@@ -678,7 +813,7 @@ export default function CompradorDashboard() {
                   currency: "BRL",
                 })
           }
-          change={savingChange ?? 0}
+          change={undefined}
           changeLabel={
             savingAcumulado == null
               ? "Defina preços alvo nos itens"
@@ -688,16 +823,17 @@ export default function CompradorDashboard() {
           }
           icon={TrendingDown}
         />
-        <div className="space-y-1">
-          <MetricsCard
-            title="Tempo Fluxo Compras"
-            value={avgLeadTime !== null ? `${avgLeadTime} dias` : "—"}
-            change={leadTimeChange}
-            changeLabel="vs mês anterior"
-            icon={Clock}
-          />
-          <p className="text-xs text-muted-foreground">Da requisição até o pedido emitido</p>
-        </div>
+        <MetricsCard
+          title="Tempo Fluxo Compras"
+          value={avgLeadTime !== null ? `${avgLeadTime} dias` : "—"}
+          change={leadTimeChange}
+          changeUnit=" dias"
+          changeLabel={
+            avgLeadTime != null ? "vs mês anterior" : "Sem vínculo REQ→pedido"
+          }
+          subtitle="Da requisição até o pedido emitido"
+          icon={Clock}
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -725,50 +861,42 @@ export default function CompradorDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentQuotations.map((q) => {
-                      const statusConfig = mapStatusToBadge(q.status)
-                      return (
-                        <TableRow key={q.id}>
-                          <TableCell className="font-medium">{q.code}</TableCell>
-                          <TableCell>{q.description}</TableCell>
-                          <TableCell>
-                            <span className="text-muted-foreground">Cotação</span>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={statusConfig.variant}
-                              className={statusConfig.className}
-                            >
-                              {statusConfig.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {q.created_at
-                              ? format(new Date(q.created_at), "dd/MM/yyyy", {
-                                  locale: ptBR,
-                                })
-                              : "-"}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => router.push(`/comprador/cotacoes/${q.id}`)}
-                            >
-                              <Eye className="h-4 w-4 mr-1" />
-                              Ver
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                    {recentQuotations.length === 0 && !dashLoading && (
+                    {recentActivities.map((activity) => (
+                      <TableRow key={`${activity.type}-${activity.id}`}>
+                        <TableCell className="font-medium">{activity.code}</TableCell>
+                        <TableCell>{activity.title}</TableCell>
+                        <TableCell>
+                          <span className="text-muted-foreground">{activity.type}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{mapActivityStatusLabel(activity.status)}</Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {activity.created_at
+                            ? format(new Date(activity.created_at), "dd/MM/yyyy", {
+                                locale: ptBR,
+                              })
+                            : "-"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => router.push(activity.href)}
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Ver
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {recentActivities.length === 0 && !dashLoading && (
                       <TableRow>
                         <TableCell
                           colSpan={6}
                           className="py-6 text-center text-sm text-muted-foreground"
                         >
-                          Nenhuma cotação recente encontrada.
+                          Nenhuma atividade recente encontrada.
                         </TableCell>
                       </TableRow>
                     )}

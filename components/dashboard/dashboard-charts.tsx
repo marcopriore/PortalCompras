@@ -158,7 +158,7 @@ export function LeadTimeChart({ data }: LeadTimeChartProps) {
       <Card>
         <CardHeader>
           <CardTitle>Lead Time Médio</CardTitle>
-          <CardDescription>Dias até conclusão do processo</CardDescription>
+          <CardDescription>Da requisição até o pedido emitido</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center text-sm text-muted-foreground">
@@ -172,7 +172,7 @@ export function LeadTimeChart({ data }: LeadTimeChartProps) {
     <Card>
       <CardHeader>
         <CardTitle>Lead Time Médio</CardTitle>
-        <CardDescription>Dias até conclusão do processo</CardDescription>
+        <CardDescription>Da requisição até o pedido emitido</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="h-[300px]">

@@ -115,8 +115,20 @@ export default function NovaRequisicaoPage() {
 
   const [attachments, setAttachments] = React.useState<AttachedFile[]>([])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const searchContainerRef = React.useRef<HTMLDivElement>(null)
+  const [searchOpen, setSearchOpen] = React.useState(false)
 
   const canCreate = hasPermission("requisition.create.buyer")
+
+  React.useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (!searchContainerRef.current?.contains(event.target as Node)) {
+        setSearchOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown)
+    return () => document.removeEventListener("mousedown", onPointerDown)
+  }, [])
 
   React.useEffect(() => {
     if (userLoading || !companyId || debouncedSearch.length < 2) {
@@ -126,13 +138,12 @@ export default function NovaRequisicaoPage() {
     const run = async () => {
       setSearchLoading(true)
       const supabase = createClient()
-      const term = `%${debouncedSearch.replace(/"/g, '\\"')}%`
-      const quoted = `"${term}"`
+      const term = `%${debouncedSearch.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`
       const { data, error } = await supabase
         .from("items")
         .select("id, code, short_description, long_description, unit_of_measure, commodity_group")
         .eq("company_id", companyId)
-        .or(`code.ilike.${quoted},short_description.ilike.${quoted}`)
+        .or(`code.ilike.${term},short_description.ilike.${term}`)
         .limit(20)
 
       setSearchLoading(false)
@@ -160,6 +171,7 @@ export default function NovaRequisicaoPage() {
         observations: "",
       },
     ])
+    setSearchOpen(false)
   }
 
   const updateItem = (itemId: string, patch: Partial<RequisitionLineItem>) => {
@@ -201,11 +213,6 @@ export default function NovaRequisicaoPage() {
       toast.error("Adicione ao menos um item antes de criar a requisição.")
       return
     }
-
-    if (attachments.length > 0) {
-      console.log("Anexos (upload futuro):", attachments.map((a) => a.file.name))
-    }
-    // TODO: upload para Supabase Storage
 
     const supabase = createClient()
     setLoading(true)
@@ -278,6 +285,20 @@ export default function NovaRequisicaoPage() {
       if (itemsErr) {
         setError("Não foi possível salvar os itens da requisição.")
         return
+      }
+
+      if (attachments.length > 0) {
+        for (const att of attachments) {
+          const fd = new FormData()
+          fd.append("file", att.file)
+          const uploadRes = await fetch(`/api/requisitions/${requisitionId}/attachments`, {
+            method: "POST",
+            body: fd,
+          })
+          if (!uploadRes.ok) {
+            toast.error(`Falha ao enviar anexo: ${att.file.name}`)
+          }
+        }
       }
 
       try {
@@ -426,7 +447,6 @@ export default function NovaRequisicaoPage() {
           </Button>
           <div className="flex-1">
             <h1 className="text-2xl font-bold tracking-tight">Nova Requisição</h1>
-            <p className="text-muted-foreground">Criação manual</p>
           </div>
         </div>
         <div className="flex items-center justify-center py-12">
@@ -445,7 +465,6 @@ export default function NovaRequisicaoPage() {
           </Button>
           <div className="flex-1">
             <h1 className="text-2xl font-bold tracking-tight">Nova Requisição</h1>
-            <p className="text-muted-foreground">—</p>
           </div>
         </div>
         <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
@@ -465,7 +484,6 @@ export default function NovaRequisicaoPage() {
             </Button>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Nova Requisição</h1>
-              <p className="text-muted-foreground">Criação manual</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -486,7 +504,6 @@ export default function NovaRequisicaoPage() {
         <Card>
           <CardHeader>
             <CardTitle>Dados Gerais</CardTitle>
-            <p className="text-sm text-muted-foreground">Criação manual de requisição de compra.</p>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-x-6 gap-y-6 grid-rows-[auto_1fr]">
@@ -571,11 +588,15 @@ export default function NovaRequisicaoPage() {
             <CardTitle>Itens Solicitados</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="relative">
+            <div className="relative" ref={searchContainerRef}>
               <Input
                 placeholder="Buscar por código ou descrição..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value)
+                  setSearchOpen(true)
+                }}
+                onFocus={() => setSearchOpen(true)}
                 className={searchTerm ? "pr-20" : "pr-10"}
               />
               {searchTerm && (
@@ -584,13 +605,17 @@ export default function NovaRequisicaoPage() {
                   variant="ghost"
                   size="icon"
                   className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-8"
-                  onClick={() => setSearchTerm("")}
+                  onClick={() => {
+                    setSearchTerm("")
+                    setSearchResults([])
+                    setSearchOpen(false)
+                  }}
                   aria-label="Limpar busca"
                 >
                   <X className="h-4 w-4" />
                 </Button>
               )}
-              {searchTerm.length >= 2 && (
+              {searchOpen && searchTerm.length >= 2 && (
                 <div
                   className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl border border-border bg-card shadow-lg z-10"
                   role="listbox"

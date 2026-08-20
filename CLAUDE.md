@@ -409,7 +409,7 @@
 
 ## IA & Analytics
 - ANTHROPIC_API_KEY: nunca NEXT_PUBLIC_, nunca no client
-- Modelo: claude-sonnet-4-20250514
+- Modelo: claude-sonnet-4-6
 - ai_analysis_logs: gravar prompt + response completos via service role
 - audit_logs ia_analysis: gravar via service role, não bloquear resposta em falha
 - Cache: ai_analytics = 1h (spend), ai_negotiation = 30min (equalização)

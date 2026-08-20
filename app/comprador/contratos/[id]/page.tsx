@@ -255,7 +255,7 @@ export default function ContratoPage({
   const searchParams = useSearchParams()
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { companyId } = useTenant()
-  const { hasFeature, loading: permissionsLoading } = usePermissions()
+  const { hasFeature, hasPermission, loading: permissionsLoading } = usePermissions()
   const contractBalanceEnabled = hasFeature("contract_balance") || isSuperAdmin
 
   const [contract, setContract] = React.useState<Contract | null>(null)
@@ -320,7 +320,10 @@ export default function ContratoPage({
     }
   }
 
-  const canAccess = hasFeature("contracts") || isSuperAdmin
+  const canAccess =
+    (hasFeature("contracts") &&
+      (hasPermission("nav.contracts") || hasPermission("contract.view"))) ||
+    isSuperAdmin
 
   function showConfirm(
     title: string,

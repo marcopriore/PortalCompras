@@ -317,6 +317,10 @@ const VALID_TABS = new Set<ActiveTab>([
   "seguranca", "campos", "termos", "usuarios", "permissoes", "integracoes",
 ])
 
+const RESTRICTED_SETTINGS_TABS = new Set<ActiveTab>([
+  "perfil", "notificacoes", "seguranca",
+])
+
 type SupplierTerm = {
   id: string
   title: string
@@ -396,31 +400,54 @@ export default function ConfiguracoesPage() {
   const { hasPermission, loading: permissionsLoading } = usePermissions()
 
   const canManageCompany = Boolean(isSuperAdmin || hasRole("admin"))
+  const canManageSettings = canManageCompany || hasPermission("settings.manage")
   const canImpersonateUsers = hasPermission("user.impersonate")
   const canAccessUsersTab = canManageCompany || canImpersonateUsers
   const impersonateOnly = canImpersonateUsers && !canManageCompany
+  const isRestrictedSettingsUser = !impersonateOnly && !canManageSettings
 
   const initialTab = React.useMemo<ActiveTab>(() => {
     const t = searchParams.get("tab") as ActiveTab | null
+    if (impersonateOnly) {
+      return t === "usuarios" ? "usuarios" : "usuarios"
+    }
+    if (isRestrictedSettingsUser) {
+      if (t && RESTRICTED_SETTINGS_TABS.has(t)) return t
+      return "perfil"
+    }
     if (t && VALID_TABS.has(t)) return t
-    return impersonateOnly ? "usuarios" : "empresa"
-  }, [searchParams, impersonateOnly])
+    return "empresa"
+  }, [searchParams, impersonateOnly, isRestrictedSettingsUser])
 
   const [activeTab, setActiveTab] = React.useState<ActiveTab>(initialTab)
 
   React.useEffect(() => {
     const t = searchParams.get("tab") as ActiveTab | null
-    if (t && VALID_TABS.has(t)) {
-      if (impersonateOnly && t !== "usuarios") {
+    if (impersonateOnly) {
+      if (t !== "usuarios") {
         setActiveTab("usuarios")
         router.replace("/comprador/configuracoes?tab=usuarios")
-        return
+      } else {
+        setActiveTab("usuarios")
       }
+      return
+    }
+    if (isRestrictedSettingsUser) {
+      if (t && RESTRICTED_SETTINGS_TABS.has(t)) {
+        setActiveTab(t)
+      } else {
+        setActiveTab("perfil")
+        if (t && t !== "perfil") {
+          router.replace("/comprador/configuracoes?tab=perfil")
+        }
+      }
+      return
+    }
+    if (t && VALID_TABS.has(t)) {
       setActiveTab(t)
       return
     }
-    if (impersonateOnly) setActiveTab("usuarios")
-  }, [searchParams, impersonateOnly, router])
+  }, [searchParams, impersonateOnly, isRestrictedSettingsUser, router])
 
   const canManageApprovals = canManageCompany
 
@@ -1776,7 +1803,13 @@ export default function ConfiguracoesPage() {
         {(
           impersonateOnly
             ? ([["usuarios", "Usuários", Users]] as const)
-            : ([
+            : isRestrictedSettingsUser
+              ? ([
+                  ["perfil", "Perfil", User],
+                  ["notificacoes", "Notificações", Bell],
+                  ["seguranca", "Segurança", Shield],
+                ] as const)
+              : ([
             ["empresa", "Empresa", Building2],
             ["perfil", "Perfil", User],
             ["notificacoes", "Notificações", Bell],

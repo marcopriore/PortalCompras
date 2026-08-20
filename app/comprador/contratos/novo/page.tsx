@@ -234,7 +234,7 @@ export default function NovoContratoPage() {
 
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { companyId } = useTenant()
-  const { hasFeature, loading: permissionsLoading } = usePermissions()
+  const { hasFeature, hasPermission, loading: permissionsLoading } = usePermissions()
 
   const [form, setForm] = React.useState<FormState>(emptyForm)
   const [suppliers, setSuppliers] = React.useState<
@@ -263,7 +263,10 @@ export default function NovoContratoPage() {
   const [importDialog, setImportDialog] = React.useState(false)
   const prefillConsumedRef = React.useRef(false)
 
-  const canAccess = hasFeature("contracts") || isSuperAdmin
+  const canAccess =
+    (hasFeature("contracts") &&
+      (hasPermission("nav.contracts") || hasPermission("contract.view"))) ||
+    isSuperAdmin
 
   React.useEffect(() => {
     const id = window.setTimeout(() => setDebouncedItemSearch(itemSearch), 300)

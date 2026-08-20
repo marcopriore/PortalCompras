@@ -106,6 +106,7 @@ type QuotationItem = {
   target_price?: number | null
   last_purchase_price?: number | null
   average_price?: number | null
+  source_requisition_code?: string | null
 }
 
 type OrderedItemInfo = {
@@ -704,7 +705,7 @@ export default function EqualizacaoPage({
           supabase
             .from("quotation_items")
             .select(
-              "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, target_price, last_purchase_price, average_price, created_at",
+              "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, target_price, last_purchase_price, average_price, source_requisition_code, created_at",
             )
             .eq("quotation_id", id)
             .order("material_description", { ascending: true }),
@@ -1984,6 +1985,16 @@ export default function EqualizacaoPage({
             ? `Pedido com linha(s) vinculada(s) ao(s) contrato(s) ${[...linkedContractCodes].join(", ")} (equalização ${quotation.code})`
             : null
 
+        const reqCodesFromLines = [
+          ...new Set(
+            linesForPo
+              .map((qi) => qi.source_requisition_code?.trim())
+              .filter((code): code is string => Boolean(code)),
+          ),
+        ]
+        const requisitionCodeForPo =
+          reqCodesFromLines.length === 1 ? reqCodesFromLines[0] : reqCodesFromLines[0] ?? null
+
         const { data: poData, error: purchaseOrderInsertError } = await supabase
           .from("purchase_orders")
           .insert({
@@ -1997,7 +2008,7 @@ export default function EqualizacaoPage({
             delivery_days: poDeliveryDays > 0 ? poDeliveryDays : null,
             delivery_address: "A definir",
             quotation_code: quotation.code,
-            requisition_code: null,
+            requisition_code: requisitionCodeForPo,
             total_price: totalPrice,
             observations,
             created_by: userId,

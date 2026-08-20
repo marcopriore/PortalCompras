@@ -35,9 +35,12 @@ import {
   Circle,
   ClipboardList,
   Clock,
+  Download,
   FileText,
   Loader2,
+  Paperclip,
   Pencil,
+  ShoppingCart,
   XCircle,
 } from "lucide-react"
 
@@ -101,6 +104,15 @@ type ApprovalHistory = {
   created_at: string
 }
 
+type RequisitionAttachment = {
+  id: string
+  file_name: string
+  file_size: number | null
+  content_type: string | null
+  created_at: string
+  download_url: string | null
+}
+
 type AuditLog = {
   id: string
   event_type: string
@@ -162,13 +174,13 @@ function HorizontalTimeline({
       key: "order",
       label: "Pedido",
       status:
-        ["pending", "rejected"].includes(req.status) || !quotation
+        ["pending", "rejected"].includes(req.status)
           ? "pending"
-          : orders.length === 0
-            ? "pending"
-            : orders.some((o) => o.status === "completed")
+          : orders.length > 0
+            ? orders.some((o) => o.status === "completed")
               ? "completed"
-              : "active",
+              : "active"
+            : "pending",
       date: orders[0]?.created_at,
     },
     {
@@ -395,7 +407,7 @@ export default function RequisicaoDetailPage({
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { hasFeature } = usePermissions()
+  const { hasFeature, hasPermission } = usePermissions()
   const { id } = React.use(params)
 
   const backHref = searchParams.get("from") === "aprovacoes" ? "/comprador/aprovacoes" : "/comprador/requisicoes"
@@ -410,6 +422,8 @@ export default function RequisicaoDetailPage({
   const [orders, setOrders] = React.useState<PurchaseOrderInfo[]>([])
   const [history, setHistory] = React.useState<ApprovalHistory[]>([])
   const [auditLogs, setAuditLogs] = React.useState<AuditLog[]>([])
+  const [attachments, setAttachments] = React.useState<RequisitionAttachment[]>([])
+  const [attachmentsLoading, setAttachmentsLoading] = React.useState(true)
 
   React.useEffect(() => {
     if (!id) return
@@ -492,6 +506,28 @@ export default function RequisicaoDetailPage({
     }
   }, [id])
 
+  React.useEffect(() => {
+    if (!id) return
+    let alive = true
+    const loadAttachments = async () => {
+      setAttachmentsLoading(true)
+      try {
+        const res = await fetch(`/api/requisitions/${id}/attachments`)
+        const data = (await res.json()) as { attachments?: RequisitionAttachment[] }
+        if (!alive) return
+        setAttachments(Array.isArray(data.attachments) ? data.attachments : [])
+      } catch {
+        if (alive) setAttachments([])
+      } finally {
+        if (alive) setAttachmentsLoading(false)
+      }
+    }
+    void loadAttachments()
+    return () => {
+      alive = false
+    }
+  }, [id])
+
   const statusMeta = requisition ? getStatusMeta(requisition.status) : null
 
   const originLabel = requisition?.origin === "manual" ? "Manual" : "Integração ERP"
@@ -500,6 +536,15 @@ export default function RequisicaoDetailPage({
     if (!requisition) return
     router.push(`/comprador/cotacoes/nova?requisition_id=${requisition.id}`)
   }
+
+  const handleGerarPedido = () => {
+    if (!requisition) return
+    router.push(`/comprador/pedidos/novo?requisitionId=${requisition.id}`)
+  }
+
+  const canCreateOrder =
+    hasPermission("order.create") &&
+    (requisition?.status === "approved" || requisition?.status === "in_quotation")
 
   if (loading) {
     return (
@@ -581,6 +626,12 @@ export default function RequisicaoDetailPage({
           {requisition.status === "approved" && (
             <Button type="button" onClick={() => setQuotationOpen(true)}>
               Gerar Cotação
+            </Button>
+          )}
+          {canCreateOrder && (
+            <Button type="button" variant="outline" onClick={handleGerarPedido}>
+              <ShoppingCart className="h-4 w-4 mr-2" />
+              Gerar Pedido
             </Button>
           )}
         </div>
@@ -689,6 +740,52 @@ export default function RequisicaoDetailPage({
               </TableBody>
             </Table>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Paperclip className="h-4 w-4 text-muted-foreground" />
+            <CardTitle>Anexos</CardTitle>
+          </div>
+          {!attachmentsLoading && (
+            <Badge variant="outline" className="text-xs">
+              {attachments.length} anexo{attachments.length === 1 ? "" : "s"}
+            </Badge>
+          )}
+        </CardHeader>
+        <CardContent>
+          {attachmentsLoading ? (
+            <p className="text-sm text-muted-foreground">Carregando anexos...</p>
+          ) : attachments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum anexo.</p>
+          ) : (
+            <ul className="space-y-2">
+              {attachments.map((att) => (
+                <li
+                  key={att.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="text-sm font-medium truncate">{att.file_name}</span>
+                  </div>
+                  {att.download_url ? (
+                    <a
+                      href={att.download_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sm text-primary hover:underline shrink-0"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Baixar
+                    </a>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
         </CardContent>
       </Card>
 

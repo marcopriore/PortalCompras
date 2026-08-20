@@ -27,7 +27,12 @@ export const COMPRADOR_NAV_RULES: NavEntryRule[] = [
   { href: "/comprador/requisicoes", permissions: ["nav.requisitions"] },
   { href: "/comprador/cotacoes", permissions: ["nav.quotations"] },
   { href: "/comprador/pedidos", permissions: ["nav.orders"] },
-  { href: "/comprador/contratos", features: ["contracts"] },
+  {
+    href: "/comprador/contratos",
+    permissions: ["nav.contracts", "contract.view"],
+    anyPermission: true,
+    features: ["contracts"],
+  },
   {
     href: "/comprador/aprovacoes",
     permissions: ["approval.requisition", "approval.order"],
@@ -36,14 +41,23 @@ export const COMPRADOR_NAV_RULES: NavEntryRule[] = [
   { href: "/comprador/itens", permissions: ["nav.items"] },
   { href: "/comprador/fornecedores", permissions: ["nav.suppliers"] },
   { href: "/comprador/relatorios", permissions: ["nav.reports"] },
-  { href: "/comprador/configuracoes/usuarios", permissions: ["user.manage", "user.impersonate"], anyPermission: true },
-  { href: "/comprador/configuracoes", permissions: ["settings.manage", "user.impersonate"], anyPermission: true },
+  {
+    href: "/comprador/configuracoes/usuarios",
+    permissions: ["user.manage", "user.impersonate"],
+    anyPermission: true,
+  },
+  // Perfil / Notificações / Segurança: acessível a qualquer usuário do portal
+  { href: "/comprador/configuracoes" },
 ]
 
 const COMPRADOR_ROUTE_RULES: RouteRule[] = [
   {
     prefix: "/comprador/requisicoes/nova",
     permissions: ["requisition.create.buyer"],
+  },
+  {
+    prefix: "/comprador/pedidos/novo",
+    permissions: ["order.create"],
   },
   {
     prefix: "/comprador/configuracoes/permissoes",
@@ -109,6 +123,20 @@ export function canAccessCompradorPath(
     pathname.startsWith("/comprador/alterar-senha/")
   ) {
     return true
+  }
+
+  // Aprovador precisa abrir o detalhe da REQ para analisar (olho em Aprovações)
+  const requisitionDetailMatch = pathname.match(
+    /^\/comprador\/requisicoes\/([^/]+)(?:\/editar)?\/?$/,
+  )
+  if (requisitionDetailMatch && requisitionDetailMatch[1] !== "nova") {
+    if (
+      ctx.hasPermission("nav.requisitions") ||
+      ctx.hasPermission("approval.requisition") ||
+      ctx.hasPermission("requisition.approve")
+    ) {
+      return true
+    }
   }
 
   const isEqualizacao =

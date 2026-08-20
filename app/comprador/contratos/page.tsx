@@ -89,7 +89,7 @@ function isExpiringSoon(c: Contract): boolean {
 export default function ContratosPage() {
   const router = useRouter()
   const { loading: userLoading, isSuperAdmin } = useUser()
-  const { hasFeature, loading: permissionsLoading, features } = usePermissions()
+  const { hasFeature, hasPermission, loading: permissionsLoading } = usePermissions()
   const { companyId } = useTenant()
 
   const [contracts, setContracts] = React.useState<Contract[]>([])
@@ -99,7 +99,10 @@ export default function ContratosPage() {
   const [filterContractKind, setFilterContractKind] =
     React.useState<string>("all")
 
-  const canAccess = hasFeature("contracts") || isSuperAdmin
+  const canAccess =
+    (hasFeature("contracts") &&
+      (hasPermission("nav.contracts") || hasPermission("contract.view"))) ||
+    isSuperAdmin
 
   const loadContracts = React.useCallback(
     async (silent = false) => {
@@ -126,7 +129,7 @@ export default function ContratosPage() {
 
   React.useEffect(() => {
     void loadContracts(false)
-  }, [loadContracts, features.contracts])
+  }, [loadContracts, canAccess])
 
   const total = contracts.length
   const ativos = contracts.filter((c) => c.status === "active").length
