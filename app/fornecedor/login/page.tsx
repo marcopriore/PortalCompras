@@ -118,13 +118,16 @@ export default function LoginPage() {
           body: JSON.stringify({ cnpj: trimmedLogin }),
         })
         const data = await res.json()
-        if (!res.ok) {
-          toast.error(data.error ?? "CNPJ não encontrado.")
-          return
-        }
-        if (data.multiple && Array.isArray(data.options)) {
+
+        // Múltiplos tenants: mostrar seletor mesmo com status 409/400
+        if (data.multiple && Array.isArray(data.options) && data.options.length > 0) {
           setTenantOptions(data.options as TenantOption[])
           toast.message("Selecione o comprador vinculado a este CNPJ.")
+          return
+        }
+
+        if (!res.ok) {
+          toast.error(data.error ?? "CNPJ não encontrado.")
           return
         }
         if (!data.email) {

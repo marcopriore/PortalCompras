@@ -49,12 +49,18 @@ export async function POST(request: Request) {
     if (portal === "fornecedor" && usedCnpj) {
       const resolved = await resolveSupplierAdminByCnpj(loginRaw)
       if ("error" in resolved) {
+        if (resolved.multiple && resolved.options?.length) {
+          return NextResponse.json(
+            {
+              error: resolved.error,
+              multiple: true,
+              options: resolved.options,
+            },
+            { status: 409 },
+          )
+        }
         return NextResponse.json(
-          {
-            error: resolved.error,
-            multiple: resolved.multiple,
-            options: resolved.options,
-          },
+          { error: resolved.error, multiple: resolved.multiple },
           { status: resolved.status },
         )
       }
