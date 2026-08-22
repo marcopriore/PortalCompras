@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 
 const OVERLAY_DELAY_MS = 180
 
-export function NavigationProgress() {
+function NavigationProgressInner() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const routeKey = `${pathname}?${searchParams.toString()}`
@@ -128,5 +128,13 @@ export function NavigationProgress() {
 
       {showOverlay ? <PageLoading overlay label="Carregando..." /> : null}
     </>
+  )
+}
+
+export function NavigationProgress() {
+  return (
+    <React.Suspense fallback={null}>
+      <NavigationProgressInner />
+    </React.Suspense>
   )
 }
