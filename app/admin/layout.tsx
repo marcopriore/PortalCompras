@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { createClient as createBrowserClient } from "@/lib/supabase/client"
 import { ValoreLogo } from "@/components/ui/valore-logo"
+import { NavigationProgress } from "@/components/layout/navigation-progress"
 
 export default function AdminLayout({
   children,
@@ -111,7 +112,10 @@ export default function AdminLayout({
             <span>{adminName || "Admin"}</span>
           </div>
         </header>
-        <main className="min-h-0 flex-1 overflow-auto p-6">{children}</main>
+        <main className="min-h-0 flex-1 overflow-auto p-6">
+          <NavigationProgress />
+          {children}
+        </main>
       </div>
     </div>
   )

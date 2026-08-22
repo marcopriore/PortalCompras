@@ -10,6 +10,7 @@ import {
   getDefaultCompradorHref,
   type CompradorAccessContext,
 } from "@/lib/permissions/comprador-nav"
+import { PageLoading } from "@/components/ui/page-loading"
 
 export function CompradorRouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -55,11 +56,7 @@ export function CompradorRouteGuard({ children }: { children: React.ReactNode })
   }, [loading, pathname, ctx, router])
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
-        Carregando permissões…
-      </div>
-    )
+    return <PageLoading label="Carregando permissões..." />
   }
 
   if (!canAccessCompradorPath(pathname, ctx) && !isSuperAdmin) {

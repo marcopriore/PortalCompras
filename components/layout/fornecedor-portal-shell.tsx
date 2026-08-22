@@ -31,6 +31,7 @@ import { createClient } from "@/lib/supabase/client"
 import { logAudit } from "@/lib/audit"
 import { cn } from "@/lib/utils"
 import { NotificationBell } from "@/components/ui/notification-bell"
+import { NavigationProgress } from "@/components/layout/navigation-progress"
 
 const SIDEBAR_BG = "#1a1a2e"
 const ACTIVE_BORDER = "#4F3EF5"
@@ -243,7 +244,10 @@ export default function FornecedorPortalShell({
             )}
           </header>
 
-          <main className="flex-1 overflow-auto bg-background p-8">{children}</main>
+          <main className="flex-1 overflow-auto bg-background p-8">
+            <NavigationProgress />
+            {children}
+          </main>
         </div>
     </div>
   )
