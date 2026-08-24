@@ -19,15 +19,16 @@ export function TablePagination({
   pageSize = TABLE_PAGE_SIZE,
   disabled = false,
 }: TablePaginationProps) {
-  if (total <= pageSize) return null
+  if (total <= 0) return null
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const pageClamped = Math.min(Math.max(page, 1), totalPages)
-  const from = total === 0 ? 0 : (pageClamped - 1) * pageSize + 1
+  const from = (pageClamped - 1) * pageSize + 1
   const to = Math.min(pageClamped * pageSize, total)
+  const multiPage = totalPages > 1
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-1 pt-4">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3">
       <p className="text-xs text-muted-foreground">
         Exibindo {from}–{to} de {total}
       </p>
@@ -36,7 +37,7 @@ export function TablePagination({
           type="button"
           variant="outline"
           size="sm"
-          disabled={disabled || pageClamped === 1}
+          disabled={disabled || !multiPage || pageClamped === 1}
           onClick={() => onPageChange(Math.max(1, pageClamped - 1))}
         >
           ← Anterior
@@ -48,7 +49,7 @@ export function TablePagination({
           type="button"
           variant="outline"
           size="sm"
-          disabled={disabled || pageClamped >= totalPages}
+          disabled={disabled || !multiPage || pageClamped >= totalPages}
           onClick={() => onPageChange(Math.min(totalPages, pageClamped + 1))}
         >
           Próximo →

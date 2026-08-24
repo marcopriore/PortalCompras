@@ -483,7 +483,7 @@ function SolicitantePageInner() {
             <div className="py-12 text-center text-sm text-muted-foreground">
               Carregando...
             </div>
-          ) : paginated.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
               <ClipboardList className="w-10 h-10 text-muted-foreground mb-3" />
               <p className="text-sm text-muted-foreground">
@@ -501,78 +501,80 @@ function SolicitantePageInner() {
               )}
             </div>
           ) : (
-            <>
-              <div>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="px-4">Código</TableHead>
-                      <TableHead className="px-4">Título</TableHead>
-                      <TableHead className="px-4">Responsável</TableHead>
-                      <TableHead className="px-4">Necessidade</TableHead>
-                      <TableHead className="px-4">Prioridade</TableHead>
-                      <TableHead className="px-4">Status</TableHead>
-                      <TableHead className="px-4 text-right">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginated.map((r) => {
-                      const statusMeta = getStatusMeta(r.status)
-                      const priorityMeta = getPriorityMeta(r.priority)
-                      return (
-                        <TableRow
-                          key={r.id}
-                          className="hover:bg-muted/50 cursor-pointer transition-colors"
-                          onClick={() => router.push(`/solicitante/${r.id}`)}
-                        >
-                          <TableCell className="px-4 font-mono text-sm text-primary font-medium">
-                            {r.code}
-                          </TableCell>
-                          <TableCell className="px-4 text-sm font-medium max-w-xs truncate">
-                            {r.title}
-                          </TableCell>
-                          <TableCell className="px-4 text-sm text-muted-foreground">
-                            {r.requester_name || "—"}
-                          </TableCell>
-                          <TableCell className="px-4 text-sm text-muted-foreground">
-                            {formatDateBR(r.needed_by)}
-                          </TableCell>
-                          <TableCell className="px-4">
-                            <Badge className={priorityMeta.className}>
-                              {priorityMeta.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="px-4">
-                            <Badge className={statusMeta.color}>
-                              {statusMeta.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="px-4 text-right whitespace-nowrap">
-                            <TableRowActions
-                              actions={[
-                                {
-                                  label: "Ver Detalhes",
-                                  icon: Eye,
-                                  href: `/solicitante/${r.id}`,
-                                },
-                              ]}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+            <div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="px-4">Código</TableHead>
+                    <TableHead className="px-4">Título</TableHead>
+                    <TableHead className="px-4">Responsável</TableHead>
+                    <TableHead className="px-4">Necessidade</TableHead>
+                    <TableHead className="px-4">Prioridade</TableHead>
+                    <TableHead className="px-4">Status</TableHead>
+                    <TableHead className="px-4 text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginated.map((r) => {
+                    const statusMeta = getStatusMeta(r.status)
+                    const priorityMeta = getPriorityMeta(r.priority)
+                    return (
+                      <TableRow
+                        key={r.id}
+                        className="hover:bg-muted/50 cursor-pointer transition-colors"
+                        onClick={() => router.push(`/solicitante/${r.id}`)}
+                      >
+                        <TableCell className="px-4 font-mono text-sm text-primary font-medium">
+                          {r.code}
+                        </TableCell>
+                        <TableCell className="px-4 text-sm font-medium max-w-xs truncate">
+                          {r.title}
+                        </TableCell>
+                        <TableCell className="px-4 text-sm text-muted-foreground">
+                          {r.requester_name || "—"}
+                        </TableCell>
+                        <TableCell className="px-4 text-sm text-muted-foreground">
+                          {formatDateBR(r.needed_by)}
+                        </TableCell>
+                        <TableCell className="px-4">
+                          <Badge className={priorityMeta.className}>
+                            {priorityMeta.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="px-4">
+                          <Badge className={statusMeta.color}>
+                            {statusMeta.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="px-4 text-right whitespace-nowrap">
+                          <TableRowActions
+                            actions={[
+                              {
+                                label: "Ver Detalhes",
+                                icon: Eye,
+                                href: `/solicitante/${r.id}`,
+                              },
+                            ]}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
 
+          {!loading && filtered.length > 0 ? (
+            <div className="border-t border-border">
               <TablePagination
                 page={page}
                 total={filtered.length}
                 pageSize={PAGE_SIZE}
                 onPageChange={setPage}
               />
-            </>
-          )}
+            </div>
+          ) : null}
         </div>
     </div>
   )
