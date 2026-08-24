@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { format, differenceInDays, parseISO, startOfDay } from "date-fns"
 import { ptBR } from "date-fns/locale"
@@ -48,6 +47,7 @@ import type { Contract } from "@/types/contracts"
 import { CONTRACT_KINDS } from "@/types/contracts"
 import { createClient } from "@/lib/supabase/client"
 import { formatResponsibleName } from "@/lib/quotations/ownership"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -385,18 +385,20 @@ export default function ContratosPage() {
                     {formatResponsibleName(c.responsible_name)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button variant="ghost" size="icon" asChild title="Visualizar">
-                        <Link href={`/comprador/contratos/${c.id}`}>
-                          <Eye className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                      <Button variant="ghost" size="icon" asChild title="Editar">
-                        <Link href={`/comprador/contratos/${c.id}?edit=true`}>
-                          <Pencil className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                    </div>
+                    <TableRowActions
+                      actions={[
+                        {
+                          label: "Ver Detalhes",
+                          icon: Eye,
+                          href: `/comprador/contratos/${c.id}`,
+                        },
+                        {
+                          label: "Editar",
+                          icon: Pencil,
+                          href: `/comprador/contratos/${c.id}?edit=true`,
+                        },
+                      ]}
+                    />
                   </TableCell>
                 </TableRow>
               ))}

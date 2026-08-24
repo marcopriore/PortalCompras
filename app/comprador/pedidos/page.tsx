@@ -37,6 +37,7 @@ import {
 } from "lucide-react"
 import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 
 type PurchaseOrderStatus =
   | "draft"
@@ -663,16 +664,15 @@ export default function PedidosPage() {
                             {formatResponsibleName(order.responsible_name)}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                router.push(`/comprador/pedidos/${order.id}`)
-                              }
-                            >
-                              <Eye className="mr-2 h-4 w-4" />
-                              Ver
-                            </Button>
+                            <TableRowActions
+                              actions={[
+                                {
+                                  label: "Ver Detalhes",
+                                  icon: Eye,
+                                  href: `/comprador/pedidos/${order.id}`,
+                                },
+                              ]}
+                            />
                           </TableCell>
                         </TableRow>
                       )

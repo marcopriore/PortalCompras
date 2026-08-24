@@ -1,7 +1,6 @@
  'use client'
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import { FileText, ShoppingCart, TrendingDown, TrendingUp, Clock, Eye } from "lucide-react"
 import { endOfMonth, format, startOfMonth, subMonths } from "date-fns"
 import { ptBR } from "date-fns/locale"
@@ -18,6 +17,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 import {
   Table,
   TableBody,
@@ -52,7 +52,6 @@ type RecentActivity = {
 }
 
 export default function CompradorDashboard() {
-  const router = useRouter()
   const { companyId, loading: userLoading } = useUser()
   const { hasFeature } = usePermissions()
 
@@ -879,14 +878,15 @@ export default function CompradorDashboard() {
                             : "-"}
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.push(activity.href)}
-                          >
-                            <Eye className="h-4 w-4 mr-1" />
-                            Ver
-                          </Button>
+                          <TableRowActions
+                            actions={[
+                              {
+                                label: "Ver Detalhes",
+                                icon: Eye,
+                                href: activity.href,
+                              },
+                            ]}
+                          />
                         </TableCell>
                       </TableRow>
                     ))}

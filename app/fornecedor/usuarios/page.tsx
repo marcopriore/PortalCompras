@@ -6,7 +6,6 @@ import { ptBR } from "date-fns/locale"
 import { toast } from "sonner"
 import {
   Ban,
-  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
@@ -30,13 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 import {
   Table,
   TableBody,
@@ -308,47 +301,43 @@ export default function FornecedorUsuariosPage() {
                     <TableCell className="text-sm text-muted-foreground">
                       {format(new Date(user.created_at), "dd/MM/yyyy", { locale: ptBR })}
                     </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(user)}>
-                            <Pencil className="h-4 w-4 mr-2" />
-                            {user.is_supplier_admin ? "Alterar e-mail" : "Atualizar"}
-                          </DropdownMenuItem>
-                          {!user.is_supplier_admin ? (
-                            <>
-                              <DropdownMenuSeparator />
-                              {user.status === "active" ? (
-                                <DropdownMenuItem
-                                  onClick={() => void runAction(user, "block")}
-                                  disabled={user.id === userId}
-                                >
-                                  <Ban className="h-4 w-4 mr-2" />
-                                  Bloquear
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem onClick={() => void runAction(user, "unblock")}>
-                                  <UserCheck className="h-4 w-4 mr-2" />
-                                  Reativar
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
-                                onClick={() => setConfirmCancel(user)}
-                                disabled={user.id === userId}
-                              >
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Cancelar acesso
-                              </DropdownMenuItem>
-                            </>
-                          ) : null}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                    <TableCell className="text-right">
+                      <TableRowActions
+                        actions={[
+                          {
+                            label: user.is_supplier_admin
+                              ? "Alterar e-mail"
+                              : "Atualizar",
+                            icon: Pencil,
+                            onClick: () => openEdit(user),
+                          },
+                          {
+                            label: "Bloquear",
+                            icon: Ban,
+                            onClick: () => void runAction(user, "block"),
+                            disabled: user.id === userId,
+                            hidden:
+                              user.is_supplier_admin || user.status !== "active",
+                            separatorBefore: true,
+                          },
+                          {
+                            label: "Reativar",
+                            icon: UserCheck,
+                            onClick: () => void runAction(user, "unblock"),
+                            hidden:
+                              user.is_supplier_admin || user.status === "active",
+                            separatorBefore: true,
+                          },
+                          {
+                            label: "Cancelar acesso",
+                            icon: Trash2,
+                            onClick: () => setConfirmCancel(user),
+                            disabled: user.id === userId,
+                            hidden: user.is_supplier_admin,
+                            destructive: true,
+                          },
+                        ]}
+                      />
                     </TableCell>
                   </TableRow>
                 ))

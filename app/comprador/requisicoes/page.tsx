@@ -27,6 +27,7 @@ import {
 
 import { ClipboardList, Clock, CheckCircle, FileText, Search, Eye, Plus, X } from "lucide-react"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 
 type Priority = "normal" | "urgent" | "critical"
 type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
@@ -411,10 +412,15 @@ export default function RequisicoesPage() {
                           <Badge className={s.className}>{s.label}</Badge>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button variant="outline" size="sm" onClick={() => router.push(`/comprador/requisicoes/${r.id}`)}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Ver
-                          </Button>
+                          <TableRowActions
+                            actions={[
+                              {
+                                label: "Ver Detalhes",
+                                icon: Eye,
+                                href: `/comprador/requisicoes/${r.id}`,
+                              },
+                            ]}
+                          />
                         </TableCell>
                       </TableRow>
                     )

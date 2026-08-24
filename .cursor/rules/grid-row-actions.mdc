@@ -1,0 +1,46 @@
+---
+description: Padrão único de ações em grids/listagens (menu ⋯ como em Cotações)
+alwaysApply: true
+---
+
+# Ações em grids (TableRowActions)
+
+## Padrão obrigatório
+
+Em **todas** as listagens/tabelas com coluna de ações, use o componente:
+
+`components/ui/table-row-actions.tsx` → `TableRowActions`
+
+Referência visual: `/comprador/cotacoes` (menu ghost com `MoreHorizontal` + itens ícone + rótulo).
+
+## Regras
+
+- **Nunca** misturar na mesma coluna: botão outline "Ver", ícones Eye/Pencil soltos, ChevronRight, etc.
+- Trigger: `Button variant="ghost" size="icon"` com `MoreHorizontal` (já encapsulado no componente).
+- Cada ação: ícone Lucide (`mr-2 h-4 w-4`) + texto (ex.: "Ver Detalhes", "Editar", "Clonar").
+- Ação principal de leitura: rótulo **"Ver Detalhes"** (não só "Ver"), salvo fluxo muito específico.
+- Ações destrutivas: `destructive: true` no item (ex.: Reprovar, Excluir).
+- Cabeçalho da coluna: **"Ações"** alinhado à direita.
+- Preferir `href` para navegação; `onClick` para ações in-place (aprovar, clonar, etc.).
+
+## Exemplo
+
+```tsx
+import { Eye, Pencil } from "lucide-react"
+import { TableRowActions } from "@/components/ui/table-row-actions"
+
+<TableCell className="text-right">
+  <TableRowActions
+    actions={[
+      { label: "Ver Detalhes", icon: Eye, href: `/comprador/pedidos/${id}` },
+      { label: "Editar", icon: Pencil, href: `/comprador/pedidos/${id}?edit=true` },
+    ]}
+  />
+</TableCell>
+```
+
+## Exceções
+
+- Telas sem coluna de ações (linha expansível / clique na linha abrem detalhe) — ok.
+- Células que **não** são menu de linha (badges de status, toggles de config em massa) — não forçar.
+- Se uma ação precisa ficar em destaque fora do menu (raro), alinhar com o time antes de divergir do padrão.

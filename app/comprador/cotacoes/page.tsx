@@ -8,7 +8,6 @@ import {
   Plus,
   Eye,
   BarChart2,
-  MoreHorizontal,
   Search,
   Building2,
   Package,
@@ -27,12 +26,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { DataTable, Column } from "@/components/data-table/data-table"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -238,58 +232,36 @@ export default function CotacoesPage() {
   ]
 
   const actions = (item: Quotation) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon">
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild>
-          <Link href={`/comprador/cotacoes/${item.id}`}>
-            <Eye className="mr-2 h-4 w-4" />
-            Ver Detalhes
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => void handleClone(item)}
-          disabled={!!cloningId}
-          className="cursor-pointer"
-        >
-          {cloningId === item.id ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Clonando...
-            </>
-          ) : (
-            <>
-              <Copy className="mr-2 h-4 w-4" />
-              Clonar Cotação
-            </>
-          )}
-        </DropdownMenuItem>
-        {(item.status === "waiting" || item.status === "analysis") && (
-          <DropdownMenuItem
-            asChild
-            disabled={
-              !hasPermission("quotation.equalize.view") &&
-              !hasPermission("quotation.equalize.select")
-            }
-            title={
-              !hasPermission("quotation.equalize.view") &&
-              !hasPermission("quotation.equalize.select")
-                ? "Sem permissão"
-                : undefined
-            }
-          >
-            <Link href={`/comprador/cotacoes/${item.id}/equalizacao`}>
-              <BarChart2 className="mr-2 h-4 w-4" />
-              Equalizar Propostas
-            </Link>
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <TableRowActions
+      actions={[
+        {
+          label: "Ver Detalhes",
+          icon: Eye,
+          href: `/comprador/cotacoes/${item.id}`,
+        },
+        {
+          label: cloningId === item.id ? "Clonando..." : "Clonar Cotação",
+          icon: cloningId === item.id ? Loader2 : Copy,
+          onClick: () => void handleClone(item),
+          disabled: !!cloningId,
+          className: cloningId === item.id ? "[&_svg]:animate-spin" : undefined,
+        },
+        {
+          label: "Equalizar Propostas",
+          icon: BarChart2,
+          href: `/comprador/cotacoes/${item.id}/equalizacao`,
+          hidden: item.status !== "waiting" && item.status !== "analysis",
+          disabled:
+            !hasPermission("quotation.equalize.view") &&
+            !hasPermission("quotation.equalize.select"),
+          title:
+            !hasPermission("quotation.equalize.view") &&
+            !hasPermission("quotation.equalize.select")
+              ? "Sem permissão"
+              : undefined,
+        },
+      ]}
+    />
   )
 
   useEffect(() => {

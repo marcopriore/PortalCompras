@@ -1,3 +1,8 @@
+---
+description: Regras gerais do Valore Portal de Compras
+alwaysApply: true
+---
+
 # Cursor Rules — Valore Portal de Compras
 
 ## Comportamento geral
@@ -25,6 +30,7 @@
 - Filtros de lista sempre usam MultiSelectFilter de components/ui/multi-select-filter.tsx
 - Cards de métrica seguem o padrão definido no CLAUDE.md
 - Larguras de filtros sempre fixas (w-40, w-48) — nunca flex-grow
+- Ações em grids: usar `TableRowActions` (`components/ui/table-row-actions.tsx`) — ver rule `grid-row-actions.mdc`
 
 ## Qualidade obrigatória
 - Sempre remover imports de componentes removidos

@@ -1,7 +1,6 @@
 "use client"
 
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -11,7 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Eye } from "lucide-react"
-import Link from "next/link"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 
 interface Activity {
   id: string
@@ -71,12 +70,15 @@ export function RecentActivitiesTable({ activities, basePath }: RecentActivities
               </TableCell>
               <TableCell className="text-muted-foreground">{activity.date}</TableCell>
               <TableCell className="text-right">
-                <Button variant="ghost" size="sm" asChild>
-                  <Link href={`${basePath}/${activity.type}s/${activity.id}`}>
-                    <Eye className="h-4 w-4 mr-1" />
-                    Ver
-                  </Link>
-                </Button>
+                <TableRowActions
+                  actions={[
+                    {
+                      label: "Ver Detalhes",
+                      icon: Eye,
+                      href: `${basePath}/${activity.type}s/${activity.id}`,
+                    },
+                  ]}
+                />
               </TableCell>
             </TableRow>
           ))}

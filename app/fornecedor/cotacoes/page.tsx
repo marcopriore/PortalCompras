@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
@@ -27,6 +26,7 @@ import {
 } from "@/components/ui/select"
 import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 
 import {
   ArchiveX,
@@ -35,6 +35,7 @@ import {
   Trophy,
   FileSpreadsheet,
   X,
+  Eye,
 } from "lucide-react"
 
 type QuotationRow = {
@@ -146,7 +147,6 @@ const statusOptions = [
 ]
 
 export default function FornecedorCotacoesPage() {
-  const router = useRouter()
   const { supplierId, loading: userLoading } = useUser()
 
   const [loading, setLoading] = React.useState(true)
@@ -871,14 +871,15 @@ export default function FornecedorCotacoesPage() {
                               {q.roundNumber != null ? `Rodada ${q.roundNumber}` : "—"}
                             </td>
                             <td className="px-3 py-3 align-top text-right">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => router.push(`/fornecedor/cotacoes/${q.id}`)}
-                              >
-                                Ver Detalhes
-                              </Button>
+                              <TableRowActions
+                                actions={[
+                                  {
+                                    label: "Ver Detalhes",
+                                    icon: Eye,
+                                    href: `/fornecedor/cotacoes/${q.id}`,
+                                  },
+                                ]}
+                              />
                             </td>
                           </tr>
                         )

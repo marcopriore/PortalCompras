@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import {
@@ -10,6 +9,7 @@ import {
   Search,
   X,
   XCircle,
+  Eye,
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
@@ -39,6 +39,7 @@ import {
   poStatusBadgeClass,
 } from "@/lib/po-status"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 
 const SUPPLIER_ACCEPTED_STATUSES = ["processing", "completed", "error", "integration_error"] as const
 
@@ -82,7 +83,6 @@ function getPeriodStartDays(period: string): string | null {
 const PAGE_SIZE = TABLE_PAGE_SIZE
 
 export default function FornecedorPedidosPage() {
-  const router = useRouter()
   const { supplierId, loading: userLoading } = useUser()
 
   const [rows, setRows] = React.useState<PurchaseOrderRow[]>([])
@@ -407,14 +407,15 @@ export default function FornecedorPedidosPage() {
                         </TableCell>
                         <TableCell className="text-sm whitespace-nowrap">{created}</TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            onClick={() => router.push(`/fornecedor/pedidos/${r.id}`)}
-                          >
-                            Ver Detalhes
-                          </Button>
+                          <TableRowActions
+                            actions={[
+                              {
+                                label: "Ver Detalhes",
+                                icon: Eye,
+                                href: `/fornecedor/pedidos/${r.id}`,
+                              },
+                            ]}
+                          />
                         </TableCell>
                       </TableRow>
                     )

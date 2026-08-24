@@ -46,6 +46,7 @@ import {
   Search,
 } from "lucide-react"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 
 function SearchWithClear({
   value,
@@ -716,51 +717,40 @@ export default function AprovacoesPage() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
-                                <div className="flex justify-end gap-2">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => router.push(`/comprador/requisicoes/${row.request.entity_id}?from=aprovacoes`)}
-                                    title="Ver detalhes"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                  {row.request.status === "pending" && (
-                                    <>
-                                      <Button
-                                        size="sm"
-                                        variant="default"
-                                        className="bg-green-600 hover:bg-green-700"
-                                        onClick={() =>
-                                          handleApprove(
-                                            "requisition",
-                                            row.request.id,
-                                            row.request.entity_id,
-                                          )
-                                        }
-                                        disabled={actionLoading === row.request.id}
-                                      >
-                                        <Check className="h-4 w-4 mr-1" />
-                                        Aprovar
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="destructive"
-                                        onClick={() =>
-                                          openRejectDialog(
-                                            "requisition",
-                                            row.request.id,
-                                            row.request.entity_id,
-                                          )
-                                        }
-                                        disabled={actionLoading === row.request.id}
-                                      >
-                                        <X className="h-4 w-4 mr-1" />
-                                        Reprovar
-                                      </Button>
-                                    </>
-                                  )}
-                                </div>
+                                <TableRowActions
+                                  actions={[
+                                    {
+                                      label: "Ver Detalhes",
+                                      icon: Eye,
+                                      href: `/comprador/requisicoes/${row.request.entity_id}?from=aprovacoes`,
+                                    },
+                                    {
+                                      label: "Aprovar",
+                                      icon: Check,
+                                      onClick: () =>
+                                        handleApprove(
+                                          "requisition",
+                                          row.request.id,
+                                          row.request.entity_id,
+                                        ),
+                                      disabled: actionLoading === row.request.id,
+                                      hidden: row.request.status !== "pending",
+                                    },
+                                    {
+                                      label: "Reprovar",
+                                      icon: X,
+                                      onClick: () =>
+                                        openRejectDialog(
+                                          "requisition",
+                                          row.request.id,
+                                          row.request.entity_id,
+                                        ),
+                                      disabled: actionLoading === row.request.id,
+                                      hidden: row.request.status !== "pending",
+                                      destructive: true,
+                                    },
+                                  ]}
+                                />
                               </TableCell>
                             </TableRow>
                           )
@@ -873,51 +863,40 @@ export default function AprovacoesPage() {
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
-                                <div className="flex justify-end gap-2">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => router.push(`/comprador/pedidos/${row.request.entity_id}`)}
-                                    title="Ver detalhes"
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                  {row.request.status === "pending" && (
-                                    <>
-                                      <Button
-                                        size="sm"
-                                        variant="default"
-                                        className="bg-green-600 hover:bg-green-700"
-                                        onClick={() =>
-                                          handleApprove(
-                                            "order",
-                                            row.request.id,
-                                            row.request.entity_id,
-                                          )
-                                        }
-                                        disabled={actionLoading === row.request.id}
-                                      >
-                                        <Check className="h-4 w-4 mr-1" />
-                                        Aprovar
-                                      </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="destructive"
-                                        onClick={() =>
-                                          openRejectDialog(
-                                            "order",
-                                            row.request.id,
-                                            row.request.entity_id,
-                                          )
-                                        }
-                                        disabled={actionLoading === row.request.id}
-                                      >
-                                        <X className="h-4 w-4 mr-1" />
-                                        Reprovar
-                                      </Button>
-                                    </>
-                                  )}
-                                </div>
+                                <TableRowActions
+                                  actions={[
+                                    {
+                                      label: "Ver Detalhes",
+                                      icon: Eye,
+                                      href: `/comprador/pedidos/${row.request.entity_id}`,
+                                    },
+                                    {
+                                      label: "Aprovar",
+                                      icon: Check,
+                                      onClick: () =>
+                                        handleApprove(
+                                          "order",
+                                          row.request.id,
+                                          row.request.entity_id,
+                                        ),
+                                      disabled: actionLoading === row.request.id,
+                                      hidden: row.request.status !== "pending",
+                                    },
+                                    {
+                                      label: "Reprovar",
+                                      icon: X,
+                                      onClick: () =>
+                                        openRejectDialog(
+                                          "order",
+                                          row.request.id,
+                                          row.request.entity_id,
+                                        ),
+                                      disabled: actionLoading === row.request.id,
+                                      hidden: row.request.status !== "pending",
+                                      destructive: true,
+                                    },
+                                  ]}
+                                />
                               </TableCell>
                             </TableRow>
                           )
@@ -1037,52 +1016,41 @@ export default function AprovacoesPage() {
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  <div className="flex justify-end gap-2">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => router.push(`/comprador/requisicoes/${row.request.entity_id}?from=aprovacoes`)}
-                                      title="Ver detalhes"
-                                    >
-                                      <Eye className="h-4 w-4" />
-                                    </Button>
-                                    {row.request.status === "pending" && (
-                                      <>
-                                        <Button
-                                          size="sm"
-                                          variant="default"
-                                          className="bg-green-600 hover:bg-green-700"
-                                          onClick={() =>
-                                            handleApprove(
-                                              "requisition",
-                                              row.request.id,
-                                              row.request.entity_id,
-                                            )
-                                          }
-                                          disabled={actionLoading === row.request.id}
-                                        >
-                                          <Check className="h-4 w-4 mr-1" />
-                                          Aprovar
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="destructive"
-                                          onClick={() =>
-                                            openRejectDialog(
-                                              "requisition",
-                                              row.request.id,
-                                              row.request.entity_id,
-                                            )
-                                          }
-                                          disabled={actionLoading === row.request.id}
-                                        >
-                                          <X className="h-4 w-4 mr-1" />
-                                          Reprovar
-                                        </Button>
-                                      </>
-                                    )}
-                                  </div>
-                                </TableCell>
+                                <TableRowActions
+                                  actions={[
+                                    {
+                                      label: "Ver Detalhes",
+                                      icon: Eye,
+                                      href: `/comprador/requisicoes/${row.request.entity_id}?from=aprovacoes`,
+                                    },
+                                    {
+                                      label: "Aprovar",
+                                      icon: Check,
+                                      onClick: () =>
+                                        handleApprove(
+                                          "requisition",
+                                          row.request.id,
+                                          row.request.entity_id,
+                                        ),
+                                      disabled: actionLoading === row.request.id,
+                                      hidden: row.request.status !== "pending",
+                                    },
+                                    {
+                                      label: "Reprovar",
+                                      icon: X,
+                                      onClick: () =>
+                                        openRejectDialog(
+                                          "requisition",
+                                          row.request.id,
+                                          row.request.entity_id,
+                                        ),
+                                      disabled: actionLoading === row.request.id,
+                                      hidden: row.request.status !== "pending",
+                                      destructive: true,
+                                    },
+                                  ]}
+                                />
+                              </TableCell>
                               </TableRow>
                             )
                           })}
@@ -1194,52 +1162,41 @@ export default function AprovacoesPage() {
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                  <div className="flex justify-end gap-2">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => router.push(`/comprador/pedidos/${row.request.entity_id}`)}
-                                      title="Ver detalhes"
-                                    >
-                                      <Eye className="h-4 w-4" />
-                                    </Button>
-                                    {row.request.status === "pending" && (
-                                      <>
-                                        <Button
-                                          size="sm"
-                                          variant="default"
-                                          className="bg-green-600 hover:bg-green-700"
-                                          onClick={() =>
-                                            handleApprove(
-                                              "order",
-                                              row.request.id,
-                                              row.request.entity_id,
-                                            )
-                                          }
-                                          disabled={actionLoading === row.request.id}
-                                        >
-                                          <Check className="h-4 w-4 mr-1" />
-                                          Aprovar
-                                        </Button>
-                                        <Button
-                                          size="sm"
-                                          variant="destructive"
-                                          onClick={() =>
-                                            openRejectDialog(
-                                              "order",
-                                              row.request.id,
-                                              row.request.entity_id,
-                                            )
-                                          }
-                                          disabled={actionLoading === row.request.id}
-                                        >
-                                          <X className="h-4 w-4 mr-1" />
-                                          Reprovar
-                                        </Button>
-                                      </>
-                                    )}
-                                  </div>
-                                </TableCell>
+                                <TableRowActions
+                                  actions={[
+                                    {
+                                      label: "Ver Detalhes",
+                                      icon: Eye,
+                                      href: `/comprador/pedidos/${row.request.entity_id}`,
+                                    },
+                                    {
+                                      label: "Aprovar",
+                                      icon: Check,
+                                      onClick: () =>
+                                        handleApprove(
+                                          "order",
+                                          row.request.id,
+                                          row.request.entity_id,
+                                        ),
+                                      disabled: actionLoading === row.request.id,
+                                      hidden: row.request.status !== "pending",
+                                    },
+                                    {
+                                      label: "Reprovar",
+                                      icon: X,
+                                      onClick: () =>
+                                        openRejectDialog(
+                                          "order",
+                                          row.request.id,
+                                          row.request.entity_id,
+                                        ),
+                                      disabled: actionLoading === row.request.id,
+                                      hidden: row.request.status !== "pending",
+                                      destructive: true,
+                                    },
+                                  ]}
+                                />
+                              </TableCell>
                               </TableRow>
                             )
                           })}

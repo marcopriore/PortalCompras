@@ -30,6 +30,7 @@ import {
   Eye,
 } from "lucide-react"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 
 type RequisitionStatus =
   | "pending"
@@ -480,17 +481,15 @@ export default function SolicitantePage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="px-4 text-right whitespace-nowrap">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                router.push(`/solicitante/${r.id}`)
-                              }}
-                            >
-                              <Eye className="w-4 h-4 mr-1" />
-                              Ver
-                            </Button>
+                            <TableRowActions
+                              actions={[
+                                {
+                                  label: "Ver Detalhes",
+                                  icon: Eye,
+                                  href: `/solicitante/${r.id}`,
+                                },
+                              ]}
+                            />
                           </TableCell>
                         </TableRow>
                       )

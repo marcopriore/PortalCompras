@@ -1,20 +1,18 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import { format, parseISO } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import {
   CheckCircle,
-  ChevronRight,
   Clock,
   FileSignature,
   Search,
   XCircle,
+  Eye,
 } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import {
@@ -25,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 import type { Contract } from "@/types/contracts"
 import { CONTRACT_KINDS } from "@/types/contracts"
 
@@ -72,7 +71,6 @@ function statusDisplay(c: Contract): { label: string; className: string } {
 }
 
 export default function FornecedorContratosPage() {
-  const router = useRouter()
   const { loading: userLoading, supplierId } = useUser()
 
   const [contracts, setContracts] = React.useState<Contract[]>([])
@@ -252,7 +250,7 @@ export default function FornecedorContratosPage() {
                 <TableHead>Tipo</TableHead>
                 <TableHead>Vigência</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Ação</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -290,18 +288,15 @@ export default function FornecedorContratosPage() {
                       <Badge className={sd.className}>{sd.label}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="gap-1"
-                        onClick={() =>
-                          router.push(`/fornecedor/contratos/${c.id}`)
-                        }
-                      >
-                        Ver
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
+                      <TableRowActions
+                        actions={[
+                          {
+                            label: "Ver Detalhes",
+                            icon: Eye,
+                            href: `/fornecedor/contratos/${c.id}`,
+                          },
+                        ]}
+                      />
                     </TableCell>
                   </TableRow>
                 )
