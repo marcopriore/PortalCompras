@@ -46,6 +46,8 @@ import {
 } from "lucide-react"
 import type { Contract } from "@/types/contracts"
 import { CONTRACT_KINDS } from "@/types/contracts"
+import { createClient } from "@/lib/supabase/client"
+import { formatResponsibleName } from "@/lib/quotations/ownership"
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -86,13 +88,15 @@ function isExpiringSoon(c: Contract): boolean {
   return days >= 0 && days <= 30
 }
 
+type ContractListRow = Contract & { responsible_name?: string }
+
 export default function ContratosPage() {
   const router = useRouter()
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { hasFeature, hasPermission, loading: permissionsLoading } = usePermissions()
   const { companyId } = useTenant()
 
-  const [contracts, setContracts] = React.useState<Contract[]>([])
+  const [contracts, setContracts] = React.useState<ContractListRow[]>([])
   const [loading, setLoading] = React.useState(true)
   const [search, setSearch] = React.useState("")
   const [filterStatus, setFilterStatus] = React.useState<string>("all")
@@ -118,7 +122,35 @@ export default function ContratosPage() {
         const res = await fetch("/api/contracts")
         const data = (await res.json()) as { contracts?: Contract[] }
         if (res.ok && Array.isArray(data.contracts)) {
-          setContracts(data.contracts)
+          const rows = data.contracts
+          const ownerIds = [
+            ...new Set(
+              rows
+                .map((c) => c.created_by)
+                .filter((id): id is string => Boolean(id)),
+            ),
+          ]
+          let nameById = new Map<string, string>()
+          if (ownerIds.length > 0) {
+            const supabase = createClient()
+            const { data: profiles } = await supabase
+              .from("profiles")
+              .select("id, full_name")
+              .in("id", ownerIds)
+            nameById = new Map(
+              ((profiles ?? []) as { id: string; full_name: string | null }[]).map(
+                (p) => [p.id, p.full_name ?? ""],
+              ),
+            )
+          }
+          setContracts(
+            rows.map((c) => ({
+              ...c,
+              responsible_name: c.created_by
+                ? nameById.get(c.created_by) ?? ""
+                : "",
+            })),
+          )
         }
       } finally {
         if (!silent) setLoading(false)
@@ -299,10 +331,10 @@ export default function ContratosPage() {
                 <TableHead>Código</TableHead>
                 <TableHead>Título</TableHead>
                 <TableHead>Fornecedor</TableHead>
-                <TableHead>Tipo de Contrato</TableHead>
                 <TableHead>Vigência</TableHead>
                 <TableHead className="text-right">Valor</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Responsável</TableHead>
                 <TableHead className="text-right w-[100px]">Ações</TableHead>
               </TableRow>
             </TableHeader>
@@ -319,10 +351,6 @@ export default function ContratosPage() {
                   </TableCell>
                   <TableCell className="max-w-[180px] truncate">
                     {c.supplier_name}
-                  </TableCell>
-                  <TableCell>
-                    {CONTRACT_KINDS.find((k) => k.value === c.contract_kind)
-                      ?.label ?? c.contract_kind}
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm">
                     {c.start_date
@@ -352,6 +380,9 @@ export default function ContratosPage() {
                         />
                       )}
                     </div>
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {formatResponsibleName(c.responsible_name)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">

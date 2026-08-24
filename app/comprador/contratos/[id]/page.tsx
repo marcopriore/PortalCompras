@@ -78,6 +78,7 @@ import type {
   ContractItemForm,
 } from "@/types/contracts"
 import { CONTRACT_KINDS, CONTRACT_STATUSES } from "@/types/contracts"
+import { formatResponsibleName } from "@/lib/quotations/ownership"
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -259,6 +260,7 @@ export default function ContratoPage({
   const contractBalanceEnabled = hasFeature("contract_balance") || isSuperAdmin
 
   const [contract, setContract] = React.useState<Contract | null>(null)
+  const [responsibleName, setResponsibleName] = React.useState("—")
   const [loadError, setLoadError] = React.useState(false)
   const [loading, setLoading] = React.useState(true)
   const [editing, setEditing] = React.useState(false)
@@ -477,6 +479,21 @@ export default function ContratoPage({
       }
       const c = data.contract
       setContract(c)
+      if (c.created_by) {
+        const supabase = createClient()
+        const { data: ownerProfile } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", c.created_by)
+          .maybeSingle()
+        setResponsibleName(
+          formatResponsibleName(
+            (ownerProfile as { full_name?: string | null } | null)?.full_name,
+          ),
+        )
+      } else {
+        setResponsibleName("—")
+      }
       if (!editing) {
         setForm(contractToForm(c))
       }
@@ -1193,6 +1210,10 @@ export default function ContratoPage({
                     {CONTRACT_KINDS.find((k) => k.value === contract.contract_kind)
                       ?.label ?? contract.contract_kind}
                   </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Responsável</p>
+                  <p className="text-sm font-medium">{responsibleName}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Vigência</p>
