@@ -61,8 +61,17 @@ const supplierNavItems: NavItem[] = [
   { title: "Configurações", href: "/fornecedor/configuracoes", icon: Settings },
 ]
 
+const solicitanteNavItems: NavItem[] = [
+  { title: "Requisições", href: "/solicitante", icon: ClipboardList },
+  {
+    title: "Configurações",
+    href: "/solicitante/configuracoes?tab=perfil",
+    icon: Settings,
+  },
+]
+
 interface SidebarProps {
-  type: "comprador" | "fornecedor"
+  type: "comprador" | "fornecedor" | "solicitante"
 }
 
 export function Sidebar({ type }: SidebarProps) {
@@ -73,7 +82,8 @@ export function Sidebar({ type }: SidebarProps) {
   const { userId, companyId, hasRole, isSuperAdmin, loading: userLoading } = useUser()
   const { hasPermission, hasFeature, loading: permissionsLoading } = usePermissions()
 
-  const isLoading = !mounted || userLoading || permissionsLoading
+  const isLoading =
+    !mounted || userLoading || (type === "comprador" && permissionsLoading)
 
   useEffect(() => {
     setMounted(true)
@@ -90,14 +100,16 @@ export function Sidebar({ type }: SidebarProps) {
   )
 
   const navItems = useMemo(() => {
-    const base = type === "comprador" ? buyerNavItems : supplierNavItems
-    if (type !== "comprador") return base
-
-    return base.filter((item) => canAccessCompradorNavHref(item.href, accessCtx))
+    if (type === "solicitante") return solicitanteNavItems
+    if (type === "fornecedor") return supplierNavItems
+    return buyerNavItems.filter((item) =>
+      canAccessCompradorNavHref(item.href, accessCtx),
+    )
   }, [type, accessCtx])
 
   const homeHref = useMemo(() => {
-    if (type !== "comprador") return "/fornecedor"
+    if (type === "solicitante") return "/solicitante"
+    if (type === "fornecedor") return "/fornecedor"
     return getDefaultCompradorHref(accessCtx) ?? "/comprador"
   }, [type, accessCtx])
 
@@ -157,7 +169,7 @@ export function Sidebar({ type }: SidebarProps) {
         <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
           {isLoading ? (
             <>
-              {Array.from({ length: 6 }).map((_, i) => (
+              {Array.from({ length: type === "solicitante" ? 2 : 6 }).map((_, i) => (
                 <div
                   key={i}
                   className="h-8 bg-white/10 rounded-md animate-pulse mx-3 mb-1"
@@ -171,7 +183,11 @@ export function Sidebar({ type }: SidebarProps) {
           ) : (
           navItems.map((item) => {
             const itemPath = item.href.split("?")[0] ?? item.href
-            const isActive = itemPath === "/comprador" || itemPath === "/fornecedor"
+            const rootExact =
+              itemPath === "/comprador" ||
+              itemPath === "/fornecedor" ||
+              itemPath === "/solicitante"
+            const isActive = rootExact
               ? pathname === itemPath
               : pathname === itemPath || pathname.startsWith(itemPath + "/")
             const NavIcon = item.icon

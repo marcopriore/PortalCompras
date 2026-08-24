@@ -515,7 +515,7 @@ export default function SolicitanteDetailPage({
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
         Carregando...
       </div>
     )
@@ -532,17 +532,14 @@ export default function SolicitanteDetailPage({
   const statusMeta = getStatusMeta(requisition.status)
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/solicitante")}>
-            <ChevronLeft className="w-4 h-4" />
-          </Button>
-        </div>
-      </header>
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => router.push("/solicitante")}>
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
+      </div>
 
-      <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <div className="space-y-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">{requisition.code}</h1>
@@ -697,7 +694,7 @@ export default function SolicitanteDetailPage({
         </Card>
 
         <HistorySection history={history} req={requisition} auditLogs={auditLogs} />
-      </main>
+      </div>
 
       <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <AlertDialogContent>

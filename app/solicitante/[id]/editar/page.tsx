@@ -564,16 +564,15 @@ export default function SolicitanteEditarRequisicaoPage({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
         Carregando...
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card px-6 py-4 sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -584,14 +583,14 @@ export default function SolicitanteEditarRequisicaoPage({
             </Button>
             <div>
               <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold">Editar Requisição</p>
+                <h1 className="text-2xl font-bold tracking-tight">Editar Requisição</h1>
                 {requisitionCode && (
                   <span className="text-xs text-muted-foreground font-mono bg-muted px-2 py-0.5 rounded">
                     {requisitionCode}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 Corrija os dados e resubmeta para aprovação
               </p>
             </div>
@@ -605,10 +604,9 @@ export default function SolicitanteEditarRequisicaoPage({
             </Button>
           </div>
         </div>
-      </header>
 
       <TooltipProvider>
-        <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+        <div className="space-y-6">
           {rejectionReason && (
             <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 flex items-start gap-3">
               <AlertTriangle className="h-4 w-4 text-orange-600 shrink-0 mt-0.5" />
@@ -944,7 +942,7 @@ export default function SolicitanteEditarRequisicaoPage({
               )}
             </CardContent>
           </Card>
-        </main>
+        </div>
       </TooltipProvider>
     </div>
   )

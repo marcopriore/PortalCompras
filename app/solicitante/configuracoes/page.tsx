@@ -4,7 +4,6 @@ import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
-import { SolicitanteHeader } from "@/components/solicitante/solicitante-header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -75,7 +74,6 @@ function SolicitanteConfigInner() {
 
   const [userId, setUserId] = React.useState<string | null>(null)
   const [companyId, setCompanyId] = React.useState<string | null>(null)
-  const [userName, setUserName] = React.useState("")
   const [authEmail, setAuthEmail] = React.useState("")
   const [loading, setLoading] = React.useState(true)
 
@@ -159,7 +157,6 @@ function SolicitanteConfigInner() {
       if (!alive) return
       setUserId(user.id)
       setCompanyId(profile.company_id)
-      setUserName(profile.full_name ?? user.email ?? "")
       setAuthEmail(user.email ?? "")
       setProfileForm({
         full_name: profile.full_name ?? "",
@@ -227,7 +224,6 @@ function SolicitanteConfigInner() {
         toast.error(error.message)
         return
       }
-      setUserName(profileForm.full_name.trim())
       toast.success("Perfil atualizado.")
     } finally {
       setProfileSaving(false)
@@ -425,19 +421,14 @@ function SolicitanteConfigInner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background">
-        <SolicitanteHeader userName={userName} />
-        <div className="py-16 text-center text-sm text-muted-foreground">
-          Carregando...
-        </div>
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        Carregando...
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <SolicitanteHeader userName={userName} />
-      <main className="max-w-3xl mx-auto px-6 py-8 space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6">
         <div className="flex gap-2 border-b border-border">
           {(
             [
@@ -808,7 +799,6 @@ function SolicitanteConfigInner() {
             </Card>
           </div>
         )}
-      </main>
     </div>
   )
 }
@@ -817,7 +807,7 @@ export default function SolicitanteConfiguracoesPage() {
   return (
     <React.Suspense
       fallback={
-        <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">
+        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
           Carregando...
         </div>
       }

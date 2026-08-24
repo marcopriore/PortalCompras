@@ -33,7 +33,6 @@ import {
 } from "lucide-react"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { TableRowActions } from "@/components/ui/table-row-actions"
-import { SolicitanteHeader } from "@/components/solicitante/solicitante-header"
 
 type RequisitionStatus =
   | "pending"
@@ -146,7 +145,6 @@ function SolicitantePageInner() {
   const PAGE_SIZE = TABLE_PAGE_SIZE
 
   const [userId, setUserId] = React.useState<string | null>(null)
-  const [userName, setUserName] = React.useState<string>("")
   const [canViewAll, setCanViewAll] = React.useState(false)
 
   React.useEffect(() => {
@@ -253,7 +251,6 @@ function SolicitantePageInner() {
     }
 
     setCanViewAll(viewAll)
-    setUserName(profile.full_name ?? user.email ?? "")
 
     let query = supabase
       .from("requisitions")
@@ -357,10 +354,7 @@ function SolicitantePageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <SolicitanteHeader userName={userName} />
-
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+    <div className="space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="rounded-lg border bg-card p-4">
             <p className="text-xs text-muted-foreground">Total</p>
@@ -580,7 +574,6 @@ function SolicitantePageInner() {
             </>
           )}
         </div>
-      </main>
     </div>
   )
 }
@@ -589,7 +582,7 @@ export default function SolicitantePage() {
   return (
     <React.Suspense
       fallback={
-        <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">
+        <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
           Carregando...
         </div>
       }

@@ -29,6 +29,7 @@ import {
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { ChevronLeft, Plus, Trash2, X, Paperclip } from "lucide-react"
@@ -398,26 +399,24 @@ export default function SolicitanteNovaPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card px-6 py-4 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+    <TooltipProvider>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => router.push("/solicitante")}>
               <ChevronLeft className="w-4 h-4" />
             </Button>
             <div>
-              <p className="text-sm font-semibold">Nova Requisição</p>
-              <p className="text-xs text-muted-foreground">Preencha os dados da solicitação</p>
+              <h1 className="text-2xl font-bold tracking-tight">Nova Requisição</h1>
+              <p className="text-sm text-muted-foreground">
+                Preencha os dados da solicitação
+              </p>
             </div>
           </div>
           <Button onClick={() => void handleSubmit()} disabled={saving}>
             {saving ? "Enviando..." : "Enviar Requisição"}
           </Button>
         </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-6 py-8 space-y-6">
 
         {/* Dados Gerais */}
         <Card>
@@ -709,7 +708,7 @@ export default function SolicitanteNovaPage() {
           </Button>
         </div>
 
-      </main>
-    </div>
+      </div>
+    </TooltipProvider>
   )
 }
