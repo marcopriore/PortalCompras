@@ -86,6 +86,20 @@ describe("canAccessCompradorPath", () => {
       hasPermission: (p) => p === "requisition.create.buyer",
     }))).toBe(true)
   })
+
+  it("novo contrato requires contract.create", () => {
+    expect(canAccessCompradorPath("/comprador/contratos/novo", makeCtx())).toBe(false)
+    expect(canAccessCompradorPath("/comprador/contratos/novo", makeCtx({
+      hasPermission: (p) => p === "contract.create",
+    }))).toBe(true)
+  })
+
+  it("nova cotação requires quotation.create", () => {
+    expect(canAccessCompradorPath("/comprador/cotacoes/nova", makeCtx())).toBe(false)
+    expect(canAccessCompradorPath("/comprador/cotacoes/nova", makeCtx({
+      hasPermission: (p) => p === "quotation.create",
+    }))).toBe(true)
+  })
 })
 
 describe("getAccessibleCompradorNavHrefs", () => {

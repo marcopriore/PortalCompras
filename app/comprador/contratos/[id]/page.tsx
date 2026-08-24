@@ -14,6 +14,7 @@ import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { canWrite } from "@/lib/permissions/write-access"
 import { useTenant } from "@/contexts/tenant-context"
 import {
   Card,
@@ -326,6 +327,8 @@ export default function ContratoPage({
     (hasFeature("contracts") &&
       (hasPermission("nav.contracts") || hasPermission("contract.view"))) ||
     isSuperAdmin
+  const canEditContract = canWrite(hasPermission, "contract.edit") || isSuperAdmin
+  const canCreateOrder = canWrite(hasPermission, "order.create") || isSuperAdmin
 
   function showConfirm(
     title: string,
@@ -522,6 +525,11 @@ export default function ContratoPage({
       editQueryHandled.current = false
       return
     }
+    if (!canEditContract) {
+      editQueryHandled.current = true
+      router.replace(`/comprador/contratos/${id}`)
+      return
+    }
     if (editQueryHandled.current) return
     editQueryHandled.current = true
     setForm(contractToForm(contract))
@@ -529,7 +537,7 @@ export default function ContratoPage({
     setItemSearch("")
     setItemResults([])
     setEditing(true)
-  }, [contract, searchParams])
+  }, [contract, searchParams, canEditContract, id, router])
 
   React.useEffect(() => {
     if (userLoading || permissionsLoading || !canAccess || !companyId) return
@@ -909,7 +917,7 @@ export default function ContratoPage({
   }
 
   function beginEdit() {
-    if (!contract) return
+    if (!contract || !canEditContract) return
     setForm(contractToForm(contract))
     setEditItems(cloneItemsForEdit(contract.items))
     setItemSearch("")
@@ -1024,7 +1032,7 @@ export default function ContratoPage({
         onChange={(e) => void handleFileChange(e)}
       />
 
-      {!isRestricted && editing ? (
+      {!isRestricted && editing && canEditContract ? (
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <button
@@ -1084,7 +1092,7 @@ export default function ContratoPage({
         </div>
         {!editing ? (
           <div className="flex items-center gap-2 flex-wrap">
-            {contract.status === "draft" ? (
+            {contract.status === "draft" && canEditContract ? (
               <Button
                 type="button"
                 size="sm"
@@ -1096,7 +1104,7 @@ export default function ContratoPage({
                 {sendingForAcceptance ? "Enviando..." : "Enviar para Aceite"}
               </Button>
             ) : null}
-            {contract.status === "active" && contractBalanceEnabled ? (
+            {contract.status === "active" && contractBalanceEnabled && canCreateOrder ? (
               <Button
                 type="button"
                 size="sm"
@@ -1107,13 +1115,17 @@ export default function ContratoPage({
                 Criar Pedido
               </Button>
             ) : null}
-            {contract.status !== "cancelled" && contract.status !== "expired" ? (
+            {contract.status !== "cancelled" &&
+            contract.status !== "expired" &&
+            canEditContract ? (
               <Button type="button" variant="outline" size="sm" onClick={beginEdit}>
                 <Edit className="h-4 w-4 mr-2" />
                 Editar
               </Button>
             ) : null}
-            {contract.status !== "cancelled" && contract.status !== "expired" ? (
+            {contract.status !== "cancelled" &&
+            contract.status !== "expired" &&
+            canEditContract ? (
               <Button
                 type="button"
                 variant="outline"
@@ -1423,7 +1435,7 @@ export default function ContratoPage({
                     Nenhum documento anexado.
                   </p>
                 ) : null}
-                {canUploadDocument ? (
+                {canUploadDocument && canEditContract ? (
                   <Button
                     type="button"
                     variant={contract.file_url ? "secondary" : "outline"}

@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { canWrite } from "@/lib/permissions/write-access"
 import { useTenant } from "@/contexts/tenant-context"
 import { ContractImportExcelDialog } from "@/components/comprador/contract-import-excel-dialog"
 import {
@@ -267,6 +268,7 @@ export default function NovoContratoPage() {
     (hasFeature("contracts") &&
       (hasPermission("nav.contracts") || hasPermission("contract.view"))) ||
     isSuperAdmin
+  const canCreateContract = canWrite(hasPermission, "contract.create") || isSuperAdmin
 
   React.useEffect(() => {
     const id = window.setTimeout(() => setDebouncedItemSearch(itemSearch), 300)
@@ -693,6 +695,31 @@ export default function NovoContratoPage() {
             <p className="text-sm text-muted-foreground">
               O módulo de contratos não está habilitado para a sua empresa.
             </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (!userLoading && !permissionsLoading && canAccess && !canCreateContract) {
+    return (
+      <div className="p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Novo contrato</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Você não tem permissão para criar contratos.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={() => router.push("/comprador/contratos")}
+            >
+              Voltar
+            </Button>
           </CardContent>
         </Card>
       </div>

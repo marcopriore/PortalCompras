@@ -30,6 +30,7 @@ import { TableRowActions } from "@/components/ui/table-row-actions"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { canWrite } from "@/lib/permissions/write-access"
 import {
   canViewAllQuotations,
   formatResponsibleName,
@@ -83,6 +84,7 @@ export default function CotacoesPage() {
 
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
   const { hasFeature, hasPermission, loading: permLoading } = usePermissions()
+  const canCloneQuotation = canWrite(hasPermission, "quotation.create")
   void hasFeature
   const viewAllQuotations = canViewAllQuotations({
     isSuperAdmin,
@@ -104,6 +106,10 @@ export default function CotacoesPage() {
 
   async function handleClone(quotation: Quotation) {
     if (cloningId) return
+    if (!canCloneQuotation) {
+      toast.error("Você não tem permissão para clonar cotações.")
+      return
+    }
     if (!companyId) return
     setCloningId(quotation.id)
 
@@ -244,6 +250,7 @@ export default function CotacoesPage() {
           icon: cloningId === item.id ? Loader2 : Copy,
           onClick: () => void handleClone(item),
           disabled: !!cloningId,
+          hidden: !canCloneQuotation,
           className: cloningId === item.id ? "[&_svg]:animate-spin" : undefined,
         },
         {
@@ -524,7 +531,7 @@ export default function CotacoesPage() {
             Gerencie suas solicitações de cotação
           </p>
         </div>
-        {!hasPermission("quotation.create") ? (
+        {!canWrite(hasPermission, "quotation.create") ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <span>

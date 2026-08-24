@@ -60,6 +60,14 @@ const COMPRADOR_ROUTE_RULES: RouteRule[] = [
     permissions: ["order.create"],
   },
   {
+    prefix: "/comprador/contratos/novo",
+    permissions: ["contract.create"],
+  },
+  {
+    prefix: "/comprador/cotacoes/nova",
+    permissions: ["quotation.create"],
+  },
+  {
     prefix: "/comprador/configuracoes/permissoes",
     adminOnly: true,
   },

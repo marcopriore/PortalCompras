@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { createNotification } from "@/lib/notify"
 import { sendEmail } from "@/lib/email/send-email"
 import { templateContractSentForAcceptance } from "@/lib/email/templates"
+import { requireApiWritePermission } from "@/lib/permissions/require-api-write"
 
 async function getBuyerContext() {
   const cookieStore = await cookies()
@@ -55,7 +56,7 @@ async function getBuyerContext() {
     }
   }
 
-  return { supabase, companyId, isSuperAdmin }
+  return { supabase, companyId, userId: user.id, isSuperAdmin }
 }
 
 type RouteCtx = { params: Promise<{ id: string }> }
@@ -64,6 +65,15 @@ export async function POST(_request: Request, context: RouteCtx) {
   try {
     const ctx = await getBuyerContext()
     if ("error" in ctx) return ctx.error
+
+    const forbidden = await requireApiWritePermission(
+      ctx.supabase,
+      ctx.userId,
+      ctx.companyId,
+      ctx.isSuperAdmin,
+      "contract.edit",
+    )
+    if (forbidden) return forbidden
 
     const { id } = await context.params
 

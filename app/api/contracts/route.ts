@@ -8,6 +8,7 @@ import {
   isContractStatus,
   isContractType,
 } from "@/types/contracts"
+import { requireApiWritePermission } from "@/lib/permissions/require-api-write"
 
 const CONTRACT_SELECT = `
   *,
@@ -132,6 +133,15 @@ export async function POST(request: Request) {
   try {
     const ctx = await getAuthedContext()
     if ("error" in ctx) return ctx.error
+
+    const forbidden = await requireApiWritePermission(
+      ctx.supabase,
+      ctx.userId,
+      ctx.companyId,
+      ctx.isSuperAdmin,
+      "contract.create",
+    )
+    if (forbidden) return forbidden
 
     const body = (await request.json()) as Record<string, unknown>
     const supplier_id = body.supplier_id

@@ -7,6 +7,7 @@ import {
   isContractStatus,
   isContractType,
 } from "@/types/contracts"
+import { requireApiWritePermission } from "@/lib/permissions/require-api-write"
 
 const CONTRACT_SELECT = `
   *,
@@ -64,7 +65,7 @@ async function getAuthedContext() {
     }
   }
 
-  return { supabase, companyId, isSuperAdmin }
+  return { supabase, companyId, userId: user.id, isSuperAdmin }
 }
 
 type RouteCtx = { params: Promise<{ id: string }> }
@@ -103,6 +104,15 @@ export async function PATCH(request: Request, context: RouteCtx) {
   try {
     const ctx = await getAuthedContext()
     if ("error" in ctx) return ctx.error
+
+    const forbidden = await requireApiWritePermission(
+      ctx.supabase,
+      ctx.userId,
+      ctx.companyId,
+      ctx.isSuperAdmin,
+      "contract.edit",
+    )
+    if (forbidden) return forbidden
 
     const { id } = await context.params
     const body = (await request.json()) as Record<string, unknown>

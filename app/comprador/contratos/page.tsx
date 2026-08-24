@@ -6,6 +6,7 @@ import { format, differenceInDays, parseISO, startOfDay } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { canWrite } from "@/lib/permissions/write-access"
 import { useTenant } from "@/contexts/tenant-context"
 import {
   Card,
@@ -107,6 +108,8 @@ export default function ContratosPage() {
     (hasFeature("contracts") &&
       (hasPermission("nav.contracts") || hasPermission("contract.view"))) ||
     isSuperAdmin
+  const canCreateContract = canWrite(hasPermission, "contract.create") || isSuperAdmin
+  const canEditContract = canWrite(hasPermission, "contract.edit") || isSuperAdmin
 
   const loadContracts = React.useCallback(
     async (silent = false) => {
@@ -299,7 +302,11 @@ export default function ContratosPage() {
         <Button
           type="button"
           className="gap-2 shrink-0"
-          onClick={() => router.push("/comprador/contratos/novo")}
+          disabled={!canCreateContract}
+          title={!canCreateContract ? "Sem permissão" : undefined}
+          onClick={() => {
+            if (canCreateContract) router.push("/comprador/contratos/novo")
+          }}
         >
           <Plus className="h-4 w-4" />
           Novo Contrato
@@ -396,6 +403,7 @@ export default function ContratosPage() {
                           label: "Editar",
                           icon: Pencil,
                           href: `/comprador/contratos/${c.id}?edit=true`,
+                          hidden: !canEditContract,
                         },
                       ]}
                     />
