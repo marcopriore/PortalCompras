@@ -427,7 +427,7 @@ export default function AprovacoesPage() {
               subject: `Requisição Aprovada — ${req.code}`,
               html: `<p>Sua requisição <strong>${req.code}</strong> foi aprovada.</p>
            <p>Ela já está disponível para abertura de cotação.</p>`,
-              emailPrefKey: "order_approved_email",
+              emailPrefKey: "requisition_approval_email",
             })
           }
         }
@@ -498,7 +498,7 @@ export default function AprovacoesPage() {
             subject: `Requisição Reprovada — ${req.code}`,
             html: `<p>Sua requisição <strong>${req.code}</strong> foi reprovada.</p>
            <p><strong>Motivo:</strong> ${rejectionReason}</p>`,
-            emailPrefKey: "order_approved_email",
+            emailPrefKey: "requisition_approval_email",
           })
         }
       }

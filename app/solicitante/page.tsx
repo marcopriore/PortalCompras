@@ -10,6 +10,8 @@ import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import {
   Table,
   TableBody,
@@ -22,15 +24,16 @@ import {
   ClipboardList,
   Plus,
   Search,
-  LogOut,
   Clock,
   CheckCircle2,
   XCircle,
   FileText,
   Eye,
+  Download,
 } from "lucide-react"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { TableRowActions } from "@/components/ui/table-row-actions"
+import { SolicitanteHeader } from "@/components/solicitante/solicitante-header"
 
 type RequisitionStatus =
   | "pending"
@@ -48,9 +51,27 @@ type Requisition = {
   priority: string
   created_at: string
   needed_by: string | null
-  cost_center: string | null
+  requester_id: string | null
+  requester_name: string | null
   quotation_id: string | null
 }
+
+const STATUS_OPTIONS = [
+  { value: "pending", label: "Aguardando" },
+  { value: "approved", label: "Aprovada" },
+  { value: "rejected", label: "Reprovada" },
+  { value: "in_quotation", label: "Em Cotação" },
+  { value: "cancelled", label: "Cancelada" },
+  { value: "completed", label: "Concluída" },
+]
+
+const DEFAULT_STATUS = [
+  "pending",
+  "approved",
+  "rejected",
+  "in_quotation",
+  "cancelled",
+]
 
 function getStatusMeta(status: RequisitionStatus) {
   switch (status) {
@@ -111,18 +132,14 @@ function formatDateBR(iso: string | null | undefined): string {
   return format(d, "dd/MM/yyyy", { locale: ptBR })
 }
 
-export default function SolicitantePage() {
+function SolicitantePageInner() {
   const router = useRouter()
   const [requisitions, setRequisitions] = React.useState<Requisition[]>([])
   const [loading, setLoading] = React.useState(true)
+  const [exporting, setExporting] = React.useState(false)
   const [search, setSearch] = React.useState("")
-  const [statusFilter, setStatusFilter] = React.useState<string[]>([
-    "pending",
-    "approved",
-    "rejected",
-    "in_quotation",
-    "cancelled",
-  ])
+  const [statusFilter, setStatusFilter] = React.useState<string[]>([...DEFAULT_STATUS])
+  const [responsibleFilter, setResponsibleFilter] = React.useState<string[]>([])
   const [dateFrom, setDateFrom] = React.useState("")
   const [dateTo, setDateTo] = React.useState("")
   const [page, setPage] = React.useState(1)
@@ -130,18 +147,33 @@ export default function SolicitantePage() {
 
   const [userId, setUserId] = React.useState<string | null>(null)
   const [userName, setUserName] = React.useState<string>("")
+  const [canViewAll, setCanViewAll] = React.useState(false)
 
   React.useEffect(() => {
     setPage(1)
-  }, [search, statusFilter, dateFrom, dateTo])
+  }, [search, statusFilter, responsibleFilter, dateFrom, dateTo])
+
+  const responsibleOptions = React.useMemo(() => {
+    const seen = new Map<string, string>()
+    for (const r of requisitions) {
+      if (!r.requester_id) continue
+      const label = r.requester_name?.trim() || "Sem nome"
+      if (!seen.has(r.requester_id)) seen.set(r.requester_id, label)
+    }
+    return Array.from(seen.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"))
+  }, [requisitions])
 
   const filtered = React.useMemo(() => {
     return requisitions.filter((r) => {
       if (search.trim()) {
         const s = search.toLowerCase()
+        const responsible = (r.requester_name ?? "").toLowerCase()
         if (
           !r.code.toLowerCase().includes(s) &&
-          !r.title.toLowerCase().includes(s)
+          !r.title.toLowerCase().includes(s) &&
+          !responsible.includes(s)
         ) {
           return false
         }
@@ -149,32 +181,37 @@ export default function SolicitantePage() {
       if (statusFilter.length > 0 && !statusFilter.includes(r.status)) {
         return false
       }
+      if (
+        responsibleFilter.length > 0 &&
+        (!r.requester_id || !responsibleFilter.includes(r.requester_id))
+      ) {
+        return false
+      }
       if (dateFrom) {
-        const from = new Date(dateFrom)
-        from.setHours(0, 0, 0, 0)
+        const from = new Date(`${dateFrom}T00:00:00`)
         if (new Date(r.created_at) < from) return false
       }
       if (dateTo) {
-        const to = new Date(dateTo)
-        to.setHours(23, 59, 59, 999)
+        const to = new Date(`${dateTo}T23:59:59`)
         if (new Date(r.created_at) > to) return false
       }
       return true
     })
-  }, [requisitions, search, statusFilter, dateFrom, dateTo])
+  }, [requisitions, search, statusFilter, responsibleFilter, dateFrom, dateTo])
 
   const paginated = React.useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
     return filtered.slice(start, start + PAGE_SIZE)
-  }, [filtered, page])
+  }, [filtered, page, PAGE_SIZE])
 
   const hasActiveFilters =
     search.trim() !== "" ||
-    statusFilter.length !== 5 ||
+    statusFilter.length !== DEFAULT_STATUS.length ||
+    DEFAULT_STATUS.some((s) => !statusFilter.includes(s)) ||
+    responsibleFilter.length > 0 ||
     dateFrom !== "" ||
     dateTo !== ""
 
-  // Métricas
   const total = requisitions.length
   const pending = requisitions.filter((r) => r.status === "pending").length
   const inProgress = requisitions.filter((r) =>
@@ -196,25 +233,44 @@ export default function SolicitantePage() {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("full_name, profile_type")
+      .select("full_name, profile_type, company_id, is_superadmin, role, roles")
       .eq("id", user.id)
       .single()
 
-    if (!profile || profile.profile_type !== "requester") {
+    if (!profile) {
       window.location.href = "/login"
       return
     }
 
+    const roles = (profile.roles as string[] | null) ?? []
+    const isMaster = Boolean(profile.is_superadmin)
+    const isAdmin = profile.role === "admin" || roles.includes("admin")
+    const viewAll = isMaster || isAdmin
+
+    if (profile.profile_type !== "requester" && !viewAll) {
+      window.location.href = "/login"
+      return
+    }
+
+    setCanViewAll(viewAll)
     setUserName(profile.full_name ?? user.email ?? "")
 
-    const { data } = await supabase
+    let query = supabase
       .from("requisitions")
       .select(
-        "id, code, title, status, priority, created_at, needed_by, cost_center, quotation_id",
+        "id, code, title, status, priority, created_at, needed_by, requester_id, requester_name, quotation_id",
       )
-      .eq("requester_id", user.id)
       .order("created_at", { ascending: false })
 
+    if (profile.company_id) {
+      query = query.eq("company_id", profile.company_id)
+    }
+
+    if (!viewAll) {
+      query = query.eq("requester_id", user.id)
+    }
+
+    const { data } = await query
     setRequisitions((data as Requisition[]) ?? [])
     setLoading(false)
   }, [])
@@ -233,37 +289,78 @@ export default function SolicitantePage() {
     enabled: Boolean(userId),
   })
 
-  async function handleLogout() {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    window.location.href = "/login"
+  const clearFilters = () => {
+    setSearch("")
+    setStatusFilter([...DEFAULT_STATUS])
+    setResponsibleFilter([])
+    setDateFrom("")
+    setDateTo("")
+  }
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const ExcelJS = (await import("exceljs")).default
+      const workbook = new ExcelJS.Workbook()
+      const ws = workbook.addWorksheet("Requisições")
+
+      ws.columns = [
+        { header: "Código", key: "code", width: 18 },
+        { header: "Título", key: "title", width: 36 },
+        { header: "Responsável", key: "responsible", width: 28 },
+        { header: "Necessidade", key: "neededBy", width: 14 },
+        { header: "Prioridade", key: "priority", width: 12 },
+        { header: "Status", key: "status", width: 22 },
+        { header: "Criada em", key: "createdAt", width: 18 },
+      ]
+
+      const headerRow = ws.getRow(1)
+      headerRow.height = 18
+      headerRow.eachCell((cell: { fill: unknown; font: unknown; alignment: unknown }) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF4F3EF5" },
+        }
+        cell.font = { color: { argb: "FFFFFFFF" }, bold: true, size: 11 }
+        cell.alignment = { horizontal: "center", vertical: "middle" }
+      })
+
+      filtered.forEach((r) => {
+        ws.addRow({
+          code: r.code,
+          title: r.title,
+          responsible: r.requester_name ?? "—",
+          neededBy: formatDateBR(r.needed_by),
+          priority: getPriorityMeta(r.priority).label,
+          status: getStatusMeta(r.status).label,
+          createdAt: format(new Date(r.created_at), "dd/MM/yyyy HH:mm", {
+            locale: ptBR,
+          }),
+        })
+      })
+
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      const stamp = format(new Date(), "yyyyMMdd_HHmm")
+      a.href = url
+      a.download = `requisicoes_solicitante_${stamp}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-20 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 px-6 py-4 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-white font-bold text-sm">V</span>
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-foreground">
-                Portal do Solicitante
-              </p>
-              <p className="text-xs text-muted-foreground">{userName}</p>
-            </div>
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => void handleLogout()}>
-            <LogOut className="w-4 h-4 mr-2" />
-            Sair
-          </Button>
-        </div>
-      </header>
+      <SolicitanteHeader userName={userName} />
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
-        {/* Cards de métricas — manter exatamente como estão */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="rounded-lg border bg-card p-4">
             <p className="text-xs text-muted-foreground">Total</p>
@@ -283,21 +380,38 @@ export default function SolicitantePage() {
           </div>
         </div>
 
-        {/* Filtros */}
-        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <div className="md:col-span-2 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por código ou título..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-9"
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col min-w-[220px] flex-1">
+              <Label className="text-xs font-medium text-muted-foreground mb-1">
+                Busca
+              </Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Código, título ou responsável..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col w-44">
+              <p className="text-xs font-medium text-muted-foreground mb-1">Status</p>
+              <MultiSelectFilter
+                label="Status"
+                options={STATUS_OPTIONS}
+                selected={statusFilter}
+                onChange={setStatusFilter}
+                width="w-44"
               />
             </div>
 
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">Data De</p>
+            <div className="flex flex-col w-[140px]">
+              <Label className="text-xs font-medium text-muted-foreground mb-1">
+                Data De
+              </Label>
               <Input
                 type="date"
                 value={dateFrom}
@@ -305,106 +419,65 @@ export default function SolicitantePage() {
               />
             </div>
 
-            <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">Data Até</p>
+            <div className="flex flex-col w-[140px]">
+              <Label className="text-xs font-medium text-muted-foreground mb-1">
+                Data Até
+              </Label>
               <Input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
               />
             </div>
-          </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-muted-foreground">Status:</span>
-            {[
-              {
-                value: "pending",
-                label: "Aguardando",
-                color: "bg-yellow-100 text-yellow-800 border-yellow-200",
-              },
-              {
-                value: "approved",
-                label: "Aprovada",
-                color: "bg-green-100 text-green-800 border-green-200",
-              },
-              {
-                value: "rejected",
-                label: "Reprovada",
-                color: "bg-red-100 text-red-800 border-red-200",
-              },
-              {
-                value: "in_quotation",
-                label: "Em Cotação",
-                color: "bg-blue-100 text-blue-800 border-blue-200",
-              },
-              {
-                value: "cancelled",
-                label: "Cancelada",
-                color: "bg-gray-100 text-gray-700 border-gray-200",
-              },
-              {
-                value: "completed",
-                label: "Concluída",
-                color: "bg-gray-100 text-gray-700 border-gray-200",
-              },
-            ].map((s) => {
-              const active = statusFilter.includes(s.value)
-              return (
-                <button
-                  key={s.value}
-                  type="button"
-                  onClick={() => {
-                    setStatusFilter((prev) =>
-                      prev.includes(s.value)
-                        ? prev.filter((x) => x !== s.value)
-                        : [...prev, s.value],
-                    )
-                  }}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
-                    active
-                      ? s.color
-                      : "bg-muted text-muted-foreground border-transparent opacity-50"
-                  }`}
-                >
-                  {s.label}
-                </button>
-              )
-            })}
+            {canViewAll ? (
+              <div className="flex flex-col">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  Responsável
+                </p>
+                <MultiSelectFilter
+                  label="Responsável"
+                  options={responsibleOptions}
+                  selected={responsibleFilter}
+                  onChange={setResponsibleFilter}
+                  width="w-52"
+                />
+              </div>
+            ) : null}
 
-            {hasActiveFilters && (
-              <button
-                type="button"
-                className="ml-auto text-xs text-primary underline"
-                onClick={() => {
-                  setSearch("")
-                  setStatusFilter([
-                    "pending",
-                    "approved",
-                    "rejected",
-                    "in_quotation",
-                    "cancelled",
-                  ])
-                  setDateFrom("")
-                  setDateTo("")
-                }}
-              >
-                Limpar filtros
-              </button>
-            )}
+            {hasActiveFilters ? (
+              <div className="flex flex-col">
+                <span className="text-xs font-medium text-muted-foreground mb-1 block">
+                  &nbsp;
+                </span>
+                <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+                  Limpar Filtros
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
 
-        {/* Lista */}
         <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-b border-border">
             <p className="text-sm font-medium text-foreground">
-              Minhas Requisições
+              {canViewAll ? "Requisições" : "Minhas Requisições"}
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-xs text-muted-foreground">
                 {filtered.length} resultado{filtered.length !== 1 ? "s" : ""}
               </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => void handleExport()}
+                disabled={exporting || filtered.length === 0}
+              >
+                <Download className="w-4 h-4" />
+                {exporting ? "Exportando..." : "Exportar Excel"}
+              </Button>
               <Button size="sm" onClick={() => router.push("/solicitante/nova")}>
                 <Plus className="w-4 h-4 mr-2" />
                 Nova Requisição
@@ -441,7 +514,7 @@ export default function SolicitantePage() {
                     <TableRow>
                       <TableHead className="px-4">Código</TableHead>
                       <TableHead className="px-4">Título</TableHead>
-                      <TableHead className="px-4">Centro de Custo</TableHead>
+                      <TableHead className="px-4">Responsável</TableHead>
                       <TableHead className="px-4">Necessidade</TableHead>
                       <TableHead className="px-4">Prioridade</TableHead>
                       <TableHead className="px-4">Status</TableHead>
@@ -465,7 +538,7 @@ export default function SolicitantePage() {
                             {r.title}
                           </TableCell>
                           <TableCell className="px-4 text-sm text-muted-foreground">
-                            {r.cost_center || "—"}
+                            {r.requester_name || "—"}
                           </TableCell>
                           <TableCell className="px-4 text-sm text-muted-foreground">
                             {formatDateBR(r.needed_by)}
@@ -509,5 +582,19 @@ export default function SolicitantePage() {
         </div>
       </main>
     </div>
+  )
+}
+
+export default function SolicitantePage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-background flex items-center justify-center text-sm text-muted-foreground">
+          Carregando...
+        </div>
+      }
+    >
+      <SolicitantePageInner />
+    </React.Suspense>
   )
 }

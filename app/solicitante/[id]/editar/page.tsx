@@ -481,7 +481,7 @@ export default function SolicitanteEditarRequisicaoPage({
             .select("id, full_name")
             .eq("company_id", companyId)
             .eq("status", "active")
-            .contains("roles", ["approver_requisition"])
+            .or("role.eq.approver_requisition,roles.cs.{approver_requisition}")
 
           for (const approver of approvers ?? []) {
             void notifyWithEmail({
@@ -521,7 +521,7 @@ export default function SolicitanteEditarRequisicaoPage({
             subject: `Requisição Aprovada — ${requisitionCode}`,
             html: `<p>Sua requisição <strong>${requisitionCode}</strong> foi aprovada automaticamente.</p>
          <p>Ela já está disponível para abertura de cotação.</p>`,
-            emailPrefKey: "order_approved_email",
+            emailPrefKey: "requisition_approval_email",
           })
         }
       } else {
@@ -546,7 +546,7 @@ export default function SolicitanteEditarRequisicaoPage({
           subject: `Requisição Aprovada — ${requisitionCode}`,
           html: `<p>Sua requisição <strong>${requisitionCode}</strong> foi aprovada automaticamente.</p>
          <p>Ela já está disponível para abertura de cotação.</p>`,
-          emailPrefKey: "order_approved_email",
+          emailPrefKey: "requisition_approval_email",
         })
       }
 

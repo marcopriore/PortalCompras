@@ -122,6 +122,8 @@ type NotificationForm = {
   daily_summary: boolean
   new_requisition_bell: boolean
   new_requisition_email: boolean
+  requisition_approval_bell: boolean
+  requisition_approval_email: boolean
   quotation_received_bell: boolean
   quotation_received_email: boolean
   order_accepted_bell: boolean
@@ -147,6 +149,8 @@ function defaultNotificationForm(): NotificationForm {
     daily_summary: false,
     new_requisition_bell: true,
     new_requisition_email: false,
+    requisition_approval_bell: true,
+    requisition_approval_email: false,
     quotation_received_bell: true,
     quotation_received_email: false,
     order_accepted_bell: true,
@@ -179,6 +183,8 @@ function notificationFormFromRow(raw: Record<string, unknown>): NotificationForm
     daily_summary: legDaily,
     new_requisition_bell: Boolean(n.new_requisition_bell ?? legNewReq),
     new_requisition_email: Boolean(n.new_requisition_email ?? false),
+    requisition_approval_bell: Boolean(n.requisition_approval_bell ?? true),
+    requisition_approval_email: Boolean(n.requisition_approval_email ?? false),
     quotation_received_bell: Boolean(n.quotation_received_bell ?? legQuot),
     quotation_received_email: Boolean(n.quotation_received_email ?? false),
     order_accepted_bell: Boolean(n.order_accepted_bell ?? true),
@@ -209,6 +215,13 @@ const notificationTypes: {
     description: "Quando uma nova requisição for criada",
     bellKey: "new_requisition_bell",
     emailKey: "new_requisition_email",
+  },
+  {
+    key: "requisition_approval",
+    label: "Aprovação Requisição",
+    description: "Quando uma requisição for aprovada ou reprovada (aviso ao solicitante)",
+    bellKey: "requisition_approval_bell",
+    emailKey: "requisition_approval_email",
   },
   {
     key: "quotation_received",
@@ -1268,6 +1281,8 @@ export default function ConfiguracoesPage() {
     const channelPayload = {
       new_requisition_bell: notifForm.new_requisition_bell,
       new_requisition_email: notifForm.new_requisition_email,
+      requisition_approval_bell: notifForm.requisition_approval_bell,
+      requisition_approval_email: notifForm.requisition_approval_email,
       quotation_received_bell: notifForm.quotation_received_bell,
       quotation_received_email: notifForm.quotation_received_email,
       order_accepted_bell: notifForm.order_accepted_bell,
