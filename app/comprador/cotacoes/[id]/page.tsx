@@ -1,6 +1,7 @@
 'use client'
 
 import { use, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -10,6 +11,7 @@ import {
   canAccessQuotation,
   canViewAllQuotations,
   formatResponsibleName,
+  isBuyerOrHigherProfile,
 } from '@/lib/quotations/ownership'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -26,11 +28,27 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   BarChart2,
   Building2,
   ChevronLeft,
   FileText,
   Package,
+  UserRoundPlus,
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 import { createNotification } from '@/lib/notify'
@@ -203,6 +221,11 @@ export default function QuotationDetailsPage({
   })
   const [updatingStatus, setUpdatingStatus] = useState<QuotationStatus | null>(null)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [requisitionIdByCode, setRequisitionIdByCode] = useState<Record<string, string>>({})
+  const [delegateOpen, setDelegateOpen] = useState(false)
+  const [delegateTargetId, setDelegateTargetId] = useState<string>('')
+  const [delegateBuyers, setDelegateBuyers] = useState<{ id: string; full_name: string | null }[]>([])
+  const [delegating, setDelegating] = useState(false)
 
   const toggleSection = (key: SectionKey) => {
     setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -276,8 +299,31 @@ export default function QuotationDetailsPage({
             .eq('quotation_id', id),
         ])
 
-        setItems((itemsData as QuotationItem[]) ?? [])
+        const loadedItems = (itemsData as QuotationItem[]) ?? []
+        setItems(loadedItems)
         setSuppliers((suppliersData as QuotationSupplier[]) ?? [])
+
+        const reqCodes = [
+          ...new Set(
+            loadedItems
+              .map((item) => item.source_requisition_code?.trim())
+              .filter((code): code is string => Boolean(code)),
+          ),
+        ]
+        if (reqCodes.length > 0) {
+          const { data: reqs } = await supabase
+            .from('requisitions')
+            .select('id, code')
+            .eq('company_id', companyId!)
+            .in('code', reqCodes)
+          const map: Record<string, string> = {}
+          ;((reqs ?? []) as { id: string; code: string }[]).forEach((req) => {
+            if (req.code) map[req.code] = req.id
+          })
+          setRequisitionIdByCode(map)
+        } else {
+          setRequisitionIdByCode({})
+        }
       } catch (err) {
         console.error('Erro ao carregar detalhes da cotação:', err)
         setError('Ocorreu um erro ao carregar a cotação.')
@@ -441,6 +487,93 @@ export default function QuotationDetailsPage({
     setCancelDialogOpen(false)
   }
 
+  const canDelegate =
+    Boolean(quotation) &&
+    quotation!.status !== 'cancelled' &&
+    (quotation!.created_by === userId || hasPermission('quotation.delegate'))
+
+  const openDelegateDialog = async () => {
+    if (!companyId || !quotation) return
+    setDelegateOpen(true)
+    setDelegateTargetId('')
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, profile_type, roles, is_superadmin')
+      .eq('company_id', companyId)
+      .order('full_name', { ascending: true })
+
+    const eligible = (
+      (data ?? []) as {
+        id: string
+        full_name: string | null
+        profile_type: string | null
+        roles: string[] | null
+        is_superadmin: boolean | null
+      }[]
+    ).filter(
+      (profile) =>
+        profile.id !== quotation.created_by && isBuyerOrHigherProfile(profile),
+    )
+    setDelegateBuyers(eligible)
+  }
+
+  const handleDelegate = async () => {
+    if (!quotation || !companyId || !delegateTargetId) return
+    setDelegating(true)
+    try {
+      const supabase = createClient()
+      const { error: updateError } = await supabase
+        .from('quotations')
+        .update({ created_by: delegateTargetId })
+        .eq('id', quotation.id)
+        .eq('company_id', companyId)
+
+      if (updateError) {
+        toast.error('Não foi possível delegar a cotação.')
+        return
+      }
+
+      const nextName =
+        delegateBuyers.find((b) => b.id === delegateTargetId)?.full_name ?? null
+      setQuotation({ ...quotation, created_by: delegateTargetId })
+      setResponsibleName(formatResponsibleName(nextName))
+
+      void createNotification({
+        userId: delegateTargetId,
+        companyId,
+        type: 'quotation.delegated',
+        title: 'Cotação atribuída a você',
+        body: `A cotação ${quotation.code} foi delegada para você.`,
+        entity: 'quotation',
+        entityId: quotation.id,
+      })
+
+      void logAudit({
+        eventType: 'quotation.delegated',
+        description: `Cotação ${quotation.code} delegada para ${formatResponsibleName(nextName)}`,
+        companyId,
+        userId: userId ?? null,
+        userName: userId ?? null,
+        entity: 'quotations',
+        entityId: quotation.id,
+        metadata: {
+          code: quotation.code,
+          from: quotation.created_by,
+          to: delegateTargetId,
+        },
+      })
+
+      toast.success('Cotação delegada com sucesso.')
+      setDelegateOpen(false)
+      if (!viewAllQuotations && delegateTargetId !== userId) {
+        router.replace('/comprador/cotacoes')
+      }
+    } finally {
+      setDelegating(false)
+    }
+  }
+
   if (userLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
@@ -482,6 +615,16 @@ export default function QuotationDetailsPage({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 pl-11 sm:pl-0">
+          {canDelegate && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void openDelegateDialog()}
+            >
+              <UserRoundPlus className="mr-2 h-4 w-4" />
+              Delegar
+            </Button>
+          )}
           {quotation && quotation.status !== 'cancelled' && quotation.status !== 'completed' && (
             !hasPermission('quotation.cancel') ? (
               <Tooltip>
@@ -659,9 +802,18 @@ export default function QuotationDetailsPage({
                         </td>
                         <td className="px-2 py-2 align-top">
                           {item.source_requisition_code ? (
-                            <span className="text-xs font-mono text-blue-600 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5">
-                              {item.source_requisition_code}
-                            </span>
+                            requisitionIdByCode[item.source_requisition_code] ? (
+                              <Link
+                                href={`/comprador/requisicoes/${requisitionIdByCode[item.source_requisition_code]}`}
+                                className="text-xs font-mono text-primary bg-primary/5 border border-primary/20 rounded px-1.5 py-0.5 hover:underline"
+                              >
+                                {item.source_requisition_code}
+                              </Link>
+                            ) : (
+                              <span className="text-xs font-mono text-blue-600 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5">
+                                {item.source_requisition_code}
+                              </span>
+                            )
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
                           )}
@@ -715,6 +867,49 @@ export default function QuotationDetailsPage({
           </Section>
         </div>
       )}
+
+      <Dialog open={delegateOpen} onOpenChange={setDelegateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delegar cotação</DialogTitle>
+            <DialogDescription>
+              Transfira a responsabilidade desta cotação para outro comprador. O novo responsável passa a ser o dono da cotação.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Novo responsável</Label>
+            <Select value={delegateTargetId || undefined} onValueChange={setDelegateTargetId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um comprador" />
+              </SelectTrigger>
+              <SelectContent>
+                {delegateBuyers.map((buyer) => (
+                  <SelectItem key={buyer.id} value={buyer.id}>
+                    {formatResponsibleName(buyer.full_name)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {delegateBuyers.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Nenhum comprador disponível para delegação.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDelegateOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleDelegate()}
+              disabled={!delegateTargetId || delegating}
+            >
+              {delegating ? 'Delegando...' : 'Confirmar delegação'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
         <AlertDialogContent>

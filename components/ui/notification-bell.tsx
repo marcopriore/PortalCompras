@@ -36,6 +36,7 @@ function resolveNotificationRoute(
 
   const buyerRoutes: Record<string, string> = {
     quotation: `/comprador/cotacoes/${entityId}`,
+    quotations: `/comprador/cotacoes/${entityId}`,
     quotation_rounds: `/comprador/cotacoes/${entityId}`,
     purchase_order: `/comprador/pedidos/${entityId}`,
     requisition: `/comprador/requisicoes/${entityId}`,
@@ -90,6 +91,7 @@ function getNotificationIcon(type: string) {
     "approval.order": { icon: Workflow, color: "text-purple-500" },
     "quotation.invited": { icon: FileText, color: "text-blue-500" },
     "quotation.new_round": { icon: FileText, color: "text-indigo-500" },
+    "quotation.delegated": { icon: FileText, color: "text-indigo-500" },
     "order.received": { icon: ShoppingCart, color: "text-blue-500" },
     "order.integration_error": { icon: AlertTriangle, color: "text-red-600" },
     "contract.sent_for_acceptance": { icon: FileText, color: "text-purple-500" },

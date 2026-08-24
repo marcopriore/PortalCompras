@@ -37,6 +37,7 @@ export type PermissionKey =
   | "quotation.equalize.view"
   | "quotation.equalize.select"
   | "quotation.view_all"
+  | "quotation.delegate"
   | "order.create"
   | "order.edit"
   | "order.edit_own"
@@ -105,6 +106,7 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "quotation.equalize.view",
   "quotation.equalize.select",
   "quotation.view_all",
+  "quotation.delegate",
   "order.create",
   "order.edit",
   "order.edit_own",

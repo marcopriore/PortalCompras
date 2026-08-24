@@ -12,6 +12,7 @@ type AuditEventType =
   | 'quotation.created'
   | 'quotation.updated'
   | 'quotation.cancelled'
+  | 'quotation.delegated'
   | 'impersonation'
   | 'integration.items'
   | 'integration.suppliers'

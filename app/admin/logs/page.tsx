@@ -150,6 +150,10 @@ function getEventMeta(eventType: string): { label: string; className: string } {
       label: 'Cotação cancelada',
       className: 'bg-red-100 text-red-800',
     },
+    'quotation.delegated': {
+      label: 'Cotação delegada',
+      className: 'bg-indigo-100 text-indigo-800',
+    },
     impersonation: {
       label: 'Impersonation',
       className: 'bg-orange-100 text-orange-800',
@@ -224,6 +228,7 @@ const AUDIT_EVENT_TYPE_VALUES = [
   'quotation.created',
   'quotation.updated',
   'quotation.cancelled',
+  'quotation.delegated',
   'impersonation',
   'integration.items',
   'integration.suppliers',

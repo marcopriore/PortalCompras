@@ -19,6 +19,8 @@ import {
   CheckCircle,
   Copy,
   Loader2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react"
 import MultiSelectFilter from "@/components/ui/multi-select-filter"
 import { Button } from "@/components/ui/button"
@@ -103,6 +105,8 @@ export default function CotacoesPage() {
   const [dateTo, setDateTo] = useState<string>("")
   const [supplierFilter, setSupplierFilter] = useState<string>("")
   const [materialFilter, setMaterialFilter] = useState<string>("")
+  const [responsibleFilter, setResponsibleFilter] = useState<string[]>([])
+  const [showAllFilters, setShowAllFilters] = useState(false)
 
   async function handleClone(quotation: Quotation) {
     if (cloningId) return
@@ -381,16 +385,30 @@ export default function CotacoesPage() {
           return code.includes(materialQ) || desc.includes(materialQ)
         })
 
+      const matchResponsible =
+        responsibleFilter.length === 0 ||
+        (q.created_by != null && responsibleFilter.includes(q.created_by))
+
       return (
         matchSearch &&
         matchStatus &&
         matchDateFrom &&
         matchDateTo &&
         matchSupplier &&
-        matchMaterial
+        matchMaterial &&
+        matchResponsible
       )
     })
-  }, [quotations, search, statusFilter, dateFrom, dateTo, supplierFilter, materialFilter])
+  }, [
+    quotations,
+    search,
+    statusFilter,
+    dateFrom,
+    dateTo,
+    supplierFilter,
+    materialFilter,
+    responsibleFilter,
+  ])
 
   const metrics = useMemo(() => {
     return {
@@ -401,6 +419,26 @@ export default function CotacoesPage() {
     }
   }, [quotations])
 
+  const extraFiltersCount = [
+    dateFrom,
+    dateTo,
+    supplierFilter,
+    materialFilter,
+    responsibleFilter.length > 0,
+  ].filter(Boolean).length
+  const filtersExpanded = showAllFilters
+
+  const responsibleOptions = useMemo(() => {
+    const seen = new Map<string, string>()
+    quotations.forEach((q) => {
+      if (!q.created_by || seen.has(q.created_by)) return
+      seen.set(q.created_by, formatResponsibleName(q.responsible_name))
+    })
+    return Array.from(seen.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"))
+  }, [quotations])
+
   const handleClearFilters = () => {
     setSearch("")
     setStatusFilter(['draft', 'waiting', 'analysis'])
@@ -408,6 +446,7 @@ export default function CotacoesPage() {
     setDateTo("")
     setSupplierFilter("")
     setMaterialFilter("")
+    setResponsibleFilter([])
   }
 
   const handleExport = async () => {
@@ -585,7 +624,21 @@ export default function CotacoesPage() {
       </div>
 
       <div className="bg-muted/40 border border-border rounded-xl p-4 mb-6">
-        <p className="text-sm font-medium text-muted-foreground mb-3">Filtros</p>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="text-sm font-medium text-muted-foreground">Filtros</p>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
+            onClick={() => setShowAllFilters((open) => !open)}
+          >
+            {filtersExpanded ? "Ocultar filtros" : extraFiltersCount > 0 ? `Mais filtros (${extraFiltersCount})` : "Mais filtros"}
+            {filtersExpanded ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </button>
+        </div>
         <div className="flex flex-wrap gap-2 items-end">
           <div className="flex flex-col flex-1 min-w-[200px] max-w-[360px]">
             <p className="text-xs font-medium text-muted-foreground mb-1 block">
@@ -634,6 +687,8 @@ export default function CotacoesPage() {
             />
           </div>
 
+          {filtersExpanded && (
+            <>
           <div className="flex flex-col w-[140px]">
             <label className="text-xs font-medium text-muted-foreground mb-1 block">
               De
@@ -713,6 +768,23 @@ export default function CotacoesPage() {
               )}
             </div>
           </div>
+
+          {viewAllQuotations && (
+            <div className="flex flex-col">
+              <p className="text-xs font-medium text-muted-foreground mb-1 block">
+                Responsável
+              </p>
+              <MultiSelectFilter
+                label="Responsável"
+                options={responsibleOptions}
+                selected={responsibleFilter}
+                onChange={setResponsibleFilter}
+                width="w-52"
+              />
+            </div>
+          )}
+            </>
+          )}
 
           {hasActiveFilters && (
             <div className="flex flex-col">

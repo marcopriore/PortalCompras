@@ -3,6 +3,7 @@ import {
   canAccessQuotation,
   canViewAllQuotations,
   formatResponsibleName,
+  isBuyerOrHigherProfile,
 } from "@/lib/quotations/ownership"
 
 describe("quotation ownership", () => {
@@ -58,5 +59,17 @@ describe("quotation ownership", () => {
     expect(formatResponsibleName(null)).toBe("—")
     expect(formatResponsibleName("  ")).toBe("—")
     expect(formatResponsibleName("Ana")).toBe("Ana")
+  })
+
+  it("identifies buyer or higher profiles", () => {
+    expect(isBuyerOrHigherProfile({ profile_type: "buyer" })).toBe(true)
+    expect(isBuyerOrHigherProfile({ profile_type: "requester" })).toBe(false)
+    expect(isBuyerOrHigherProfile({ profile_type: "supplier" })).toBe(false)
+    expect(
+      isBuyerOrHigherProfile({ profile_type: "buyer", roles: ["manager"] }),
+    ).toBe(true)
+    expect(isBuyerOrHigherProfile({ is_superadmin: true, profile_type: "supplier" })).toBe(
+      true,
+    )
   })
 })
