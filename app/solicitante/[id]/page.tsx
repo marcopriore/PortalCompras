@@ -127,7 +127,7 @@ function getStatusMeta(status: string) {
     case "completed":
       return { label: "Concluída", className: "bg-gray-100 text-gray-700" }
     case "cancelled":
-      return { label: "Cancelada", className: "bg-gray-100 text-gray-700" }
+      return { label: "Cancelada", className: "bg-red-100 text-red-800" }
     default:
       return { label: status, className: "bg-gray-100 text-gray-700" }
   }
@@ -142,9 +142,9 @@ function HorizontalTimeline({
   quotation: QuotationInfo | null
   orders: PurchaseOrderInfo[]
 }) {
-  type StepStatus = "completed" | "active" | "pending" | "rejected"
+  type StepStatus = "completed" | "active" | "pending" | "rejected" | "cancelled"
 
-  const steps: {
+  const baseSteps: {
     key: string
     label: string
     status: StepStatus
@@ -162,11 +162,13 @@ function HorizontalTimeline({
       status:
         req.status === "draft"
           ? "pending"
-          : req.status === "rejected" || req.status === "cancelled"
-          ? "rejected"
-          : req.status === "pending"
-            ? "active"
-            : "completed",
+          : req.status === "rejected"
+            ? "rejected"
+            : req.status === "cancelled"
+              ? "pending"
+              : req.status === "pending"
+                ? "active"
+                : "completed",
       date: req.approved_at,
     },
     {
@@ -209,6 +211,20 @@ function HorizontalTimeline({
     },
   ]
 
+  const steps =
+    req.status === "cancelled"
+      ? [
+          ...baseSteps.slice(0, 2),
+          {
+            key: "cancelled",
+            label: "Cancelada",
+            status: "cancelled" as const,
+            date: null,
+          },
+          ...baseSteps.slice(2),
+        ]
+      : baseSteps
+
   return (
     <div className="bg-card border border-border rounded-xl p-4 overflow-x-auto">
       <div className="flex items-center justify-between relative min-w-[320px]">
@@ -232,6 +248,10 @@ function HorizontalTimeline({
               circle: "bg-blue-500 border-blue-500",
               text: "text-blue-700",
             },
+            cancelled: {
+              circle: "bg-red-500 border-red-500",
+              text: "text-red-700",
+            },
           }[step.status]
 
           return (
@@ -246,6 +266,9 @@ function HorizontalTimeline({
                   <Loader2 className="w-4 h-4 text-white animate-spin" />
                 )}
                 {step.status === "rejected" && (
+                  <XCircle className="w-5 h-5 text-white" />
+                )}
+                {step.status === "cancelled" && (
                   <XCircle className="w-5 h-5 text-white" />
                 )}
                 {step.status === "pending" && (

@@ -74,7 +74,6 @@ const DEFAULT_STATUS = [
   "approved",
   "rejected",
   "in_quotation",
-  "cancelled",
 ]
 
 function getStatusMeta(status: RequisitionStatus) {
@@ -118,7 +117,7 @@ function getStatusMeta(status: RequisitionStatus) {
     case "cancelled":
       return {
         label: "Cancelada",
-        color: "bg-gray-100 text-gray-700",
+        color: "bg-red-100 text-red-800",
         icon: XCircle,
       }
     default:
