@@ -592,15 +592,19 @@ export default function SolicitanteDetailPage({
             <h1 className="text-2xl font-bold tracking-tight">{requisition.code}</h1>
             <p className="text-muted-foreground text-sm mt-0.5">{requisition.title}</p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 shrink-0">
             <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
             {requisition.status === "draft" && (
               <>
-                <Button onClick={() => router.push(`/solicitante/${id}/editar`)}>
+                <Button
+                  size="sm"
+                  onClick={() => router.push(`/solicitante/${id}/editar`)}
+                >
                   <Pencil className="w-4 h-4 mr-2" />
                   Continuar edição
                 </Button>
                 <Button
+                  size="sm"
                   variant="outline"
                   className="text-destructive border-destructive/30 hover:bg-destructive/5"
                   onClick={() => setCancelOpen(true)}
@@ -611,7 +615,7 @@ export default function SolicitanteDetailPage({
               </>
             )}
             {requisition.status === "rejected" && (
-              <Button onClick={() => router.push(`/solicitante/${id}/editar`)}>
+              <Button size="sm" onClick={() => router.push(`/solicitante/${id}/editar`)}>
                 <Pencil className="w-4 h-4 mr-2" />
                 Editar e Resubmeter
               </Button>
@@ -620,8 +624,9 @@ export default function SolicitanteDetailPage({
               !requisition.quotation_id &&
               orders.length === 0 && (
                 <Button
+                  size="sm"
                   variant="outline"
-                  className="w-full text-destructive border-destructive/30 hover:bg-destructive/5"
+                  className="text-destructive border-destructive/30 hover:bg-destructive/5"
                   onClick={() => setCancelOpen(true)}
                 >
                   <XCircle className="w-4 h-4 mr-2" />
