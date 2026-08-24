@@ -101,6 +101,7 @@ export default function NovaRequisicaoPage() {
   const { hasPermission, loading: permissionsLoading } = usePermissions()
 
   const [loading, setLoading] = React.useState(false)
+  const [drafting, setDrafting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   const [form, setForm] = React.useState<RequisitionDraftForm>({
@@ -213,6 +214,129 @@ export default function NovaRequisicaoPage() {
     setAttachments((prev) => prev.filter((a) => a.id !== id))
   }
 
+  const createRequisitionRecord = async (status: "draft" | "pending") => {
+    if (!companyId || !userId) return null
+
+    const supabase = createClient()
+    const { data: profileRes } = await supabase
+      .from("profiles")
+      .select("full_name")
+      .eq("id", userId)
+      .single()
+
+    const requesterName = (profileRes as { full_name?: string } | null)?.full_name ?? ""
+    const costCenterTrimmed = (form.costCenter ?? "").trim()
+    const costCenterForInsert = costCenterTrimmed || null
+
+    const { data: requisitionRes, error: requisitionErr } = await supabase
+      .from("requisitions")
+      .insert({
+        company_id: companyId,
+        status,
+        origin: "manual",
+        requester_id: userId,
+        requester_name: requesterName,
+        title: form.title.trim(),
+        description: form.description.trim() || null,
+        cost_center: costCenterForInsert,
+        needed_by: form.neededBy ? new Date(`${form.neededBy}T00:00:00`).toISOString() : null,
+        priority: form.priority,
+      })
+      .select("id, code")
+      .single()
+
+    if (requisitionErr || !requisitionRes) {
+      setError(
+        status === "draft"
+          ? "Não foi possível salvar o rascunho."
+          : "Não foi possível criar a requisição.",
+      )
+      return null
+    }
+
+    const requisitionId = (requisitionRes as { id: string }).id
+    const requisitionCode = (requisitionRes as { code: string }).code
+
+    void logAudit({
+      eventType: status === "draft" ? "requisition.draft_saved" : "requisition.created",
+      description:
+        status === "draft"
+          ? `Rascunho ${requisitionCode} salvo por ${requesterName || "comprador"}`
+          : `Requisição ${requisitionCode} criada por ${requesterName || "comprador"}`,
+      companyId,
+      userId,
+      userName: requesterName || null,
+      entity: "requisitions",
+      entityId: requisitionId,
+      metadata: {
+        code: requisitionCode,
+        priority: form.priority,
+        cost_center: costCenterForInsert,
+        status,
+      },
+    })
+
+    if (items.length > 0) {
+      const payloadItems = items.map((it) => ({
+        requisition_id: requisitionId,
+        company_id: companyId,
+        material_code: (it.materialCode ?? "").trim() || null,
+        material_description: it.materialDescription.trim(),
+        quantity: Math.max(1, Number(it.quantity) || 1),
+        unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
+        commodity_group: (it.commodityGroup ?? "").trim() || null,
+        observations: (it.observations ?? "").trim() || null,
+      }))
+
+      const { error: itemsErr } = await supabase.from("requisition_items").insert(payloadItems)
+
+      if (itemsErr) {
+        setError("Não foi possível salvar os itens da requisição.")
+        return null
+      }
+    }
+
+    if (attachments.length > 0) {
+      for (const att of attachments) {
+        const fd = new FormData()
+        fd.append("file", att.file)
+        const uploadRes = await fetch(`/api/requisitions/${requisitionId}/attachments`, {
+          method: "POST",
+          body: fd,
+        })
+        if (!uploadRes.ok) {
+          toast.error(`Falha ao enviar anexo: ${att.file.name}`)
+        }
+      }
+    }
+
+    return { requisitionId, requisitionCode, requesterName, costCenterTrimmed }
+  }
+
+  const handleSaveDraft = async () => {
+    setError(null)
+    if (!companyId || !userId) return
+
+    if (!form.title.trim()) {
+      setError("Título é obrigatório.")
+      return
+    }
+    if (!(form.costCenter ?? "").trim()) {
+      setError("Centro de custo é obrigatório.")
+      return
+    }
+
+    setDrafting(true)
+    try {
+      const created = await createRequisitionRecord("draft")
+      if (!created) return
+      toast.success("Rascunho salvo.")
+      router.push(`/comprador/requisicoes/${created.requisitionId}`)
+    } finally {
+      setDrafting(false)
+    }
+  }
+
   const handleSubmit = async () => {
     setError(null)
     if (!companyId || !userId) return
@@ -235,89 +359,10 @@ export default function NovaRequisicaoPage() {
     const supabase = createClient()
     setLoading(true)
     try {
-      const { data: profileRes } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", userId)
-        .single()
+      const created = await createRequisitionRecord("pending")
+      if (!created) return
 
-      const requesterName = (profileRes as { full_name?: string } | null)?.full_name ?? ""
-      const costCenterTrimmed = (form.costCenter ?? "").trim()
-      const costCenterForInsert = costCenterTrimmed || null
-
-      const { data: requisitionRes, error: requisitionErr } = await supabase
-        .from("requisitions")
-        .insert({
-          company_id: companyId,
-          status: "pending",
-          origin: "manual",
-          requester_id: userId,
-          requester_name: requesterName,
-          title: form.title.trim(),
-          description: form.description.trim() || null,
-          cost_center: costCenterForInsert,
-          needed_by: form.neededBy ? new Date(`${form.neededBy}T00:00:00`).toISOString() : null,
-          priority: form.priority,
-        })
-        .select("id, code")
-        .single()
-
-      if (requisitionErr || !requisitionRes) {
-        setError("Não foi possível criar a requisição.")
-        return
-      }
-
-      const requisitionId = (requisitionRes as { id: string }).id
-      const requisitionCode = (requisitionRes as { code: string }).code
-
-      void logAudit({
-        eventType: "requisition.created",
-        description: `Requisição ${requisitionCode} criada por ${requesterName || "comprador"}`,
-        companyId,
-        userId,
-        userName: requesterName || null,
-        entity: "requisitions",
-        entityId: requisitionId,
-        metadata: {
-          code: requisitionCode,
-          priority: form.priority,
-          cost_center: costCenterForInsert,
-        },
-      })
-
-      const payloadItems = items.map((it) => ({
-        requisition_id: requisitionId,
-        company_id: companyId,
-        material_code: (it.materialCode ?? "").trim() || null,
-        material_description: it.materialDescription.trim(),
-        quantity: Math.max(1, Number(it.quantity) || 1),
-        unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
-        commodity_group: (it.commodityGroup ?? "").trim() || null,
-        observations: (it.observations ?? "").trim() || null,
-      }))
-
-      const { error: itemsErr } = await supabase
-        .from("requisition_items")
-        .insert(payloadItems)
-
-      if (itemsErr) {
-        setError("Não foi possível salvar os itens da requisição.")
-        return
-      }
-
-      if (attachments.length > 0) {
-        for (const att of attachments) {
-          const fd = new FormData()
-          fd.append("file", att.file)
-          const uploadRes = await fetch(`/api/requisitions/${requisitionId}/attachments`, {
-            method: "POST",
-            body: fd,
-          })
-          if (!uploadRes.ok) {
-            toast.error(`Falha ao enviar anexo: ${att.file.name}`)
-          }
-        }
-      }
+      const { requisitionId, requisitionCode, requesterName, costCenterTrimmed } = created
 
       try {
         const costCenterForRpc = costCenterTrimmed || ""
@@ -353,7 +398,7 @@ export default function NovaRequisicaoPage() {
          <p>Ela já está disponível para abertura de cotação.</p>`,
             emailPrefKey: "requisition_approval_email",
           })
-          router.push("/comprador/requisicoes")
+          router.push(`/comprador/requisicoes/${requisitionId}`)
           return
         }
 
@@ -391,7 +436,7 @@ export default function NovaRequisicaoPage() {
          <p>Ela já está disponível para abertura de cotação.</p>`,
             emailPrefKey: "requisition_approval_email",
           })
-          router.push("/comprador/requisicoes")
+          router.push(`/comprador/requisicoes/${requisitionId}`)
           return
         }
 
@@ -436,12 +481,12 @@ export default function NovaRequisicaoPage() {
           status: "pending",
         })
 
-        router.push("/comprador/requisicoes")
-      } catch (approvalErr) {
+        router.push(`/comprador/requisicoes/${requisitionId}`)
+      } catch {
         toast.error(
           "Requisição criada, mas houve erro ao configurar aprovação. Contate o administrador."
         )
-        router.push("/comprador/requisicoes")
+        router.push(`/comprador/requisicoes/${requisitionId}`)
       }
     } finally {
       setLoading(false)
@@ -505,11 +550,28 @@ export default function NovaRequisicaoPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => router.push("/comprador/requisicoes")}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.push("/comprador/requisicoes")}
+              disabled={loading || drafting}
+            >
               Cancelar
             </Button>
-            <Button type="button" onClick={handleSubmit} disabled={loading}>
-              {loading ? "Salvando..." : "Criar Requisição"}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleSaveDraft()}
+              disabled={loading || drafting}
+            >
+              {drafting ? "Salvando..." : "Salvar"}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSubmit()}
+              disabled={loading || drafting}
+            >
+              {loading ? "Enviando..." : "Enviar Requisição"}
             </Button>
           </div>
         </div>

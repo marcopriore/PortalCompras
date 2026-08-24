@@ -29,12 +29,14 @@ import {
   XCircle,
   FileText,
   Eye,
+  Pencil,
   Download,
 } from "lucide-react"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { TableRowActions } from "@/components/ui/table-row-actions"
 
 type RequisitionStatus =
+  | "draft"
   | "pending"
   | "approved"
   | "rejected"
@@ -56,6 +58,7 @@ type Requisition = {
 }
 
 const STATUS_OPTIONS = [
+  { value: "draft", label: "Rascunho" },
   { value: "pending", label: "Aguardando" },
   { value: "approved", label: "Aprovada" },
   { value: "rejected", label: "Reprovada" },
@@ -65,6 +68,7 @@ const STATUS_OPTIONS = [
 ]
 
 const DEFAULT_STATUS = [
+  "draft",
   "pending",
   "approved",
   "rejected",
@@ -74,6 +78,12 @@ const DEFAULT_STATUS = [
 
 function getStatusMeta(status: RequisitionStatus) {
   switch (status) {
+    case "draft":
+      return {
+        label: "Rascunho",
+        color: "bg-violet-100 text-violet-800",
+        icon: FileText,
+      }
     case "pending":
       return {
         label: "Aguardando Aprovação",
@@ -554,6 +564,18 @@ function SolicitantePageInner() {
                                 icon: Eye,
                                 href: `/solicitante/${r.id}`,
                               },
+                              ...(r.status === "draft" || r.status === "rejected"
+                                ? [
+                                    {
+                                      label:
+                                        r.status === "draft"
+                                          ? "Continuar edição"
+                                          : "Editar e Resubmeter",
+                                      icon: Pencil,
+                                      href: `/solicitante/${r.id}/editar`,
+                                    },
+                                  ]
+                                : []),
                             ]}
                           />
                         </TableCell>

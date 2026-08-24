@@ -89,6 +89,7 @@ export default function SolicitanteNovaPage() {
   const [userId, setUserId] = React.useState<string | null>(null)
   const [userName, setUserName] = React.useState<string>("")
   const [saving, setSaving] = React.useState(false)
+  const [drafting, setDrafting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
   // Dados gerais
@@ -212,17 +213,10 @@ export default function SolicitanteNovaPage() {
     setAttachments(prev => prev.filter(a => a.id !== id))
   }
 
-  async function handleSubmit() {
-    setError(null)
-    if (!title.trim()) { setError("Título é obrigatório."); return }
-    if (!costCenter.trim()) { setError("Centro de custo é obrigatório."); return }
-    if (items.length === 0) { setError("Adicione ao menos um item."); return }
-    if (!companyId || !userId) return
+  async function persistNewRequisition(status: "draft" | "pending") {
+    if (!companyId || !userId) return null
 
-    setSaving(true)
     const supabase = createClient()
-
-    // Gerar código
     const { count } = await supabase
       .from("requisitions")
       .select("*", { count: "exact", head: true })
@@ -239,7 +233,7 @@ export default function SolicitanteNovaPage() {
         cost_center: costCenter.trim() || null,
         needed_by: neededBy || null,
         priority,
-        status: "pending",
+        status,
         origin: "manual",
         requester_id: userId,
         requester_name: userName,
@@ -247,18 +241,33 @@ export default function SolicitanteNovaPage() {
       .select("id, code")
       .single()
 
-    if (reqError || !reqData) {
-      setError("Erro ao criar requisição. Tente novamente.")
-      setSaving(false)
-      return
+    if (reqError || !reqData) return null
+
+    if (items.length > 0) {
+      const { error: itemsErr } = await supabase.from("requisition_items").insert(
+        items.map((item) => ({
+          requisition_id: reqData.id,
+          company_id: companyId,
+          material_code: item.materialCode || null,
+          material_description: item.materialDescription,
+          quantity: item.quantity,
+          unit_of_measure: item.unitOfMeasure || null,
+          commodity_group: item.commodityGroup || null,
+          observations: item.observations || null,
+        })),
+      )
+      if (itemsErr) {
+        setError("Não foi possível salvar os itens da requisição.")
+        return null
+      }
     }
 
-    const requisitionId = reqData.id
-    const requisitionCode = reqData.code
-
     void logAudit({
-      eventType: "requisition.created",
-      description: `Requisição ${reqData.code} criada por ${userName || "solicitante"}`,
+      eventType: status === "draft" ? "requisition.draft_saved" : "requisition.created",
+      description:
+        status === "draft"
+          ? `Rascunho ${reqData.code} salvo por ${userName || "solicitante"}`
+          : `Requisição ${reqData.code} criada por ${userName || "solicitante"}`,
       companyId,
       userId,
       userName: userName || null,
@@ -268,28 +277,58 @@ export default function SolicitanteNovaPage() {
         code: reqData.code,
         priority,
         cost_center: costCenter || null,
+        status,
       },
     })
 
-    // Inserir itens
-    const { error: itemsErr } = await supabase.from("requisition_items").insert(
-      items.map(item => ({
-        requisition_id: requisitionId,
-        company_id: companyId,
-        material_code: item.materialCode || null,
-        material_description: item.materialDescription,
-        quantity: item.quantity,
-        unit_of_measure: item.unitOfMeasure || null,
-        commodity_group: item.commodityGroup || null,
-        observations: item.observations || null,
-      }))
-    )
+    return reqData as { id: string; code: string }
+  }
 
-    if (itemsErr) {
-      setError("Não foi possível salvar os itens da requisição.")
+  async function handleSaveDraft() {
+    setError(null)
+    if (!title.trim()) {
+      setError("Título é obrigatório.")
+      return
+    }
+    if (!costCenter.trim()) {
+      setError("Centro de custo é obrigatório.")
+      return
+    }
+    if (!companyId || !userId) return
+
+    setDrafting(true)
+    try {
+      const reqData = await persistNewRequisition("draft")
+      if (!reqData) {
+        setError((prev) => prev ?? "Erro ao salvar rascunho. Tente novamente.")
+        return
+      }
+      toast.success("Rascunho salvo.")
+      router.push(`/solicitante/${reqData.id}`)
+    } finally {
+      setDrafting(false)
+    }
+  }
+
+  async function handleSubmit() {
+    setError(null)
+    if (!title.trim()) { setError("Título é obrigatório."); return }
+    if (!costCenter.trim()) { setError("Centro de custo é obrigatório."); return }
+    if (items.length === 0) { setError("Adicione ao menos um item."); return }
+    if (!companyId || !userId) return
+
+    setSaving(true)
+    const supabase = createClient()
+
+    const reqData = await persistNewRequisition("pending")
+    if (!reqData) {
+      setError("Erro ao criar requisição. Tente novamente.")
       setSaving(false)
       return
     }
+
+    const requisitionId = reqData.id
+    const requisitionCode = reqData.code
 
     try {
       const costCenterForRpc = costCenter.trim() || ""
@@ -419,6 +458,8 @@ export default function SolicitanteNovaPage() {
         "Requisição criada, mas houve erro ao configurar aprovação. Contate o administrador."
       )
       router.push(`/solicitante/${requisitionId}`)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -437,9 +478,18 @@ export default function SolicitanteNovaPage() {
               </p>
             </div>
           </div>
-          <Button onClick={() => void handleSubmit()} disabled={saving}>
-            {saving ? "Enviando..." : "Enviar Requisição"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => void handleSaveDraft()}
+              disabled={saving || drafting}
+            >
+              {drafting ? "Salvando..." : "Salvar"}
+            </Button>
+            <Button onClick={() => void handleSubmit()} disabled={saving || drafting}>
+              {saving ? "Enviando..." : "Enviar Requisição"}
+            </Button>
+          </div>
         </div>
 
         {/* Dados Gerais */}
@@ -751,11 +801,27 @@ export default function SolicitanteNovaPage() {
         )}
 
         <div className="flex gap-3 pb-8">
-          <Button variant="outline" className="flex-1"
-            onClick={() => router.push("/solicitante")}>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => router.push("/solicitante")}
+            disabled={saving || drafting}
+          >
             Cancelar
           </Button>
-          <Button className="flex-1" onClick={() => void handleSubmit()} disabled={saving}>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => void handleSaveDraft()}
+            disabled={saving || drafting}
+          >
+            {drafting ? "Salvando..." : "Salvar"}
+          </Button>
+          <Button
+            className="flex-1"
+            onClick={() => void handleSubmit()}
+            disabled={saving || drafting}
+          >
             {saving ? "Enviando..." : "Enviar Requisição"}
           </Button>
         </div>

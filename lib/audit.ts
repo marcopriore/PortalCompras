@@ -29,6 +29,7 @@ type AuditEventType =
   | 'requisition.in_quotation'
   | 'requisition.approved'
   | 'requisition.created'
+  | 'requisition.draft_saved'
 
 type LogAuditParams = {
   eventType: AuditEventType

@@ -25,12 +25,19 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { ClipboardList, Clock, CheckCircle, FileText, Search, Eye, Plus, X } from "lucide-react"
+import { ClipboardList, Clock, CheckCircle, FileText, Search, Eye, Pencil, Plus, X } from "lucide-react"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { TableRowActions } from "@/components/ui/table-row-actions"
 
 type Priority = "normal" | "urgent" | "critical"
-type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
+type RequisitionStatus =
+  | "draft"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "in_quotation"
+  | "completed"
+  | "cancelled"
 
 type RequisitionItemRel = { id: string }
 
@@ -49,6 +56,8 @@ type Requisition = {
 
 export function getStatusMeta(status: RequisitionStatus): { label: string; className: string } {
   switch (status) {
+    case "draft":
+      return { label: "Rascunho", className: "bg-violet-100 text-violet-800" }
     case "pending":
       return { label: "Aguardando Aprovação", className: "bg-yellow-100 text-yellow-800" }
     case "approved":
@@ -59,6 +68,8 @@ export function getStatusMeta(status: RequisitionStatus): { label: string; class
       return { label: "Em Cotação", className: "bg-blue-100 text-blue-800" }
     case "completed":
       return { label: "Concluído", className: "bg-gray-100 text-gray-700" }
+    case "cancelled":
+      return { label: "Cancelada", className: "bg-gray-100 text-gray-700" }
   }
 }
 
@@ -95,7 +106,13 @@ export default function RequisicoesPage() {
 
   const [search, setSearch] = React.useState("")
   const searchInputRef = React.useRef<HTMLDivElement>(null)
-  const [status, setStatus] = React.useState<string[]>(['pending', 'approved', 'rejected', 'in_quotation'])
+  const [status, setStatus] = React.useState<string[]>([
+    "draft",
+    "pending",
+    "approved",
+    "rejected",
+    "in_quotation",
+  ])
   const [priority, setPriority] = React.useState<string[]>([])
   const [dateFrom, setDateFrom] = React.useState<string>("")
   const [dateTo, setDateTo] = React.useState<string>("")
@@ -288,11 +305,13 @@ export default function RequisicoesPage() {
               <MultiSelectFilter
                 label="Status"
                 options={[
+                  { value: "draft", label: "Rascunho" },
                   { value: "pending", label: "Aguardando Aprovação" },
                   { value: "approved", label: "Aprovado" },
                   { value: "rejected", label: "Rejeitado" },
                   { value: "in_quotation", label: "Em Cotação" },
                   { value: "completed", label: "Concluído" },
+                  { value: "cancelled", label: "Cancelada" },
                 ]}
                 selected={status}
                 onChange={setStatus}
@@ -333,7 +352,7 @@ export default function RequisicoesPage() {
                 size="sm"
                 onClick={() => {
                   setSearch("")
-                  setStatus(['pending', 'approved', 'rejected', 'in_quotation'])
+                  setStatus(["draft", "pending", "approved", "rejected", "in_quotation"])
                   setPriority([])
                   setDateFrom("")
                   setDateTo("")
@@ -419,6 +438,18 @@ export default function RequisicoesPage() {
                                 icon: Eye,
                                 href: `/comprador/requisicoes/${r.id}`,
                               },
+                              ...(r.status === "draft" || r.status === "rejected"
+                                ? [
+                                    {
+                                      label:
+                                        r.status === "draft"
+                                          ? "Continuar edição"
+                                          : "Editar e Resubmeter",
+                                      icon: Pencil,
+                                      href: `/comprador/requisicoes/${r.id}/editar`,
+                                    },
+                                  ]
+                                : []),
                             ]}
                           />
                         </TableCell>

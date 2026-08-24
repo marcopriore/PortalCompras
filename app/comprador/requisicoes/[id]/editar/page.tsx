@@ -120,9 +120,11 @@ export default function EditarRequisicaoPage({
 
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
+  const [drafting, setDrafting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [rejectionReason, setRejectionReason] = React.useState<string | null>(null)
   const [requisitionCode, setRequisitionCode] = React.useState<string>("")
+  const [currentStatus, setCurrentStatus] = React.useState<"draft" | "rejected" | null>(null)
 
   const [form, setForm] = React.useState<RequisitionDraftForm>({
     title: "",
@@ -179,11 +181,12 @@ export default function EditarRequisicaoPage({
         return
       }
 
-      if (reqData.status !== "rejected") {
+      if (reqData.status !== "rejected" && reqData.status !== "draft") {
         router.push(`/comprador/requisicoes/${id}`)
         return
       }
 
+      setCurrentStatus(reqData.status === "draft" ? "draft" : "rejected")
       setRequisitionCode(reqData.code)
       setRejectionReason(reqData.rejection_reason ?? null)
       setForm({
@@ -309,6 +312,90 @@ export default function EditarRequisicaoPage({
     setAttachments((prev) => prev.filter((a) => a.id !== id))
   }
 
+  const handleSaveDraft = async () => {
+    setError(null)
+    if (!companyId || !userId || !id) return
+    if (currentStatus !== "draft") return
+
+    if (!form.title.trim()) {
+      setError("Título é obrigatório.")
+      return
+    }
+    if (!(form.costCenter ?? "").trim()) {
+      setError("Centro de custo é obrigatório.")
+      return
+    }
+
+    const supabase = createClient()
+    setDrafting(true)
+    try {
+      const costCenterTrimmed = (form.costCenter ?? "").trim()
+      const { error: updateErr } = await supabase
+        .from("requisitions")
+        .update({
+          title: form.title.trim(),
+          description: form.description.trim() || null,
+          cost_center: costCenterTrimmed || null,
+          priority: form.priority,
+          needed_by: form.neededBy
+            ? new Date(`${form.neededBy}T00:00:00`).toISOString()
+            : null,
+          status: "draft",
+        })
+        .eq("id", id)
+
+      if (updateErr) {
+        toast.error("Erro ao salvar rascunho.")
+        return
+      }
+
+      const { error: deleteItemsErr } = await supabase
+        .from("requisition_items")
+        .delete()
+        .eq("requisition_id", id)
+
+      if (deleteItemsErr) {
+        toast.error("Erro ao atualizar itens.")
+        return
+      }
+
+      if (items.length > 0) {
+        const payloadItems = items.map((it) => ({
+          requisition_id: id,
+          company_id: companyId,
+          material_code: (it.materialCode ?? "").trim() || null,
+          material_description: it.materialDescription.trim(),
+          quantity: Math.max(1, Number(it.quantity) || 1),
+          unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
+          commodity_group: (it.commodityGroup ?? "").trim() || null,
+          observations: (it.observations ?? "").trim() || null,
+        }))
+        const { error: insertItemsErr } = await supabase
+          .from("requisition_items")
+          .insert(payloadItems)
+        if (insertItemsErr) {
+          toast.error("Erro ao salvar os itens da requisição.")
+          return
+        }
+      }
+
+      void logAudit({
+        eventType: "requisition.draft_saved",
+        description: `Rascunho ${requisitionCode || id} atualizado`,
+        companyId,
+        userId,
+        entity: "requisitions",
+        entityId: id,
+        metadata: { code: requisitionCode || null, status: "draft" },
+      })
+
+      toast.success("Rascunho salvo.")
+      router.push(`/comprador/requisicoes/${id}`)
+    } finally {
+      setDrafting(false)
+    }
+  }
+
   const handleSubmit = async () => {
     setError(null)
     if (!companyId || !userId || !id) return
@@ -318,8 +405,13 @@ export default function EditarRequisicaoPage({
       return
     }
 
+    if (!(form.costCenter ?? "").trim()) {
+      setError("Centro de custo é obrigatório.")
+      return
+    }
+
     if (items.length === 0) {
-      toast.error("Adicione ao menos um item antes de salvar.")
+      toast.error("Adicione ao menos um item antes de enviar.")
       return
     }
 
@@ -554,20 +646,41 @@ export default function EditarRequisicaoPage({
             </Button>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Editar Requisição {requisitionCode}</h1>
-              <p className="text-muted-foreground">Edite e resubmeta para aprovação</p>
+              <p className="text-muted-foreground">
+                {currentStatus === "draft"
+                  ? "Continue o preenchimento e envie quando estiver pronto"
+                  : "Edite e resubmeta para aprovação"}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={handleCancel}>
+            <Button type="button" variant="outline" onClick={handleCancel} disabled={saving || drafting}>
               Cancelar
             </Button>
-            <Button type="button" onClick={handleSubmit} disabled={saving}>
+            {currentStatus === "draft" && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleSaveDraft()}
+                disabled={saving || drafting}
+              >
+                {drafting ? "Salvando..." : "Salvar"}
+              </Button>
+            )}
+            <Button type="button" onClick={() => void handleSubmit()} disabled={saving || drafting}>
               <Send className="h-4 w-4 mr-2" />
-              {saving ? "Salvando..." : "Salvar e Resubmeter"}
+              {saving
+                ? currentStatus === "draft"
+                  ? "Enviando..."
+                  : "Salvando..."
+                : currentStatus === "draft"
+                  ? "Enviar Requisição"
+                  : "Salvar e Resubmeter"}
             </Button>
           </div>
         </div>
 
+        {currentStatus === "rejected" && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex gap-3 items-start">
           <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
@@ -581,6 +694,7 @@ export default function EditarRequisicaoPage({
             )}
           </div>
         </div>
+        )}
 
         {error && (
           <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">

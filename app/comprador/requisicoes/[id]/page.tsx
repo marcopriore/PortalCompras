@@ -45,7 +45,14 @@ import {
 } from "lucide-react"
 
 type Priority = "normal" | "urgent" | "critical"
-type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
+type RequisitionStatus =
+  | "draft"
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "in_quotation"
+  | "completed"
+  | "cancelled"
 
 type RequisitionItem = {
   id: string
@@ -141,15 +148,17 @@ function HorizontalTimeline({
   }[] = [
     {
       key: "created",
-      label: "Criada",
-      status: "completed",
+      label: req.status === "draft" ? "Rascunho" : "Criada",
+      status: req.status === "draft" ? "active" : "completed",
       date: req.created_at,
     },
     {
       key: "approval",
       label: "Aprovação",
       status:
-        req.status === "rejected"
+        req.status === "draft"
+          ? "pending"
+          : req.status === "rejected"
           ? "rejected"
           : req.status === "pending"
             ? "active"
@@ -159,7 +168,7 @@ function HorizontalTimeline({
     {
       key: "quotation",
       label: "Cotação",
-      status: ["pending", "rejected"].includes(req.status)
+      status: ["draft", "pending", "rejected", "cancelled"].includes(req.status)
         ? "pending"
         : quotation
           ? ["completed", "cancelled"].includes(quotation.status)
@@ -174,7 +183,7 @@ function HorizontalTimeline({
       key: "order",
       label: "Pedido",
       status:
-        ["pending", "rejected"].includes(req.status)
+        ["draft", "pending", "rejected", "cancelled"].includes(req.status)
           ? "pending"
           : orders.length > 0
             ? orders.some((o) => o.status === "completed")
@@ -380,6 +389,8 @@ function HistorySection({
 
 function getStatusMeta(status: RequisitionStatus): { label: string; className: string } {
   switch (status) {
+    case "draft":
+      return { label: "Rascunho", className: "bg-violet-100 text-violet-800" }
     case "pending":
       return { label: "Aguardando Aprovação", className: "bg-yellow-100 text-yellow-800" }
     case "approved":
@@ -390,6 +401,8 @@ function getStatusMeta(status: RequisitionStatus): { label: string; className: s
       return { label: "Em Cotação", className: "bg-blue-100 text-blue-800" }
     case "completed":
       return { label: "Concluído", className: "bg-gray-100 text-gray-700" }
+    case "cancelled":
+      return { label: "Cancelada", className: "bg-gray-100 text-gray-700" }
   }
 }
 
@@ -612,6 +625,15 @@ export default function RequisicaoDetailPage({
               <FileText className="w-3 h-3" />
               {linkedQuotation.code}
             </button>
+          )}
+          {requisition.status === "draft" && (
+            <Button
+              type="button"
+              onClick={() => router.push(`/comprador/requisicoes/${id}/editar`)}
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Continuar edição
+            </Button>
           )}
           {requisition.status === "rejected" && (
             <Button

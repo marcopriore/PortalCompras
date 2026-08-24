@@ -42,6 +42,7 @@ import {
 } from "lucide-react"
 
 type RequisitionStatus =
+  | "draft"
   | "pending"
   | "approved"
   | "rejected"
@@ -112,6 +113,8 @@ type RequisitionItem = {
 
 function getStatusMeta(status: string) {
   switch (status) {
+    case "draft":
+      return { label: "Rascunho", className: "bg-violet-100 text-violet-800" }
     case "pending":
       return { label: "Aguardando Aprovação", className: "bg-yellow-100 text-yellow-800" }
     case "approved":
@@ -148,15 +151,17 @@ function HorizontalTimeline({
   }[] = [
     {
       key: "created",
-      label: "Criada",
-      status: "completed",
+      label: req.status === "draft" ? "Rascunho" : "Criada",
+      status: req.status === "draft" ? "active" : "completed",
       date: req.created_at,
     },
     {
       key: "approval",
       label: "Aprovação",
       status:
-        req.status === "rejected" || req.status === "cancelled"
+        req.status === "draft"
+          ? "pending"
+          : req.status === "rejected" || req.status === "cancelled"
           ? "rejected"
           : req.status === "pending"
             ? "active"
@@ -166,7 +171,7 @@ function HorizontalTimeline({
     {
       key: "quotation",
       label: "Cotação",
-      status: ["pending", "rejected", "cancelled"].includes(req.status)
+      status: ["draft", "pending", "rejected", "cancelled"].includes(req.status)
         ? "pending"
         : quotation
           ? ["completed", "cancelled"].includes(quotation.status)
@@ -181,7 +186,7 @@ function HorizontalTimeline({
       key: "order",
       label: "Pedido",
       status:
-        ["pending", "rejected", "cancelled"].includes(req.status) || !quotation
+        ["draft", "pending", "rejected", "cancelled"].includes(req.status) || !quotation
           ? "pending"
           : orders.length === 0
             ? "pending"
@@ -547,6 +552,22 @@ export default function SolicitanteDetailPage({
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Badge className={statusMeta.className}>{statusMeta.label}</Badge>
+            {requisition.status === "draft" && (
+              <>
+                <Button onClick={() => router.push(`/solicitante/${id}/editar`)}>
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Continuar edição
+                </Button>
+                <Button
+                  variant="outline"
+                  className="text-destructive border-destructive/30 hover:bg-destructive/5"
+                  onClick={() => setCancelOpen(true)}
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  Descartar Rascunho
+                </Button>
+              </>
+            )}
             {requisition.status === "rejected" && (
               <Button onClick={() => router.push(`/solicitante/${id}/editar`)}>
                 <Pencil className="w-4 h-4 mr-2" />
@@ -699,10 +720,13 @@ export default function SolicitanteDetailPage({
       <AlertDialog open={cancelOpen} onOpenChange={setCancelOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancelar Requisição</AlertDialogTitle>
+            <AlertDialogTitle>
+              {requisition.status === "draft" ? "Descartar Rascunho" : "Cancelar Requisição"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja cancelar a requisição {requisition.code}? Esta ação
-              não pode ser desfeita.
+              {requisition.status === "draft"
+                ? `Tem certeza que deseja descartar o rascunho ${requisition.code}? Esta ação não pode ser desfeita.`
+                : `Tem certeza que deseja cancelar a requisição ${requisition.code}? Esta ação não pode ser desfeita.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -712,7 +736,13 @@ export default function SolicitanteDetailPage({
               disabled={cancelling}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {cancelling ? "Cancelando..." : "Confirmar Cancelamento"}
+              {cancelling
+                ? requisition.status === "draft"
+                  ? "Descartando..."
+                  : "Cancelando..."
+                : requisition.status === "draft"
+                  ? "Confirmar Descarte"
+                  : "Confirmar Cancelamento"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
