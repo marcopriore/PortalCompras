@@ -38,6 +38,7 @@ import {
   getPOStatusForSupplier,
   poStatusBadgeClass,
 } from "@/lib/po-status"
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 
 const SUPPLIER_ACCEPTED_STATUSES = ["processing", "completed", "error", "integration_error"] as const
 
@@ -78,7 +79,7 @@ function getPeriodStartDays(period: string): string | null {
   return d.toISOString()
 }
 
-const PAGE_SIZE = 10
+const PAGE_SIZE = TABLE_PAGE_SIZE
 
 export default function FornecedorPedidosPage() {
   const router = useRouter()
@@ -421,33 +422,12 @@ export default function FornecedorPedidosPage() {
                 </TableBody>
               </Table>
             </div>
-            {totalPages > 1 ? (
-              <div className="flex items-center justify-between border-t border-border px-4 py-3 text-sm text-muted-foreground">
-                <span>
-                  Página {pageClamped} de {totalPages}
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={pageClamped <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Anterior
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={pageClamped >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  >
-                    Próxima
-                  </Button>
-                </div>
-              </div>
-            ) : null}
+            <TablePagination
+              page={pageClamped}
+              total={filtered.length}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+            />
           </>
         )}
       </div>

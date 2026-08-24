@@ -22,6 +22,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ScrollText, Sparkles } from 'lucide-react'
+import { TABLE_PAGE_SIZE, TablePagination } from '@/components/ui/table-pagination'
 
 type AuditLog = {
   id: string
@@ -202,6 +203,10 @@ function getEventMeta(eventType: string): { label: string; className: string } {
       label: 'Entrega Atualizada',
       className: 'bg-violet-100 text-violet-800',
     },
+    'purchase_order.delegated': {
+      label: 'Pedido delegado',
+      className: 'bg-indigo-100 text-indigo-800',
+    },
     ia_analysis: {
       label: 'Análise IA',
       className: 'bg-violet-100 text-violet-800',
@@ -216,7 +221,7 @@ function getEventMeta(eventType: string): { label: string; className: string } {
   )
 }
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = TABLE_PAGE_SIZE
 
 const AUDIT_EVENT_TYPE_VALUES = [
   'user.login',
@@ -241,6 +246,7 @@ const AUDIT_EVENT_TYPE_VALUES = [
   'purchase_order.accepted',
   'purchase_order.refused',
   'purchase_order.delivery_updated',
+  'purchase_order.delegated',
 ] as const
 
 const AUDIT_EVENT_TYPES_FOR_FILTER = AUDIT_EVENT_TYPE_VALUES.map((value) => ({
@@ -367,8 +373,6 @@ export default function AdminLogsPage() {
     }
     void fetchTenants()
   }, [])
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
 
   async function handleViewAiLog(logId: string) {
     setAiLogDialog({
@@ -639,33 +643,13 @@ export default function AdminLogsPage() {
         </Table>
       </div>
 
-      {totalCount > PAGE_SIZE ? (
-        <div className="flex items-center justify-between mt-4">
-          <span className="text-sm text-muted-foreground">
-            Página {page} de {totalPages}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={page === 1 || loading}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              ← Anterior
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages || loading}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Próximo →
-            </Button>
-          </div>
-        </div>
-      ) : null}
+      <TablePagination
+        page={page}
+        total={totalCount}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        disabled={loading}
+      />
 
       <Dialog
         open={aiLogDialog.open}

@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formatDateTimeBR } from "@/lib/utils/date-helpers"
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import {
   mapOrderRowsToActivityItems,
   mapProposalRowsToActivityItems,
@@ -34,7 +35,7 @@ import {
   type ProposalActivityRow,
 } from "@/lib/utils/activity-helpers"
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = TABLE_PAGE_SIZE
 
 type ModuleFilter = "all" | "proposal" | "order"
 type PeriodFilter = "all" | "today" | "7" | "30" | "90"
@@ -366,32 +367,12 @@ export default function FornecedorAtividadesPage() {
                 </Table>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Página {safePage} de {totalPages} · {totalFiltered} resultado
-                  {totalFiltered === 1 ? "" : "s"}
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={safePage <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    ← Anterior
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={safePage >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  >
-                    Próximo →
-                  </Button>
-                </div>
-              </div>
+              <TablePagination
+                page={safePage}
+                total={totalFiltered}
+                pageSize={PAGE_SIZE}
+                onPageChange={setPage}
+              />
             </>
           )}
         </>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Table,
   TableBody,
@@ -9,7 +9,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -18,14 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  Search,
-  Filter,
-} from "lucide-react"
+import { Search, Filter } from "lucide-react"
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 
 export interface Column<T> {
   key: keyof T | string
@@ -56,7 +49,7 @@ export function DataTable<T extends { id: string | number }>({
   filterKey,
   onRowClick,
   actions,
-  pageSize = 10,
+  pageSize = TABLE_PAGE_SIZE,
   toolbarRight,
 }: DataTableProps<T>) {
   const [search, setSearch] = useState("")
@@ -71,9 +64,14 @@ export function DataTable<T extends { id: string | number }>({
     return matchesSearch && matchesFilter
   })
 
-  const totalPages = Math.ceil(filteredData.length / pageSize)
-  const startIndex = (currentPage - 1) * pageSize
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize))
+  const pageClamped = Math.min(currentPage, totalPages)
+  const startIndex = (pageClamped - 1) * pageSize
   const paginatedData = filteredData.slice(startIndex, startIndex + pageSize)
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [data, search, filter])
 
   const getValue = (item: T, key: string) => {
     const keys = key.split(".")
@@ -181,47 +179,12 @@ export function DataTable<T extends { id: string | number }>({
         </Table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Página {currentPage} de {totalPages}
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-            >
-              <ChevronsLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-            >
-              <ChevronsRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+      <TablePagination
+        page={pageClamped}
+        total={filteredData.length}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+      />
     </div>
   )
 }

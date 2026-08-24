@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import MultiSelectFilter from "@/components/ui/multi-select-filter"
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 
 import {
   ArchiveX,
@@ -164,7 +165,7 @@ export default function FornecedorCotacoesPage() {
   const [filterPeriod, setFilterPeriod] = React.useState<string>("all")
 
   const [page, setPage] = React.useState(1)
-  const pageSize = 10
+  const pageSize = TABLE_PAGE_SIZE
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
   const supplierIdRef = React.useRef(supplierId)
@@ -886,31 +887,12 @@ export default function FornecedorCotacoesPage() {
                   </table>
                 </div>
 
-                <div className="flex justify-between items-center mt-4 text-sm">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={pageClamped <= 1}
-                  >
-                    Anterior
-                  </Button>
-
-                  <span className="text-muted-foreground">
-                    Página {pageClamped} de {totalPages}
-                  </span>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={pageClamped >= totalPages}
-                  >
-                    Próximo
-                  </Button>
-                </div>
+                <TablePagination
+                  page={pageClamped}
+                  total={filteredQuotations.length}
+                  pageSize={pageSize}
+                  onPageChange={setPage}
+                />
               </>
             )}
           </>

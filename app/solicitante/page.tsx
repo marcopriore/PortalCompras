@@ -29,6 +29,7 @@ import {
   FileText,
   Eye,
 } from "lucide-react"
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 
 type RequisitionStatus =
   | "pending"
@@ -124,7 +125,7 @@ export default function SolicitantePage() {
   const [dateFrom, setDateFrom] = React.useState("")
   const [dateTo, setDateTo] = React.useState("")
   const [page, setPage] = React.useState(1)
-  const PAGE_SIZE = 20
+  const PAGE_SIZE = TABLE_PAGE_SIZE
 
   const [userId, setUserId] = React.useState<string | null>(null)
   const [userName, setUserName] = React.useState<string>("")
@@ -165,8 +166,6 @@ export default function SolicitantePage() {
     const start = (page - 1) * PAGE_SIZE
     return filtered.slice(start, start + PAGE_SIZE)
   }, [filtered, page])
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
 
   const hasActiveFilters =
     search.trim() !== "" ||
@@ -500,36 +499,12 @@ export default function SolicitantePage() {
                 </Table>
               </div>
 
-              {totalPages > 1 && (
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between px-4 py-3 border-t border-border">
-                  <p className="text-xs text-muted-foreground">
-                    Exibindo {(page - 1) * PAGE_SIZE + 1}–
-                    {Math.min(page * PAGE_SIZE, filtered.length)} de{" "}
-                    {filtered.length}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page === 1}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
-                      ← Anterior
-                    </Button>
-                    <span className="text-xs text-muted-foreground">
-                      Página {page} de {totalPages}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      Próximo →
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <TablePagination
+                page={page}
+                total={filtered.length}
+                pageSize={PAGE_SIZE}
+                onPageChange={setPage}
+              />
             </>
           )}
         </div>

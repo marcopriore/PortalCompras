@@ -42,6 +42,7 @@ export type PermissionKey =
   | "order.edit"
   | "order.edit_own"
   | "order.view_all"
+  | "order.delegate"
   | "contract.view"
   | "contract.create"
   | "contract.edit"
@@ -111,6 +112,7 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "order.edit",
   "order.edit_own",
   "order.view_all",
+  "order.delegate",
   "contract.view",
   "contract.create",
   "contract.edit",

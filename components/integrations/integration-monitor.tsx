@@ -6,8 +6,6 @@ import { ptBR } from "date-fns/locale"
 import {
   ArrowDownLeft,
   ArrowUpRight,
-  ChevronLeft,
-  ChevronRight,
   Loader2,
   RefreshCw,
   RotateCcw,
@@ -42,6 +40,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
+import { TablePagination } from "@/components/ui/table-pagination"
 import type {
   InboundLogRow,
   IntegrationLogDirection,
@@ -212,8 +211,6 @@ export function IntegrationMonitor({
       setDetailLoading(false)
     }
   }
-
-  const totalPages = data?.total_pages ?? 0
 
   const handleRetryIntegration = async (log: OutboundLogRow) => {
     if (!log.entity_id) return
@@ -499,31 +496,13 @@ export function IntegrationMonitor({
         </Table>
       </div>
 
-      {totalPages > 0 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>
-            Página {data?.page ?? 1} de {totalPages} · {data?.total ?? 0} registros
-          </span>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1 || loading}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages || loading}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+      <TablePagination
+        page={data?.page ?? page}
+        total={data?.total ?? 0}
+        pageSize={data?.page_size ?? 25}
+        onPageChange={setPage}
+        disabled={loading}
+      />
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">

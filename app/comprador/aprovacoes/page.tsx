@@ -44,9 +44,8 @@ import {
   X,
   Eye,
   Search,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react"
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 
 function SearchWithClear({
   value,
@@ -335,22 +334,16 @@ export default function AprovacoesPage() {
     })
   }, [orderRows, orderStatus, orderSearch])
 
-  const PAGE_SIZE = 20
-  const reqTotalPages = Math.max(1, Math.ceil(filteredRequisitions.length / PAGE_SIZE))
+  const PAGE_SIZE = TABLE_PAGE_SIZE
   const reqPaginated = filteredRequisitions.slice(
     (reqPage - 1) * PAGE_SIZE,
     reqPage * PAGE_SIZE,
   )
-  const reqFrom = filteredRequisitions.length === 0 ? 0 : (reqPage - 1) * PAGE_SIZE + 1
-  const reqTo = Math.min(reqPage * PAGE_SIZE, filteredRequisitions.length)
 
-  const orderTotalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE))
   const orderPaginated = filteredOrders.slice(
     (orderPage - 1) * PAGE_SIZE,
     orderPage * PAGE_SIZE,
   )
-  const orderFrom = filteredOrders.length === 0 ? 0 : (orderPage - 1) * PAGE_SIZE + 1
-  const orderTo = Math.min(orderPage * PAGE_SIZE, filteredOrders.length)
 
   const hasReqFilters = reqStatus.length > 0 || reqSearch.trim() !== ""
   const hasOrderFilters = orderStatus.length > 0 || orderSearch.trim() !== ""
@@ -774,36 +767,12 @@ export default function AprovacoesPage() {
                         })}
                       </TableBody>
                     </Table>
-                    <div className="flex flex-col gap-3 px-4 py-4 border-t border-border sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-sm text-muted-foreground">
-                        Exibindo {reqFrom}–{reqTo} de {filteredRequisitions.length} resultado(s)
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setReqPage((p) => Math.max(1, p - 1))}
-                          disabled={reqPage <= 1}
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                          Anterior
-                        </Button>
-                        <span className="text-sm text-muted-foreground px-2">
-                          Página {reqPage} de {reqTotalPages}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            setReqPage((p) => Math.min(reqTotalPages, p + 1))
-                          }
-                          disabled={reqPage >= reqTotalPages}
-                        >
-                          Próximo
-                          <ChevronRight className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
+                    <TablePagination
+                      page={reqPage}
+                      total={filteredRequisitions.length}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={setReqPage}
+                    />
                   </>
                 )}
               </CardContent>
@@ -955,38 +924,12 @@ export default function AprovacoesPage() {
                         })}
                       </TableBody>
                     </Table>
-                    <div className="flex flex-col gap-3 px-4 py-4 border-t border-border sm:flex-row sm:items-center sm:justify-between">
-                      <p className="text-sm text-muted-foreground">
-                        Exibindo {orderFrom}–{orderTo} de {filteredOrders.length} resultado(s)
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            setOrderPage((p) => Math.max(1, p - 1))
-                          }
-                          disabled={orderPage <= 1}
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                          Anterior
-                        </Button>
-                        <span className="text-sm text-muted-foreground px-2">
-                          Página {orderPage} de {orderTotalPages}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            setOrderPage((p) => Math.min(orderTotalPages, p + 1))
-                          }
-                          disabled={orderPage >= orderTotalPages}
-                        >
-                          Próximo
-                          <ChevronRight className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
+                    <TablePagination
+                      page={orderPage}
+                      total={filteredOrders.length}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={setOrderPage}
+                    />
                   </>
                 )}
               </CardContent>
@@ -1145,36 +1088,12 @@ export default function AprovacoesPage() {
                           })}
                         </TableBody>
                       </Table>
-                      <div className="flex flex-col gap-3 px-4 py-4 border-t border-border sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm text-muted-foreground">
-                          Exibindo {reqFrom}–{reqTo} de {filteredRequisitions.length} resultado(s)
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setReqPage((p) => Math.max(1, p - 1))}
-                            disabled={reqPage <= 1}
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                            Anterior
-                          </Button>
-                          <span className="text-sm text-muted-foreground px-2">
-                            Página {reqPage} de {reqTotalPages}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              setReqPage((p) => Math.min(reqTotalPages, p + 1))
-                            }
-                            disabled={reqPage >= reqTotalPages}
-                          >
-                            Próximo
-                            <ChevronRight className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
+                      <TablePagination
+                        page={reqPage}
+                        total={filteredRequisitions.length}
+                        pageSize={PAGE_SIZE}
+                        onPageChange={setReqPage}
+                      />
                     </>
                   )}
                 </CardContent>
@@ -1326,38 +1245,12 @@ export default function AprovacoesPage() {
                           })}
                         </TableBody>
                       </Table>
-                      <div className="flex flex-col gap-3 px-4 py-4 border-t border-border sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm text-muted-foreground">
-                          Exibindo {orderFrom}–{orderTo} de {filteredOrders.length} resultado(s)
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              setOrderPage((p) => Math.max(1, p - 1))
-                            }
-                            disabled={orderPage <= 1}
-                          >
-                            <ChevronLeft className="h-4 w-4" />
-                            Anterior
-                          </Button>
-                          <span className="text-sm text-muted-foreground px-2">
-                            Página {orderPage} de {orderTotalPages}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              setOrderPage((p) => Math.min(orderTotalPages, p + 1))
-                            }
-                            disabled={orderPage >= orderTotalPages}
-                          >
-                            Próximo
-                            <ChevronRight className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
+                      <TablePagination
+                        page={orderPage}
+                        total={filteredOrders.length}
+                        pageSize={PAGE_SIZE}
+                        onPageChange={setOrderPage}
+                      />
                     </>
                   )}
                 </CardContent>

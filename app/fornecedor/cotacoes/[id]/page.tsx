@@ -21,6 +21,7 @@ import { formatDateBR, isExpiredDate, isUrgentDate } from "@/lib/utils/date-help
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -122,7 +123,7 @@ type ItemFormRow = {
   observations: string
 }
 
-const ITEMS_PER_PAGE = 20
+const ITEMS_PER_PAGE = TABLE_PAGE_SIZE
 
 const readOnlyFieldClass =
   "border-0 bg-transparent shadow-none focus-visible:ring-0 cursor-default disabled:opacity-100"
@@ -1407,33 +1408,12 @@ export default function FornecedorCotacaoPropostaPage({
           </tbody>
         </table>
 
-        <div className="flex justify-between items-center mt-3 text-sm">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-foreground"
-            disabled={itemPageClamped <= 1}
-            onClick={() => setItemPage((p) => Math.max(1, p - 1))}
-          >
-            ← Anterior
-          </Button>
-          <span className="text-muted-foreground">
-            Página {itemPageClamped} de {totalItemPages} · {quotationItems.length} itens
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-foreground"
-            disabled={itemPageClamped >= totalItemPages}
-            onClick={() =>
-              setItemPage((p) => Math.min(totalItemPages, p + 1))
-            }
-          >
-            Próximo →
-          </Button>
-        </div>
+        <TablePagination
+          page={itemPageClamped}
+          total={quotationItems.length}
+          pageSize={ITEMS_PER_PAGE}
+          onPageChange={setItemPage}
+        />
 
         <div className="flex flex-col gap-1 pt-4 border-t border-border sm:flex-row sm:justify-between sm:items-center">
           <p className="text-base font-semibold text-foreground">

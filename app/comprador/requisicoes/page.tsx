@@ -25,7 +25,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-import { ClipboardList, Clock, CheckCircle, ChevronLeft, ChevronRight, FileText, Search, Eye, Plus, X } from "lucide-react"
+import { ClipboardList, Clock, CheckCircle, FileText, Search, Eye, Plus, X } from "lucide-react"
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 
 type Priority = "normal" | "urgent" | "critical"
 type RequisitionStatus = "pending" | "approved" | "rejected" | "in_quotation" | "completed"
@@ -155,14 +156,13 @@ export default function RequisicoesPage() {
     })
   }, [requisitions, search, status, priority, dateFrom, dateTo])
 
-  const PAGE_SIZE = 20
+  const PAGE_SIZE = TABLE_PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const pageClamped = Math.min(page, totalPages)
   const paginated = React.useMemo(
-    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [filtered, page],
+    () => filtered.slice((pageClamped - 1) * PAGE_SIZE, pageClamped * PAGE_SIZE),
+    [filtered, pageClamped],
   )
-  const from = filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
-  const to = Math.min(page * PAGE_SIZE, filtered.length)
 
   const metrics = React.useMemo(() => {
     return {
@@ -424,36 +424,12 @@ export default function RequisicoesPage() {
             </div>
           )}
 
-          {!loading && filtered.length > 0 && (
-            <div className="flex flex-col gap-3 pt-4 border-t border-border mt-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-muted-foreground">
-                Exibindo {from}–{to} de {filtered.length} resultado(s)
-              </p>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Anterior
-                </Button>
-                <span className="text-sm text-muted-foreground px-2">
-                  Página {page} de {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages}
-                >
-                  Próximo
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
+          <TablePagination
+            page={pageClamped}
+            total={filtered.length}
+            pageSize={PAGE_SIZE}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
     </div>

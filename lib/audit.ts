@@ -25,6 +25,7 @@ type AuditEventType =
   | 'purchase_order.accepted'
   | 'purchase_order.refused'
   | 'purchase_order.delivery_updated'
+  | 'purchase_order.delegated'
   | 'requisition.in_quotation'
   | 'requisition.approved'
   | 'requisition.created'

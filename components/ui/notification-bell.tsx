@@ -87,6 +87,7 @@ function getNotificationIcon(type: string) {
     "order.accepted": { icon: CheckCircle, color: "text-green-500" },
     "order.refused": { icon: XCircle, color: "text-red-500" },
     "order.delivery_updated": { icon: Calendar, color: "text-amber-500" },
+    "purchase_order.delegated": { icon: FileText, color: "text-indigo-500" },
     "approval.requisition": { icon: Workflow, color: "text-purple-500" },
     "approval.order": { icon: Workflow, color: "text-purple-500" },
     "quotation.invited": { icon: FileText, color: "text-blue-500" },

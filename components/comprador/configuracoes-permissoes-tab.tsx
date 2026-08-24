@@ -40,6 +40,7 @@ const PERMISSIONS = [
   { key: "order.edit", label: "Editar Qualquer Pedido", group: "Pedidos" },
   { key: "order.edit_own", label: "Editar Próprios Pedidos", group: "Pedidos" },
   { key: "order.view_all", label: "Ver Pedidos de Todos", group: "Pedidos" },
+  { key: "order.delegate", label: "Delegar Pedido (de outros responsáveis)", group: "Pedidos" },
   { key: "contract.view", label: "Visualizar Contratos", group: "Contratos" },
   { key: "contract.create", label: "Criar Contratos", group: "Contratos" },
   { key: "contract.edit", label: "Editar Contratos", group: "Contratos" },

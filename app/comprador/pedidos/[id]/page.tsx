@@ -9,11 +9,25 @@ import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
+import { createNotification } from "@/lib/notify"
+import {
+  formatResponsibleName,
+  isBuyerOrHigherProfile,
+} from "@/lib/quotations/ownership"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Select,
   SelectContent,
@@ -53,6 +67,7 @@ import {
   Package,
   Pencil,
   Send,
+  UserRoundPlus,
   X,
   XCircle,
 } from "lucide-react"
@@ -512,6 +527,13 @@ export default function PurchaseOrderDetailPage({
     items: EditItem[]
   } | null>(null)
   const [savingEdit, setSavingEdit] = React.useState(false)
+  const [responsibleName, setResponsibleName] = React.useState("—")
+  const [delegateOpen, setDelegateOpen] = React.useState(false)
+  const [delegateTargetId, setDelegateTargetId] = React.useState("")
+  const [delegateBuyers, setDelegateBuyers] = React.useState<
+    { id: string; full_name: string | null }[]
+  >([])
+  const [delegating, setDelegating] = React.useState(false)
 
   const fetchOrderData = React.useCallback(
     async (options?: { silent?: boolean }) => {
@@ -565,7 +587,22 @@ export default function PurchaseOrderDetailPage({
             ])
             .order("created_at", { ascending: true }),
         ])
-        setOrder((orderRes.data as PurchaseOrder) ?? null)
+        const loadedOrder = (orderRes.data as PurchaseOrder) ?? null
+        setOrder(loadedOrder)
+        if (loadedOrder?.created_by) {
+          const { data: ownerProfile } = await supabase
+            .from("profiles")
+            .select("full_name")
+            .eq("id", loadedOrder.created_by)
+            .maybeSingle()
+          setResponsibleName(
+            formatResponsibleName(
+              (ownerProfile as { full_name?: string | null } | null)?.full_name,
+            ),
+          )
+        } else {
+          setResponsibleName("—")
+        }
         const rawItems = (itemsRes.data ?? []) as Array<
           Record<string, unknown> & {
             contracts?: { code?: string } | { code?: string }[] | null
@@ -710,6 +747,89 @@ export default function PurchaseOrderDetailPage({
     () => (order ? buildTimeline(order, orderLogs) : []),
     [order, orderLogs],
   )
+
+  const openDelegateDialog = async () => {
+    if (!companyId || !order) return
+    setDelegateOpen(true)
+    setDelegateTargetId("")
+    const supabase = createClient()
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, full_name, profile_type, roles, is_superadmin")
+      .eq("company_id", companyId)
+      .order("full_name", { ascending: true })
+
+    const eligible = (
+      (data ?? []) as {
+        id: string
+        full_name: string | null
+        profile_type: string | null
+        roles: string[] | null
+        is_superadmin: boolean | null
+      }[]
+    ).filter(
+      (profile) =>
+        profile.id !== order.created_by && isBuyerOrHigherProfile(profile),
+    )
+    setDelegateBuyers(eligible)
+  }
+
+  const handleDelegate = async () => {
+    if (!order || !companyId || !delegateTargetId) return
+    setDelegating(true)
+    try {
+      const supabase = createClient()
+      const previousOwner = order.created_by
+      const { error: updateError } = await supabase
+        .from("purchase_orders")
+        .update({ created_by: delegateTargetId })
+        .eq("id", order.id)
+        .eq("company_id", companyId)
+
+      if (updateError) {
+        toast.error("Não foi possível delegar o pedido.")
+        return
+      }
+
+      const nextName =
+        delegateBuyers.find((b) => b.id === delegateTargetId)?.full_name ?? null
+      setOrder({ ...order, created_by: delegateTargetId })
+      setResponsibleName(formatResponsibleName(nextName))
+
+      void createNotification({
+        userId: delegateTargetId,
+        companyId,
+        type: "purchase_order.delegated",
+        title: "Pedido atribuído a você",
+        body: `O pedido ${order.code} foi delegado para você.`,
+        entity: "purchase_order",
+        entityId: order.id,
+      })
+
+      void logAudit({
+        eventType: "purchase_order.delegated",
+        description: `Pedido ${order.code} delegado para ${formatResponsibleName(nextName)}`,
+        companyId,
+        userId: userId ?? null,
+        userName: userId ?? null,
+        entity: "purchase_orders",
+        entityId: order.id,
+        metadata: {
+          code: order.code,
+          from: previousOwner,
+          to: delegateTargetId,
+        },
+      })
+
+      toast.success("Pedido delegado com sucesso.")
+      setDelegateOpen(false)
+      if (!hasPermission("order.view_all") && delegateTargetId !== userId) {
+        router.replace("/comprador/pedidos")
+      }
+    } finally {
+      setDelegating(false)
+    }
+  }
 
   const handleConfirmOrder = async () => {
     if (!order || !companyId) return
@@ -1367,6 +1487,11 @@ export default function PurchaseOrderDetailPage({
     hasPermission("order.edit") ||
     (hasPermission("order.edit_own") && order.created_by === userId)
 
+  const canDelegate =
+    order.status !== "cancelled" &&
+    order.status !== "completed" &&
+    (order.created_by === userId || hasPermission("order.delegate"))
+
   const totalItemsCount = items.length
 
   const displayedOrderTotal = isEditing
@@ -1730,6 +1855,17 @@ export default function PurchaseOrderDetailPage({
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          {canDelegate && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void openDelegateDialog()}
+            >
+              <UserRoundPlus className="mr-2 h-4 w-4" />
+              Delegar
+            </Button>
+          )}
           <Button
             variant="default"
             size="sm"
@@ -1890,6 +2026,10 @@ export default function PurchaseOrderDetailPage({
             <CardTitle>Dados do Pedido</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
+            <div>
+              <p className="text-xs text-muted-foreground">Responsável</p>
+              <p className="text-sm text-muted-foreground">{responsibleName}</p>
+            </div>
             <div>
               <p className="text-xs text-muted-foreground">Código da Cotação</p>
               <p className="text-sm text-muted-foreground">
@@ -2147,6 +2287,49 @@ export default function PurchaseOrderDetailPage({
           </ol>
         )}
       </div>
+
+      <Dialog open={delegateOpen} onOpenChange={setDelegateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delegar pedido</DialogTitle>
+            <DialogDescription>
+              Transfira a responsabilidade deste pedido para outro comprador. O novo responsável passa a ser o dono do pedido.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Novo responsável</Label>
+            <Select value={delegateTargetId || undefined} onValueChange={setDelegateTargetId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um comprador" />
+              </SelectTrigger>
+              <SelectContent>
+                {delegateBuyers.map((buyer) => (
+                  <SelectItem key={buyer.id} value={buyer.id}>
+                    {formatResponsibleName(buyer.full_name)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {delegateBuyers.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Nenhum comprador disponível para delegação.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDelegateOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleDelegate()}
+              disabled={!delegateTargetId || delegating}
+            >
+              {delegating ? "Delegando..." : "Confirmar delegação"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

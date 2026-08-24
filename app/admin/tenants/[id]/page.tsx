@@ -54,6 +54,7 @@ import {
 import { logAudit } from '@/lib/audit'
 import { TenantSettingsTab } from '@/components/admin/tenant-settings-tab'
 import { TenantSecurityTab } from '@/components/admin/tenant-security-tab'
+import { TABLE_PAGE_SIZE, TablePagination } from '@/components/ui/table-pagination'
 
 type Tenant = {
   id: string
@@ -302,7 +303,7 @@ function getPeriodStart(period: PeriodFilter, customFrom: string): Date | null {
   return null
 }
 
-const USERS_PAGE_SIZE = 10
+const USERS_PAGE_SIZE = TABLE_PAGE_SIZE
 
 type TenantDetailPageProps = {
   params: Promise<{ id: string }>
@@ -377,10 +378,6 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
         usersPage * USERS_PAGE_SIZE,
       ),
     [profiles, usersPage],
-  )
-  const usersTotalPages = Math.max(
-    1,
-    Math.ceil(profiles.length / USERS_PAGE_SIZE),
   )
 
   async function handleExportUsers() {
@@ -1214,31 +1211,12 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                 </Table>
               </div>
 
-              {usersTotalPages > 1 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">
-                    Página {usersPage} de {usersTotalPages}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={usersPage === 1}
-                      onClick={() => setUsersPage((p) => p - 1)}
-                    >
-                      ← Anterior
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={usersPage >= usersTotalPages}
-                      onClick={() => setUsersPage((p) => p + 1)}
-                    >
-                      Próximo →
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <TablePagination
+                page={usersPage}
+                total={profiles.length}
+                pageSize={USERS_PAGE_SIZE}
+                onPageChange={setUsersPage}
+              />
             </>
           )}
         </div>
