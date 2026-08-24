@@ -3,8 +3,14 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { AlertCircle, ChevronLeft, Send } from "lucide-react"
+import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
+import {
+  canAccessQuotation,
+  canViewAllQuotations,
+} from "@/lib/quotations/ownership"
 import { logAudit } from "@/lib/audit"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -26,6 +32,7 @@ type Quotation = {
   code: string
   description: string | null
   status: string
+  created_by?: string | null
 }
 
 type ProposalItem = {
@@ -95,7 +102,13 @@ export default function NovoPedidoPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
-  const { userId, companyId } = useUser()
+  const { userId, companyId, isSuperAdmin, hasRole } = useUser()
+  const { hasPermission } = usePermissions()
+  const viewAllQuotations = canViewAllQuotations({
+    isSuperAdmin,
+    hasRole,
+    hasPermission,
+  })
   const { id } = React.use(params)
 
   const [quotation, setQuotation] = React.useState<Quotation | null>(null)
@@ -127,7 +140,7 @@ export default function NovoPedidoPage({
       const [qRes, pRes, qiRes] = await Promise.all([
         supabase
           .from("quotations")
-          .select("id, code, description, status")
+          .select("id, code, description, status, created_by")
           .eq("id", id)
           .single(),
         supabase
@@ -141,7 +154,21 @@ export default function NovoPedidoPage({
 
       if (!alive) return
 
-      setQuotation((qRes.data as Quotation) ?? null)
+      const q = (qRes.data as Quotation) ?? null
+      if (
+        q &&
+        !canAccessQuotation({
+          createdBy: q.created_by,
+          userId,
+          canViewAll: viewAllQuotations,
+        })
+      ) {
+        toast.error("Você não tem permissão para acessar esta cotação.")
+        router.replace("/comprador/cotacoes")
+        return
+      }
+
+      setQuotation(q)
       const selectedProposal = (pRes.data as Proposal) ?? null
       setProposal(selectedProposal)
       setQuotationItems(((qiRes.data as unknown) as QuotationItem[]) ?? [])
@@ -184,7 +211,7 @@ export default function NovoPedidoPage({
     return () => {
       alive = false
     }
-  }, [companyId, id])
+  }, [companyId, id, userId, viewAllQuotations, router])
 
   const totalPrice = React.useMemo(
     () => items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),

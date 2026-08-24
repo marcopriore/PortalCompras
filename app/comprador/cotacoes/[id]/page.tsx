@@ -6,6 +6,11 @@ import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
 import { usePermissions } from '@/lib/hooks/usePermissions'
+import {
+  canAccessQuotation,
+  canViewAllQuotations,
+  formatResponsibleName,
+} from '@/lib/quotations/ownership'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -41,6 +46,7 @@ interface Quotation {
   payment_condition: string | null
   response_deadline: string | null
   created_at: string
+  created_by: string | null
 }
 
 interface QuotationItem {
@@ -175,11 +181,17 @@ export default function QuotationDetailsPage({
   const { id } = use(params)
   const from = searchParams.get('from')
   const requisicaoId = searchParams.get('requisicaoId')
-  const { companyId, userId, loading: userLoading } = useUser()
-  const { hasFeature, hasPermission } = usePermissions()
+  const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
+  const { hasFeature, hasPermission, loading: permLoading } = usePermissions()
   void hasFeature
+  const viewAllQuotations = canViewAllQuotations({
+    isSuperAdmin,
+    hasRole,
+    hasPermission,
+  })
 
   const [quotation, setQuotation] = useState<Quotation | null>(null)
+  const [responsibleName, setResponsibleName] = useState<string>("")
   const [items, setItems] = useState<QuotationItem[]>([])
   const [suppliers, setSuppliers] = useState<QuotationSupplier[]>([])
   const [loading, setLoading] = useState(true)
@@ -197,7 +209,7 @@ export default function QuotationDetailsPage({
   }
 
   useEffect(() => {
-    if (userLoading || !companyId) return
+    if (userLoading || permLoading || !companyId) return
 
     const fetchData = async () => {
       setLoading(true)
@@ -209,7 +221,7 @@ export default function QuotationDetailsPage({
         const { data: quotationData, error: quotationError } = await supabase
           .from('quotations')
           .select(
-            'id, code, description, status, category, payment_condition, response_deadline, created_at',
+            'id, code, description, status, category, payment_condition, response_deadline, created_at, created_by',
           )
           .eq('id', id)
           .eq('company_id', companyId!)
@@ -221,7 +233,35 @@ export default function QuotationDetailsPage({
           return
         }
 
-        setQuotation(quotationData)
+        const q = quotationData as Quotation
+        if (
+          !canAccessQuotation({
+            createdBy: q.created_by,
+            userId,
+            canViewAll: viewAllQuotations,
+          })
+        ) {
+          toast.error('Você não tem permissão para acessar esta cotação.')
+          router.replace('/comprador/cotacoes')
+          return
+        }
+
+        setQuotation(q)
+
+        if (q.created_by) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', q.created_by)
+            .maybeSingle()
+          setResponsibleName(
+            formatResponsibleName(
+              (profile as { full_name?: string | null } | null)?.full_name,
+            ),
+          )
+        } else {
+          setResponsibleName('—')
+        }
 
         const [{ data: itemsData }, { data: suppliersData }] = await Promise.all([
           supabase
@@ -247,7 +287,7 @@ export default function QuotationDetailsPage({
     }
 
     fetchData()
-  }, [id, companyId, userLoading])
+  }, [id, companyId, userId, userLoading, permLoading, viewAllQuotations, router])
 
   const handleStatusUpdate = async (newStatus: QuotationStatus) => {
     if (!quotation) return
@@ -572,6 +612,12 @@ export default function QuotationDetailsPage({
                   <Label>Data de Criação</Label>
                   <div className="rounded-md bg-muted/40 px-3 py-2 text-sm">
                     {new Date(quotation.created_at).toLocaleDateString('pt-BR')}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Responsável</Label>
+                  <div className="rounded-md bg-muted/40 px-3 py-2 text-sm">
+                    {formatResponsibleName(responsibleName)}
                   </div>
                 </div>
               </div>

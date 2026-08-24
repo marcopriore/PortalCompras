@@ -34,7 +34,7 @@ const PERMISSIONS = [
   { key: "quotation.cancel", label: "Cancelar Cotação", group: "Cotações" },
   { key: "quotation.equalize.view", label: "Visualizar Equalização", group: "Cotações" },
   { key: "quotation.equalize.select", label: "Ações na Equalização", group: "Cotações" },
-  { key: "quotation.view_all", label: "Ver Cotações de Todos", group: "Cotações" },
+  { key: "quotation.view_all", label: "Ver Cotações de Todos (senão, só as próprias)", group: "Cotações" },
   { key: "order.create", label: "Criar Pedido", group: "Pedidos" },
   { key: "order.edit", label: "Editar Qualquer Pedido", group: "Pedidos" },
   { key: "order.edit_own", label: "Editar Próprios Pedidos", group: "Pedidos" },

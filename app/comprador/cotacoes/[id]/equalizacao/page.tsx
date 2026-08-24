@@ -70,6 +70,10 @@ import { sendTransactionalEmailClient } from "@/lib/email/send-transactional-ema
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import {
+  canAccessQuotation,
+  canViewAllQuotations,
+} from "@/lib/quotations/ownership"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
@@ -221,6 +225,7 @@ type Quotation = {
   payment_condition?: string | null
   response_deadline?: string | null
   created_at?: string | null
+  created_by?: string | null
 }
 
 type PaymentConditionRow = { id: string; code: string; description: string }
@@ -458,9 +463,14 @@ export default function EqualizacaoPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
-  const { companyId, userId, loading: userLoading, profileType } = useUser()
+  const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading, profileType } = useUser()
   const { value: scorePriceWeight } = useTenantSetting("score_weight_price")
   const { hasFeature, hasPermission } = usePermissions()
+  const viewAllQuotations = canViewAllQuotations({
+    isSuperAdmin,
+    hasRole,
+    hasPermission,
+  })
   const contractBalanceEnabled = hasFeature("contract_balance")
 
   // Next.js 16: params é Promise
@@ -698,7 +708,7 @@ export default function EqualizacaoPage({
           supabase
             .from("quotations")
             .select(
-              "id, code, description, status, category, payment_condition, response_deadline, created_at",
+              "id, code, description, status, category, payment_condition, response_deadline, created_at, created_by",
             )
             .eq("id", id)
             .single(),
@@ -726,6 +736,18 @@ export default function EqualizacaoPage({
         if (allProposalsRawRes.error) throw allProposalsRawRes.error
 
         const q = (qRes.data as Quotation) ?? null
+        if (
+          q &&
+          !canAccessQuotation({
+            createdBy: q.created_by,
+            userId,
+            canViewAll: viewAllQuotations,
+          })
+        ) {
+          toast.error("Você não tem permissão para acessar esta cotação.")
+          router.replace("/comprador/cotacoes")
+          return
+        }
         const items = (
           ((itemsRes.data as unknown) as QuotationItem[] | null | undefined) ?? []
         ).map((i) => ({
@@ -844,7 +866,7 @@ export default function EqualizacaoPage({
         if (showLoadingUI) setLoading(false)
       }
     },
-    [id, selectedRoundId],
+    [id, selectedRoundId, userId, viewAllQuotations, router],
   )
 
   const refreshProposalsLight = React.useCallback(async () => {

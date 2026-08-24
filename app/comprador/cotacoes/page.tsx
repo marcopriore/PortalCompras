@@ -34,6 +34,10 @@ import {
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import {
+  canViewAllQuotations,
+  formatResponsibleName,
+} from "@/lib/quotations/ownership"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 type QuotationSupplier = { supplier_name: string | null }
@@ -51,6 +55,8 @@ interface Quotation {
   payment_condition: string | null
   response_deadline: string | null
   created_at: string
+  created_by: string | null
+  responsible_name?: string
   quotation_suppliers?: QuotationSupplier[] | null
   quotation_items?: QuotationItem[] | null
 }
@@ -79,9 +85,14 @@ export default function CotacoesPage() {
   const [loadingData, setLoadingData] = useState(true)
   const [cloningId, setCloningId] = useState<string | null>(null)
 
-  const { companyId, loading: userLoading } = useUser()
-  const { hasFeature, hasPermission } = usePermissions()
+  const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
+  const { hasFeature, hasPermission, loading: permLoading } = usePermissions()
   void hasFeature
+  const viewAllQuotations = canViewAllQuotations({
+    isSuperAdmin,
+    hasRole,
+    hasPermission,
+  })
 
   const [search, setSearch] = useState("")
   const searchRef = React.useRef<HTMLDivElement>(null)
@@ -130,6 +141,7 @@ export default function CotacoesPage() {
           category: quotation.category ?? null,
           response_deadline: null,
           payment_condition: quotation.payment_condition ?? null,
+          created_by: userId ?? null,
         })
         .select("id, code")
         .single()
@@ -214,6 +226,11 @@ export default function CotacoesPage() {
       header: "Criado em",
       cell: (item) => new Date(item.created_at).toLocaleDateString("pt-BR"),
     },
+    {
+      key: "responsible_name",
+      header: "Responsável",
+      cell: (item) => formatResponsibleName(item.responsible_name),
+    },
   ]
 
   const actions = (item: Quotation) => (
@@ -273,29 +290,58 @@ export default function CotacoesPage() {
 
   useEffect(() => {
     const fetchQuotations = async () => {
-      if (!companyId) {
+      if (userLoading || permLoading || !companyId) {
         return
       }
 
       const supabase = createClient()
-      const { data, error } = await supabase
+      let query = supabase
         .from("quotations")
         .select(
           "*, quotation_suppliers(supplier_name), quotation_items(material_code, material_description)",
         )
         .eq("company_id", companyId)
-        .order("created_at", { ascending: false })
+      if (!viewAllQuotations && userId) {
+        query = query.eq("created_by", userId)
+      }
+      const { data, error } = await query.order("created_at", { ascending: false })
 
       if (error) {
         console.error("Erro ao buscar cotações:", error)
-      } else {
-        setQuotations(data ?? [])
+        setQuotations([])
+        setLoadingData(false)
+        return
       }
+
+      const rows = (data ?? []) as Quotation[]
+      const ownerIds = [
+        ...new Set(rows.map((q) => q.created_by).filter((id): id is string => Boolean(id))),
+      ]
+      let nameById = new Map<string, string>()
+      if (ownerIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, full_name")
+          .in("id", ownerIds)
+        nameById = new Map(
+          ((profiles ?? []) as { id: string; full_name: string | null }[]).map((p) => [
+            p.id,
+            p.full_name ?? "",
+          ]),
+        )
+      }
+
+      setQuotations(
+        rows.map((q) => ({
+          ...q,
+          responsible_name: q.created_by ? nameById.get(q.created_by) ?? "" : "",
+        })),
+      )
       setLoadingData(false)
     }
 
     fetchQuotations()
-  }, [companyId])
+  }, [companyId, userId, userLoading, permLoading, viewAllQuotations])
 
   const hasActiveFilters =
     !!search ||
@@ -377,6 +423,7 @@ export default function CotacoesPage() {
       { header: "Condição de Pagamento", key: "payment", width: 25 },
       { header: "Prazo de Resposta", key: "deadline", width: 20 },
       { header: "Data de Criação", key: "createdAt", width: 20 },
+      { header: "Responsável", key: "responsible", width: 28 },
     ]
 
     const headerRow = ws.getRow(1)
@@ -415,6 +462,7 @@ export default function CotacoesPage() {
         payment: q.payment_condition ?? "—",
         deadline: q.response_deadline ? formatDateOnly(q.response_deadline) : "—",
         createdAt: formatDateTime(q.created_at),
+        responsible: formatResponsibleName(q.responsible_name),
       })
 
       const rowNumber = idx + 2

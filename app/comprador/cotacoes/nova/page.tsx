@@ -150,7 +150,7 @@ function NovaCotacaoContent() {
   const [requisitionsLoading, setRequisitionsLoading] = useState(false)
   const [selectedReqIds, setSelectedReqIds] = useState<string[]>([])
 
-  const { userId, companyId, loading: userLoading } = useUser()
+  const { userId, companyId, fullName, loading: userLoading } = useUser()
 
   const debouncedItemSearch = useDebounce(itemSearch, ITEM_SEARCH_DEBOUNCE_MS)
   const debouncedSupplierSearch = useDebounce(supplierSearch, SUPPLIER_SEARCH_DEBOUNCE_MS)
@@ -435,6 +435,7 @@ function NovaCotacaoContent() {
           category: category ?? null,
           response_deadline: deadline ? deadline.toISOString().split('T')[0] : null,
           payment_condition: paymentCondition.trim() || null,
+          created_by: userId ?? null,
         })
         .select('id, code, status')
         .single()
@@ -684,6 +685,16 @@ function NovaCotacaoContent() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label>Responsável</Label>
+              <Input
+                disabled
+                value={fullName?.trim() || 'Você'}
+                className="bg-muted/40"
+              />
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

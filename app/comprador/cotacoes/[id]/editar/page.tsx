@@ -9,6 +9,12 @@ import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
+import {
+  canAccessQuotation,
+  canViewAllQuotations,
+  formatResponsibleName,
+} from "@/lib/quotations/ownership"
 import { SuggestSuppliersButton } from "@/components/comprador/suggest-suppliers-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -129,7 +135,13 @@ export default function EditarCotacaoPage({
 }) {
   const router = useRouter()
   const { id } = use(params)
-  const { companyId, userId, loading: userLoading } = useUser()
+  const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
+  const { hasPermission, loading: permLoading } = usePermissions()
+  const viewAllQuotations = canViewAllQuotations({
+    isSuperAdmin,
+    hasRole,
+    hasPermission,
+  })
 
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -138,6 +150,8 @@ export default function EditarCotacaoPage({
   const [deadlineOpen, setDeadlineOpen] = React.useState(false)
   const [category, setCategory] = React.useState<string | undefined>()
   const [paymentCondition, setPaymentCondition] = React.useState("")
+  const [responsibleId, setResponsibleId] = React.useState<string>("")
+  const [buyers, setBuyers] = React.useState<{ id: string; full_name: string | null }[]>([])
   const [paymentConditions, setPaymentConditions] = React.useState<
     PaymentConditionRow[]
   >([])
@@ -259,25 +273,47 @@ export default function EditarCotacaoPage({
   }, [companyId, debouncedSupplierSearch])
 
   React.useEffect(() => {
-    if (!id || !companyId) return
+    if (!id || !companyId || userLoading || permLoading) return
 
     const fetchData = async () => {
       setLoading(true)
       try {
         const supabase = createClient()
 
-        const { data: quotationData, error: quotationError } = await supabase
-          .from("quotations")
-          .select(
-            "id, code, description, status, category, response_deadline, payment_condition",
-          )
-          .eq("id", id)
-          .eq("company_id", companyId)
-          .single()
+        const [{ data: quotationData, error: quotationError }, buyersRes] =
+          await Promise.all([
+            supabase
+              .from("quotations")
+              .select(
+                "id, code, description, status, category, response_deadline, payment_condition, created_by",
+              )
+              .eq("id", id)
+              .eq("company_id", companyId)
+              .single(),
+            supabase
+              .from("profiles")
+              .select("id, full_name")
+              .eq("company_id", companyId)
+              .neq("profile_type", "supplier")
+              .order("full_name", { ascending: true }),
+          ])
 
         if (quotationError || !quotationData) {
           toast.error("Não foi possível carregar a cotação.")
           setLoading(false)
+          return
+        }
+
+        const createdBy = (quotationData.created_by as string | null) ?? null
+        if (
+          !canAccessQuotation({
+            createdBy,
+            userId,
+            canViewAll: viewAllQuotations,
+          })
+        ) {
+          toast.error("Você não tem permissão para editar esta cotação.")
+          router.replace("/comprador/cotacoes")
           return
         }
 
@@ -292,6 +328,11 @@ export default function EditarCotacaoPage({
         setCategory((quotationData.category as string) ?? undefined)
         setPaymentCondition(
           (quotationData.payment_condition as string | null) ?? "",
+        )
+        setResponsibleId(createdBy ?? userId ?? "")
+        setBuyers(
+          ((buyersRes.data ?? []) as { id: string; full_name: string | null }[]) ??
+            [],
         )
         if (quotationData.response_deadline) {
           setDeadline(new Date(quotationData.response_deadline as string))
@@ -356,7 +397,7 @@ export default function EditarCotacaoPage({
     }
 
     fetchData()
-  }, [id, companyId, router])
+  }, [id, companyId, userId, userLoading, permLoading, viewAllQuotations, router])
 
   const toggle = (key: string) =>
     setOpen((prev) => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))
@@ -522,6 +563,10 @@ export default function EditarCotacaoPage({
     try {
       const supabase = createClient()
 
+      const nextOwnerId = viewAllQuotations
+        ? responsibleId || userId || null
+        : (responsibleId || userId || null)
+
       await supabase
         .from("quotations")
         .update({
@@ -531,6 +576,7 @@ export default function EditarCotacaoPage({
             ? deadline.toISOString().split("T")[0]
             : null,
           payment_condition: paymentCondition.trim() || null,
+          created_by: nextOwnerId,
         })
         .eq("id", id)
         .eq("company_id", companyId!)
@@ -815,6 +861,42 @@ export default function EditarCotacaoPage({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-1.5">
+              <Label>Responsável</Label>
+              {viewAllQuotations ? (
+                <Select
+                  value={responsibleId || undefined}
+                  onValueChange={setResponsibleId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o comprador" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {responsibleId &&
+                      !buyers.some((b) => b.id === responsibleId) && (
+                        <SelectItem value={responsibleId}>
+                          Responsável atual
+                        </SelectItem>
+                      )}
+                    {buyers.map((b) => (
+                      <SelectItem key={b.id} value={b.id}>
+                        {formatResponsibleName(b.full_name)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  disabled
+                  className="bg-muted/40"
+                  value={formatResponsibleName(
+                    buyers.find((b) => b.id === responsibleId)?.full_name,
+                  )}
+                />
+              )}
             </div>
           </div>
         </div>
