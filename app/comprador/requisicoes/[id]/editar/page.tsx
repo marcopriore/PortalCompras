@@ -7,6 +7,7 @@ import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
 import { toast } from "sonner"
+import { CostCenterSelect } from "@/components/ui/cost-center-select"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -612,12 +613,12 @@ export default function EditarRequisicaoPage({
                 </div>
               </div>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="costCenter">Centro de Custo</Label>
-                <Input
-                  id="costCenter"
+                <CostCenterSelect
+                  companyId={companyId}
                   value={form.costCenter}
-                  onChange={(e) => setForm((f) => ({ ...f, costCenter: e.target.value }))}
-                  placeholder="Ex: CC-001"
+                  onChange={(code) => setForm((f) => ({ ...f, costCenter: code }))}
+                  required
+                  includeInactiveCodes={form.costCenter ? [form.costCenter] : []}
                 />
               </div>
               <div className="flex flex-col gap-2">

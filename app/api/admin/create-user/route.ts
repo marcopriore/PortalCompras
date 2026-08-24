@@ -16,7 +16,7 @@ function resolveProfileType(roles: string[]): string {
 
 export async function POST(request: Request) {
   try {
-    const { email, password, fullName, role, roles, companyId, profileType } =
+    const { email, password, fullName, role, roles, companyId, profileType, costCenterId } =
       await request.json()
 
     const rolesArray = Array.isArray(roles) ? roles : role ? [role] : []
@@ -34,8 +34,30 @@ export async function POST(request: Request) {
         { status: 400 },
       )
     }
+    if (!costCenterId || typeof costCenterId !== 'string') {
+      return NextResponse.json(
+        { error: 'Centro de custo é obrigatório' },
+        { status: 400 },
+      )
+    }
 
     const supabaseAdmin = createServiceRoleClient()
+
+    const { data: costCenter } = await supabaseAdmin
+      .from('cost_centers')
+      .select('id')
+      .eq('id', costCenterId)
+      .eq('company_id', companyId)
+      .eq('active', true)
+      .maybeSingle()
+
+    if (!costCenter) {
+      return NextResponse.json(
+        { error: 'Centro de custo inválido' },
+        { status: 400 },
+      )
+    }
+
     const policy = await loadPasswordPolicy(supabaseAdmin, companyId)
     const passwordCheck = validatePasswordAgainstPolicy(password, policy)
     if (!passwordCheck.ok) {
@@ -76,6 +98,7 @@ export async function POST(request: Request) {
         status: 'active',
         is_superadmin: false,
         profile_type: profileType ?? resolveProfileType(rolesArray),
+        cost_center_id: costCenterId,
       })
       .eq('id', authData.user.id)
 

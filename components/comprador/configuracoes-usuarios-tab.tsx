@@ -49,6 +49,13 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import MultiSelectFilter from '@/components/ui/multi-select-filter'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { PasswordPolicy } from "@/lib/settings/password-policy-registry"
 import { generatePasswordForPolicy } from "@/lib/auth/generate-password"
 import { UserPermissionsDialog } from '@/components/comprador/user-permissions-dialog'
@@ -72,6 +79,9 @@ type Profile = {
   roles?: string[] | null
   status: string
   created_at: string
+  cost_center_id?: string | null
+  cost_center_code?: string | null
+  cost_center_description?: string | null
 }
 
 type UserForm = {
@@ -79,6 +89,14 @@ type UserForm = {
   email: string
   roles: string[]
   status: string
+  costCenterId: string
+}
+
+type CostCenterOption = {
+  id: string
+  code: string
+  description: string
+  active: boolean
 }
 
 function getInitials(name: string): string {
@@ -235,14 +253,18 @@ export function ConfiguracoesUsuariosTab({
     email: '',
     roles: ['buyer'],
     status: 'active',
+    costCenterId: '',
   })
   const [editForm, setEditForm] = useState<{
     roles: string[]
     status: string
+    costCenterId: string
   }>({
     roles: ['buyer'],
     status: 'active',
+    costCenterId: '',
   })
+  const [costCenters, setCostCenters] = useState<CostCenterOption[]>([])
   const [permissionsOpen, setPermissionsOpen] = useState(false)
   const [permissionsUser, setPermissionsUser] = useState<Profile | null>(null)
   const [actingAsUserId, setActingAsUserId] = React.useState<string | null>(null)
@@ -300,6 +322,24 @@ export function ConfiguracoesUsuariosTab({
       .catch(() => {})
   }, [companyId])
 
+  useEffect(() => {
+    if (!companyId) return
+    const supabase = createClient()
+    void supabase
+      .from('cost_centers')
+      .select('id, code, description, active')
+      .eq('company_id', companyId)
+      .order('code', { ascending: true })
+      .then(({ data }) => {
+        setCostCenters((data ?? []) as CostCenterOption[])
+      })
+  }, [companyId])
+
+  const activeCostCenters = React.useMemo(
+    () => costCenters.filter((c) => c.active),
+    [costCenters],
+  )
+
   const loadProfiles = React.useCallback(async () => {
     if (!companyId) return
     setLoading(true)
@@ -312,7 +352,7 @@ export function ConfiguracoesUsuariosTab({
         const supabase = createClient()
         const { data: rows } = await supabase
           .from('profiles')
-          .select('id, full_name, role, roles, status, created_at, is_superadmin, profile_type')
+          .select('id, full_name, role, roles, status, created_at, is_superadmin, profile_type, cost_center_id')
           .eq('company_id', companyId)
           .eq('is_superadmin', false)
           .neq('profile_type', 'supplier')
@@ -392,6 +432,10 @@ export function ConfiguracoesUsuariosTab({
   const handleCreate = async () => {
     if (!form.fullName || !form.email || !companyId) return
     if (form.roles.length === 0) return
+    if (!form.costCenterId) {
+      toast.error('Selecione o centro de custo.')
+      return
+    }
     if (!generatedPassword) {
       setGeneratedPassword(generatePasswordForPolicy(passwordPolicy))
     }
@@ -411,6 +455,7 @@ export function ConfiguracoesUsuariosTab({
           role: form.roles[0],
           companyId,
           profileType: resolveProfileType(form.roles),
+          costCenterId: form.costCenterId,
         }),
       })
       const data = await res.json()
@@ -438,6 +483,7 @@ export function ConfiguracoesUsuariosTab({
         email: '',
         roles: ['buyer'],
         status: 'active',
+        costCenterId: '',
       })
       setGeneratedPassword('')
     } finally {
@@ -447,6 +493,10 @@ export function ConfiguracoesUsuariosTab({
 
   const handleEdit = async () => {
     if (!selectedProfile || !companyId || editForm.roles.length === 0) return
+    if (!editForm.costCenterId) {
+      toast.error('Selecione o centro de custo.')
+      return
+    }
     setSubmitting(true)
     try {
       const supabase = createClient()
@@ -456,9 +506,10 @@ export function ConfiguracoesUsuariosTab({
           role: editForm.roles[0],
           roles: editForm.roles,
           status: editForm.status,
+          cost_center_id: editForm.costCenterId,
         })
         .eq('id', selectedProfile.id)
-        .select('id, role, roles, status')
+        .select('id, role, roles, status, cost_center_id')
 
       if (error) {
         // eslint-disable-next-line no-console
@@ -487,6 +538,7 @@ export function ConfiguracoesUsuariosTab({
                   role: updated.role ?? editForm.roles[0],
                   roles: updated.roles ?? editForm.roles,
                   status: updated.status ?? editForm.status,
+                  cost_center_id: updated.cost_center_id ?? editForm.costCenterId,
                 }
               : p,
           ),
@@ -1121,6 +1173,7 @@ export function ConfiguracoesUsuariosTab({
                                 profile.roles ??
                                 (profile.role ? [profile.role] : ['buyer']),
                               status: profile.status,
+                              costCenterId: profile.cost_center_id ?? '',
                             })
                             setEditOpen(true)
                           }}
@@ -1196,6 +1249,32 @@ export function ConfiguracoesUsuariosTab({
               </p>
             </div>
             <div>
+              <Label>Centro de Custo *</Label>
+              <Select
+                value={form.costCenterId || undefined}
+                onValueChange={(v) => setForm((f) => ({ ...f, costCenterId: v }))}
+                disabled={submitting || activeCostCenters.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      activeCostCenters.length === 0
+                        ? 'Cadastre centros em Configuração de Campos'
+                        : 'Selecione o centro de custo'
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeCostCenters.map((cc) => (
+                    <SelectItem key={cc.id} value={cc.id}>
+                      <span className="font-mono text-xs mr-2">{cc.code}</span>
+                      {cc.description}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>Senha Gerada</Label>
               <div className="flex gap-2 mt-1">
                 <Input
@@ -1254,6 +1333,7 @@ export function ConfiguracoesUsuariosTab({
                 !form.fullName ||
                 !form.email ||
                 form.roles.length === 0 ||
+                !form.costCenterId ||
                 !companyId
               }
             >
@@ -1280,6 +1360,34 @@ export function ConfiguracoesUsuariosTab({
                 onChange={(v) => setEditForm((f) => ({ ...f, roles: v }))}
                 disabled={submitting}
               />
+            </div>
+            <div>
+              <Label>Centro de Custo *</Label>
+              <Select
+                value={editForm.costCenterId || undefined}
+                onValueChange={(v) =>
+                  setEditForm((f) => ({ ...f, costCenterId: v }))
+                }
+                disabled={submitting}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o centro de custo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(editForm.costCenterId &&
+                  !activeCostCenters.some((c) => c.id === editForm.costCenterId)
+                    ? costCenters.filter(
+                        (c) => c.active || c.id === editForm.costCenterId,
+                      )
+                    : activeCostCenters
+                  ).map((cc) => (
+                    <SelectItem key={cc.id} value={cc.id}>
+                      <span className="font-mono text-xs mr-2">{cc.code}</span>
+                      {cc.description}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Status</Label>
@@ -1314,7 +1422,10 @@ export function ConfiguracoesUsuariosTab({
               type="button"
               onClick={handleEdit}
               disabled={
-                submitting || !selectedProfile || editForm.roles.length === 0
+                submitting ||
+                !selectedProfile ||
+                editForm.roles.length === 0 ||
+                !editForm.costCenterId
               }
             >
               {submitting ? 'Salvando...' : 'Salvar'}

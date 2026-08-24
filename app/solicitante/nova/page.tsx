@@ -32,9 +32,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { ChevronLeft, Plus, Trash2, X, Paperclip } from "lucide-react"
+import { ChevronLeft, Plus, Trash2, X, Paperclip, PackageSearch } from "lucide-react"
+import {
+  CostCenterSelect,
+  loadUserDefaultCostCenterCode,
+} from "@/components/ui/cost-center-select"
 
-const DEBOUNCE_MS = 300
+const DEBOUNCE_MS = 400
 const ACCEPTED_FILE_TYPES = ".pdf,.xlsx,.xls,.jpg,.jpeg,.png"
 
 type CatalogItem = {
@@ -100,6 +104,8 @@ export default function SolicitanteNovaPage() {
   const [searchResults, setSearchResults] = React.useState<CatalogItem[]>([])
   const [searchLoading, setSearchLoading] = React.useState(false)
   const debouncedSearch = useDebounce(searchTerm, DEBOUNCE_MS)
+  const searchContainerRef = React.useRef<HTMLDivElement>(null)
+  const [searchOpen, setSearchOpen] = React.useState(false)
 
   // Anexos
   const [attachments, setAttachments] = React.useState<AttachedFile[]>([])
@@ -125,8 +131,20 @@ export default function SolicitanteNovaPage() {
       setUserId(user.id)
       setCompanyId(profile.company_id)
       setUserName(profile.full_name ?? "")
+      const defaultCc = await loadUserDefaultCostCenterCode(user.id)
+      if (defaultCc) setCostCenter(defaultCc)
     }
     void run()
+  }, [])
+
+  React.useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (!searchContainerRef.current?.contains(event.target as Node)) {
+        setSearchOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown)
+    return () => document.removeEventListener("mousedown", onPointerDown)
   }, [])
 
   // Busca no catálogo
@@ -138,34 +156,39 @@ export default function SolicitanteNovaPage() {
     const run = async () => {
       setSearchLoading(true)
       const supabase = createClient()
-      const term = `%${debouncedSearch.replace(/"/g, '\\"')}%`
-      const quoted = `"${term}"`
+      const term = `%${debouncedSearch.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`
       const { data, error: searchError } = await supabase
         .from("items")
         .select("id, code, short_description, long_description, unit_of_measure, commodity_group")
         .eq("company_id", companyId)
-        .or(`code.ilike.${quoted},short_description.ilike.${quoted}`)
+        .or(`code.ilike.${term},short_description.ilike.${term}`)
         .limit(20)
       setSearchLoading(false)
-      if (searchError) { setSearchResults([]); return }
+      if (searchError) {
+        setSearchResults([])
+        return
+      }
       setSearchResults((data as CatalogItem[]) ?? [])
     }
     void run()
   }, [companyId, debouncedSearch])
 
   function addItem(item: CatalogItem) {
-    if (items.some(i => i.itemId === item.id)) return
-    setItems(prev => [...prev, {
-      id: crypto.randomUUID(),
-      itemId: item.id,
-      materialCode: item.code,
-      materialDescription: item.short_description,
-      unitOfMeasure: item.unit_of_measure ?? "",
-      commodityGroup: item.commodity_group ?? "",
-      quantity: 1,
-      observations: "",
-    }])
-    setSearchTerm("")
+    if (items.some((i) => i.itemId === item.id)) return
+    setItems((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        itemId: item.id,
+        materialCode: item.code,
+        materialDescription: item.short_description,
+        unitOfMeasure: item.unit_of_measure ?? "",
+        commodityGroup: item.commodity_group ?? "",
+        quantity: 1,
+        observations: "",
+      },
+    ])
+    setSearchOpen(false)
   }
 
   function updateItem(id: string, patch: Partial<LineItem>) {
@@ -192,6 +215,7 @@ export default function SolicitanteNovaPage() {
   async function handleSubmit() {
     setError(null)
     if (!title.trim()) { setError("Título é obrigatório."); return }
+    if (!costCenter.trim()) { setError("Centro de custo é obrigatório."); return }
     if (items.length === 0) { setError("Adicione ao menos um item."); return }
     if (!companyId || !userId) return
 
@@ -437,14 +461,12 @@ export default function SolicitanteNovaPage() {
               />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Centro de Custo</Label>
-                <Input
-                  placeholder="Ex: CC-001"
-                  value={costCenter}
-                  onChange={e => setCostCenter(e.target.value)}
-                />
-              </div>
+              <CostCenterSelect
+                companyId={companyId}
+                value={costCenter}
+                onChange={setCostCenter}
+                required
+              />
               <div className="space-y-2">
                 <Label>Data de Necessidade</Label>
                 <Input
@@ -486,18 +508,20 @@ export default function SolicitanteNovaPage() {
           </CardContent>
         </Card>
 
-        {/* Itens */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Itens da Requisição</CardTitle>
+            <CardTitle className="text-base">Itens Solicitados</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Busca no catálogo */}
-            <div className="relative">
+            <div className="relative" ref={searchContainerRef}>
               <Input
-                placeholder="Buscar item por código ou descrição..."
+                placeholder="Buscar por código ou descrição..."
                 value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value)
+                  setSearchOpen(true)
+                }}
+                onFocus={() => setSearchOpen(true)}
                 className={searchTerm ? "pr-20" : "pr-10"}
               />
               {searchTerm && (
@@ -506,40 +530,61 @@ export default function SolicitanteNovaPage() {
                   variant="ghost"
                   size="icon"
                   className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-8"
-                  onClick={() => setSearchTerm("")}
+                  onClick={() => {
+                    setSearchTerm("")
+                    setSearchResults([])
+                    setSearchOpen(false)
+                  }}
+                  aria-label="Limpar busca"
                 >
                   <X className="h-4 w-4" />
                 </Button>
               )}
-              {searchTerm.length >= 2 && (
-                <div className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto
-                                rounded-xl border border-border bg-card shadow-lg z-10">
+              {searchOpen && searchTerm.length >= 2 && (
+                <div
+                  className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl border border-border bg-card shadow-lg z-10"
+                  role="listbox"
+                >
                   {searchLoading ? (
-                    <div className="p-4 text-center text-sm text-muted-foreground">Buscando...</div>
+                    <div className="p-4 text-center text-sm text-muted-foreground">
+                      Buscando...
+                    </div>
                   ) : searchResults.length === 0 ? (
                     <div className="p-4 text-center text-sm text-muted-foreground">
                       Nenhum item encontrado
                     </div>
                   ) : (
                     <ul className="py-2">
-                      {searchResults.map(item => {
-                        const isAdded = items.some(i => i.itemId === item.id)
+                      {searchResults.map((item) => {
+                        const isAdded = items.some((i) => i.itemId === item.id)
                         return (
-                          <li key={item.id}
-                            className="flex items-center gap-3 px-4 py-2 hover:bg-muted/50">
+                          <li
+                            key={item.id}
+                            className="flex items-center gap-3 px-4 py-2 hover:bg-muted/50"
+                          >
                             {isAdded ? (
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <Button type="button" variant="ghost" size="icon"
-                                    disabled className="shrink-0">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled
+                                    className="shrink-0"
+                                  >
                                     <Plus className="h-4 w-4" />
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent>Já adicionado</TooltipContent>
                               </Tooltip>
                             ) : (
-                              <Button type="button" variant="default" size="icon"
-                                onClick={() => addItem(item)} className="shrink-0">
+                              <Button
+                                type="button"
+                                variant="default"
+                                size="icon"
+                                onClick={() => addItem(item)}
+                                className="shrink-0"
+                              >
                                 <Plus className="h-4 w-4" />
                               </Button>
                             )}
@@ -565,23 +610,33 @@ export default function SolicitanteNovaPage() {
               )}
             </div>
 
-            {/* Tabela de itens */}
-            {items.length > 0 && (
+            <p className="text-sm text-muted-foreground">
+              {items.length} item(ns) adicionado(s)
+            </p>
+
+            {items.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
+                <PackageSearch className="h-12 w-12 text-muted-foreground mb-4" />
+                <p className="text-sm text-muted-foreground">
+                  Nenhum item adicionado. Use a busca acima para adicionar materiais.
+                </p>
+              </div>
+            ) : (
               <div className="rounded-xl border border-border overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Código</TableHead>
-                      <TableHead>Descrição</TableHead>
+                      <TableHead>Descrição Curta</TableHead>
                       <TableHead className="text-center">Unidade</TableHead>
-                      <TableHead>Grupo</TableHead>
+                      <TableHead>Grupo de Mercadoria</TableHead>
                       <TableHead className="w-28">Quantidade</TableHead>
                       <TableHead>Observações</TableHead>
                       <TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map(it => (
+                    {items.map((it) => (
                       <TableRow key={it.id}>
                         <TableCell className="font-mono text-xs">{it.materialCode}</TableCell>
                         <TableCell className="text-sm">{it.materialDescription}</TableCell>
@@ -594,9 +649,9 @@ export default function SolicitanteNovaPage() {
                             type="number"
                             min={1}
                             value={it.quantity}
-                            onChange={e =>
+                            onChange={(e) =>
                               updateItem(it.id, {
-                                quantity: Math.max(1, Number(e.target.value) || 1)
+                                quantity: Math.max(1, Number(e.target.value) || 0),
                               })
                             }
                             className="h-8"
@@ -606,21 +661,25 @@ export default function SolicitanteNovaPage() {
                           <Input
                             value={it.observations}
                             maxLength={300}
-                            onChange={e =>
+                            onChange={(e) =>
                               updateItem(it.id, {
-                                observations: e.target.value.slice(0, 300)
+                                observations: e.target.value.slice(0, 300),
                               })
                             }
                             placeholder="Opcional"
                             className="h-8"
                           />
                           <p className="absolute bottom-0 right-2 text-[10px] text-muted-foreground">
-                            {it.observations.length}/300
+                            {(it.observations ?? "").length}/300
                           </p>
                         </TableCell>
                         <TableCell>
-                          <Button type="button" variant="ghost" size="icon"
-                            onClick={() => removeItem(it.id)}>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeItem(it.id)}
+                          >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </TableCell>
@@ -628,13 +687,6 @@ export default function SolicitanteNovaPage() {
                     ))}
                   </TableBody>
                 </Table>
-              </div>
-            )}
-
-            {items.length === 0 && (
-              <div className="rounded-xl border border-dashed border-border p-8 text-center
-                              text-sm text-muted-foreground">
-                Busque e adicione itens do catálogo acima
               </div>
             )}
           </CardContent>

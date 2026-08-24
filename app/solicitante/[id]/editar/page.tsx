@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { notifyWithEmail } from "@/lib/notify-with-email"
 import { toast } from "sonner"
+import { CostCenterSelect } from "@/components/ui/cost-center-select"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -144,6 +144,8 @@ export default function SolicitanteEditarRequisicaoPage({
   const [searchResults, setSearchResults] = React.useState<CatalogItem[]>([])
   const [searchLoading, setSearchLoading] = React.useState(false)
   const debouncedSearch = useDebounce(searchTerm, DEBOUNCE_MS)
+  const searchContainerRef = React.useRef<HTMLDivElement>(null)
+  const [searchOpen, setSearchOpen] = React.useState(false)
 
   const [attachments, setAttachments] = React.useState<AttachedFile[]>([])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -278,6 +280,16 @@ export default function SolicitanteEditarRequisicaoPage({
   }, [id, router])
 
   React.useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (!searchContainerRef.current?.contains(event.target as Node)) {
+        setSearchOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown)
+    return () => document.removeEventListener("mousedown", onPointerDown)
+  }, [])
+
+  React.useEffect(() => {
     if (!companyId || debouncedSearch.length < 2) {
       setSearchResults([])
       return
@@ -285,13 +297,12 @@ export default function SolicitanteEditarRequisicaoPage({
     const run = async () => {
       setSearchLoading(true)
       const supabase = createClient()
-      const term = `%${debouncedSearch.replace(/"/g, '\\"')}%`
-      const quoted = `"${term}"`
+      const term = `%${debouncedSearch.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`
       const { data, error: searchErr } = await supabase
         .from("items")
         .select("id, code, short_description, long_description, unit_of_measure, commodity_group")
         .eq("company_id", companyId)
-        .or(`code.ilike.${quoted},short_description.ilike.${quoted}`)
+        .or(`code.ilike.${term},short_description.ilike.${term}`)
         .limit(20)
 
       setSearchLoading(false)
@@ -319,6 +330,7 @@ export default function SolicitanteEditarRequisicaoPage({
         observations: "",
       },
     ])
+    setSearchOpen(false)
   }
 
   const updateItem = (itemId: string, patch: Partial<RequisitionLineItem>) => {
@@ -649,12 +661,12 @@ export default function SolicitanteEditarRequisicaoPage({
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="costCenter">Centro de Custo</Label>
-                  <Input
-                    id="costCenter"
+                  <CostCenterSelect
+                    companyId={companyId}
                     value={form.costCenter}
-                    onChange={(e) => setForm((f) => ({ ...f, costCenter: e.target.value }))}
-                    placeholder="Ex: CC-001"
+                    onChange={(code) => setForm((f) => ({ ...f, costCenter: code }))}
+                    required
+                    includeInactiveCodes={form.costCenter ? [form.costCenter] : []}
                   />
                 </div>
                 <div className="space-y-2">
@@ -707,19 +719,18 @@ export default function SolicitanteEditarRequisicaoPage({
 
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Itens da Requisição</CardTitle>
-                <Badge variant="outline" className="text-xs">
-                  {items.length} {items.length === 1 ? "item" : "itens"}
-                </Badge>
-              </div>
+              <CardTitle className="text-base">Itens Solicitados</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="relative">
+              <div className="relative" ref={searchContainerRef}>
                 <Input
                   placeholder="Buscar por código ou descrição..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value)
+                    setSearchOpen(true)
+                  }}
+                  onFocus={() => setSearchOpen(true)}
                   className={searchTerm ? "pr-20" : "pr-10"}
                 />
                 {searchTerm && (
@@ -728,13 +739,17 @@ export default function SolicitanteEditarRequisicaoPage({
                     variant="ghost"
                     size="icon"
                     className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-8"
-                    onClick={() => setSearchTerm("")}
+                    onClick={() => {
+                      setSearchTerm("")
+                      setSearchResults([])
+                      setSearchOpen(false)
+                    }}
                     aria-label="Limpar busca"
                   >
                     <X className="h-4 w-4" />
                   </Button>
                 )}
-                {searchTerm.length >= 2 && (
+                {searchOpen && searchTerm.length >= 2 && (
                   <div
                     className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl border border-border bg-card shadow-lg z-10"
                     role="listbox"
@@ -804,12 +819,15 @@ export default function SolicitanteEditarRequisicaoPage({
                 )}
               </div>
 
+              <p className="text-sm text-muted-foreground">
+                {items.length} item(ns) adicionado(s)
+              </p>
+
               {items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
                   <PackageSearch className="h-12 w-12 text-muted-foreground mb-4" />
                   <p className="text-sm text-muted-foreground">
-                    Nenhum item adicionado. Use a busca acima para adicionar
-                    materiais.
+                    Nenhum item adicionado. Use a busca acima para adicionar materiais.
                   </p>
                 </div>
               ) : (

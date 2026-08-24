@@ -48,7 +48,9 @@ export async function GET() {
 
     const { data: profiles, error } = await supabase
       .from("profiles")
-      .select("id, full_name, role, roles, status, created_at, profile_type, is_superadmin")
+      .select(
+        "id, full_name, role, roles, status, created_at, profile_type, is_superadmin, cost_center_id, cost_centers(id, code, description)",
+      )
       .eq("company_id", ctx.companyId)
       .eq("is_superadmin", false)
       .neq("profile_type", "supplier")
@@ -70,6 +72,11 @@ export async function GET() {
     const users = await Promise.all(
       tenantUsers.map(async (p) => {
         const { data: authUser } = await authAdmin.auth.admin.getUserById(p.id)
+        const ccRel = p.cost_centers as
+          | { id?: string; code?: string; description?: string }
+          | { id?: string; code?: string; description?: string }[]
+          | null
+        const cc = Array.isArray(ccRel) ? ccRel[0] : ccRel
         return {
           id: p.id,
           full_name: p.full_name,
@@ -79,6 +86,9 @@ export async function GET() {
           created_at: p.created_at,
           profile_type: p.profile_type,
           email: authUser?.user?.email ?? null,
+          cost_center_id: p.cost_center_id ?? null,
+          cost_center_code: cc?.code ?? null,
+          cost_center_description: cc?.description ?? null,
         }
       }),
     )

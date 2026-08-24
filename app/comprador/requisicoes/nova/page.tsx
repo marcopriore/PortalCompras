@@ -8,6 +8,10 @@ import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
 import { toast } from "sonner"
+import {
+  CostCenterSelect,
+  loadUserDefaultCostCenterCode,
+} from "@/components/ui/cost-center-select"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -121,6 +125,15 @@ export default function NovaRequisicaoPage() {
   const canCreate = hasPermission("requisition.create.buyer")
 
   React.useEffect(() => {
+    if (!userId) return
+    void loadUserDefaultCostCenterCode(userId).then((code) => {
+      if (code) {
+        setForm((f) => (f.costCenter ? f : { ...f, costCenter: code }))
+      }
+    })
+  }, [userId])
+
+  React.useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
       if (!searchContainerRef.current?.contains(event.target as Node)) {
         setSearchOpen(false)
@@ -206,6 +219,11 @@ export default function NovaRequisicaoPage() {
 
     if (!form.title.trim()) {
       setError("Título é obrigatório.")
+      return
+    }
+
+    if (!(form.costCenter ?? "").trim()) {
+      setError("Centro de custo é obrigatório.")
       return
     }
 
@@ -524,15 +542,12 @@ export default function NovaRequisicaoPage() {
                   </p>
                 </div>
               </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="costCenter">Centro de Custo</Label>
-                <Input
-                  id="costCenter"
-                  value={form.costCenter}
-                  onChange={(e) => setForm((f) => ({ ...f, costCenter: e.target.value }))}
-                  placeholder="Ex: CC-001"
-                />
-              </div>
+              <CostCenterSelect
+                companyId={companyId}
+                value={form.costCenter}
+                onChange={(code) => setForm((f) => ({ ...f, costCenter: code }))}
+                required
+              />
               <div className="flex flex-col gap-2">
                 <Label htmlFor="description">Descrição</Label>
                 <div className="relative pb-5">

@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ConfiguracoesUsuariosTab } from "@/components/comprador/configuracoes-usuarios-tab"
 import { ConfiguracoesPermissoesTab } from "@/components/comprador/configuracoes-permissoes-tab"
+import { CostCentersSettings } from "@/components/comprador/cost-centers-settings"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -3053,6 +3054,8 @@ export default function ConfiguracoesPage() {
               </CardContent>
             </Card>
           )}
+
+          {canManageCompany ? <CostCentersSettings /> : null}
 
           {canManageCompany && contractBalanceEnabled ? (
             <Card>
