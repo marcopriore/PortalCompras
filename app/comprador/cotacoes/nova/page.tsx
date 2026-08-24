@@ -7,6 +7,7 @@ import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
+import { usePermissions } from '@/lib/hooks/usePermissions'
 import { logAudit } from '@/lib/audit'
 import { SuggestSuppliersButton } from '@/components/comprador/suggest-suppliers-button'
 import { Button } from '@/components/ui/button'
@@ -121,6 +122,7 @@ export default function Page() {
 
 function NovaCotacaoContent() {
   const router = useRouter()
+  const { canWrite, loading: permLoading } = usePermissions()
 
   const searchParams = useSearchParams()
   const requisitionId = searchParams.get('requisition_id')
@@ -557,6 +559,31 @@ function NovaCotacaoContent() {
       setLoading(false)
       setLoadingAction(null)
     }
+  }
+
+  if (!userLoading && !permLoading && !canWrite("quotation.create")) {
+    return (
+      <div className="mx-auto max-w-5xl space-y-4 p-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Nova Cotação</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Você não tem permissão para criar cotações.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={() => router.push("/comprador/cotacoes")}
+            >
+              Voltar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (

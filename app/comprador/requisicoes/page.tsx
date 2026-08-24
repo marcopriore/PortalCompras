@@ -94,7 +94,7 @@ function formatDateBR(iso: string | null): string {
 export default function RequisicoesPage() {
   const router = useRouter()
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
-  const { hasPermission } = usePermissions()
+  const { hasPermission, canWrite } = usePermissions()
 
   const canViewAll =
     Boolean(isSuperAdmin) ||
@@ -215,16 +215,12 @@ export default function RequisicoesPage() {
             onImported={() => loadRequisitions()}
           />
 
-          <Button
-            onClick={() => router.push("/comprador/requisicoes/nova")}
-            disabled={!hasPermission("requisition.create.buyer")}
-            title={
-              !hasPermission("requisition.create.buyer") ? "Sem permissão" : undefined
-            }
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            + Nova Requisição
-          </Button>
+          {canWrite("requisition.create.buyer") ? (
+            <Button onClick={() => router.push("/comprador/requisicoes/nova")}>
+              <Plus className="mr-2 h-4 w-4" />
+              + Nova Requisição
+            </Button>
+          ) : null}
         </div>
       </div>
 

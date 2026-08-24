@@ -1,6 +1,7 @@
 import * as React from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { canWritePermission } from "@/lib/permissions/write-access"
 
 export type FeatureKey =
   | "quotations"
@@ -67,6 +68,7 @@ export type UsePermissionsReturn = {
   loading: boolean
   hasFeature: (feature: FeatureKey) => boolean
   hasPermission: (permission: PermissionKey) => boolean
+  canWrite: (permission: PermissionKey) => boolean
   features: Record<FeatureKey, boolean>
   permissions: Record<PermissionKey, boolean>
 }
@@ -165,7 +167,6 @@ export function usePermissions(): UsePermissionsReturn {
   const {
     userId,
     companyId,
-    roles,
     isSuperAdmin,
     isImpersonating,
     loading: userLoading,
@@ -220,8 +221,6 @@ export function usePermissions(): UsePermissionsReturn {
 
         const nextPermissions = emptyPermissions()
 
-        // Preferência: grupos + rules diretas. Fallback: role_permissions (legado / pré-migration).
-        let usedGroups = false
         const groupLinksRes = await supabase
           .from("profile_permission_groups")
           .select("group_id")
@@ -234,7 +233,6 @@ export function usePermissions(): UsePermissionsReturn {
             .filter(Boolean)
 
           if (groupIds.length > 0) {
-            usedGroups = true
             const { data: groupRules } = await supabase
               .from("permission_group_rules")
               .select("permission_key")
@@ -249,23 +247,6 @@ export function usePermissions(): UsePermissionsReturn {
               ),
             )
           }
-        }
-
-        if (!usedGroups && roles.length > 0) {
-          const { data: rolePermissionsData } = await supabase
-            .from("role_permissions")
-            .select("permission_key, enabled")
-            .eq("company_id", companyId)
-            .in("role", roles)
-
-          ;((rolePermissionsData ?? []) as {
-            permission_key: PermissionKey
-            enabled: boolean
-          }[]).forEach((row) => {
-            if (row.permission_key && row.enabled) {
-              nextPermissions[row.permission_key] = true
-            }
-          })
         }
 
         const profilePermissionsRes = await supabase
@@ -299,7 +280,7 @@ export function usePermissions(): UsePermissionsReturn {
     return () => {
       alive = false
     }
-  }, [companyId, userId, roles, isSuperAdmin, isImpersonating, userLoading])
+  }, [companyId, userId, isSuperAdmin, isImpersonating, userLoading])
 
   const hasFeature = React.useCallback(
     (feature: FeatureKey) => Boolean(features[feature]),
@@ -309,11 +290,16 @@ export function usePermissions(): UsePermissionsReturn {
     (permission: PermissionKey) => Boolean(permissions[permission]),
     [permissions],
   )
+  const canWrite = React.useCallback(
+    (permission: PermissionKey) => canWritePermission(permissions, permission),
+    [permissions],
+  )
 
   return {
     loading: userLoading || loading,
     hasFeature,
     hasPermission,
+    canWrite,
     features,
     permissions,
   }

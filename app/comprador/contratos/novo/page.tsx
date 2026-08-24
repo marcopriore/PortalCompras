@@ -7,7 +7,6 @@ import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
-import { canWrite } from "@/lib/permissions/write-access"
 import { useTenant } from "@/contexts/tenant-context"
 import { ContractImportExcelDialog } from "@/components/comprador/contract-import-excel-dialog"
 import {
@@ -235,7 +234,7 @@ export default function NovoContratoPage() {
 
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { companyId } = useTenant()
-  const { hasFeature, hasPermission, loading: permissionsLoading } = usePermissions()
+  const { hasFeature, hasPermission, canWrite, loading: permissionsLoading } = usePermissions()
 
   const [form, setForm] = React.useState<FormState>(emptyForm)
   const [suppliers, setSuppliers] = React.useState<
@@ -268,7 +267,7 @@ export default function NovoContratoPage() {
     (hasFeature("contracts") &&
       (hasPermission("nav.contracts") || hasPermission("contract.view"))) ||
     isSuperAdmin
-  const canCreateContract = canWrite(hasPermission, "contract.create") || isSuperAdmin
+  const canCreateContract = canWrite("contract.create") || isSuperAdmin
 
   React.useEffect(() => {
     const id = window.setTimeout(() => setDebouncedItemSearch(itemSearch), 300)

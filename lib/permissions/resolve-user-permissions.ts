@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { PermissionKey } from "@/lib/hooks/usePermissions"
-import { canWrite } from "@/lib/permissions/write-access"
+import { canWritePermission } from "@/lib/permissions/write-access"
 
 function applyKeys(target: Set<PermissionKey>, keys: string[]) {
   for (const key of keys) {
@@ -69,5 +69,9 @@ export function canUserWrite(
   permissions: Set<PermissionKey>,
   permission: PermissionKey,
 ): boolean {
-  return canWrite((key) => permissions.has(key), permission)
+  const record = {} as Record<PermissionKey, boolean>
+  for (const key of permissions) {
+    record[key] = true
+  }
+  return canWritePermission(record, permission)
 }

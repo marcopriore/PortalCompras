@@ -30,12 +30,10 @@ import { TableRowActions } from "@/components/ui/table-row-actions"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
-import { canWrite } from "@/lib/permissions/write-access"
 import {
   canViewAllQuotations,
   formatResponsibleName,
 } from "@/lib/quotations/ownership"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 type QuotationSupplier = { supplier_name: string | null }
 type QuotationItem = {
@@ -83,8 +81,8 @@ export default function CotacoesPage() {
   const [cloningId, setCloningId] = useState<string | null>(null)
 
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
-  const { hasFeature, hasPermission, loading: permLoading } = usePermissions()
-  const canCloneQuotation = canWrite(hasPermission, "quotation.create")
+  const { hasFeature, hasPermission, canWrite, loading: permLoading } = usePermissions()
+  const canCloneQuotation = canWrite("quotation.create")
   void hasFeature
   const viewAllQuotations = canViewAllQuotations({
     isSuperAdmin,
@@ -531,33 +529,14 @@ export default function CotacoesPage() {
             Gerencie suas solicitações de cotação
           </p>
         </div>
-        {!canWrite(hasPermission, "quotation.create") ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button
-                  asChild
-                  disabled
-                  title="Sem permissão"
-                  onClick={(e) => e.preventDefault()}
-                >
-                  <Link href="/comprador/cotacoes/nova">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Nova Cotação
-                  </Link>
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
-          </Tooltip>
-        ) : (
+        {canWrite("quotation.create") ? (
           <Button asChild>
             <Link href="/comprador/cotacoes/nova">
               <Plus className="mr-2 h-4 w-4" />
               Nova Cotação
             </Link>
           </Button>
-        )}
+        ) : null}
       </div>
 
       <div

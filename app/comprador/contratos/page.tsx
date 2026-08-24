@@ -6,7 +6,6 @@ import { format, differenceInDays, parseISO, startOfDay } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
-import { canWrite } from "@/lib/permissions/write-access"
 import { useTenant } from "@/contexts/tenant-context"
 import {
   Card,
@@ -94,7 +93,7 @@ type ContractListRow = Contract & { responsible_name?: string }
 export default function ContratosPage() {
   const router = useRouter()
   const { loading: userLoading, isSuperAdmin } = useUser()
-  const { hasFeature, hasPermission, loading: permissionsLoading } = usePermissions()
+  const { hasFeature, hasPermission, canWrite, loading: permissionsLoading } = usePermissions()
   const { companyId } = useTenant()
 
   const [contracts, setContracts] = React.useState<ContractListRow[]>([])
@@ -108,8 +107,8 @@ export default function ContratosPage() {
     (hasFeature("contracts") &&
       (hasPermission("nav.contracts") || hasPermission("contract.view"))) ||
     isSuperAdmin
-  const canCreateContract = canWrite(hasPermission, "contract.create") || isSuperAdmin
-  const canEditContract = canWrite(hasPermission, "contract.edit") || isSuperAdmin
+  const canCreateContract = canWrite("contract.create") || isSuperAdmin
+  const canEditContract = canWrite("contract.edit") || isSuperAdmin
 
   const loadContracts = React.useCallback(
     async (silent = false) => {
@@ -299,18 +298,16 @@ export default function ContratosPage() {
             ))}
           </SelectContent>
         </Select>
-        <Button
-          type="button"
-          className="gap-2 shrink-0"
-          disabled={!canCreateContract}
-          title={!canCreateContract ? "Sem permissão" : undefined}
-          onClick={() => {
-            if (canCreateContract) router.push("/comprador/contratos/novo")
-          }}
-        >
-          <Plus className="h-4 w-4" />
-          Novo Contrato
-        </Button>
+        {canCreateContract ? (
+          <Button
+            type="button"
+            className="gap-2 shrink-0"
+            onClick={() => router.push("/comprador/contratos/novo")}
+          >
+            <Plus className="h-4 w-4" />
+            Novo Contrato
+          </Button>
+        ) : null}
       </div>
 
       <Separator />

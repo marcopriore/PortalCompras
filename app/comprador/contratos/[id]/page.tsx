@@ -14,7 +14,6 @@ import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
-import { canWrite } from "@/lib/permissions/write-access"
 import { useTenant } from "@/contexts/tenant-context"
 import {
   Card,
@@ -257,7 +256,7 @@ export default function ContratoPage({
   const searchParams = useSearchParams()
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { companyId } = useTenant()
-  const { hasFeature, hasPermission, loading: permissionsLoading } = usePermissions()
+  const { hasFeature, hasPermission, canWrite, loading: permissionsLoading } = usePermissions()
   const contractBalanceEnabled = hasFeature("contract_balance") || isSuperAdmin
 
   const [contract, setContract] = React.useState<Contract | null>(null)
@@ -327,8 +326,8 @@ export default function ContratoPage({
     (hasFeature("contracts") &&
       (hasPermission("nav.contracts") || hasPermission("contract.view"))) ||
     isSuperAdmin
-  const canEditContract = canWrite(hasPermission, "contract.edit") || isSuperAdmin
-  const canCreateOrder = canWrite(hasPermission, "order.create") || isSuperAdmin
+  const canEditContract = canWrite("contract.edit") || isSuperAdmin
+  const canCreateOrder = canWrite("order.create") || isSuperAdmin
 
   function showConfirm(
     title: string,
