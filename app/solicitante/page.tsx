@@ -38,6 +38,7 @@ import { TableRowActions } from "@/components/ui/table-row-actions"
 
 type RequisitionStatus =
   | "draft"
+  | "buyer_review"
   | "pending"
   | "approved"
   | "rejected"
@@ -83,6 +84,12 @@ function getStatusMeta(status: RequisitionStatus) {
         label: "Rascunho",
         color: "bg-violet-100 text-violet-800",
         icon: FileText,
+      }
+    case "buyer_review":
+      return {
+        label: "Revisão Comprador",
+        color: "bg-indigo-100 text-indigo-800",
+        icon: Clock,
       }
     case "pending":
       return {

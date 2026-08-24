@@ -116,6 +116,8 @@ function getStatusMeta(status: string) {
   switch (status) {
     case "draft":
       return { label: "Rascunho", className: "bg-violet-100 text-violet-800" }
+    case "buyer_review":
+      return { label: "Revisão Comprador", className: "bg-indigo-100 text-indigo-800" }
     case "pending":
       return { label: "Aguardando Aprovação", className: "bg-yellow-100 text-yellow-800" }
     case "approved":

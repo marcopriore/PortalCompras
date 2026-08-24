@@ -42,6 +42,11 @@ export const COMPRADOR_NAV_RULES: NavEntryRule[] = [
   { href: "/comprador/fornecedores", permissions: ["nav.suppliers"] },
   { href: "/comprador/relatorios", permissions: ["nav.reports"] },
   {
+    href: "/comprador/catalogo",
+    permissions: ["nav.catalog"],
+    features: ["purchase_catalog"],
+  },
+  {
     href: "/comprador/configuracoes/usuarios",
     permissions: ["user.manage", "user.impersonate"],
     anyPermission: true,

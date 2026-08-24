@@ -25,6 +25,7 @@ import {
   Building2,
   ShieldCheck,
   FileSignature,
+  Store,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ValoreLogo } from "@/components/ui/valore-logo"
@@ -46,6 +47,7 @@ const buyerNavItems: NavItem[] = [
   { title: "Cotações", href: "/comprador/cotacoes", icon: FileText },
   { title: "Pedidos", href: "/comprador/pedidos", icon: ShoppingCart },
   { title: "Contratos", href: "/comprador/contratos", icon: FileSignature },
+  { title: "Catálogo", href: "/comprador/catalogo", icon: Store },
   { title: "Aprovações", href: "/comprador/aprovacoes", icon: ShieldCheck },
   { title: "Itens", href: "/comprador/itens", icon: Package },
   { title: "Fornecedores", href: "/comprador/fornecedores", icon: Building2 },
@@ -63,6 +65,7 @@ const supplierNavItems: NavItem[] = [
 
 const solicitanteNavItems: NavItem[] = [
   { title: "Requisições", href: "/solicitante", icon: ClipboardList },
+  { title: "Catálogo", href: "/solicitante/catalogo", icon: Store },
   {
     title: "Configurações",
     href: "/solicitante/configuracoes?tab=perfil",
@@ -83,7 +86,9 @@ export function Sidebar({ type }: SidebarProps) {
   const { hasPermission, hasFeature, loading: permissionsLoading } = usePermissions()
 
   const isLoading =
-    !mounted || userLoading || (type === "comprador" && permissionsLoading)
+    !mounted ||
+    userLoading ||
+    ((type === "comprador" || type === "solicitante") && permissionsLoading)
 
   useEffect(() => {
     setMounted(true)
@@ -100,12 +105,19 @@ export function Sidebar({ type }: SidebarProps) {
   )
 
   const navItems = useMemo(() => {
-    if (type === "solicitante") return solicitanteNavItems
+    if (type === "solicitante") {
+      return solicitanteNavItems.filter((item) => {
+        if (item.href === "/solicitante/catalogo") {
+          return hasFeature("purchase_catalog") && hasPermission("nav.catalog")
+        }
+        return true
+      })
+    }
     if (type === "fornecedor") return supplierNavItems
     return buyerNavItems.filter((item) =>
       canAccessCompradorNavHref(item.href, accessCtx),
     )
-  }, [type, accessCtx])
+  }, [type, accessCtx, hasFeature, hasPermission])
 
   const homeHref = useMemo(() => {
     if (type === "solicitante") return "/solicitante"

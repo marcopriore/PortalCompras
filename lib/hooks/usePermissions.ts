@@ -21,6 +21,7 @@ export type FeatureKey =
   | "contracts"
   | "contract_balance"
   | "api_integrations"
+  | "purchase_catalog"
 
 export type PermissionKey =
   | "nav.dashboard"
@@ -31,6 +32,7 @@ export type PermissionKey =
   | "nav.items"
   | "nav.suppliers"
   | "nav.reports"
+  | "nav.catalog"
   | "quotation.create"
   | "quotation.edit"
   | "quotation.cancel"
@@ -63,6 +65,8 @@ export type PermissionKey =
   | "settings.manage"
   | "portal.solicitante"
   | "view_only"
+  | "catalog.order"
+  | "catalog.buyer_review"
 
 export type UsePermissionsReturn = {
   loading: boolean
@@ -91,6 +95,7 @@ const ALL_FEATURES: FeatureKey[] = [
   "contracts",
   "contract_balance",
   "api_integrations",
+  "purchase_catalog",
 ]
 
 const ALL_PERMISSIONS: PermissionKey[] = [
@@ -102,6 +107,7 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "nav.items",
   "nav.suppliers",
   "nav.reports",
+  "nav.catalog",
   "quotation.create",
   "quotation.edit",
   "quotation.cancel",
@@ -134,6 +140,8 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "settings.manage",
   "portal.solicitante",
   "view_only",
+  "catalog.order",
+  "catalog.buyer_review",
 ]
 
 function emptyPermissions(): Record<PermissionKey, boolean> {
@@ -193,6 +201,8 @@ export function usePermissions(): UsePermissionsReturn {
         ALL_PERMISSIONS.forEach((k) => {
           p[k] = true
         })
+        // Superadmin tem todas as rules, mas nunca opera em modo somente leitura
+        p.view_only = false
 
         if (!alive) return
         setFeatures(f)

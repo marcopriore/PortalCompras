@@ -103,6 +103,7 @@ type FeatureKey =
   | 'contracts'
   | 'contract_balance'
   | 'api_integrations'
+  | 'purchase_catalog'
 
 const CORE_FEATURES: Array<{
   key: FeatureKey
@@ -232,6 +233,13 @@ const PREMIUM_FEATURES: Array<{
     description:
       'API REST inbound (ERP → Valore) e integrações HTTP outbound (Valore → ERP)',
     icon: <Plug2 className="h-5 w-5 text-violet-500" />,
+  },
+  {
+    key: 'purchase_catalog',
+    label: 'Catálogo de Compras',
+    description:
+      'Marketplace interno com itens de contratos ativos, carrinho e checkout por fornecedor',
+    icon: <ShoppingCart className="h-5 w-5 text-violet-500" />,
   },
 ]
 

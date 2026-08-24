@@ -18,6 +18,8 @@ export const WRITE_PERMISSION_KEYS: PermissionKey[] = [
   "requisition.create.buyer",
   "requisition.create.requester",
   "requisition.approve",
+  "catalog.order",
+  "catalog.buyer_review",
   "approval.requisition",
   "approval.order",
   "import.excel",

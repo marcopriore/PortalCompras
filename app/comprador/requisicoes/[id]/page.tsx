@@ -47,6 +47,7 @@ import {
 type Priority = "normal" | "urgent" | "critical"
 type RequisitionStatus =
   | "draft"
+  | "buyer_review"
   | "pending"
   | "approved"
   | "rejected"
@@ -391,6 +392,8 @@ function getStatusMeta(status: RequisitionStatus): { label: string; className: s
   switch (status) {
     case "draft":
       return { label: "Rascunho", className: "bg-violet-100 text-violet-800" }
+    case "buyer_review":
+      return { label: "Revisão Comprador", className: "bg-indigo-100 text-indigo-800" }
     case "pending":
       return { label: "Aguardando Aprovação", className: "bg-yellow-100 text-yellow-800" }
     case "approved":
@@ -543,7 +546,12 @@ export default function RequisicaoDetailPage({
 
   const statusMeta = requisition ? getStatusMeta(requisition.status) : null
 
-  const originLabel = requisition?.origin === "manual" ? "Manual" : "Integração ERP"
+  const originLabel =
+    requisition?.origin === "catalog"
+      ? "Catálogo de Compras"
+      : requisition?.origin === "manual"
+        ? "Manual"
+        : "Integração ERP"
 
   const handleGerarCotacao = () => {
     if (!requisition) return
