@@ -7,6 +7,7 @@ import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
+import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -409,76 +410,94 @@ export default function SolicitanteDetailPage({
   const [cancelling, setCancelling] = React.useState(false)
 
   const loadData = React.useCallback(async () => {
-    const supabase = createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      window.location.href = "/solicitante/login"
-      return
-    }
+    try {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        window.location.href = "/login"
+        return
+      }
 
-    // Carregar requisição (verifica que pertence ao usuário)
-    const { data: reqData } = await supabase
-      .from("requisitions")
-      .select("*")
-      .eq("id", id)
-      .eq("requester_id", user.id)
-      .single()
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("profile_type, is_superadmin, role, roles")
+        .eq("id", user.id)
+        .maybeSingle()
 
-    if (!reqData) {
+      const roles = Array.isArray(profile?.roles) ? profile.roles : []
+      const viewAll =
+        Boolean(profile?.is_superadmin) ||
+        profile?.role === "admin" ||
+        roles.includes("admin")
+
+      let reqQuery = supabase.from("requisitions").select("*").eq("id", id)
+      if (!viewAll) {
+        reqQuery = reqQuery.eq("requester_id", user.id)
+      }
+
+      const { data: reqData, error: reqError } = await reqQuery.maybeSingle()
+
+      if (reqError || !reqData) {
+        toast.error("Requisição não encontrada.")
+        router.push("/solicitante")
+        return
+      }
+
+      const req = reqData as Requisition
+      setRequisition(req)
+
+      const [historyResult, itemsResult, ordersResult, auditResult] = await Promise.all([
+        supabase
+          .from("approval_requests")
+          .select("id, status, approver_name, rejection_reason, decided_at, created_at")
+          .eq("entity_id", id)
+          .eq("flow", "requisition")
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("requisition_items")
+          .select(
+            "id, material_code, material_description, quantity, unit_of_measure, commodity_group, observations",
+          )
+          .eq("requisition_id", id)
+          .order("created_at"),
+        supabase
+          .from("purchase_orders")
+          .select(
+            "id, code, status, supplier_name, total_price, created_at, estimated_delivery_date",
+          )
+          .eq("requisition_code", req.code)
+          .order("created_at"),
+        supabase
+          .from("audit_logs")
+          .select("id, event_type, description, created_at, user_name, metadata")
+          .eq("entity", "requisitions")
+          .eq("entity_id", id)
+          .order("created_at", { ascending: true }),
+      ])
+
+      setHistory((historyResult.data as ApprovalHistory[]) ?? [])
+      setAuditLogs((auditResult.data ?? []) as AuditLog[])
+      setItems((itemsResult.data as RequisitionItem[]) ?? [])
+      setOrders((ordersResult.data as PurchaseOrderInfo[]) ?? [])
+
+      let quot: QuotationInfo | null = null
+      if (req.quotation_id) {
+        const { data: qData } = await supabase
+          .from("quotations")
+          .select("id, code, status, created_at")
+          .eq("id", req.quotation_id)
+          .maybeSingle()
+        if (qData) quot = qData as QuotationInfo
+      }
+      setQuotation(quot)
+    } catch {
+      toast.error("Não foi possível carregar a requisição.")
       router.push("/solicitante")
-      return
+    } finally {
+      setLoading(false)
     }
-
-    const req = reqData as Requisition
-    setRequisition(req)
-
-    const [historyResult, itemsResult, ordersResult, auditResult] = await Promise.all([
-      supabase
-        .from("approval_requests")
-        .select("id, status, approver_name, rejection_reason, decided_at, created_at")
-        .eq("entity_id", id)
-        .eq("flow", "requisition")
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("requisition_items")
-        .select(
-          "id, material_code, material_description, quantity, unit_of_measure, commodity_group, observations",
-        )
-        .eq("requisition_id", id)
-        .order("created_at"),
-      supabase
-        .from("purchase_orders")
-        .select(
-          "id, code, status, supplier_name, total_price, created_at, estimated_delivery_date",
-        )
-        .eq("requisition_code", req.code)
-        .order("created_at"),
-      supabase
-        .from("audit_logs")
-        .select("id, event_type, description, created_at, user_name, metadata")
-        .eq("entity", "requisitions")
-        .eq("entity_id", id)
-        .order("created_at", { ascending: true }),
-    ])
-
-    setHistory((historyResult.data as ApprovalHistory[]) ?? [])
-    setAuditLogs((auditResult.data ?? []) as AuditLog[])
-    setItems((itemsResult.data as RequisitionItem[]) ?? [])
-    setOrders((ordersResult.data as PurchaseOrderInfo[]) ?? [])
-
-    let quot: QuotationInfo | null = null
-    if (req.quotation_id) {
-      const { data: qData } = await supabase
-        .from("quotations")
-        .select("id, code, status, created_at")
-        .eq("id", req.quotation_id)
-        .single()
-      if (qData) quot = qData as QuotationInfo
-    }
-    setQuotation(quot)
-    setLoading(false)
   }, [id, router])
 
   React.useEffect(() => {

@@ -7,6 +7,7 @@ import { ptBR } from "date-fns/locale"
 import { createClient } from "@/lib/supabase/client"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -120,6 +121,12 @@ function getStatusMeta(status: RequisitionStatus) {
         color: "bg-gray-100 text-gray-700",
         icon: XCircle,
       }
+    default:
+      return {
+        label: status,
+        color: "bg-gray-100 text-gray-700",
+        icon: FileText,
+      }
   }
 }
 
@@ -228,58 +235,70 @@ function SolicitantePageInner() {
   const completed = requisitions.filter((r) => r.status === "completed").length
 
   const loadRequisitions = React.useCallback(async () => {
-    const supabase = createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-    if (!user) {
-      window.location.href = "/login"
-      return
+    try {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!user) {
+        window.location.href = "/login"
+        return
+      }
+
+      setUserId(user.id)
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("full_name, profile_type, company_id, is_superadmin, role, roles")
+        .eq("id", user.id)
+        .maybeSingle()
+
+      if (profileError || !profile) {
+        window.location.href = "/login"
+        return
+      }
+
+      const roles = Array.isArray(profile.roles) ? profile.roles : []
+      const isMaster = Boolean(profile.is_superadmin)
+      const isAdmin = profile.role === "admin" || roles.includes("admin")
+      const viewAll = isMaster || isAdmin
+
+      if (profile.profile_type !== "requester" && !viewAll) {
+        window.location.href = "/login"
+        return
+      }
+
+      setCanViewAll(viewAll)
+
+      let query = supabase
+        .from("requisitions")
+        .select(
+          "id, code, title, status, priority, created_at, needed_by, requester_id, requester_name, quotation_id",
+        )
+        .order("created_at", { ascending: false })
+
+      if (profile.company_id) {
+        query = query.eq("company_id", profile.company_id)
+      }
+
+      if (!viewAll) {
+        query = query.eq("requester_id", user.id)
+      }
+
+      const { data, error } = await query
+      if (error) {
+        toast.error("Não foi possível carregar as requisições.")
+        setRequisitions([])
+        return
+      }
+
+      setRequisitions((data as Requisition[]) ?? [])
+    } catch {
+      toast.error("Não foi possível carregar as requisições.")
+      setRequisitions([])
+    } finally {
+      setLoading(false)
     }
-
-    setUserId(user.id)
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("full_name, profile_type, company_id, is_superadmin, role, roles")
-      .eq("id", user.id)
-      .single()
-
-    if (!profile) {
-      window.location.href = "/login"
-      return
-    }
-
-    const roles = (profile.roles as string[] | null) ?? []
-    const isMaster = Boolean(profile.is_superadmin)
-    const isAdmin = profile.role === "admin" || roles.includes("admin")
-    const viewAll = isMaster || isAdmin
-
-    if (profile.profile_type !== "requester" && !viewAll) {
-      window.location.href = "/login"
-      return
-    }
-
-    setCanViewAll(viewAll)
-
-    let query = supabase
-      .from("requisitions")
-      .select(
-        "id, code, title, status, priority, created_at, needed_by, requester_id, requester_name, quotation_id",
-      )
-      .order("created_at", { ascending: false })
-
-    if (profile.company_id) {
-      query = query.eq("company_id", profile.company_id)
-    }
-
-    if (!viewAll) {
-      query = query.eq("requester_id", user.id)
-    }
-
-    const { data } = await query
-    setRequisitions((data as Requisition[]) ?? [])
-    setLoading(false)
   }, [])
 
   React.useEffect(() => {

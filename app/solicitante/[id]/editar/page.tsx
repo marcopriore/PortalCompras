@@ -158,123 +158,128 @@ export default function SolicitanteEditarRequisicaoPage({
 
     const run = async () => {
       setLoading(true)
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
-        window.location.href = "/login"
-        return
-      }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("company_id, full_name, profile_type")
-        .eq("id", user.id)
-        .single()
-
-      if (!profile || profile.profile_type !== "requester") {
-        window.location.href = "/login"
-        return
-      }
-
-      const cid = profile.company_id as string
-      setCompanyId(cid)
-      setUserId(user.id)
-      setUserName(profile.full_name ?? "")
-
-      const [rRes, iRes] = await Promise.all([
-        supabase
-          .from("requisitions")
-          .select("*")
-          .eq("id", id)
-          .eq("requester_id", user.id)
-          .single(),
-        supabase
-          .from("requisition_items")
-          .select("*")
-          .eq("requisition_id", id)
-          .order("created_at"),
-      ])
-
-      if (!alive) return
-
-      const reqData = rRes.data as {
-        id: string
-        code: string
-        title: string
-        description: string | null
-        cost_center: string | null
-        needed_by: string | null
-        priority: Priority
-        status: string
-        rejection_reason: string | null
-      } | null
-
-      if (!reqData || rRes.error) {
-        router.push("/solicitante")
-        return
-      }
-
-      if (reqData.status !== "rejected" && reqData.status !== "draft") {
-        router.push(`/solicitante/${id}`)
-        return
-      }
-
-      setCurrentStatus(reqData.status === "draft" ? "draft" : "rejected")
-      setRequisitionCode(reqData.code)
-      setRejectionReason(reqData.rejection_reason ?? null)
-      setForm({
-        title: reqData.title ?? "",
-        description: reqData.description ?? "",
-        costCenter: reqData.cost_center ?? "",
-        neededBy: formatDateForInput(reqData.needed_by),
-        priority: (reqData.priority as Priority) ?? "normal",
-      })
-
-      const reqItems = (iRes.data ?? []) as RequisitionItemRow[]
-      let itemsData: CatalogItem[] = []
-      if (reqItems.length > 0) {
-        const materialCodes = [
-          ...new Set(
-            reqItems.map((r) => r.material_code).filter((c): c is string => Boolean(c)),
-          ),
-        ]
-        if (materialCodes.length > 0) {
-          const { data } = await supabase
-            .from("items")
-            .select(
-              "id, code, short_description, long_description, unit_of_measure, commodity_group",
-            )
-            .eq("company_id", cid)
-            .in("code", materialCodes)
-          itemsData = (data ?? []) as CatalogItem[]
+      try {
+        const supabase = createClient()
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) {
+          window.location.href = "/login"
+          return
         }
 
-        const itemMap = new Map<string, CatalogItem>()
-        itemsData.forEach((item) => {
-          itemMap.set(item.code, item)
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("company_id, full_name, profile_type")
+          .eq("id", user.id)
+          .maybeSingle()
+
+        if (!profile || profile.profile_type !== "requester") {
+          window.location.href = "/login"
+          return
+        }
+
+        const cid = profile.company_id as string
+        setCompanyId(cid)
+        setUserId(user.id)
+        setUserName(profile.full_name ?? "")
+
+        const [rRes, iRes] = await Promise.all([
+          supabase
+            .from("requisitions")
+            .select("*")
+            .eq("id", id)
+            .eq("requester_id", user.id)
+            .maybeSingle(),
+          supabase
+            .from("requisition_items")
+            .select("*")
+            .eq("requisition_id", id)
+            .order("created_at"),
+        ])
+
+        if (!alive) return
+
+        const reqData = rRes.data as {
+          id: string
+          code: string
+          title: string
+          description: string | null
+          cost_center: string | null
+          needed_by: string | null
+          priority: Priority
+          status: string
+          rejection_reason: string | null
+        } | null
+
+        if (!reqData || rRes.error) {
+          router.push("/solicitante")
+          return
+        }
+
+        if (reqData.status !== "rejected" && reqData.status !== "draft") {
+          router.push(`/solicitante/${id}`)
+          return
+        }
+
+        setCurrentStatus(reqData.status === "draft" ? "draft" : "rejected")
+        setRequisitionCode(reqData.code)
+        setRejectionReason(reqData.rejection_reason ?? null)
+        setForm({
+          title: reqData.title ?? "",
+          description: reqData.description ?? "",
+          costCenter: reqData.cost_center ?? "",
+          neededBy: formatDateForInput(reqData.needed_by),
+          priority: (reqData.priority as Priority) ?? "normal",
         })
 
-        const lineItems: RequisitionLineItem[] = reqItems.map((ri) => {
-          const catalogItem = ri.material_code ? itemMap.get(ri.material_code) : null
-          return {
-            id: ri.id,
-            itemId: catalogItem?.id ?? `legacy-${ri.id}`,
-            materialCode: ri.material_code ?? "",
-            materialDescription: ri.material_description ?? "",
-            unitOfMeasure: catalogItem?.unit_of_measure ?? ri.unit_of_measure ?? "",
-            commodityGroup: catalogItem?.commodity_group ?? ri.commodity_group ?? "",
-            quantity: ri.quantity ?? 1,
-            observations: ri.observations ?? "",
+        const reqItems = (iRes.data ?? []) as RequisitionItemRow[]
+        let itemsData: CatalogItem[] = []
+        if (reqItems.length > 0) {
+          const materialCodes = [
+            ...new Set(
+              reqItems.map((r) => r.material_code).filter((c): c is string => Boolean(c)),
+            ),
+          ]
+          if (materialCodes.length > 0) {
+            const { data } = await supabase
+              .from("items")
+              .select(
+                "id, code, short_description, long_description, unit_of_measure, commodity_group",
+              )
+              .eq("company_id", cid)
+              .in("code", materialCodes)
+            itemsData = (data ?? []) as CatalogItem[]
           }
-        })
-        setItems(lineItems)
-      } else {
-        setItems([])
-      }
 
-      setLoading(false)
+          const itemMap = new Map<string, CatalogItem>()
+          itemsData.forEach((item) => {
+            itemMap.set(item.code, item)
+          })
+
+          const lineItems: RequisitionLineItem[] = reqItems.map((ri) => {
+            const catalogItem = ri.material_code ? itemMap.get(ri.material_code) : null
+            return {
+              id: ri.id,
+              itemId: catalogItem?.id ?? `legacy-${ri.id}`,
+              materialCode: ri.material_code ?? "",
+              materialDescription: ri.material_description ?? "",
+              unitOfMeasure: catalogItem?.unit_of_measure ?? ri.unit_of_measure ?? "",
+              commodityGroup: catalogItem?.commodity_group ?? ri.commodity_group ?? "",
+              quantity: ri.quantity ?? 1,
+              observations: ri.observations ?? "",
+            }
+          })
+          setItems(lineItems)
+        } else {
+          setItems([])
+        }
+      } catch {
+        toast.error("Não foi possível carregar a requisição.")
+        router.push("/solicitante")
+      } finally {
+        if (alive) setLoading(false)
+      }
     }
 
     void run()
