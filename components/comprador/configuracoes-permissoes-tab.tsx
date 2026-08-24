@@ -1,14 +1,27 @@
 "use client"
 
 import * as React from "react"
-import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
+import {
+  PERMISSION_CATALOG,
+  groupPermissionsByCategory,
+} from "@/lib/permissions/catalog"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import {
   Table,
   TableBody,
@@ -17,78 +30,24 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableRowActions } from "@/components/ui/table-row-actions"
+import {
+  ShieldCheck,
+  Save,
+  Plus,
+  Pencil,
+  Trash2,
+  LayoutDashboard,
+} from "lucide-react"
 
-import { ShieldCheck, Save, LayoutDashboard } from "lucide-react"
-
-const PERMISSIONS = [
-  { key: "nav.dashboard", label: "Dashboard", group: "Navegação" },
-  { key: "nav.requisitions", label: "Requisições", group: "Navegação" },
-  { key: "nav.quotations", label: "Cotações", group: "Navegação" },
-  { key: "nav.orders", label: "Pedidos", group: "Navegação" },
-  { key: "nav.contracts", label: "Contratos", group: "Navegação" },
-  { key: "nav.items", label: "Itens", group: "Navegação" },
-  { key: "nav.suppliers", label: "Fornecedores", group: "Navegação" },
-  { key: "nav.reports", label: "Relatórios", group: "Navegação" },
-  { key: "quotation.create", label: "Criar / Clonar Cotação", group: "Cotações" },
-  { key: "quotation.edit", label: "Editar Cotação", group: "Cotações" },
-  { key: "quotation.cancel", label: "Cancelar Cotação", group: "Cotações" },
-  { key: "quotation.equalize.view", label: "Visualizar Equalização", group: "Cotações" },
-  { key: "quotation.equalize.select", label: "Ações na Equalização", group: "Cotações" },
-  { key: "quotation.view_all", label: "Ver Cotações de Todos (senão, só as próprias)", group: "Cotações" },
-  { key: "quotation.delegate", label: "Delegar Cotação (de outros responsáveis)", group: "Cotações" },
-  { key: "order.create", label: "Criar Pedido", group: "Pedidos" },
-  { key: "order.edit", label: "Editar Qualquer Pedido", group: "Pedidos" },
-  { key: "order.edit_own", label: "Editar Próprios Pedidos", group: "Pedidos" },
-  { key: "order.view_all", label: "Ver Pedidos de Todos", group: "Pedidos" },
-  { key: "order.delegate", label: "Delegar Pedido (de outros responsáveis)", group: "Pedidos" },
-  { key: "contract.view", label: "Visualizar Contratos", group: "Contratos" },
-  { key: "contract.create", label: "Criar Contratos", group: "Contratos" },
-  { key: "contract.edit", label: "Editar Contratos", group: "Contratos" },
-  { key: "requisition.create.buyer", label: "Criar Requisição (Comprador)", group: "Requisições" },
-  { key: "requisition.create.requester", label: "Criar Requisição (Solicitante)", group: "Requisições" },
-  { key: "requisition.approve", label: "Aprovar Requisições", group: "Requisições" },
-  { key: "requisition.view_all", label: "Ver Requisições de Todos", group: "Requisições" },
-  { key: "approval.requisition", label: "Fluxo Aprovação Requisição", group: "Aprovações" },
-  { key: "approval.order", label: "Fluxo Aprovação Pedido", group: "Aprovações" },
-  { key: "export.excel", label: "Exportar Excel", group: "Dados" },
-  { key: "import.excel", label: "Importar Excel", group: "Dados" },
-  { key: "supplier.create", label: "Cadastrar Fornecedor", group: "Cadastros" },
-  { key: "supplier.edit", label: "Editar Fornecedor", group: "Cadastros" },
-  { key: "item.create", label: "Cadastrar Item", group: "Cadastros" },
-  { key: "item.edit", label: "Editar Item", group: "Cadastros" },
-  { key: "user.manage", label: "Gerenciar Usuários", group: "Administração" },
-  { key: "settings.manage", label: "Gerenciar Configurações da Empresa", group: "Administração" },
-  { key: "portal.solicitante", label: "Acessar Portal Solicitante", group: "Administração" },
-  { key: "view_only", label: "Somente Visualização", group: "Geral" },
-] as const
-
-type PermissionKey = (typeof PERMISSIONS)[number]["key"]
-
-// Admin é exibido separadamente com comportamento especial
-const ADMIN_ROLE = { value: "admin", label: "Administrador" } as const
-
-const ROLES = [
-  { value: "buyer", label: "Comprador" },
-  { value: "manager", label: "Gestor de Compras" },
-  { value: "approver_requisition", label: "Aprov. Requisição" },
-  { value: "approver_order", label: "Aprov. Pedido" },
-  { value: "requester", label: "Requisitante" },
-] as const
-
-const ALL_ROLES = [ADMIN_ROLE, ...ROLES] as const
-type RoleValue = (typeof ALL_ROLES)[number]["value"]
-
-type PermissionRowState = Record<RoleValue, Record<PermissionKey, boolean>>
-
-const createInitialPermissionsState = (): PermissionRowState => {
-  const state = {} as PermissionRowState
-  ALL_ROLES.forEach((r) => {
-    state[r.value] = {} as Record<PermissionKey, boolean>
-    PERMISSIONS.forEach((p) => {
-      state[r.value][p.key as PermissionKey] = false
-    })
-  })
-  return state
+type PermissionGroup = {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  is_system: boolean
+  source_role: string | null
+  permission_keys?: string[]
 }
 
 export function ConfiguracoesPermissoesTab() {
@@ -96,178 +55,187 @@ export function ConfiguracoesPermissoesTab() {
 
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
-
-  const [permissionsState, setPermissionsState] = React.useState<PermissionRowState>(
-    createInitialPermissionsState(),
-  )
+  const [groups, setGroups] = React.useState<PermissionGroup[]>([])
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null)
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
-  React.useEffect(() => {
-    if (!userLoading) setLoading(false)
-  }, [userLoading])
-
-  React.useEffect(() => {
-    let alive = true
-
-    const loadPermissions = async () => {
-      if (userLoading || loading) return
-      if (!companyId) return
-
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("role_permissions")
-        .select("*")
-        .eq("company_id", companyId)
-
-      if (!alive) return
-
-      const rows = (data ?? []) as { role: string; permission_key: string; enabled: boolean }[]
-      const rolesWithData = new Set(rows.map((r) => r.role))
-      const newRoles = ["approver_requisition", "approver_order", "requester"] as const
-
-      for (const role of newRoles) {
-        if (!rolesWithData.has(role)) {
-          for (const p of PERMISSIONS) {
-            await supabase
-              .from("role_permissions")
-              .upsert(
-                {
-                  company_id: companyId,
-                  role,
-                  permission_key: p.key,
-                  enabled: false,
-                },
-                { onConflict: "company_id,role,permission_key" },
-              )
-          }
-          if (!alive) return
-        }
-      }
-
-      // Garante chaves novas da matriz (ex.: contratos) para todos os perfis
-      const existingKeys = new Set(rows.map((r) => `${r.role}::${r.permission_key}`))
-      for (const role of ALL_ROLES) {
-        for (const p of PERMISSIONS) {
-          const key = `${role.value}::${p.key}`
-          if (existingKeys.has(key)) continue
-          await supabase.from("role_permissions").upsert(
-            {
-              company_id: companyId,
-              role: role.value,
-              permission_key: p.key,
-              enabled: role.value === "admin",
-            },
-            { onConflict: "company_id,role,permission_key" },
-          )
-        }
-      }
-      if (!alive) return
-
-      const { data: dataAfter } = await supabase
-        .from("role_permissions")
-        .select("*")
-        .eq("company_id", companyId)
-
-      if (!alive) return
-
-      const next = createInitialPermissionsState()
-      ;((dataAfter ?? []) as any[]).forEach((row) => {
-        const role = row.role as RoleValue
-        const permissionKey = row.permission_key as PermissionKey
-        const enabled = Boolean(row.enabled)
-        if (next[role] && next[role][permissionKey] != null) {
-          next[role][permissionKey] = enabled
-        }
-      })
-
-      setPermissionsState(next)
-    }
-
-    loadPermissions()
-    return () => {
-      alive = false
-    }
-  }, [companyId, userLoading, loading, isSuperAdmin])
+  const [editorOpen, setEditorOpen] = React.useState(false)
+  const [editing, setEditing] = React.useState<PermissionGroup | null>(null)
+  const [formName, setFormName] = React.useState("")
+  const [formDescription, setFormDescription] = React.useState("")
+  const [selectedKeys, setSelectedKeys] = React.useState<Set<string>>(new Set())
 
   const canManage = React.useMemo(() => {
     if (isSuperAdmin) return true
     return hasRole("admin")
   }, [isSuperAdmin, hasRole])
 
-  const groups = React.useMemo(() => {
-    const map = new Map<string, typeof PERMISSIONS>()
-    PERMISSIONS.forEach((p) => {
-      const key = p.group
-      if (!map.has(key)) map.set(key, [] as any)
-      ;(map.get(key) as any).push(p)
-    })
-    return Array.from(map.entries())
+  const catalogByGroup = React.useMemo(
+    () => groupPermissionsByCategory(PERMISSION_CATALOG),
+    [],
+  )
+
+  const loadGroups = React.useCallback(async () => {
+    setLoading(true)
+    setErrorMessage(null)
+    try {
+      const res = await fetch("/api/admin/permission-groups?withRules=1", {
+        cache: "no-store",
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setErrorMessage(data.error ?? "Não foi possível carregar os grupos.")
+        return
+      }
+      setGroups((data.groups ?? []) as PermissionGroup[])
+    } catch {
+      setErrorMessage("Não foi possível carregar os grupos.")
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  const handleToggle = (role: RoleValue, key: PermissionKey, enabled: boolean) => {
-    setPermissionsState((prev) => ({
-      ...prev,
-      [role]: {
-        ...prev[role],
-        [key]: enabled,
-      },
-    }))
+  React.useEffect(() => {
+    if (userLoading || !canManage) return
+    void loadGroups()
+  }, [userLoading, canManage, loadGroups])
+
+  const openCreate = () => {
+    setEditing(null)
+    setFormName("")
+    setFormDescription("")
+    setSelectedKeys(new Set())
+    setEditorOpen(true)
   }
 
-  const handleSave = async () => {
-    if (!companyId) return
+  const openEdit = async (group: PermissionGroup) => {
+    setEditing(group)
+    setFormName(group.name)
+    setFormDescription(group.description ?? "")
+    setSelectedKeys(new Set(group.permission_keys ?? []))
+    setEditorOpen(true)
+
+    // Garante rules atualizadas do servidor
+    try {
+      const res = await fetch(`/api/admin/permission-groups?id=${group.id}`, {
+        cache: "no-store",
+      })
+      const data = await res.json()
+      if (res.ok && data.permissions) {
+        setSelectedKeys(
+          new Set(
+            Object.entries(data.permissions as Record<string, boolean>)
+              .filter(([, enabled]) => enabled)
+              .map(([key]) => key),
+          ),
+        )
+      }
+    } catch {
+      /* mantém keys da listagem */
+    }
+  }
+
+  const toggleKey = (key: string, enabled: boolean) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev)
+      if (enabled) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }
+
+  const handleSaveGroup = async () => {
+    if (!companyId || !formName.trim()) return
     setSaving(true)
     setSuccessMessage(null)
+    setErrorMessage(null)
 
     try {
-      const supabase = createClient()
-      const payloads: Array<{
-        company_id: string
-        role: RoleValue
-        permission_key: PermissionKey
-        enabled: boolean
-      }> = []
-
-      ALL_ROLES.forEach((r) => {
-        PERMISSIONS.forEach((p) => {
-          payloads.push({
-            company_id: companyId,
-            role: r.value,
-            permission_key: p.key,
-            enabled: permissionsState[r.value][p.key],
-          })
+      const permissionKeys = [...selectedKeys]
+      if (editing) {
+        const res = await fetch("/api/admin/permission-groups", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editing.id,
+            name: formName.trim(),
+            description: formDescription.trim() || null,
+            permissionKeys,
+          }),
         })
-      })
+        const data = await res.json()
+        if (!res.ok) {
+          setErrorMessage(data.error ?? "Erro ao salvar grupo.")
+          return
+        }
+        await logAudit({
+          eventType: "tenant.updated",
+          description: `Grupo de permissões "${formName.trim()}" atualizado`,
+          companyId,
+          userId,
+          entity: "permission_groups",
+          entityId: editing.id,
+        })
+        setSuccessMessage("Grupo atualizado com sucesso.")
+      } else {
+        const res = await fetch("/api/admin/permission-groups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: formName.trim(),
+            description: formDescription.trim() || undefined,
+            permissionKeys,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          setErrorMessage(data.error ?? "Erro ao criar grupo.")
+          return
+        }
+        await logAudit({
+          eventType: "tenant.updated",
+          description: `Grupo de permissões "${formName.trim()}" criado`,
+          companyId,
+          userId,
+          entity: "permission_groups",
+          entityId: data.group?.id,
+        })
+        setSuccessMessage("Grupo criado com sucesso.")
+      }
 
-      await Promise.all(
-        payloads.map((pl) =>
-          supabase
-            .from("role_permissions")
-            .upsert(
-              {
-                company_id: pl.company_id,
-                role: pl.role,
-                permission_key: pl.permission_key,
-                enabled: pl.enabled,
-              },
-              { onConflict: "company_id,role,permission_key" },
-            ),
-        ),
-      )
-
-      await logAudit({
-        eventType: "tenant.updated",
-        description: "Permissões de perfis de acesso atualizadas",
-        companyId,
-        userId,
-        entity: "role_permissions",
-        entityId: companyId,
-      })
-
-      setSuccessMessage("Permissões atualizadas com sucesso.")
+      setEditorOpen(false)
+      await loadGroups()
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleDelete = async (group: PermissionGroup) => {
+    if (group.is_system) return
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(`Excluir o grupo "${group.name}"?`)) return
+
+    setErrorMessage(null)
+    const res = await fetch(`/api/admin/permission-groups?id=${group.id}`, {
+      method: "DELETE",
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      setErrorMessage(data.error ?? "Erro ao excluir grupo.")
+      return
+    }
+    if (companyId) {
+      await logAudit({
+        eventType: "tenant.updated",
+        description: `Grupo de permissões "${group.name}" excluído`,
+        companyId,
+        userId,
+        entity: "permission_groups",
+        entityId: group.id,
+      })
+    }
+    setSuccessMessage("Grupo excluído.")
+    await loadGroups()
   }
 
   if (userLoading) {
@@ -282,13 +250,13 @@ export function ConfiguracoesPermissoesTab() {
     return (
       <div className="space-y-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Perfis de Acesso</h1>
+          <h1 className="text-2xl font-bold text-foreground">Grupos de Perfis</h1>
           <p className="text-muted-foreground">
-            Configure as permissões de cada perfil de usuário
+            Pacotes de regras (rules) atribuíveis aos usuários
           </p>
         </div>
         <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
-          Apenas administradores podem gerenciar permissões de acesso.
+          Apenas administradores podem gerenciar grupos de permissões.
         </div>
       </div>
     )
@@ -296,11 +264,18 @@ export function ConfiguracoesPermissoesTab() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Perfis de Acesso</h1>
-        <p className="text-muted-foreground">
-          Configure as permissões de cada perfil de usuário
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Grupos de Perfis</h1>
+          <p className="text-muted-foreground">
+            Pacotes de regras reutilizáveis. Atribua grupos e/ou rules individuais
+            em Usuários → Permissões.
+          </p>
+        </div>
+        <Button type="button" onClick={openCreate}>
+          <Plus className="mr-2 h-4 w-4" />
+          Novo Grupo
+        </Button>
       </div>
 
       {successMessage && (
@@ -308,80 +283,188 @@ export function ConfiguracoesPermissoesTab() {
           {successMessage}
         </div>
       )}
+      {errorMessage && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          {errorMessage}
+        </div>
+      )}
 
       <Card>
         <CardContent className="pt-6">
-          <div className="flex items-center justify-between mb-4 gap-3">
-            <Badge variant="outline">Matriz de Permissões</Badge>
-            <Button onClick={handleSave} disabled={saving}>
-              <Save className="mr-2 h-4 w-4" />
-              {saving ? "Salvando..." : "Salvar Alterações"}
-            </Button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead> </TableHead>
-                  {ALL_ROLES.map((r) => (
-                    <TableHead key={r.value} className="text-center">
-                      <div className="flex flex-col items-center gap-0.5">
-                        <span>{r.label}</span>
-                        {r.value === "admin" && (
-                          <span className="text-[10px] text-primary font-normal">
-                            (editável pelo Master)
-                          </span>
+          {loading ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              Carregando grupos...
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              Nenhum grupo cadastrado. Crie um grupo ou execute a migration 050
+              para migrar os perfis legados.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Grupo</TableHead>
+                    <TableHead>Código</TableHead>
+                    <TableHead>Rules</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {groups.map((group) => (
+                    <TableRow key={group.id}>
+                      <TableCell>
+                        <div className="font-medium">{group.name}</div>
+                        {group.description ? (
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {group.description}
+                          </div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {group.code}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="font-normal">
+                          {(group.permission_keys ?? []).length} rules
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {group.is_system ? (
+                          <Badge variant="outline">Sistema</Badge>
+                        ) : (
+                          <Badge variant="secondary">Customizado</Badge>
                         )}
-                      </div>
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {groups.map(([groupName, groupPermissions]) => (
-                  <React.Fragment key={groupName}>
-                    <TableRow>
-                      <TableCell colSpan={1 + ALL_ROLES.length}>
-                        <div className="bg-muted/50 font-semibold text-xs uppercase text-muted-foreground rounded-md px-2 py-1 flex items-center gap-1.5">
-                          {groupName === "Navegação" && <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />}
-                          {groupName === "Aprovações" && <ShieldCheck className="h-3.5 w-3.5 shrink-0" />}
-                          {groupName}
-                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <TableRowActions
+                          actions={[
+                            {
+                              label: "Editar Rules",
+                              icon: Pencil,
+                              onClick: () => void openEdit(group),
+                            },
+                            {
+                              label: "Excluir",
+                              icon: Trash2,
+                              destructive: true,
+                              hidden: group.is_system,
+                              onClick: () => void handleDelete(group),
+                            },
+                          ]}
+                        />
                       </TableCell>
                     </TableRow>
-
-                    {(groupPermissions as typeof PERMISSIONS).map((perm) => (
-                      <TableRow key={perm.key}>
-                        <TableCell className="font-medium">{perm.label}</TableCell>
-                        {ALL_ROLES.map((role) => {
-                          const checked = permissionsState[role.value][perm.key]
-                          const isAdmin = role.value === "admin"
-                          // Admin só pode ser editado pelo SuperAdmin/Master
-                          const isDisabled = saving || (isAdmin && !isSuperAdmin)
-                          return (
-                            <TableCell key={role.value} className="text-center">
-                              <Checkbox
-                                checked={checked}
-                                onCheckedChange={(val) =>
-                                  handleToggle(role.value, perm.key, val === true)
-                                }
-                                disabled={isDisabled}
-                                className={isAdmin ? "border-primary" : ""}
-                              />
-                            </TableCell>
-                          )
-                        })}
-                      </TableRow>
-                    ))}
-                  </React.Fragment>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editing ? `Editar: ${editing.name}` : "Novo Grupo de Perfis"}
+            </DialogTitle>
+            <DialogDescription>
+              Selecione as rules (permissões atômicas) deste pacote.
+              {editing?.is_system
+                ? " Grupos de sistema podem ter as rules ajustadas."
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            <div>
+              <Label>Nome *</Label>
+              <Input
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder="Ex: Comprador avançado"
+                disabled={Boolean(editing?.is_system)}
+              />
+              {editing?.is_system ? (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Nome de grupos de sistema é fixo (código: {editing.code}).
+                </p>
+              ) : null}
+            </div>
+            {!editing?.is_system ? (
+              <div>
+                <Label>Descrição</Label>
+                <Input
+                  value={formDescription}
+                  onChange={(e) => setFormDescription(e.target.value)}
+                  placeholder="Opcional"
+                />
+              </div>
+            ) : null}
+
+            <div className="rounded-lg border border-border divide-y divide-border">
+              {[...catalogByGroup.entries()].map(([category, items]) => (
+                <div key={category} className="p-3">
+                  <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
+                    {category === "Navegação" ? (
+                      <LayoutDashboard className="h-3.5 w-3.5" />
+                    ) : null}
+                    {category === "Administração" ? (
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                    ) : null}
+                    {category}
+                  </div>
+                  <div className="space-y-2">
+                    {items.map((item) => (
+                      <label
+                        key={item.key}
+                        className="flex items-start gap-3 text-sm cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={selectedKeys.has(item.key)}
+                          onCheckedChange={(v) =>
+                            toggleKey(item.key, v === true)
+                          }
+                          disabled={saving}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <span className="font-medium">{item.label}</span>
+                          <span className="block text-xs text-muted-foreground font-mono">
+                            {item.key}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditorOpen(false)}
+              disabled={saving}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSaveGroup()}
+              disabled={saving || !formName.trim()}
+            >
+              <Save className="mr-2 h-4 w-4" />
+              {saving ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
-

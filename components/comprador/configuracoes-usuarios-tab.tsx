@@ -46,11 +46,12 @@ import {
   KeyRound,
   CheckCircle2,
   UserCog,
+  ShieldCheck,
 } from 'lucide-react'
-import { Checkbox } from '@/components/ui/checkbox'
 import MultiSelectFilter from '@/components/ui/multi-select-filter'
 import type { PasswordPolicy } from "@/lib/settings/password-policy-registry"
 import { generatePasswordForPolicy } from "@/lib/auth/generate-password"
+import { UserPermissionsDialog } from '@/components/comprador/user-permissions-dialog'
 
 const ROLES = [
   { value: 'admin', label: 'Administrador' },
@@ -238,12 +239,12 @@ export function ConfiguracoesUsuariosTab({
   const [editForm, setEditForm] = useState<{
     roles: string[]
     status: string
-    canImpersonate: boolean
   }>({
     roles: ['buyer'],
     status: 'active',
-    canImpersonate: false,
   })
+  const [permissionsOpen, setPermissionsOpen] = useState(false)
+  const [permissionsUser, setPermissionsUser] = useState<Profile | null>(null)
   const [actingAsUserId, setActingAsUserId] = React.useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [importStep, setImportStep] = useState<
@@ -341,18 +342,7 @@ export function ConfiguracoesUsuariosTab({
   const currentIsAdmin =
     !impersonateOnly && (isSuperAdmin || hasRole('admin') || hasRole('manager'))
 
-  const canManageImpersonatePermission = isSuperAdmin || hasRole('admin')
-
-  async function loadUserImpersonatePermission(profileId: string): Promise<boolean> {
-    try {
-      const res = await fetch(`/api/admin/profile-permissions?userId=${profileId}`)
-      const data = await res.json()
-      if (!res.ok) return false
-      return Boolean(data.canImpersonate)
-    } catch {
-      return false
-    }
-  }
+  const canManageUserPermissions = isSuperAdmin || hasRole('admin')
 
   async function handleActAs(profile: Profile) {
     if (profile.id === userId) return
@@ -478,18 +468,6 @@ export function ConfiguracoesUsuariosTab({
 
       if (data && data[0]) {
         const updated = data[0]
-
-        if (canManageImpersonatePermission) {
-          await fetch('/api/admin/profile-permissions', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: selectedProfile.id,
-              permissionKey: 'user.impersonate',
-              enabled: editForm.canImpersonate,
-            }),
-          })
-        }
 
         await logAudit({
           eventType: 'user.updated',
@@ -1116,20 +1094,33 @@ export function ConfiguracoesUsuariosTab({
                         >
                           <KeyRound className="w-4 h-4" />
                         </Button>
+                        {canManageUserPermissions ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => {
+                              setPermissionsUser(profile)
+                              setPermissionsOpen(true)
+                            }}
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            Permissões
+                          </Button>
+                        ) : null}
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           className="gap-1.5"
-                          onClick={async () => {
+                          onClick={() => {
                             setSelectedProfile(profile)
-                            const canAct = await loadUserImpersonatePermission(profile.id)
                             setEditForm({
                               roles:
                                 profile.roles ??
                                 (profile.role ? [profile.role] : ['buyer']),
                               status: profile.status,
-                              canImpersonate: canAct,
                             })
                             setEditOpen(true)
                           }}
@@ -1303,25 +1294,12 @@ export function ConfiguracoesUsuariosTab({
                 <option value="inactive">Inativo</option>
               </select>
             </div>
-            {canManageImpersonatePermission && selectedProfile?.id !== userId ? (
-              <div className="flex items-start gap-3 rounded-md border border-border p-3">
-                <Checkbox
-                  id="can-impersonate"
-                  checked={editForm.canImpersonate}
-                  onCheckedChange={(checked) =>
-                    setEditForm((f) => ({ ...f, canImpersonate: checked === true }))
-                  }
-                />
-                <div className="space-y-1">
-                  <Label htmlFor="can-impersonate" className="cursor-pointer">
-                    Permitir &quot;Agir como&quot;
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Libera este usuário a operar em nome de outros usuários do tenant.
-                    Permissão individual — não vinculada ao perfil Comprador.
-                  </p>
-                </div>
-              </div>
+            {canManageUserPermissions ? (
+              <p className="text-xs text-muted-foreground">
+                Para grupos e rules (incl. Agir como), use o botão{" "}
+                <span className="font-medium text-foreground">Permissões</span>{" "}
+                na listagem.
+              </p>
             ) : null}
           </div>
           <DialogFooter className="mt-4">
@@ -1632,6 +1610,22 @@ export function ConfiguracoesUsuariosTab({
           )}
         </DialogContent>
       </Dialog>
+
+      {permissionsUser ? (
+        <UserPermissionsDialog
+          open={permissionsOpen}
+          onOpenChange={(open) => {
+            setPermissionsOpen(open)
+            if (!open) setPermissionsUser(null)
+          }}
+          userId={permissionsUser.id}
+          userName={permissionsUser.full_name}
+          companyId={companyId}
+          onSaved={() => {
+            toast.success('Permissões atualizadas')
+          }}
+        />
+      ) : null}
     </div>
   )
 }

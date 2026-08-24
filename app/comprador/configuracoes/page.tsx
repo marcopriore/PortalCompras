@@ -1833,7 +1833,7 @@ export default function ConfiguracoesPage() {
             ["termos", "Termos de Fornecimento", FileText],
             ...(canManageCompany ? [
               ["usuarios", "Usuários", Users],
-              ["permissoes", "Perfis de Acesso", ShieldCheck],
+              ["permissoes", "Grupos de Perfis", ShieldCheck],
               ["integracoes", "Integrações", Zap],
             ] as const : canAccessUsersTab ? [["usuarios", "Usuários", Users]] as const : []),
           ] as const)

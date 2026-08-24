@@ -1,7 +1,6 @@
 import * as React from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
-import { IMPERSONATION_PERMISSION } from "@/lib/impersonation/constants"
 
 export type FeatureKey =
   | "quotations"
@@ -135,6 +134,33 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "view_only",
 ]
 
+function emptyPermissions(): Record<PermissionKey, boolean> {
+  const next = {} as Record<PermissionKey, boolean>
+  ALL_PERMISSIONS.forEach((k) => {
+    next[k] = false
+  })
+  return next
+}
+
+function emptyFeatures(): Record<FeatureKey, boolean> {
+  const next = {} as Record<FeatureKey, boolean>
+  ALL_FEATURES.forEach((k) => {
+    next[k] = false
+  })
+  return next
+}
+
+function applyPermissionKeys(
+  target: Record<PermissionKey, boolean>,
+  keys: string[],
+) {
+  for (const key of keys) {
+    if (key in target) {
+      target[key as PermissionKey] = true
+    }
+  }
+}
+
 export function usePermissions(): UsePermissionsReturn {
   const {
     userId,
@@ -158,8 +184,8 @@ export function usePermissions(): UsePermissionsReturn {
 
     const load = async () => {
       if (isSuperAdmin && !isImpersonating) {
-        const f: Record<FeatureKey, boolean> = {} as Record<FeatureKey, boolean>
-        const p: Record<PermissionKey, boolean> = {} as Record<PermissionKey, boolean>
+        const f = emptyFeatures()
+        const p = emptyPermissions()
         ALL_FEATURES.forEach((k) => {
           f[k] = true
         })
@@ -176,79 +202,85 @@ export function usePermissions(): UsePermissionsReturn {
 
       if (!companyId || !userId) return
 
-      if (roles.length === 0) {
-        const nextPermissions = {} as Record<PermissionKey, boolean>
-        ALL_PERMISSIONS.forEach((k) => {
-          nextPermissions[k] = false
-        })
-        const nextFeatures = {} as Record<FeatureKey, boolean>
-        ALL_FEATURES.forEach((k) => {
-          nextFeatures[k] = false
-        })
-        if (!alive) return
-        setFeatures(nextFeatures)
-        setPermissions(nextPermissions)
-        setLoading(false)
-        return
-      }
-
       const supabase = createClient()
 
       try {
-        const [tenantFeaturesRes, rolePermissionsRes, profilePermissionsRes] =
-          await Promise.all([
-          supabase
-            .from("tenant_features")
-            .select("feature_key, enabled")
-            .eq("company_id", companyId),
-          supabase
-            .from("role_permissions")
-            .select("permission_key, enabled")
-            .eq("company_id", companyId)
-            .in("role", roles),
-          supabase
-            .from("profile_permissions")
-            .select("permission_key, enabled")
-            .eq("company_id", companyId)
-            .eq("user_id", userId)
-            .eq("enabled", true),
-        ])
+        const tenantFeaturesRes = await supabase
+          .from("tenant_features")
+          .select("feature_key, enabled")
+          .eq("company_id", companyId)
 
-        const tenantFeaturesData = (tenantFeaturesRes.data ?? []) as {
+        const nextFeatures = emptyFeatures()
+        ;((tenantFeaturesRes.data ?? []) as {
           feature_key: FeatureKey
           enabled: boolean
-        }[]
-
-        const rolePermissionsData = ((rolePermissionsRes.data ?? []) as {
-          permission_key: PermissionKey
-          enabled: boolean
-        }[])
-
-        const nextFeatures = {} as Record<FeatureKey, boolean>
-        ALL_FEATURES.forEach((k) => {
-          nextFeatures[k] = false
-        })
-        tenantFeaturesData.forEach((row) => {
+        }[]).forEach((row) => {
           if (row.feature_key) nextFeatures[row.feature_key] = Boolean(row.enabled)
         })
 
-        const nextPermissions = {} as Record<PermissionKey, boolean>
-        ALL_PERMISSIONS.forEach((k) => {
-          nextPermissions[k] = false
-        })
-        rolePermissionsData.forEach((row) => {
-          if (row.permission_key && row.enabled) {
-            nextPermissions[row.permission_key] = true
-          }
-        })
+        const nextPermissions = emptyPermissions()
 
-        const profilePermissionsData = (profilePermissionsRes.data ?? []) as {
+        // Preferência: grupos + rules diretas. Fallback: role_permissions (legado / pré-migration).
+        let usedGroups = false
+        const groupLinksRes = await supabase
+          .from("profile_permission_groups")
+          .select("group_id")
+          .eq("company_id", companyId)
+          .eq("user_id", userId)
+
+        if (!groupLinksRes.error) {
+          const groupIds = ((groupLinksRes.data ?? []) as { group_id: string }[])
+            .map((r) => r.group_id)
+            .filter(Boolean)
+
+          if (groupIds.length > 0) {
+            usedGroups = true
+            const { data: groupRules } = await supabase
+              .from("permission_group_rules")
+              .select("permission_key")
+              .eq("company_id", companyId)
+              .in("group_id", groupIds)
+              .eq("enabled", true)
+
+            applyPermissionKeys(
+              nextPermissions,
+              ((groupRules ?? []) as { permission_key: string }[]).map(
+                (r) => r.permission_key,
+              ),
+            )
+          }
+        }
+
+        if (!usedGroups && roles.length > 0) {
+          const { data: rolePermissionsData } = await supabase
+            .from("role_permissions")
+            .select("permission_key, enabled")
+            .eq("company_id", companyId)
+            .in("role", roles)
+
+          ;((rolePermissionsData ?? []) as {
+            permission_key: PermissionKey
+            enabled: boolean
+          }[]).forEach((row) => {
+            if (row.permission_key && row.enabled) {
+              nextPermissions[row.permission_key] = true
+            }
+          })
+        }
+
+        const profilePermissionsRes = await supabase
+          .from("profile_permissions")
+          .select("permission_key, enabled")
+          .eq("company_id", companyId)
+          .eq("user_id", userId)
+          .eq("enabled", true)
+
+        ;((profilePermissionsRes.data ?? []) as {
           permission_key: PermissionKey
           enabled: boolean
-        }[]
-        profilePermissionsData.forEach((row) => {
-          if (row.permission_key === IMPERSONATION_PERMISSION && row.enabled) {
-            nextPermissions["user.impersonate"] = true
+        }[]).forEach((row) => {
+          if (row.permission_key && row.enabled) {
+            nextPermissions[row.permission_key] = true
           }
         })
 
@@ -288,4 +320,3 @@ export function usePermissions(): UsePermissionsReturn {
 }
 
 export default usePermissions
-

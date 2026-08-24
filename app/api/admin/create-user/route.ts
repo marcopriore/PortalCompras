@@ -86,6 +86,24 @@ export async function POST(request: Request) {
       )
     }
 
+    // Atribuir grupos de permissão alinhados aos papéis (se existirem no tenant)
+    const { data: matchingGroups } = await supabaseAdmin
+      .from('permission_groups')
+      .select('id, code')
+      .eq('company_id', companyId)
+      .in('code', rolesArray)
+
+    if (matchingGroups && matchingGroups.length > 0) {
+      await supabaseAdmin.from('profile_permission_groups').upsert(
+        matchingGroups.map((g) => ({
+          company_id: companyId,
+          user_id: authData.user.id,
+          group_id: g.id,
+        })),
+        { onConflict: 'company_id,user_id,group_id' },
+      )
+    }
+
     await applyPasswordChange(
       supabaseAdmin,
       authData.user.id,
