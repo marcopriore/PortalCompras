@@ -83,6 +83,7 @@ const SCOPE_LABELS: Record<string, string> = {
   "contracts:read": "Contratos — leitura",
   "approvals:read": "Aprovações — leitura",
   "approvals:write": "Aprovações — decisão (aprovar/reprovar)",
+  "reports:read": "Relatórios — Saving e Spend",
 }
 
 const ACTION_LABELS: Record<string, string> = {

@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.95
+## Versão atual: v2.19.96
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -654,7 +654,7 @@ Query: `round_number`, `supplier_code`, `status`. Status default: todos (`invite
 | **Aprovações** | `GET /approvals`, `GET /approvals/{id}`, `POST .../approve`, `POST .../reject` | ✅ v2.19.93 — escopos `approvals:read\|write`; escrita só `flow=requisition` |
 | **Anexos** | `GET/POST /requisitions/{id}/attachments` | ✅ v2.19.94 — escopos `requisitions:read\|write`; multipart; URL assinada 1h |
 | **Cotações** | `POST /quotations/{id}/invites` | ✅ v2.19.95 — escopo `quotations:write`; convite por `supplier_code` |
-| Relatórios | GET saving/spend JSON | ⬜ |
+| **Relatórios** | `GET /reports/saving`, `GET /reports/spend` | ✅ v2.19.96 — escopo `reports:read`; feature `reports` |
 
 ### 10.6 O que NÃO expor
 

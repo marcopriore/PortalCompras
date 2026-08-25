@@ -470,6 +470,59 @@ export const API_DOC_ENDPOINTS: ApiDocEndpoint[] = [
     requestExample: `{ "reason": "Fora do orçamento", "decided_by_name": "ERP Integrador" }`,
     responseExample: `{ "data": { "approval": { "status": "rejected" } } }`,
   },
+  {
+    id: "reports-saving",
+    group: "Relatórios",
+    method: "GET",
+    path: "/reports/saving",
+    title: "Relatório de Saving",
+    description:
+      "Saving = (target_price − unit_price) × quantity em itens de pedido com vínculo a cotação. Positivo = economia. Status default: sent|processing|completed. Período default: 30d.",
+    scope: "reports:read",
+    tenantFeature: "reports",
+    queryParams: [
+      { name: "period", type: "string", description: "30d | 60d | 90d | current_month (default 30d)" },
+      { name: "from", type: "string (ISO 8601)", description: "Início (usar com to)" },
+      { name: "to", type: "string (ISO 8601)", description: "Fim (usar com from)" },
+      { name: "category", type: "string", description: "Filtro por quotations.category" },
+      { name: "supplier_code", type: "string", description: "Filtro por código do fornecedor" },
+    ],
+    responseExample: `{
+  "data": {
+    "from": "…", "to": "…", "period": "30d",
+    "sign_convention": "positive_means_economy",
+    "summary": { "saving_total": 12500.5, "line_count": 42, "order_count": 18 },
+    "by_month": [{ "month": "2026-08", "saving": 12500.5 }],
+    "by_category": [{ "category": "TI", "saving": 8000 }]
+  }
+}`,
+  },
+  {
+    id: "reports-spend",
+    group: "Relatórios",
+    method: "GET",
+    path: "/reports/spend",
+    title: "Relatório de Spend",
+    description:
+      "Soma de purchase_order_items.total_price. Status default: sent|processing|completed. Com include_previous=true compara janela anterior de mesmo comprimento.",
+    scope: "reports:read",
+    tenantFeature: "reports",
+    queryParams: [
+      { name: "period", type: "string", description: "30d | 60d | 90d | current_month (default 30d)" },
+      { name: "from", type: "string (ISO 8601)", description: "Início (usar com to)" },
+      { name: "to", type: "string (ISO 8601)", description: "Fim (usar com from)" },
+      { name: "category", type: "string", description: "Filtro por quotations.category" },
+      { name: "supplier_code", type: "string", description: "Filtro por código do fornecedor" },
+      { name: "include_previous", type: "boolean", description: "true|1 — inclui spend anterior e variation_pct" },
+    ],
+    responseExample: `{
+  "data": {
+    "summary": { "spend_total": 250000, "previous_spend_total": 230000, "variation_pct": 0.087 },
+    "by_category": [{ "category": "TI", "spend": 100000, "pct_of_total": 0.4 }],
+    "by_supplier": [{ "supplier_name": "Fornecedor A", "orders": 12, "spend": 80000 }]
+  }
+}`,
+  },
 ]
 
 export function buildOpenApiSpec() {

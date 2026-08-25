@@ -175,8 +175,8 @@ export default function ApiDocsPage() {
       </header>
 
       <div className="mx-auto flex max-w-7xl gap-8 px-4 py-8 sm:px-6">
-        <aside className="hidden w-56 shrink-0 lg:block">
-          <nav className="sticky top-24 space-y-6 text-sm">
+        <aside className="hidden w-56 shrink-0 self-start lg:block">
+          <nav className="sticky top-24 max-h-[calc(100vh-7rem)] space-y-6 overflow-y-auto overscroll-contain pr-2 text-sm">
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">
                 Introdução
@@ -202,7 +202,7 @@ export default function ApiDocsPage() {
                     href={`#${ep.id}`}
                     className="flex items-center gap-1 py-1 text-white/60 hover:text-white"
                   >
-                    <ChevronRight className="h-3 w-3" />
+                    <ChevronRight className="h-3 w-3 shrink-0" />
                     <span className="truncate">{ep.title}</span>
                   </a>
                 ))}

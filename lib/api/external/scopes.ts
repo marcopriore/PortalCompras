@@ -11,6 +11,7 @@ export const API_SCOPES = [
   "contracts:read",
   "approvals:read",
   "approvals:write",
+  "reports:read",
 ] as const
 
 export type ApiScope = (typeof API_SCOPES)[number]

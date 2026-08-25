@@ -1,5 +1,16 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.96] — 2026-08-25
+
+### Loja de API — Fase 2 (Relatórios) + docs UI
+
+- Escopo `reports:read` + feature tenant `reports`
+- `GET /api/v1/reports/saving` — saving por período/categoria/fornecedor (positivo = economia)
+- `GET /api/v1/reports/spend` — spend agregado; `include_previous` para variação
+- `/docs/api`: sidebar esquerda com scroll (`max-h` + `overflow-y-auto`)
+
+---
+
 ## [v2.19.95] — 2026-08-25
 
 ### Loja de API — Fase 2 (Convite de fornecedor)
