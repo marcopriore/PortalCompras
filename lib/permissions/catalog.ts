@@ -130,6 +130,21 @@ export const LEGACY_ROLE_GROUPS: {
   },
 ]
 
+/** Ordem de exibição no editor de grupos / rules do usuário. */
+const PERMISSION_GROUP_ORDER = [
+  "Navegação",
+  "Catálogo",
+  "Cotações",
+  "Pedidos",
+  "Contratos",
+  "Requisições",
+  "Aprovações",
+  "Dados",
+  "Cadastros",
+  "Administração",
+  "Geral",
+] as const
+
 export function groupPermissionsByCategory(
   items: PermissionCatalogItem[] = PERMISSION_CATALOG,
 ): Map<string, PermissionCatalogItem[]> {
@@ -139,7 +154,16 @@ export function groupPermissionsByCategory(
     list.push(item)
     map.set(item.group, list)
   }
-  return map
+
+  const ordered = new Map<string, PermissionCatalogItem[]>()
+  for (const group of PERMISSION_GROUP_ORDER) {
+    const list = map.get(group)
+    if (list?.length) ordered.set(group, list)
+  }
+  for (const [group, list] of map) {
+    if (!ordered.has(group)) ordered.set(group, list)
+  }
+  return ordered
 }
 
 export function isKnownPermissionKey(key: string): boolean {

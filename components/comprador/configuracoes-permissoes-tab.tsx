@@ -38,6 +38,7 @@ import {
   Pencil,
   Trash2,
   LayoutDashboard,
+  ShoppingCart,
 } from "lucide-react"
 
 type PermissionGroup = {
@@ -411,6 +412,9 @@ export function ConfiguracoesPermissoesTab() {
                   <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase text-muted-foreground">
                     {category === "Navegação" ? (
                       <LayoutDashboard className="h-3.5 w-3.5" />
+                    ) : null}
+                    {category === "Catálogo" ? (
+                      <ShoppingCart className="h-3.5 w-3.5" />
                     ) : null}
                     {category === "Administração" ? (
                       <ShieldCheck className="h-3.5 w-3.5" />
