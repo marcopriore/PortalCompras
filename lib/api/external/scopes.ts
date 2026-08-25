@@ -7,6 +7,7 @@ export const API_SCOPES = [
   "requisitions:write",
   "quotations:read",
   "orders:read",
+  "contracts:read",
 ] as const
 
 export type ApiScope = (typeof API_SCOPES)[number]

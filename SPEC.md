@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.90
+## Versão atual: v2.19.92
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -643,15 +643,15 @@ Query: `round_number`, `supplier_code`, `status`. Status default: todos (`invite
 
 ---
 
-### 10.5 Fase 2 (backlog — não escopo Fase 1)
+### 10.5 Fase 2 (backlog — evolução da Loja de API)
 
-| Domínio | Endpoints |
-|---------|-----------|
-| Contratos | GET list/detail, saldo, aceites |
-| Aprovações | GET pendentes; POST approve/reject inbound |
-| Cotações | POST convite fornecedor (se demanda ERP) |
-| Relatórios | GET saving/spend JSON |
-| Anexos | POST upload requisição |
+| Domínio | Endpoints | Status |
+|---------|-----------|--------|
+| **Contratos** | `GET /contracts`, `GET /contracts/{id}`, `GET .../balance`, `GET .../acceptances` | ✅ v2.19.92 — escopo `contracts:read`, feature `contracts` |
+| Aprovações | GET pendentes; POST approve/reject inbound | ⬜ |
+| Cotações | POST convite fornecedor (se demanda ERP) | ⬜ |
+| Relatórios | GET saving/spend JSON | ⬜ |
+| Anexos | POST upload requisição | ⬜ |
 
 ### 10.6 O que NÃO expor
 

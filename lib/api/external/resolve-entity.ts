@@ -57,3 +57,28 @@ export async function resolveQuotationRow(
 
   return query.maybeSingle()
 }
+
+export async function resolveContractRow(
+  service: SupabaseClient,
+  companyId: string,
+  idOrCode: string,
+) {
+  let query = service
+    .from("contracts")
+    .select(
+      `
+      *,
+      suppliers(name, code),
+      payment_conditions(code, description)
+    `,
+    )
+    .eq("company_id", companyId)
+
+  if (isUuid(idOrCode)) {
+    query = query.eq("id", idOrCode)
+  } else {
+    query = query.or(`code.eq.${idOrCode},erp_code.eq.${idOrCode}`)
+  }
+
+  return query.maybeSingle()
+}

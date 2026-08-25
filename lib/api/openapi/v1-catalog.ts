@@ -194,6 +194,107 @@ export const API_DOC_ENDPOINTS: ApiDocEndpoint[] = [
     ],
     responseExample: "(binary PDF)",
   },
+  {
+    id: "contracts-list",
+    group: "Contratos",
+    method: "GET",
+    path: "/contracts",
+    title: "Listar contratos",
+    description:
+      "Lista contratos do tenant com paginação. Inclui saldos de cabeçalho (available_value).",
+    scope: "contracts:read",
+    tenantFeature: "contracts",
+    queryParams: [
+      { name: "page", type: "integer", description: "Página (1-based)", example: 1 },
+      { name: "page_size", type: "integer", description: "Tamanho da página (máx. 100)", example: 50 },
+      { name: "code", type: "string", description: "Filtro por code ou erp_code" },
+      { name: "search", type: "string", description: "Busca em code, erp_code e title" },
+      { name: "status", type: "string", description: "draft | pending_acceptance | active | expired | cancelled" },
+      { name: "supplier_code", type: "string", description: "Código do fornecedor" },
+      { name: "created_since", type: "string (ISO 8601)", description: "Criados desde a data" },
+      { name: "updated_since", type: "string (ISO 8601)", description: "Alterados desde a data" },
+    ],
+    responseExample: `{
+  "data": {
+    "contracts": [{
+      "code": "CTR-2026-0001",
+      "status": "active",
+      "supplier_code": "FORN-001",
+      "available_value": 15000.5
+    }],
+    "page": 1, "page_size": 50, "total": 12, "total_pages": 1
+  }
+}`,
+  },
+  {
+    id: "contracts-get",
+    group: "Contratos",
+    method: "GET",
+    path: "/contracts/{id}",
+    title: "Detalhe do contrato",
+    description: "Retorna cabeçalho + itens (com saldos por linha). id = UUID, code ou erp_code.",
+    scope: "contracts:read",
+    tenantFeature: "contracts",
+    pathParams: [
+      { name: "id", type: "string", required: true, description: "UUID, code ou erp_code" },
+    ],
+    responseExample: `{
+  "data": {
+    "contract": {
+      "code": "CTR-2026-0001",
+      "status": "active",
+      "available_value": 15000.5,
+      "items": [{ "material_code": "MAT-001", "available_quantity": 10 }]
+    }
+  }
+}`,
+  },
+  {
+    id: "contracts-balance",
+    group: "Contratos",
+    method: "GET",
+    path: "/contracts/{id}/balance",
+    title: "Saldo do contrato",
+    description:
+      "Resumo de saldo (cabeçalho e itens): ceiling, consumido, reservado e disponível.",
+    scope: "contracts:read",
+    tenantFeature: "contracts",
+    pathParams: [
+      { name: "id", type: "string", required: true, description: "UUID, code ou erp_code" },
+    ],
+    responseExample: `{
+  "data": {
+    "balance": {
+      "code": "CTR-2026-0001",
+      "available_value": 15000.5,
+      "items": [{ "material_code": "MAT-001", "available_quantity": 10 }]
+    }
+  }
+}`,
+  },
+  {
+    id: "contracts-acceptances",
+    group: "Contratos",
+    method: "GET",
+    path: "/contracts/{id}/acceptances",
+    title: "Aceites / recusas do contrato",
+    description: "Histórico de aceites e recusas do fornecedor no contrato.",
+    scope: "contracts:read",
+    tenantFeature: "contracts",
+    pathParams: [
+      { name: "id", type: "string", required: true, description: "UUID, code ou erp_code" },
+    ],
+    responseExample: `{
+  "data": {
+    "code": "CTR-2026-0001",
+    "acceptances": [{
+      "action": "accepted",
+      "created_at": "2026-08-01T12:00:00Z",
+      "term_version": "1.0"
+    }]
+  }
+}`,
+  },
 ]
 
 export function buildOpenApiSpec() {

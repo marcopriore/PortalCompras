@@ -1,5 +1,27 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.92] — 2026-08-25
+
+### Loja de API — Fase 2 (Contratos read)
+
+- Escopo `contracts:read` + feature tenant `contracts`
+- `GET /api/v1/contracts` — listagem com paginação e filtros
+- `GET /api/v1/contracts/{id}` — detalhe + itens (UUID, `code` ou `erp_code`)
+- `GET /api/v1/contracts/{id}/balance` — saldos de cabeçalho e linhas
+- `GET /api/v1/contracts/{id}/acceptances` — histórico de aceites/recusas
+- Docs OpenAPI (`/docs/api`) atualizadas; mapper inbound em `lib/api/external/mappers/contract.ts`
+
+---
+
+## [v2.19.91] — 2026-08-25
+
+### Permissões Dashboard e Relatórios
+
+- Widgets do Dashboard e seções/exports de Relatórios configuráveis por permissão
+- Migration 060 (seed admin/buyer/manager); layout adaptativo
+
+---
+
 ## [v2.19.90] — 2026-08-25
 
 ### Requisição — UX do ciclo do pedido
