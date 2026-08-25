@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { toast } from "sonner"
 import {
   Building2,
   Loader2,
@@ -49,6 +48,99 @@ function groupBySupplier(items: CatalogCartItem[]): SupplierGroup[] {
     items: groupItems,
     subtotal: groupItems.reduce((s, i) => s + i.lineTotal, 0),
   }))
+}
+
+function CartQuantityInput({
+  itemId,
+  quantity,
+  syncing,
+  disabled,
+  onQuantityChange,
+}: {
+  itemId: string
+  quantity: number
+  syncing: boolean
+  disabled?: boolean
+  onQuantityChange: (itemId: string, quantity: number) => void
+}) {
+  const [draft, setDraft] = React.useState(String(quantity))
+  const [focused, setFocused] = React.useState(false)
+
+  React.useEffect(() => {
+    if (!focused) setDraft(String(quantity))
+  }, [quantity, focused])
+
+  const commitDraft = () => {
+    const parsed = Number(draft.replace(",", "."))
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      setDraft(String(Math.max(1, quantity)))
+      if (quantity < 1) onQuantityChange(itemId, 1)
+      return
+    }
+    const next = Math.floor(parsed)
+    setDraft(String(next))
+    if (next !== quantity) onQuantityChange(itemId, next)
+  }
+
+  return (
+    <div className="relative flex items-center rounded-lg border border-border bg-background">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 rounded-none rounded-l-lg"
+        onClick={() => onQuantityChange(itemId, Math.max(1, quantity - 1))}
+        disabled={disabled || syncing || quantity <= 1}
+      >
+        <Minus className="h-3.5 w-3.5" />
+      </Button>
+      <div className="relative flex h-8 w-14 items-center justify-center border-x border-border">
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          aria-label="Quantidade"
+          value={draft}
+          onFocus={() => setFocused(true)}
+          onBlur={() => {
+            setFocused(false)
+            commitDraft()
+          }}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^\d]/g, "")
+            setDraft(raw)
+            if (raw === "") return
+            const next = Number(raw)
+            if (!Number.isFinite(next) || next < 1) return
+            onQuantityChange(itemId, next)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur()
+          }}
+          disabled={disabled || syncing}
+          className={cn(
+            "h-full w-full bg-transparent px-1 text-center text-sm font-medium tabular-nums outline-none",
+            "focus-visible:bg-muted/40",
+            (disabled || syncing) && "text-muted-foreground",
+            syncing && !focused && "opacity-0",
+          )}
+        />
+        {syncing && !focused ? (
+          <Loader2 className="pointer-events-none absolute h-3.5 w-3.5 animate-spin text-muted-foreground" />
+        ) : null}
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 rounded-none rounded-r-lg"
+        onClick={() => onQuantityChange(itemId, quantity + 1)}
+        disabled={disabled || syncing}
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  )
 }
 
 type CatalogCartSheetProps = {
@@ -168,40 +260,12 @@ export function CatalogCartSheet({
                           </div>
 
                           <div className="flex items-center justify-between gap-3">
-                            <div className="flex items-center rounded-lg border border-border bg-background">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 rounded-none rounded-l-lg"
-                                onClick={() =>
-                                  onQuantityChange(item.id, Math.max(1, item.quantity - 1))
-                                }
-                                disabled={syncing || item.quantity <= 1}
-                              >
-                                <Minus className="h-3.5 w-3.5" />
-                              </Button>
-                              <span
-                                className={cn(
-                                  "flex h-8 min-w-[2.5rem] items-center justify-center border-x border-border px-2 text-sm font-medium tabular-nums",
-                                  syncing && "text-muted-foreground",
-                                )}
-                              >
-                                {syncing ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  item.quantity
-                                )}
-                              </span>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 rounded-none rounded-r-lg"
-                                onClick={() => onQuantityChange(item.id, item.quantity + 1)}
-                                disabled={syncing}
-                              >
-                                <Plus className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
+                            <CartQuantityInput
+                              itemId={item.id}
+                              quantity={item.quantity}
+                              syncing={syncing}
+                              onQuantityChange={onQuantityChange}
+                            />
                             <div className="text-right">
                               <p className="text-sm font-semibold tabular-nums">
                                 {formatMoney(item.lineTotal)}

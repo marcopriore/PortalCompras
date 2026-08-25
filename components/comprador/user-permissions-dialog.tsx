@@ -7,7 +7,6 @@ import {
 } from "@/lib/permissions/catalog"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import {
   Dialog,
@@ -17,7 +16,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { ShieldCheck } from "lucide-react"
+import { Lock, ShieldCheck } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 type GroupOption = {
   id: string
@@ -52,13 +52,22 @@ export function UserPermissionsDialog({
     new Set(),
   )
   const [directKeys, setDirectKeys] = React.useState<Set<string>>(new Set())
-  const [effectiveKeys, setEffectiveKeys] = React.useState<string[]>([])
-  const [showEffective, setShowEffective] = React.useState(false)
 
   const catalogByGroup = React.useMemo(
     () => groupPermissionsByCategory(PERMISSION_CATALOG),
     [],
   )
+
+  const keysFromGroups = React.useMemo(() => {
+    const keys = new Set<string>()
+    for (const group of groups) {
+      if (!selectedGroupIds.has(group.id)) continue
+      for (const key of group.permission_keys ?? []) {
+        keys.add(key)
+      }
+    }
+    return keys
+  }, [groups, selectedGroupIds])
 
   const load = React.useCallback(async () => {
     if (!userId) return
@@ -86,7 +95,6 @@ export function UserPermissionsDialog({
       setGroups((groupsData.groups ?? []) as GroupOption[])
       setSelectedGroupIds(new Set((userData.groupIds ?? []) as string[]))
       setDirectKeys(new Set((userData.directPermissionKeys ?? []) as string[]))
-      setEffectiveKeys((userData.effectivePermissionKeys ?? []) as string[])
     } catch {
       setError("Erro ao carregar permissões.")
     } finally {
@@ -108,6 +116,7 @@ export function UserPermissionsDialog({
   }
 
   const toggleDirect = (key: string, enabled: boolean) => {
+    if (keysFromGroups.has(key)) return
     setDirectKeys((prev) => {
       const next = new Set(prev)
       if (enabled) next.add(key)
@@ -121,13 +130,16 @@ export function UserPermissionsDialog({
     setSaving(true)
     setError(null)
     try {
+      // Não persiste extras que já vêm dos grupos selecionados
+      const extrasOnly = [...directKeys].filter((key) => !keysFromGroups.has(key))
+
       const res = await fetch("/api/admin/user-permissions", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
           groupIds: [...selectedGroupIds],
-          directPermissionKeys: [...directKeys],
+          directPermissionKeys: extrasOnly,
         }),
       })
       const data = await res.json()
@@ -153,8 +165,8 @@ export function UserPermissionsDialog({
             Permissões — {userName}
           </DialogTitle>
           <DialogDescription>
-            Efetivo = união dos grupos selecionados + rules individuais.
-            Papéis (Comprador, Admin…) continuam definindo identidade/portal.
+            Rules dos grupos aparecem marcadas e travadas. Rules individuais são
+            extras além dos grupos.
           </DialogDescription>
         </DialogHeader>
 
@@ -210,72 +222,66 @@ export function UserPermissionsDialog({
             </div>
 
             <div>
-              <h3 className="text-sm font-semibold mb-2">
-                Rules individuais (extras)
-              </h3>
+              <h3 className="text-sm font-semibold mb-2">Rules</h3>
               <p className="text-xs text-muted-foreground mb-2">
-                Concedidas além dos grupos — ex.: Agir como outro usuário.
+                Marcadas e travadas = vindas do(s) grupo(s). As demais podem ser
+                concedidas individualmente (ex.: Agir como outro usuário).
               </p>
-              <div className="rounded-lg border border-border divide-y divide-border max-h-64 overflow-y-auto">
+              <div className="rounded-lg border border-border divide-y divide-border max-h-80 overflow-y-auto">
                 {[...catalogByGroup.entries()].map(([category, items]) => (
                   <div key={category} className="p-3">
                     <div className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
                       {category}
                     </div>
                     <div className="space-y-2">
-                      {items.map((item) => (
-                        <label
-                          key={item.key}
-                          className="flex items-start gap-3 text-sm cursor-pointer"
-                        >
-                          <Checkbox
-                            checked={directKeys.has(item.key)}
-                            onCheckedChange={(v) =>
-                              toggleDirect(item.key, v === true)
-                            }
-                            disabled={saving}
-                            className="mt-0.5"
-                          />
-                          <span>
-                            <span className="font-medium">{item.label}</span>
-                            <span className="block text-xs text-muted-foreground font-mono">
-                              {item.key}
+                      {items.map((item) => {
+                        const fromGroup = keysFromGroups.has(item.key)
+                        const checked =
+                          fromGroup || directKeys.has(item.key)
+                        const locked = fromGroup
+
+                        return (
+                          <label
+                            key={item.key}
+                            className={cn(
+                              "flex items-start gap-3 text-sm",
+                              locked
+                                ? "cursor-default opacity-80"
+                                : "cursor-pointer",
+                            )}
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(v) =>
+                                toggleDirect(item.key, v === true)
+                              }
+                              disabled={saving || locked}
+                              className="mt-0.5"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium">{item.label}</span>
+                                {locked ? (
+                                  <Badge
+                                    variant="secondary"
+                                    className="font-normal text-[10px]"
+                                  >
+                                    <Lock className="mr-1 h-3 w-3" />
+                                    Via grupo
+                                  </Badge>
+                                ) : null}
+                              </span>
+                              <span className="block text-xs text-muted-foreground font-mono">
+                                {item.key}
+                              </span>
                             </span>
-                          </span>
-                        </label>
-                      ))}
+                          </label>
+                        )
+                      })}
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
-
-            <div>
-              <button
-                type="button"
-                className="text-xs text-primary hover:underline"
-                onClick={() => setShowEffective((v) => !v)}
-              >
-                {showEffective
-                  ? "Ocultar permissões efetivas atuais"
-                  : "Ver permissões efetivas atuais"}
-              </button>
-              {showEffective ? (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {effectiveKeys.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">
-                      Nenhuma (antes de salvar; lista reflete o último estado
-                      salvo).
-                    </span>
-                  ) : (
-                    effectiveKeys.map((k) => (
-                      <Badge key={k} variant="secondary" className="font-mono text-[10px]">
-                        {k}
-                      </Badge>
-                    ))
-                  )}
-                </div>
-              ) : null}
             </div>
           </div>
         )}
