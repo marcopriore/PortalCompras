@@ -43,17 +43,16 @@ import {
   ShoppingCart,
   XCircle,
 } from "lucide-react"
+import {
+  getRequisitionStatusMeta,
+  type RequisitionStatus,
+} from "@/lib/requisitions/status"
+import {
+  buildCatalogRequisitionTimeline,
+  buildStandardRequisitionTimeline,
+} from "@/lib/requisitions/timeline"
 
 type Priority = "normal" | "urgent" | "critical"
-type RequisitionStatus =
-  | "draft"
-  | "buyer_review"
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "in_quotation"
-  | "completed"
-  | "cancelled"
 
 type RequisitionItem = {
   id: string
@@ -139,108 +138,10 @@ function HorizontalTimeline({
   quotation: QuotationInfo | null
   orders: PurchaseOrderInfo[]
 }) {
-  type StepStatus = "completed" | "active" | "pending" | "rejected"
-
-  const isCatalog = req.origin === "catalog"
-
-  const catalogSteps: {
-    key: string
-    label: string
-    status: StepStatus
-    date?: string | null
-  }[] = [
-    {
-      key: "created",
-      label: "Criada",
-      status: "completed",
-      date: req.created_at,
-    },
-    {
-      key: "order",
-      label: "Pedido",
-      status: orders.length > 0 ? "completed" : "pending",
-      date: orders[0]?.created_at ?? null,
-    },
-    {
-      key: "delivery",
-      label: "Entrega",
-      status: orders.some((o) => o.status === "completed")
-        ? "completed"
-        : orders.some((o) => ["processing", "sent"].includes(o.status))
-          ? "active"
-          : "pending",
-      date:
-        orders.find((o) => o.status === "completed")?.estimated_delivery_date ??
-        null,
-    },
-  ]
-
-  const standardSteps: {
-    key: string
-    label: string
-    status: StepStatus
-    date?: string | null
-  }[] = [
-    {
-      key: "created",
-      label: req.status === "draft" ? "Rascunho" : "Criada",
-      status: req.status === "draft" ? "active" : "completed",
-      date: req.created_at,
-    },
-    {
-      key: "approval",
-      label: "Aprovação",
-      status:
-        req.status === "draft"
-          ? "pending"
-          : req.status === "rejected"
-          ? "rejected"
-          : req.status === "pending"
-            ? "active"
-            : "completed",
-      date: req.approved_at ?? null,
-    },
-    {
-      key: "quotation",
-      label: "Cotação",
-      status: ["draft", "pending", "rejected", "cancelled"].includes(req.status)
-        ? "pending"
-        : quotation
-          ? ["completed", "cancelled"].includes(quotation.status)
-            ? "completed"
-            : "active"
-          : req.status === "approved"
-            ? "pending"
-            : "active",
-      date: quotation?.created_at,
-    },
-    {
-      key: "order",
-      label: "Pedido",
-      status:
-        ["draft", "pending", "rejected", "cancelled"].includes(req.status)
-          ? "pending"
-          : orders.length > 0
-            ? orders.some((o) => o.status === "completed")
-              ? "completed"
-              : "active"
-            : "pending",
-      date: orders[0]?.created_at,
-    },
-    {
-      key: "delivery",
-      label: "Entrega",
-      status:
-        req.status === "completed" && req.origin !== "catalog"
-          ? "completed"
-          : orders.some((o) => o.status === "completed")
-            ? "active"
-            : "pending",
-      date: orders.find((o) => o.status === "completed")?.estimated_delivery_date,
-    },
-  ]
-
-  const steps = isCatalog ? catalogSteps : standardSteps
+  const steps =
+    req.origin === "catalog"
+      ? buildCatalogRequisitionTimeline(req, orders)
+      : buildStandardRequisitionTimeline(req, quotation, orders)
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 overflow-x-auto">
@@ -264,6 +165,10 @@ function HorizontalTimeline({
             rejected: {
               circle: "bg-blue-500 border-blue-500",
               text: "text-blue-700",
+            },
+            cancelled: {
+              circle: "bg-red-500 border-red-500",
+              text: "text-red-700",
             },
           }[step.status]
 
@@ -425,24 +330,7 @@ function HistorySection({
 }
 
 function getStatusMeta(status: RequisitionStatus): { label: string; className: string } {
-  switch (status) {
-    case "draft":
-      return { label: "Rascunho", className: "bg-violet-100 text-violet-800" }
-    case "buyer_review":
-      return { label: "Revisão Comprador", className: "bg-indigo-100 text-indigo-800" }
-    case "pending":
-      return { label: "Aguardando Aprovação", className: "bg-yellow-100 text-yellow-800" }
-    case "approved":
-      return { label: "Aprovado", className: "bg-green-100 text-green-800" }
-    case "rejected":
-      return { label: "Rejeitado", className: "bg-red-100 text-red-800" }
-    case "in_quotation":
-      return { label: "Em Cotação", className: "bg-blue-100 text-blue-800" }
-    case "completed":
-      return { label: "Concluído", className: "bg-gray-100 text-gray-700" }
-    case "cancelled":
-      return { label: "Cancelada", className: "bg-gray-100 text-gray-700" }
-  }
+  return getRequisitionStatusMeta(status)
 }
 
 function formatDateBR(iso: string | null | undefined): string {

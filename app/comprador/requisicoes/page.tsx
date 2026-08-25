@@ -28,17 +28,13 @@ import {
 import { ClipboardList, Clock, CheckCircle, FileText, Search, Eye, Pencil, Plus, X } from "lucide-react"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { TableRowActions } from "@/components/ui/table-row-actions"
+import {
+  getRequisitionStatusMeta,
+  REQUISITION_STATUS_FILTER_OPTIONS,
+  type RequisitionStatus,
+} from "@/lib/requisitions/status"
 
 type Priority = "normal" | "urgent" | "critical"
-type RequisitionStatus =
-  | "draft"
-  | "buyer_review"
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "in_quotation"
-  | "completed"
-  | "cancelled"
 
 type RequisitionItemRel = { id: string }
 
@@ -56,24 +52,7 @@ type Requisition = {
 }
 
 export function getStatusMeta(status: RequisitionStatus): { label: string; className: string } {
-  switch (status) {
-    case "draft":
-      return { label: "Rascunho", className: "bg-violet-100 text-violet-800" }
-    case "buyer_review":
-      return { label: "Revisão Comprador", className: "bg-indigo-100 text-indigo-800" }
-    case "pending":
-      return { label: "Aguardando Aprovação", className: "bg-yellow-100 text-yellow-800" }
-    case "approved":
-      return { label: "Aprovado", className: "bg-green-100 text-green-800" }
-    case "rejected":
-      return { label: "Rejeitado", className: "bg-red-100 text-red-800" }
-    case "in_quotation":
-      return { label: "Em Cotação", className: "bg-blue-100 text-blue-800" }
-    case "completed":
-      return { label: "Concluído", className: "bg-gray-100 text-gray-700" }
-    case "cancelled":
-      return { label: "Cancelada", className: "bg-gray-100 text-gray-700" }
-  }
+  return getRequisitionStatusMeta(status)
 }
 
 export function getPriorityMeta(priority: Priority): { label: string; className: string } {
@@ -243,7 +222,7 @@ export default function RequisicoesPage() {
         </div>
         <div className="bg-white border border-yellow-100 rounded-xl p-5 flex items-center justify-between">
           <div>
-            <p className="text-sm text-yellow-600 font-medium">Aguardando Aprovação</p>
+            <p className="text-sm text-yellow-600 font-medium">Pendente Aprovação</p>
             <p className="text-3xl font-bold text-yellow-700 mt-1">{metrics.pending}</p>
           </div>
           <div className="bg-yellow-100 p-3 rounded-full">
@@ -305,14 +284,8 @@ export default function RequisicoesPage() {
               <MultiSelectFilter
                 label="Status"
                 options={[
-                  { value: "draft", label: "Rascunho" },
+                  ...REQUISITION_STATUS_FILTER_OPTIONS,
                   { value: "buyer_review", label: "Revisão Comprador" },
-                  { value: "pending", label: "Aguardando Aprovação" },
-                  { value: "approved", label: "Aprovado" },
-                  { value: "rejected", label: "Rejeitado" },
-                  { value: "in_quotation", label: "Em Cotação" },
-                  { value: "completed", label: "Concluído" },
-                  { value: "cancelled", label: "Cancelada" },
                 ]}
                 selected={status}
                 onChange={setStatus}

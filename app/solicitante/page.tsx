@@ -35,16 +35,12 @@ import {
 } from "lucide-react"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { TableRowActions } from "@/components/ui/table-row-actions"
-
-type RequisitionStatus =
-  | "draft"
-  | "buyer_review"
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "in_quotation"
-  | "completed"
-  | "cancelled"
+import {
+  getRequisitionStatusMeta,
+  REQUISITION_STATUS_FILTER_OPTIONS,
+  SOLICITANTE_DEFAULT_STATUS_FILTER,
+  type RequisitionStatus,
+} from "@/lib/requisitions/status"
 
 type Requisition = {
   id: string
@@ -59,82 +55,24 @@ type Requisition = {
   quotation_id: string | null
 }
 
-const STATUS_OPTIONS = [
-  { value: "draft", label: "Rascunho" },
-  { value: "pending", label: "Aguardando" },
-  { value: "approved", label: "Aprovada" },
-  { value: "rejected", label: "Reprovada" },
-  { value: "in_quotation", label: "Em Cotação" },
-  { value: "cancelled", label: "Cancelada" },
-  { value: "completed", label: "Concluída" },
-]
+const STATUS_OPTIONS = REQUISITION_STATUS_FILTER_OPTIONS.map((o) => ({
+  value: o.value,
+  label: o.label,
+}))
 
-const DEFAULT_STATUS = [
-  "draft",
-  "pending",
-  "approved",
-  "rejected",
-  "in_quotation",
-  "completed",
-]
+const DEFAULT_STATUS = [...SOLICITANTE_DEFAULT_STATUS_FILTER]
 
 function getStatusMeta(status: RequisitionStatus) {
-  switch (status) {
-    case "draft":
-      return {
-        label: "Rascunho",
-        color: "bg-violet-100 text-violet-800",
-        icon: FileText,
-      }
-    case "buyer_review":
-      return {
-        label: "Revisão Comprador",
-        color: "bg-indigo-100 text-indigo-800",
-        icon: Clock,
-      }
-    case "pending":
-      return {
-        label: "Aguardando Aprovação",
-        color: "bg-yellow-100 text-yellow-800",
-        icon: Clock,
-      }
-    case "approved":
-      return {
-        label: "Aprovado",
-        color: "bg-green-100 text-green-800",
-        icon: CheckCircle2,
-      }
-    case "rejected":
-      return {
-        label: "Reprovado",
-        color: "bg-red-100 text-red-800",
-        icon: XCircle,
-      }
-    case "in_quotation":
-      return {
-        label: "Em Cotação",
-        color: "bg-blue-100 text-blue-800",
-        icon: FileText,
-      }
-    case "completed":
-      return {
-        label: "Concluído",
-        color: "bg-gray-100 text-gray-700",
-        icon: CheckCircle2,
-      }
-    case "cancelled":
-      return {
-        label: "Cancelada",
-        color: "bg-red-100 text-red-800",
-        icon: XCircle,
-      }
-    default:
-      return {
-        label: status,
-        color: "bg-gray-100 text-gray-700",
-        icon: FileText,
-      }
-  }
+  const meta = getRequisitionStatusMeta(status)
+  const icon =
+    status === "rejected" || status === "cancelled"
+      ? XCircle
+      : status === "completed"
+        ? CheckCircle2
+        : status === "draft"
+          ? FileText
+          : Clock
+  return { label: meta.label, color: meta.className, icon }
 }
 
 function getPriorityMeta(priority: string) {
@@ -237,7 +175,13 @@ function SolicitantePageInner() {
   const total = requisitions.length
   const pending = requisitions.filter((r) => r.status === "pending").length
   const inProgress = requisitions.filter((r) =>
-    ["approved", "in_quotation"].includes(r.status),
+    [
+      "approved",
+      "in_quotation",
+      "awaiting_buyer",
+      "awaiting_supplier",
+      "buyer_review",
+    ].includes(r.status),
   ).length
   const completed = requisitions.filter((r) => r.status === "completed").length
 
@@ -397,7 +341,7 @@ function SolicitantePageInner() {
             <p className="text-2xl font-bold text-foreground">{total}</p>
           </div>
           <div className="rounded-lg border border-yellow-100 bg-yellow-50 p-4">
-            <p className="text-xs text-yellow-700">Aguardando</p>
+            <p className="text-xs text-yellow-700">Pendente Aprovação</p>
             <p className="text-2xl font-bold text-yellow-800">{pending}</p>
           </div>
           <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">

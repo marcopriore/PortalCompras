@@ -135,7 +135,7 @@ export async function POST(request: Request) {
           purchase_order_id: po.id,
           purchase_order_code: po.code,
           origin: "catalog",
-          status: "completed",
+          status: "awaiting_buyer",
         },
       })
     }

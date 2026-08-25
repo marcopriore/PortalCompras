@@ -197,7 +197,7 @@ Regras:
 
 ## 8. Banco (resumo objetivo)
 
-- `requisitions.status`: `pending`, `approved`, `rejected`, `in_quotation`, `completed`, **`cancelled`**
+- `requisitions.status`: `draft`, `pending` (Pendente Aprovação), `approved`, `rejected`, `in_quotation`, **`awaiting_buyer`** (Pendente Comprador), **`awaiting_supplier`** (Pendente Aceite Fornecedor), `completed`, **`cancelled`** (+ `buyer_review` legado). Sync automático a partir do PO via trigger `trg_sync_requisition_from_po` (migration 059).
 - `quotation_items`: `long_description`, **`source_requisition_code`**; campos Saving alinhados ao catálogo quando aplicável (`target_price`, `last_purchase_price`, `average_price`)
 - `profiles.profile_type`: `'buyer' | 'supplier' | 'requester'`
 - `purchase_orders`: `supplier_id`, `accepted_at`, `accepted_by_supplier`, `estimated_delivery_date`, `cancellation_reason`, `delivery_date_change_reason`, `created_by`, `quotation_id`.

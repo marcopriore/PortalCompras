@@ -339,7 +339,7 @@ function NovoPedidoContent() {
 
       const { error: reqUpdateError } = await supabase
         .from("requisitions")
-        .update({ status: "completed" })
+        .update({ status: "awaiting_buyer" })
         .eq("id", requisition.id)
         .eq("company_id", companyId)
 

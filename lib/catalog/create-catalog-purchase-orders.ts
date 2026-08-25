@@ -196,7 +196,7 @@ export async function createCatalogPurchaseOrders(
         cost_center: input.costCenter.trim(),
         needed_by: input.neededBy?.trim() || null,
         priority: input.priority ?? "normal",
-        status: "completed",
+        status: "awaiting_buyer",
         origin: "catalog",
         requester_id: userId,
         requester_name: userName,

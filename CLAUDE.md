@@ -142,7 +142,7 @@
 | proposal_items | round_id FK quotation_rounds (OBRIGATÓRIO); delivery_days por item |
 | notifications | id, company_id, user_id, type, title, body, entity, entity_id, read, created_at |
 | notification_preferences | user_id, company_id, campos legados + `*_bell` e `*_email` por tipo |
-| requisitions | status: pending/approved/rejected/in_quotation/completed/cancelled |
+| requisitions | status: draft/pending/approved/rejected/in_quotation/awaiting_buyer/awaiting_supplier/completed/cancelled (+ buyer_review legado) |
 | purchase_orders | status: draft/sent/processing/completed/cancelled/refused/error; supplier_id, accepted_at, accepted_by_supplier, estimated_delivery_date, cancellation_reason, delivery_date_change_reason, created_by, quotation_id |
 | purchase_order_items | delivery_days por item |
 | items | long_description; **Saving:** `target_price`, `last_purchase_price`, `average_price` |
