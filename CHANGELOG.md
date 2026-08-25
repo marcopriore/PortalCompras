@@ -1,5 +1,16 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.94] — 2026-08-25
+
+### Loja de API — Fase 2 (Anexos de requisição)
+
+- `GET /api/v1/requisitions/{id}/attachments` — lista com URL assinada (1h)
+- `POST /api/v1/requisitions/{id}/attachments` — upload `multipart/form-data` (campo `file`)
+- Mesmos tipos do portal (PDF, Excel, png/jpg; máx. 10MB); identificador UUID/`code`/`external_code`
+- Escopos existentes `requisitions:read` / `requisitions:write`; upload bloqueado se REQ `cancelled`
+
+---
+
 ## [v2.19.93] — 2026-08-25
 
 ### Loja de API — Fase 2 (Aprovações)

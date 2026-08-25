@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.93
+## Versão atual: v2.19.94
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -561,6 +561,8 @@ Campos mínimos: `code`, `name`; opcionais: CNPJ, e-mail, telefone, condição p
 | Externo → Valore | POST | `/api/v1/requisitions/batch` | **Criação em lote** (espelho futuro da importação Excel) |
 | Externo → Valore | PUT | `/api/v1/requisitions/{id}` | **Atualização** cabeçalho/itens (regras de status: só `pending`/`rejected` editável pelo ERP) |
 | Externo → Valore | DELETE | `/api/v1/requisitions/{id}` | **Cancelamento** pelo ERP → status `cancelled` (não DELETE físico) |
+| Externo → Valore | GET | `/api/v1/requisitions/{id}/attachments` | Listar anexos + URL assinada (1h) |
+| Externo → Valore | POST | `/api/v1/requisitions/{id}/attachments` | Upload `multipart/form-data` (campo `file`; PDF/Excel/imagem; máx. 10MB) |
 | Valore → Externo | HTTP POST/PUT/DELETE | `integration_endpoints` + `dispatchOutboundIntegration` | Pedido criado/alterado/cancelado no portal |
 | Valore → Externo | HTTP POST/PUT | idem | Requisição alterada/cancelada no portal |
 
@@ -649,9 +651,9 @@ Query: `round_number`, `supplier_code`, `status`. Status default: todos (`invite
 |---------|-----------|--------|
 | **Contratos** | `GET /contracts`, `GET /contracts/{id}`, `GET .../balance`, `GET .../acceptances` | ✅ v2.19.92 — escopo `contracts:read`, feature `contracts` |
 | **Aprovações** | `GET /approvals`, `GET /approvals/{id}`, `POST .../approve`, `POST .../reject` | ✅ v2.19.93 — escopos `approvals:read\|write`; escrita só `flow=requisition` |
+| **Anexos** | `GET/POST /requisitions/{id}/attachments` | ✅ v2.19.94 — escopos `requisitions:read\|write`; multipart; URL assinada 1h |
 | Cotações | POST convite fornecedor (se demanda ERP) | ⬜ |
 | Relatórios | GET saving/spend JSON | ⬜ |
-| Anexos | POST upload requisição | ⬜ |
 
 ### 10.6 O que NÃO expor
 
@@ -891,6 +893,8 @@ Fallback aceito: `external_code` (legado). Gravado em `contracts.erp_code`.
 |--------|----------|-----|
 | POST | `/api/v1/requisitions` | Criação unitária + itens |
 | POST | `/api/v1/requisitions/batch` | Criação em lote |
+| GET | `/api/v1/requisitions/{id}/attachments` | Listar anexos (URL assinada 1h) |
+| POST | `/api/v1/requisitions/{id}/attachments` | Upload multipart (campo `file`) |
 
 Autenticação: API key (header `Authorization: Bearer` ou `X-Api-Key`).
 

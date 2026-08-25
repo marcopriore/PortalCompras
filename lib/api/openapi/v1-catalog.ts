@@ -150,6 +150,66 @@ export const API_DOC_ENDPOINTS: ApiDocEndpoint[] = [
     responseExample: `{ "data": { "requisition": { "status": "cancelled" } } }`,
   },
   {
+    id: "requisitions-attachments-list",
+    group: "Requisições",
+    method: "GET",
+    path: "/requisitions/{id}/attachments",
+    title: "Listar anexos da requisição",
+    description:
+      "Lista anexos com URL assinada (1h). Aceita UUID, code ou external_code.",
+    scope: "requisitions:read",
+    tenantFeature: "requisitions",
+    pathParams: [
+      { name: "id", type: "string", required: true, description: "UUID, code ou external_code" },
+    ],
+    responseExample: `{
+  "data": {
+    "attachments": [{
+      "id": "…",
+      "file_name": "nf.pdf",
+      "file_size": 12040,
+      "content_type": "application/pdf",
+      "created_at": "2026-08-25T12:00:00Z",
+      "download_url": "https://…"
+    }]
+  }
+}`,
+  },
+  {
+    id: "requisitions-attachments-post",
+    group: "Requisições",
+    method: "POST",
+    path: "/requisitions/{id}/attachments",
+    title: "Enviar anexo da requisição",
+    description:
+      "Upload multipart/form-data (campo file). PDF, Excel ou imagem png/jpg; máx. 10MB. Bloqueado se a requisição estiver cancelled.",
+    scope: "requisitions:write",
+    tenantFeature: "requisitions",
+    pathParams: [
+      { name: "id", type: "string", required: true, description: "UUID, code ou external_code" },
+    ],
+    bodyFields: [
+      {
+        name: "file",
+        type: "file (multipart)",
+        required: true,
+        description: "Arquivo PDF, Excel (.xls/.xlsx) ou imagem (png/jpg). Máx. 10MB.",
+      },
+    ],
+    requestExample: `curl -X POST "$BASE/requisitions/ERP-REQ-1001/attachments" \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -F "file=@nf.pdf;type=application/pdf"`,
+    responseExample: `{
+  "data": {
+    "attachment": {
+      "id": "…",
+      "file_name": "nf.pdf",
+      "download_url": "https://…"
+    }
+  }
+}`,
+  },
+  {
     id: "quotations-proposals",
     group: "Cotações",
     method: "GET",
