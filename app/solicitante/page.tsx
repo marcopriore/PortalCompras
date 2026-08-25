@@ -75,6 +75,7 @@ const DEFAULT_STATUS = [
   "approved",
   "rejected",
   "in_quotation",
+  "completed",
 ]
 
 function getStatusMeta(status: RequisitionStatus) {

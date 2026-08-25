@@ -1,5 +1,21 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.88] — 2026-08-25
+
+### Catálogo de Compras
+
+- Feature `purchase_catalog` + permissões `nav.catalog` / `catalog.order`
+- Telas `/comprador/catalogo` e `/solicitante/catalogo`: ofertas de contratos ativos com saldo
+- Carrinho por tenant; quantidade editável (+/− e digitação); checkout por fornecedor
+- Checkout cria **requisição `completed` (origin catalog) + pedido `draft` vinculados** (`purchase_orders.requisition_code`)
+- Reserva de saldo de contrato no checkout; paginação no banco (RPCs `get_catalog_offers_page` / facets)
+- Migrations 054–058 (carrinho, RLS superadmin, origin catalog, paginação SQL, seed de permissões)
+- Notificação in-app + e-mail ao finalizar pedido do catálogo
+- UX: rules herdadas do grupo marcadas/travadas no dialog de permissões do usuário
+- Testes: `__tests__/lib/catalog-checkout.test.ts`
+
+---
+
 ## [v2.19.85] — 2026-08-19
 
 ### Importação massiva de requisições (Excel)

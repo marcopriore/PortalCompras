@@ -43,3 +43,11 @@ export type CatalogCart = {
   itemCount: number
   totalAmount: number
 }
+
+export type CatalogCheckoutInput = {
+  title: string
+  costCenter: string
+  neededBy?: string | null
+  priority?: "normal" | "urgent" | "critical"
+  description?: string | null
+}

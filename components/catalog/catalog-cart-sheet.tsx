@@ -319,7 +319,7 @@ export function CatalogCartSheet({
               </div>
 
               <Button className="w-full h-11" onClick={onCheckout}>
-                Finalizar pedido
+                Finalizar Pedido
               </Button>
             </div>
           </>

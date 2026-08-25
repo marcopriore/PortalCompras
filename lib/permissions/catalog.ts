@@ -60,11 +60,6 @@ export const PERMISSION_CATALOG: PermissionCatalogItem[] = [
     label: "Comprar no Catálogo (carrinho e checkout)",
     group: "Catálogo",
   },
-  {
-    key: "catalog.buyer_review",
-    label: "Revisar pedidos do catálogo (comprador)",
-    group: "Catálogo",
-  },
   { key: "approval.requisition", label: "Fluxo Aprovação Requisição", group: "Aprovações" },
   { key: "approval.order", label: "Fluxo Aprovação Pedido", group: "Aprovações" },
   { key: "export.excel", label: "Exportar Excel", group: "Dados" },

@@ -69,6 +69,18 @@ function resolveNotificationRoute(
     return buyerRoutes[entity ?? ""] ?? null
   }
 
+  if (type.startsWith("catalog") || type === "order.catalog_created") {
+    if (profileType === "requester") {
+      return entity === "requisition"
+        ? requesterRoutes.requisition
+        : null
+    }
+    if (entity === "purchase_order" || entity === "purchase_orders") {
+      return buyerRoutes.purchase_order
+    }
+    if (entity === "requisition") return buyerRoutes.requisition
+  }
+
   if (type.startsWith("contract") || entity === "contract") {
     if (profileType === "supplier") {
       return supplierRoutes.contract ?? null

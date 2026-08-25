@@ -88,22 +88,6 @@ export async function tenantHasPurchaseCatalog(
   return Boolean((data as { enabled?: boolean } | null)?.enabled)
 }
 
-export async function isCatalogBuyerReviewRequired(
-  supabase: ReturnType<typeof createServerClient>,
-  companyId: string,
-): Promise<boolean> {
-  const { data } = await supabase
-    .from("company_settings")
-    .select("value")
-    .eq("company_id", companyId)
-    .eq("key", "catalog_buyer_review_required")
-    .maybeSingle()
-
-  const value = (data as { value?: string } | null)?.value
-  if (value === undefined || value === null || value === "") return true
-  return value !== "false" && value !== "0"
-}
-
 /** Superadmin opera em tenant via cookie — escrita usa service role para bypass de RLS. */
 export function resolveCatalogDbClient(ctx: CatalogAuthContext): SupabaseClient {
   if (ctx.isSuperAdmin) {

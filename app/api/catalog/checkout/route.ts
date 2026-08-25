@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createCatalogPurchaseOrders } from "@/lib/catalog/create-catalog-purchase-orders"
+import { notifyCatalogCheckout } from "@/lib/catalog/notify-catalog-checkout"
 import {
   getCatalogAuthContext,
   resolveCatalogDbClient,
@@ -81,7 +82,8 @@ export async function POST(request: Request) {
       db,
       ctx.companyId,
       ctx.userId,
-      cartItems as Parameters<typeof createCatalogPurchaseOrders>[3],
+      ctx.fullName,
+      cartItems as Parameters<typeof createCatalogPurchaseOrders>[4],
       {
         title: body.title ?? "",
         costCenter: body.cost_center ?? "",
@@ -103,8 +105,8 @@ export async function POST(request: Request) {
 
     for (const po of result.result.purchaseOrders) {
       await db.from("audit_logs").insert({
-        event_type: "requisition.created",
-        description: `Pedido ${po.code} criado via catálogo de compras`,
+        event_type: "catalog.checkout",
+        description: `Catálogo: pedido ${po.code} + requisição ${po.requisitionCode}`,
         company_id: ctx.companyId,
         user_id: ctx.userId,
         user_name: ctx.fullName,
@@ -112,12 +114,41 @@ export async function POST(request: Request) {
         entity_id: po.id,
         metadata: {
           code: po.code,
+          requisition_id: po.requisitionId,
+          requisition_code: po.requisitionCode,
           origin: "catalog",
           supplier_id: po.supplierId,
           status: "draft",
         },
       })
+
+      await db.from("audit_logs").insert({
+        event_type: "requisition.created",
+        description: `Requisição ${po.requisitionCode} criada via catálogo (vinculada a ${po.code})`,
+        company_id: ctx.companyId,
+        user_id: ctx.userId,
+        user_name: ctx.fullName,
+        entity: "requisitions",
+        entity_id: po.requisitionId,
+        metadata: {
+          code: po.requisitionCode,
+          purchase_order_id: po.id,
+          purchase_order_code: po.code,
+          origin: "catalog",
+          status: "completed",
+        },
+      })
     }
+
+    void notifyCatalogCheckout({
+      db,
+      companyId: ctx.companyId,
+      actorUserId: ctx.userId,
+      actorName: ctx.fullName,
+      actorProfileType: ctx.profileType,
+      title: (body.title ?? "").trim() || "Pedido do catálogo",
+      purchaseOrders: result.result.purchaseOrders,
+    })
 
     return NextResponse.json({
       success: true,

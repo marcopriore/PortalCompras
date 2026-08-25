@@ -449,7 +449,12 @@ export function PurchaseCatalogPage({
       })
       const body = (await res.json()) as {
         error?: string
-        purchase_orders?: Array<{ id: string; code: string }>
+        purchase_orders?: Array<{
+          id: string
+          code: string
+          requisitionId?: string
+          requisitionCode?: string
+        }>
       }
       if (!res.ok) throw new Error(body.error ?? "Erro no checkout")
 
@@ -457,8 +462,8 @@ export function PurchaseCatalogPage({
 
       toast.success(
         orders.length === 1
-          ? `Pedido ${orders[0].code} criado em rascunho`
-          : `${orders.length} pedidos criados em rascunho`,
+          ? `Pedido ${orders[0].code} e requisição ${orders[0].requisitionCode ?? ""} criados`
+          : `${orders.length} pedidos com requisições vinculadas criados`,
       )
 
       setCheckoutOpen(false)
@@ -470,6 +475,8 @@ export function PurchaseCatalogPage({
       if (orders.length === 1) {
         if (portal === "comprador") {
           router.push(`/comprador/pedidos/${orders[0].id}`)
+        } else if (orders[0].requisitionId) {
+          router.push(`/solicitante/${orders[0].requisitionId}`)
         } else {
           router.push("/solicitante")
         }
@@ -627,8 +634,8 @@ export function PurchaseCatalogPage({
                 <span>
                   {" "}
                   · Serão criados{" "}
-                  {new Set(cart.items.map((i) => i.supplierId)).size} pedidos em rascunho (um
-                  por fornecedor)
+                  {new Set(cart.items.map((i) => i.supplierId)).size} pedidos em
+                  rascunho com requisições vinculadas (um por fornecedor)
                 </span>
               )}
             </p>
@@ -691,7 +698,7 @@ export function PurchaseCatalogPage({
               Cancelar
             </Button>
             <Button onClick={() => void handleCheckout()} disabled={checkingOut}>
-              {checkingOut ? "Processando..." : "Criar pedido(s)"}
+              {checkingOut ? "Processando..." : "Finalizar Pedido"}
             </Button>
           </DialogFooter>
         </DialogContent>

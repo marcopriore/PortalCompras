@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { validateCatalogLineQuantity } from "@/lib/catalog/validate-cart-line"
-import type { CatalogCheckoutInput } from "@/lib/catalog/checkout"
+import type { CatalogCheckoutInput } from "@/lib/catalog/types"
 import type { ContractKind } from "@/types/contracts"
 
 export type CatalogCartLineRow = {
@@ -16,8 +16,16 @@ export type CatalogCartLineRow = {
   quantity: number
 }
 
+export type CatalogPurchaseOrderCreated = {
+  id: string
+  code: string
+  supplierId: string
+  requisitionId: string
+  requisitionCode: string
+}
+
 export type CatalogPurchaseOrderResult = {
-  purchaseOrders: Array<{ id: string; code: string; supplierId: string }>
+  purchaseOrders: CatalogPurchaseOrderCreated[]
 }
 
 function unwrapJoin<T>(value: T | T[] | null): T | null {
@@ -25,7 +33,9 @@ function unwrapJoin<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? value[0] ?? null : value
 }
 
-function groupBySupplier(items: CatalogCartLineRow[]): Map<string, CatalogCartLineRow[]> {
+export function groupCatalogLinesBySupplier(
+  items: CatalogCartLineRow[],
+): Map<string, CatalogCartLineRow[]> {
   const groups = new Map<string, CatalogCartLineRow[]>()
   for (const item of items) {
     const list = groups.get(item.supplier_id) ?? []
@@ -39,7 +49,12 @@ async function loadContractItemDetails(
   db: SupabaseClient,
   contractItemIds: string[],
 ) {
-  if (contractItemIds.length === 0) return new Map<string, Parameters<typeof validateCatalogLineQuantity>[1] & { delivery_days: number | null }>()
+  if (contractItemIds.length === 0) {
+    return new Map<
+      string,
+      Parameters<typeof validateCatalogLineQuantity>[1] & { delivery_days: number | null }
+    >()
+  }
 
   const { data } = await db
     .from("contract_items")
@@ -53,25 +68,28 @@ async function loadContractItemDetails(
     delivery_days: number | null
   }
 
-  return new Map(
-    ((data ?? []) as Row[]).map((row) => [
-      row.id,
-      row,
-    ]),
-  )
+  return new Map(((data ?? []) as Row[]).map((row) => [row.id, row]))
 }
 
 async function rollbackPurchaseOrder(db: SupabaseClient, orderId: string) {
   try {
     await db.rpc("release_contract_balance", { p_order_id: orderId })
-  } catch {}
+  } catch {
+    /* best-effort */
+  }
   await db.from("purchase_orders").delete().eq("id", orderId)
+}
+
+async function rollbackRequisition(db: SupabaseClient, requisitionId: string) {
+  await db.from("requisition_items").delete().eq("requisition_id", requisitionId)
+  await db.from("requisitions").delete().eq("id", requisitionId)
 }
 
 export async function createCatalogPurchaseOrders(
   db: SupabaseClient,
   companyId: string,
   userId: string,
+  userName: string | null,
   cartItems: CatalogCartLineRow[],
   input: CatalogCheckoutInput,
 ): Promise<
@@ -123,12 +141,15 @@ export async function createCatalogPurchaseOrders(
     ((contractsData ?? []) as Array<{
       id: string
       code: string
-      payment_conditions: { code: string; description: string } | { code: string; description: string }[] | null
+      payment_conditions:
+        | { code: string; description: string }
+        | { code: string; description: string }[]
+        | null
     }>).map((c) => [c.id, c]),
   )
 
-  const groups = groupBySupplier(cartItems)
-  const created: CatalogPurchaseOrderResult["purchaseOrders"] = []
+  const groups = groupCatalogLinesBySupplier(cartItems)
+  const created: CatalogPurchaseOrderCreated[] = []
 
   for (const [supplierId, lines] of groups) {
     const supplier = supplierMap.get(supplierId)
@@ -166,8 +187,62 @@ export async function createCatalogPurchaseOrders(
       }
     })
 
+    const { data: reqRow, error: reqErr } = await db
+      .from("requisitions")
+      .insert({
+        company_id: companyId,
+        title: input.title.trim(),
+        description: input.description?.trim() || null,
+        cost_center: input.costCenter.trim(),
+        needed_by: input.neededBy?.trim() || null,
+        priority: input.priority ?? "normal",
+        status: "completed",
+        origin: "catalog",
+        requester_id: userId,
+        requester_name: userName,
+        supplier_id: supplierId,
+      })
+      .select("id, code")
+      .single()
+
+    if (reqErr || !reqRow) {
+      for (const po of created) {
+        await rollbackPurchaseOrder(db, po.id)
+        await rollbackRequisition(db, po.requisitionId)
+      }
+      return { ok: false, error: reqErr?.message ?? "Falha ao criar requisição" }
+    }
+
+    const requisitionId = reqRow.id as string
+    const requisitionCode = reqRow.code as string
+
+    const { error: reqItemsErr } = await db.from("requisition_items").insert(
+      lines.map((line) => ({
+        requisition_id: requisitionId,
+        company_id: companyId,
+        material_code: line.material_code,
+        material_description: line.material_description,
+        quantity: line.quantity,
+        unit_of_measure: line.unit_of_measure,
+        unit_price: line.unit_price,
+        contract_id: line.contract_id,
+        contract_item_id: line.contract_item_id,
+        estimated_price: line.unit_price,
+      })),
+    )
+
+    if (reqItemsErr) {
+      await rollbackRequisition(db, requisitionId)
+      for (const po of created) {
+        await rollbackPurchaseOrder(db, po.id)
+        await rollbackRequisition(db, po.requisitionId)
+      }
+      return { ok: false, error: reqItemsErr.message }
+    }
+
     const observationParts = [
       `Pedido originado do Catálogo de Compras: ${input.title.trim()}`,
+      `Requisição: ${requisitionCode}`,
       `Centro de custo: ${input.costCenter.trim()}`,
       contractCodes.size > 0
         ? `Contrato(s): ${[...contractCodes].join(", ")}`
@@ -187,7 +262,7 @@ export async function createCatalogPurchaseOrders(
         delivery_days: maxDeliveryDays > 0 ? maxDeliveryDays : null,
         delivery_address: "A definir",
         quotation_code: null,
-        requisition_code: null,
+        requisition_code: requisitionCode,
         total_price: Math.round(totalPrice * 100) / 100,
         observations: observationParts.join("\n"),
         created_by: userId,
@@ -197,8 +272,10 @@ export async function createCatalogPurchaseOrders(
       .single()
 
     if (poErr || !poData) {
+      await rollbackRequisition(db, requisitionId)
       for (const po of created) {
         await rollbackPurchaseOrder(db, po.id)
+        await rollbackRequisition(db, po.requisitionId)
       }
       return { ok: false, error: poErr?.message ?? "Falha ao criar pedido" }
     }
@@ -223,8 +300,10 @@ export async function createCatalogPurchaseOrders(
 
     if (itemsErr) {
       await rollbackPurchaseOrder(db, poId)
+      await rollbackRequisition(db, requisitionId)
       for (const po of created) {
         await rollbackPurchaseOrder(db, po.id)
+        await rollbackRequisition(db, po.requisitionId)
       }
       return { ok: false, error: itemsErr.message }
     }
@@ -235,8 +314,10 @@ export async function createCatalogPurchaseOrders(
 
     if (reserveErr) {
       await rollbackPurchaseOrder(db, poId)
+      await rollbackRequisition(db, requisitionId)
       for (const po of created) {
         await rollbackPurchaseOrder(db, po.id)
+        await rollbackRequisition(db, po.requisitionId)
       }
       return {
         ok: false,
@@ -251,8 +332,10 @@ export async function createCatalogPurchaseOrders(
 
     if (flagErr) {
       await rollbackPurchaseOrder(db, poId)
+      await rollbackRequisition(db, requisitionId)
       for (const po of created) {
         await rollbackPurchaseOrder(db, po.id)
+        await rollbackRequisition(db, po.requisitionId)
       }
       return { ok: false, error: flagErr.message }
     }
@@ -261,6 +344,8 @@ export async function createCatalogPurchaseOrders(
       id: poId,
       code: poData.code as string,
       supplierId,
+      requisitionId,
+      requisitionCode,
     })
   }
 

@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.84
+## Versão atual: v2.19.88
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -354,7 +354,7 @@ Persistência em `company_settings` (`company_id`, `key`, `value`). Catálogo ti
 
 ---
 
-## 9. Backlog (estado atual — v2.19.84)
+## 9. Backlog (estado atual — v2.19.88)
 
 Revisado em 20/08/2026. **Foco atual:** diferenciação de produto e escala; Recebimento adiado.
 
@@ -395,6 +395,7 @@ Revisado em 20/08/2026. **Foco atual:** diferenciação de produto e escala; Rec
 | # | Item | Notas |
 |---|------|-------|
 | 14 | **Migrar documentação de implantação para Notion** | Go-to-market |
+| 16 | **Catálogo de Compras** | ✅ v2.19.88 | Ofertas de contrato, carrinho, checkout cria REQ `completed` + PO `draft` vinculados; paginação DB; permissões; notificação |
 | 15 | **Auto-retry outbound com backoff** | ✅ v2.19.87 | Transient (rede/5xx/timeout); audit; Monitor após esgotar |
 | 16 | **Módulo de Recebimento + consumo por item REQ** | Adiado conscientemente; retomar muito à frente |
 

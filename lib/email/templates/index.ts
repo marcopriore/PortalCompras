@@ -576,3 +576,39 @@ export function templatePasswordReset(data: {
     html: emailBase(content, "Redefinição de senha"),
   }
 }
+
+// ─── CATÁLOGO DE COMPRAS ───────────────────────────────────
+
+export function templateCatalogOrderCreated(data: {
+  recipientName: string
+  title: string
+  orderCodes: string
+  requisitionCodes: string
+  linkPath: string
+  portalLabel: string
+}): { subject: string; html: string } {
+  const base = getAppEmailBaseUrl()
+  const content = `
+      <h2 style="color:#1a1a2e;font-size:22px;margin:0 0 8px;">
+        Pedido do catálogo criado
+      </h2>
+      <p style="color:#6c757d;font-size:15px;margin:0 0 32px;">
+        Olá, ${data.recipientName}! Um pedido foi gerado a partir do Catálogo de Compras.
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0"
+        style="background:#f8f9fa;border-radius:8px;padding:20px;margin-bottom:24px;">
+        <tr><td>
+          <table width="100%">
+            ${emailInfoRow("Título", data.title)}
+            ${emailInfoRow("Pedido(s)", data.orderCodes)}
+            ${emailInfoRow("Requisição(ões)", data.requisitionCodes)}
+          </table>
+        </td></tr>
+      </table>
+      ${emailButton(data.portalLabel, `${base}${data.linkPath}`)}
+    `
+  return {
+    subject: `Catálogo — ${data.orderCodes}`,
+    html: emailBase(content, "Pedido do catálogo"),
+  }
+}
