@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.92
+## Versão atual: v2.19.93
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -648,7 +648,7 @@ Query: `round_number`, `supplier_code`, `status`. Status default: todos (`invite
 | Domínio | Endpoints | Status |
 |---------|-----------|--------|
 | **Contratos** | `GET /contracts`, `GET /contracts/{id}`, `GET .../balance`, `GET .../acceptances` | ✅ v2.19.92 — escopo `contracts:read`, feature `contracts` |
-| Aprovações | GET pendentes; POST approve/reject inbound | ⬜ |
+| **Aprovações** | `GET /approvals`, `GET /approvals/{id}`, `POST .../approve`, `POST .../reject` | ✅ v2.19.93 — escopos `approvals:read\|write`; escrita só `flow=requisition` |
 | Cotações | POST convite fornecedor (se demanda ERP) | ⬜ |
 | Relatórios | GET saving/spend JSON | ⬜ |
 | Anexos | POST upload requisição | ⬜ |

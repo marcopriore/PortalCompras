@@ -1,5 +1,17 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.93] — 2026-08-25
+
+### Loja de API — Fase 2 (Aprovações)
+
+- Escopos `approvals:read` / `approvals:write`
+- `GET /api/v1/approvals` (default `status=pending`) e `GET /api/v1/approvals/{id}`
+- `POST /api/v1/approvals/{id}/approve` e `.../reject` (fluxo **requisition**; order bloqueado)
+- Criação de REQ via API com `approval_requisition` enfileira `approval_requests` (RPC aprovador)
+- Notificação in-app + e-mail ao solicitante (mesma lógica do portal)
+
+---
+
 ## [v2.19.92] — 2026-08-25
 
 ### Loja de API — Fase 2 (Contratos read)

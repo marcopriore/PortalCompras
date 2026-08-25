@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.92
+- Versão atual: v2.19.93
 
 ---
 
@@ -320,6 +320,7 @@
 | v2.19.90 | Timeline (datas só concluídas) + número do pedido no detalhe da REQ |
 | v2.19.91 | Permissões por widget do Dashboard e seções/exports de Relatórios |
 | v2.19.92 | Loja de API Fase 2: GET contratos (list/detail/balance/acceptances) |
+| v2.19.93 | Loja de API Fase 2: GET/POST aprovações (requisição) |
 | v2.19.85 | Importação massiva de requisições via Excel; monitor integração em nova aba |
 | v2.19.84 | Testes unitários ampliados (143/14 arquivos) e rotina de docs sincronizada |
 | v2.19.83 | Configurações unificadas: abas Usuários, Perfis de Acesso, Integrações; deep link ?tab= |

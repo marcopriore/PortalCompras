@@ -295,6 +295,87 @@ export const API_DOC_ENDPOINTS: ApiDocEndpoint[] = [
   }
 }`,
   },
+  {
+    id: "approvals-list",
+    group: "Aprovações",
+    method: "GET",
+    path: "/approvals",
+    title: "Listar aprovações",
+    description:
+      "Fila de approval_requests. Default status=pending. Use status=all para todos.",
+    scope: "approvals:read",
+    queryParams: [
+      { name: "page", type: "integer", description: "Página (1-based)", example: 1 },
+      { name: "page_size", type: "integer", description: "Tamanho da página (máx. 100)", example: 50 },
+      { name: "status", type: "string", description: "pending | approved | rejected | all (default pending)" },
+      { name: "flow", type: "string", description: "requisition | order" },
+      { name: "created_since", type: "string (ISO 8601)", description: "Criados desde a data" },
+    ],
+    responseExample: `{
+  "data": {
+    "approvals": [{
+      "id": "…",
+      "flow": "requisition",
+      "status": "pending",
+      "entity_code": "REQ-2026-0001",
+      "entity_external_code": "ERP-99"
+    }],
+    "page": 1, "page_size": 50, "total": 3, "total_pages": 1
+  }
+}`,
+  },
+  {
+    id: "approvals-get",
+    group: "Aprovações",
+    method: "GET",
+    path: "/approvals/{id}",
+    title: "Detalhe da aprovação",
+    description: "id = UUID da approval_request.",
+    scope: "approvals:read",
+    pathParams: [
+      { name: "id", type: "string", required: true, description: "UUID da approval_request" },
+    ],
+  },
+  {
+    id: "approvals-approve",
+    group: "Aprovações",
+    method: "POST",
+    path: "/approvals/{id}/approve",
+    title: "Aprovar",
+    description:
+      "Aprova a solicitação. Se todos os níveis não rejeitados estiverem aprovados, a requisição vai para approved. Fluxo order ainda não suportado na escrita.",
+    scope: "approvals:write",
+    pathParams: [
+      { name: "id", type: "string", required: true, description: "UUID da approval_request" },
+    ],
+    bodyFields: [
+      {
+        name: "decided_by_name",
+        type: "string",
+        description: "Nome opcional gravado em approver_name da REQ quando concluir",
+      },
+    ],
+    requestExample: `{ "decided_by_name": "ERP Integrador" }`,
+    responseExample: `{ "data": { "approval": { "status": "approved" }, "entity_fully_approved": true } }`,
+  },
+  {
+    id: "approvals-reject",
+    group: "Aprovações",
+    method: "POST",
+    path: "/approvals/{id}/reject",
+    title: "Reprovar",
+    description: "Reprova imediatamente a requisição. reason obrigatório.",
+    scope: "approvals:write",
+    pathParams: [
+      { name: "id", type: "string", required: true, description: "UUID da approval_request" },
+    ],
+    bodyFields: [
+      { name: "reason", type: "string", required: true, description: "Motivo da reprovação" },
+      { name: "decided_by_name", type: "string", description: "Nome opcional" },
+    ],
+    requestExample: `{ "reason": "Fora do orçamento", "decided_by_name": "ERP Integrador" }`,
+    responseExample: `{ "data": { "approval": { "status": "rejected" } } }`,
+  },
 ]
 
 export function buildOpenApiSpec() {

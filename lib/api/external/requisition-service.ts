@@ -101,6 +101,18 @@ export async function createRequisitionFromApi(
     return { ok: false as const, code: "INTERNAL_ERROR" as const, message: itemsError.message }
   }
 
+  if (status === "pending") {
+    const { enqueueRequisitionApprovalIfNeeded } = await import(
+      "@/lib/api/external/approval-service"
+    )
+    await enqueueRequisitionApprovalIfNeeded(
+      service,
+      companyId,
+      created.id as string,
+      input.cost_center ?? null,
+    )
+  }
+
   const requisition = await loadRequisitionWithItems(service, created.id as string)
   return { ok: true as const, requisition, status }
 }
