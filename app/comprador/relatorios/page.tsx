@@ -44,11 +44,19 @@ import {
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions, type PermissionKey } from "@/lib/hooks/usePermissions"
 import { cn } from "@/lib/utils"
 
-const relatoriosDisponiveis = [
+const relatoriosDisponiveis: Array<{
+  id: number
+  permission: PermissionKey
+  titulo: string
+  descricao: string
+  icon: typeof DollarSign
+}> = [
   {
     id: 1,
+    permission: "reports.export.spend_category",
     titulo: "Spend por Categoria",
     descricao:
       "Valor total gasto por categoria, comparativo com período anterior e % do spend total",
@@ -56,6 +64,7 @@ const relatoriosDisponiveis = [
   },
   {
     id: 2,
+    permission: "reports.export.supplier_performance",
     titulo: "Performance de Fornecedores",
     descricao:
       "Scorecard completo: volume comprado, pedidos, lead time e cobertura por fornecedor",
@@ -63,12 +72,14 @@ const relatoriosDisponiveis = [
   },
   {
     id: 3,
+    permission: "reports.export.saving",
     titulo: "Saving Acumulado",
     descricao: "Economia gerada através de negociações e processos de cotação",
     icon: TrendingUp,
   },
   {
     id: 4,
+    permission: "reports.export.process_time",
     titulo: "Tempo do Processo de Compras",
     descricao: "Eficiência do time: dias entre requisição e pedido, por comprador e por categoria",
     icon: Package,
@@ -138,6 +149,22 @@ export default function RelatoriosPage() {
   const [coberturaPrecoAlvo, setCoberturaPrecoAlvo] = useState<number | null>(null)
 
   const { companyId, loading: userLoading } = useUser()
+  const { hasPermission, loading: permissionsLoading } = usePermissions()
+
+  const canReportsSaving = hasPermission("reports.saving")
+  const canReportsSpend = hasPermission("reports.spend")
+  const canReportsOrders = hasPermission("reports.orders")
+  const canReportsQuotations = hasPermission("reports.quotations")
+  const visibleExports = relatoriosDisponiveis.filter((r) =>
+    hasPermission(r.permission),
+  )
+  const showDashboardsTab =
+    canReportsSaving ||
+    canReportsSpend ||
+    canReportsOrders ||
+    canReportsQuotations
+  const showExportsTab = visibleExports.length > 0
+  const reportsDefaultTab = showDashboardsTab ? "dashboards" : "exportar"
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [dashLoading, setDashLoading] = useState(true)
   const [completedOrdersCount, setCompletedOrdersCount] = useState<number | null>(null)
@@ -1527,7 +1554,7 @@ export default function RelatoriosPage() {
     setEditingTarget(null)
   }
 
-  if (userLoading) {
+  if (userLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
         Carregando...
@@ -1645,13 +1672,27 @@ export default function RelatoriosPage() {
         )}
       </div>
 
-      <Tabs defaultValue="dashboards" className="w-full">
+      {!showDashboardsTab && !showExportsTab ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            Nenhum relatório liberado para o seu perfil. Solicite ao administrador as
+            permissões de Relatórios.
+          </CardContent>
+        </Card>
+      ) : (
+      <Tabs defaultValue={reportsDefaultTab} className="w-full">
         <TabsList>
-          <TabsTrigger value="dashboards">Dashboards</TabsTrigger>
-          <TabsTrigger value="exportar">Exportar Relatórios</TabsTrigger>
+          {showDashboardsTab && (
+            <TabsTrigger value="dashboards">Dashboards</TabsTrigger>
+          )}
+          {showExportsTab && (
+            <TabsTrigger value="exportar">Exportar Relatórios</TabsTrigger>
+          )}
         </TabsList>
 
+        {showDashboardsTab && (
         <TabsContent value="dashboards" className="mt-6 space-y-10">
+          {canReportsSaving && (
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-border pb-2">
               <TrendingUp className="h-5 w-5 text-green-600" />
@@ -1849,7 +1890,9 @@ export default function RelatoriosPage() {
               </Card>
             </div>
           </section>
+          )}
 
+          {canReportsSpend && (
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-border pb-2">
               <DollarSign className="h-5 w-5 text-primary" />
@@ -1975,7 +2018,9 @@ export default function RelatoriosPage() {
               </Card>
             </div>
           </section>
+          )}
 
+          {canReportsOrders && (
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-border pb-2">
               <Package className="h-5 w-5 text-primary" />
@@ -2199,7 +2244,9 @@ export default function RelatoriosPage() {
               </Card>
             </div>
           </section>
+          )}
 
+          {canReportsQuotations && (
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-border pb-2">
               <FileText className="h-5 w-5 text-primary" />
@@ -2316,14 +2363,17 @@ export default function RelatoriosPage() {
               </Card>
             </div>
           </section>
+          )}
         </TabsContent>
+        )}
 
+        {showExportsTab && (
         <TabsContent value="exportar" className="mt-4">
           <p className="text-sm text-muted-foreground mb-4">
             Os relatórios abaixo usam os filtros de período, categoria e fornecedor selecionados acima.
           </p>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {relatoriosDisponiveis.map((relatorio) => (
+            {visibleExports.map((relatorio) => (
               <Card key={relatorio.id}>
                 <CardHeader>
                   <div className="flex items-start gap-4">
@@ -2373,7 +2423,9 @@ export default function RelatoriosPage() {
             ))}
           </div>
         </TabsContent>
+        )}
       </Tabs>
+      )}
     </div>
   )
 }

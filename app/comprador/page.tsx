@@ -37,6 +37,10 @@ import {
   Cell,
   ReferenceLine,
 } from "recharts"
+import {
+  adaptiveMetricGridClass,
+  adaptivePairGridClass,
+} from "@/lib/permissions/dashboard-reports"
 import { cn } from "@/lib/utils"
 
 type QuotationStatus = "draft" | "waiting" | "analysis" | "completed" | "cancelled"
@@ -53,7 +57,23 @@ type RecentActivity = {
 
 export default function CompradorDashboard() {
   const { companyId, loading: userLoading } = useUser()
-  const { hasFeature } = usePermissions()
+  const { hasFeature, hasPermission, loading: permissionsLoading } = usePermissions()
+
+  const canMetrics = hasPermission("dashboard.metrics")
+  const canSpendCategory = hasPermission("dashboard.spend_category")
+  const canQuotationStatus = hasPermission("dashboard.quotation_status")
+  const canRecentActivity = hasPermission("dashboard.recent_activity")
+  const canLeadTime = hasPermission("dashboard.lead_time")
+  const canRoi = hasPermission("dashboard.roi")
+
+  const hasAnyDashboardWidget =
+    canMetrics ||
+    canSpendCategory ||
+    canQuotationStatus ||
+    canRecentActivity ||
+    canLeadTime ||
+    canRoi
+
 
   const [quotationsPending, setQuotationsPending] = useState<number>(0)
   const [quotationsByStatus, setQuotationsByStatus] = useState<
@@ -772,13 +792,18 @@ export default function CompradorDashboard() {
     return labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ")
   }
 
-  if (userLoading) {
+  if (userLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
         Carregando...
       </div>
     )
   }
+
+  const chartPairCount =
+    (canSpendCategory ? 1 : 0) + (canQuotationStatus ? 1 : 0)
+  const activityLeadCount =
+    (canRecentActivity ? 1 : 0) + (canLeadTime ? 1 : 0)
 
   return (
     <div className="space-y-6">
@@ -789,127 +814,153 @@ export default function CompradorDashboard() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <MetricsCard
-          title="Cotações Pendentes"
-          value={quotationsPending}
-          change={quotationsChange}
-          icon={FileText}
-        />
-        <MetricsCard
-          title="Pedidos em Andamento"
-          value={ordersInProgress ?? "—"}
-          change={ordersChange}
-          icon={ShoppingCart}
-        />
-        <MetricsCard
-          title="Saving Acumulado"
-          value={
-            savingAcumulado == null
-              ? "—"
-              : savingAcumulado.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })
-          }
-          change={undefined}
-          changeLabel={
-            savingAcumulado == null
-              ? "Defina preços alvo nos itens"
-              : savingAcumulado >= 0
-                ? "Economia vs. preço alvo"
-                : "Acima do preço alvo"
-          }
-          icon={TrendingDown}
-        />
-        <MetricsCard
-          title="Tempo Fluxo Compras"
-          value={avgLeadTime !== null ? `${avgLeadTime} dias` : "—"}
-          change={leadTimeChange}
-          changeUnit=" dias"
-          changeLabel={
-            avgLeadTime != null ? "vs mês anterior" : "Sem vínculo REQ→pedido"
-          }
-          subtitle="Da requisição até o pedido emitido"
-          icon={Clock}
-        />
-      </div>
+      {!hasAnyDashboardWidget && (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            Nenhum indicador liberado para o seu perfil. Solicite ao administrador as
+            permissões de Dashboard.
+          </CardContent>
+        </Card>
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <SpendAnalysisChart data={spendData} />
-        <QuotationStatusChart data={quotationsByStatus} />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Atividades Recentes</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="rounded-lg border bg-card">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Título</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Data</TableHead>
-                      <TableHead className="text-right">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recentActivities.map((activity) => (
-                      <TableRow key={`${activity.type}-${activity.id}`}>
-                        <TableCell className="font-medium">{activity.code}</TableCell>
-                        <TableCell>{activity.title}</TableCell>
-                        <TableCell>
-                          <span className="text-muted-foreground">{activity.type}</span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{mapActivityStatusLabel(activity.status)}</Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {activity.created_at
-                            ? format(new Date(activity.created_at), "dd/MM/yyyy", {
-                                locale: ptBR,
-                              })
-                            : "-"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <TableRowActions
-                            actions={[
-                              {
-                                label: "Ver Detalhes",
-                                icon: Eye,
-                                href: activity.href,
-                              },
-                            ]}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {recentActivities.length === 0 && !dashLoading && (
-                      <TableRow>
-                        <TableCell
-                          colSpan={6}
-                          className="py-6 text-center text-sm text-muted-foreground"
-                        >
-                          Nenhuma atividade recente encontrada.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+      {canMetrics && (
+        <div className={adaptiveMetricGridClass(4)}>
+          <MetricsCard
+            title="Cotações Pendentes"
+            value={quotationsPending}
+            change={quotationsChange}
+            icon={FileText}
+          />
+          <MetricsCard
+            title="Pedidos em Andamento"
+            value={ordersInProgress ?? "—"}
+            change={ordersChange}
+            icon={ShoppingCart}
+          />
+          <MetricsCard
+            title="Saving Acumulado"
+            value={
+              savingAcumulado == null
+                ? "—"
+                : savingAcumulado.toLocaleString("pt-BR", {
+                    style: "currency",
+                    currency: "BRL",
+                  })
+            }
+            change={undefined}
+            changeLabel={
+              savingAcumulado == null
+                ? "Defina preços alvo nos itens"
+                : savingAcumulado >= 0
+                  ? "Economia vs. preço alvo"
+                  : "Acima do preço alvo"
+            }
+            icon={TrendingDown}
+          />
+          <MetricsCard
+            title="Tempo Fluxo Compras"
+            value={avgLeadTime !== null ? `${avgLeadTime} dias` : "—"}
+            change={leadTimeChange}
+            changeUnit=" dias"
+            changeLabel={
+              avgLeadTime != null ? "vs mês anterior" : "Sem vínculo REQ→pedido"
+            }
+            subtitle="Da requisição até o pedido emitido"
+            icon={Clock}
+          />
         </div>
-        <LeadTimeChart data={leadTimeChartData} />
-      </div>
+      )}
+
+      {chartPairCount > 0 && (
+        <div className={adaptivePairGridClass(chartPairCount)}>
+          {canSpendCategory && <SpendAnalysisChart data={spendData} />}
+          {canQuotationStatus && <QuotationStatusChart data={quotationsByStatus} />}
+        </div>
+      )}
+
+      {activityLeadCount > 0 && (
+        <div
+          className={
+            canRecentActivity && canLeadTime
+              ? "grid gap-4 lg:grid-cols-3"
+              : "grid gap-4 grid-cols-1"
+          }
+        >
+          {canRecentActivity && (
+            <div className={canLeadTime ? "lg:col-span-2" : undefined}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Atividades Recentes</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="rounded-lg border bg-card">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>ID</TableHead>
+                          <TableHead>Título</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Data</TableHead>
+                          <TableHead className="text-right">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {recentActivities.map((activity) => (
+                          <TableRow key={`${activity.type}-${activity.id}`}>
+                            <TableCell className="font-medium">{activity.code}</TableCell>
+                            <TableCell>{activity.title}</TableCell>
+                            <TableCell>
+                              <span className="text-muted-foreground">{activity.type}</span>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">
+                                {mapActivityStatusLabel(activity.status)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {activity.created_at
+                                ? format(new Date(activity.created_at), "dd/MM/yyyy", {
+                                    locale: ptBR,
+                                  })
+                                : "-"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <TableRowActions
+                                actions={[
+                                  {
+                                    label: "Ver Detalhes",
+                                    icon: Eye,
+                                    href: activity.href,
+                                  },
+                                ]}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {recentActivities.length === 0 && !dashLoading && (
+                          <TableRow>
+                            <TableCell
+                              colSpan={6}
+                              className="py-6 text-center text-sm text-muted-foreground"
+                            >
+                              Nenhuma atividade recente encontrada.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+          {canLeadTime && <LeadTimeChart data={leadTimeChartData} />}
+        </div>
+      )}
 
       {/* ── Painel de ROI ─────────────────────────────────────── */}
+      {canRoi && (
       <div className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Painel de ROI</h2>
@@ -1113,6 +1164,7 @@ export default function CompradorDashboard() {
         </div>
         {hasFeature("ai_analytics") && <SpendAIInsights />}
       </div>
+      )}
     </div>
   )
 }

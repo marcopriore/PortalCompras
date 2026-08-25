@@ -33,6 +33,20 @@ export type PermissionKey =
   | "nav.suppliers"
   | "nav.reports"
   | "nav.catalog"
+  | "dashboard.metrics"
+  | "dashboard.spend_category"
+  | "dashboard.quotation_status"
+  | "dashboard.recent_activity"
+  | "dashboard.lead_time"
+  | "dashboard.roi"
+  | "reports.saving"
+  | "reports.spend"
+  | "reports.orders"
+  | "reports.quotations"
+  | "reports.export.spend_category"
+  | "reports.export.supplier_performance"
+  | "reports.export.saving"
+  | "reports.export.process_time"
   | "quotation.create"
   | "quotation.edit"
   | "quotation.cancel"
@@ -108,6 +122,20 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "nav.suppliers",
   "nav.reports",
   "nav.catalog",
+  "dashboard.metrics",
+  "dashboard.spend_category",
+  "dashboard.quotation_status",
+  "dashboard.recent_activity",
+  "dashboard.lead_time",
+  "dashboard.roi",
+  "reports.saving",
+  "reports.spend",
+  "reports.orders",
+  "reports.quotations",
+  "reports.export.spend_category",
+  "reports.export.supplier_performance",
+  "reports.export.saving",
+  "reports.export.process_time",
   "quotation.create",
   "quotation.edit",
   "quotation.cancel",

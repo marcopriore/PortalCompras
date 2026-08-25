@@ -16,6 +16,60 @@ export const PERMISSION_CATALOG: PermissionCatalogItem[] = [
   { key: "nav.suppliers", label: "Fornecedores", group: "Navegação" },
   { key: "nav.reports", label: "Relatórios", group: "Navegação" },
   { key: "nav.catalog", label: "Catálogo de Compras", group: "Navegação" },
+  { key: "dashboard.metrics", label: "Cards de métricas", group: "Dashboard" },
+  {
+    key: "dashboard.spend_category",
+    label: "Gráfico Spend por Categoria",
+    group: "Dashboard",
+  },
+  {
+    key: "dashboard.quotation_status",
+    label: "Gráfico Status das Cotações",
+    group: "Dashboard",
+  },
+  {
+    key: "dashboard.recent_activity",
+    label: "Atividades Recentes",
+    group: "Dashboard",
+  },
+  {
+    key: "dashboard.lead_time",
+    label: "Gráfico Lead Time Médio",
+    group: "Dashboard",
+  },
+  {
+    key: "dashboard.roi",
+    label: "Painel de ROI (métricas e gráficos)",
+    group: "Dashboard",
+  },
+  { key: "reports.saving", label: "Seção Saving", group: "Relatórios" },
+  { key: "reports.spend", label: "Seção Spend", group: "Relatórios" },
+  { key: "reports.orders", label: "Seção Pedidos", group: "Relatórios" },
+  {
+    key: "reports.quotations",
+    label: "Seção Cotações & Fornecedores",
+    group: "Relatórios",
+  },
+  {
+    key: "reports.export.spend_category",
+    label: "Exportar Spend por Categoria",
+    group: "Relatórios",
+  },
+  {
+    key: "reports.export.supplier_performance",
+    label: "Exportar Performance de Fornecedores",
+    group: "Relatórios",
+  },
+  {
+    key: "reports.export.saving",
+    label: "Exportar Saving Acumulado",
+    group: "Relatórios",
+  },
+  {
+    key: "reports.export.process_time",
+    label: "Exportar Tempo do Processo",
+    group: "Relatórios",
+  },
   { key: "quotation.create", label: "Criar / Clonar Cotação", group: "Cotações" },
   { key: "quotation.edit", label: "Editar Cotação", group: "Cotações" },
   { key: "quotation.cancel", label: "Cancelar Cotação", group: "Cotações" },
@@ -128,6 +182,8 @@ export const LEGACY_ROLE_GROUPS: {
 /** Ordem de exibição no editor de grupos / rules do usuário. */
 const PERMISSION_GROUP_ORDER = [
   "Navegação",
+  "Dashboard",
+  "Relatórios",
   "Catálogo",
   "Cotações",
   "Pedidos",
