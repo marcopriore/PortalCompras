@@ -84,7 +84,7 @@ function FieldsTable({ fields, title }: { fields: ApiDocEndpoint["bodyFields"]; 
 
 function EndpointSection({ endpoint }: { endpoint: ApiDocEndpoint }) {
   return (
-    <section id={endpoint.id} className="scroll-mt-24 border-b border-white/10 pb-10">
+    <section id={endpoint.id} className="scroll-mt-6 border-b border-white/10 pb-10">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Badge className={cn("font-mono", METHOD_COLORS[endpoint.method])}>
           {endpoint.method}
@@ -137,6 +137,12 @@ function EndpointSection({ endpoint }: { endpoint: ApiDocEndpoint }) {
   )
 }
 
+function scrollToSection(id: string) {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.scrollIntoView({ behavior: "smooth", block: "start" })
+}
+
 export default function ApiDocsPage() {
   const [activeGroup, setActiveGroup] = React.useState<string>(API_DOC_GROUPS[0] ?? "Geral")
 
@@ -150,9 +156,22 @@ export default function ApiDocsPage() {
     return map
   }, [])
 
+  React.useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, "")
+    if (!hash) return
+    const t = window.setTimeout(() => scrollToSection(hash), 50)
+    return () => window.clearTimeout(t)
+  }, [])
+
+  const onNavClick = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    e.preventDefault()
+    window.history.replaceState(null, "", `#${id}`)
+    scrollToSection(id)
+  }
+
   return (
-    <div className="min-h-screen bg-[#0a0a12] text-white">
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-[#0a0a12]/90 backdrop-blur-md">
+    <div className="flex h-dvh flex-col overflow-hidden bg-[#0a0a12] text-white">
+      <header className="z-20 shrink-0 border-b border-white/10 bg-[#0a0a12]">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3">
             <Link href="/">
@@ -174,20 +193,40 @@ export default function ApiDocsPage() {
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-7xl gap-8 px-4 py-8 sm:px-6">
-        <aside className="hidden w-56 shrink-0 self-start lg:block">
-          <nav className="sticky top-24 max-h-[calc(100vh-7rem)] space-y-6 overflow-y-auto overscroll-contain pr-2 text-sm">
+      <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1">
+        <aside className="hidden w-60 shrink-0 flex-col border-r border-white/10 lg:flex">
+          <nav
+            className={cn(
+              "flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 py-6 text-sm",
+              "[scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.25)_transparent]",
+              "[&::-webkit-scrollbar]:w-1.5",
+              "[&::-webkit-scrollbar-track]:bg-transparent",
+              "[&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20",
+            )}
+          >
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/40">
                 Introdução
               </p>
-              <a href="#auth" className="block py-1 text-white/70 hover:text-white">
+              <a
+                href="#auth"
+                onClick={(e) => onNavClick(e, "auth")}
+                className="block py-1 text-white/70 hover:text-white"
+              >
                 Autenticação
               </a>
-              <a href="#outbound-idempotency" className="block py-1 text-white/70 hover:text-white">
+              <a
+                href="#outbound-idempotency"
+                onClick={(e) => onNavClick(e, "outbound-idempotency")}
+                className="block py-1 text-white/70 hover:text-white"
+              >
                 Outbound Idempotency-Key
               </a>
-              <a href="#errors" className="block py-1 text-white/70 hover:text-white">
+              <a
+                href="#errors"
+                onClick={(e) => onNavClick(e, "errors")}
+                className="block py-1 text-white/70 hover:text-white"
+              >
                 Códigos de erro
               </a>
             </div>
@@ -200,6 +239,7 @@ export default function ApiDocsPage() {
                   <a
                     key={ep.id}
                     href={`#${ep.id}`}
+                    onClick={(e) => onNavClick(e, ep.id)}
                     className="flex items-center gap-1 py-1 text-white/60 hover:text-white"
                   >
                     <ChevronRight className="h-3 w-3 shrink-0" />
@@ -211,7 +251,7 @@ export default function ApiDocsPage() {
           </nav>
         </aside>
 
-        <main className="min-w-0 flex-1 space-y-12">
+        <main className="min-w-0 flex-1 space-y-12 overflow-y-auto overscroll-contain px-4 py-8 sm:px-6">
           <div>
             <div className="mb-4 flex items-center gap-2 text-primary">
               <BookOpen className="h-5 w-5" />
@@ -227,7 +267,7 @@ export default function ApiDocsPage() {
             </p>
           </div>
 
-          <section id="auth" className="scroll-mt-24 rounded-xl border border-white/10 bg-white/5 p-6">
+          <section id="auth" className="scroll-mt-6 rounded-xl border border-white/10 bg-white/5 p-6">
             <h2 className="text-lg font-semibold">Autenticação</h2>
             <p className="mt-2 text-sm text-white/60">
               Envie a chave em um dos formatos abaixo. A chave é exibida apenas uma vez na criação.
@@ -246,7 +286,7 @@ export default function ApiDocsPage() {
             </p>
           </section>
 
-          <section id="outbound-idempotency" className="scroll-mt-24 rounded-xl border border-white/10 bg-white/5 p-6">
+          <section id="outbound-idempotency" className="scroll-mt-6 rounded-xl border border-white/10 bg-white/5 p-6">
             <h2 className="text-lg font-semibold">Outbound Valore → ERP (Idempotency-Key)</h2>
             <p className="mt-2 text-sm text-white/60">
               Chamadas do Valore ao ERP (pedidos e contratos) enviam o header{" "}
@@ -277,7 +317,7 @@ export default function ApiDocsPage() {
             </ul>
           </section>
 
-          <section id="errors" className="scroll-mt-24">
+          <section id="errors" className="scroll-mt-6">
             <h2 className="text-lg font-semibold">Códigos de erro</h2>
             <div className="mt-4 overflow-hidden rounded-xl border border-white/10">
               <table className="w-full text-sm">
