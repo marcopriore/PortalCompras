@@ -65,6 +65,7 @@ type Requisition = {
   cost_center: string | null
   requester_name: string | null
   quotation_id: string | null
+  origin: string | null
 }
 
 type QuotationInfo = {
@@ -146,6 +147,42 @@ function HorizontalTimeline({
 }) {
   type StepStatus = "completed" | "active" | "pending" | "rejected" | "cancelled"
 
+  const isCatalog = req.origin === "catalog"
+
+  const catalogSteps: {
+    key: string
+    label: string
+    status: StepStatus
+    date?: string | null
+  }[] = [
+    {
+      key: "created",
+      label: "Criada",
+      status: "completed",
+      date: req.created_at,
+    },
+    {
+      key: "order",
+      label: "Pedido",
+      status: orders.length > 0 ? "completed" : "pending",
+      date: orders[0]?.created_at ?? null,
+    },
+    {
+      key: "delivery",
+      label: "Entrega",
+      status: orders.some((o) => o.status === "completed")
+        ? "completed"
+        : orders.some((o) =>
+              ["processing", "sent"].includes(o.status),
+            )
+          ? "active"
+          : "pending",
+      date:
+        orders.find((o) => o.status === "completed")?.estimated_delivery_date ??
+        null,
+    },
+  ]
+
   const baseSteps: {
     key: string
     label: string
@@ -191,7 +228,8 @@ function HorizontalTimeline({
       key: "order",
       label: "Pedido",
       status:
-        ["draft", "pending", "rejected", "cancelled"].includes(req.status) || !quotation
+        ["draft", "pending", "rejected", "cancelled"].includes(req.status) ||
+        !quotation
           ? "pending"
           : orders.length === 0
             ? "pending"
@@ -213,8 +251,9 @@ function HorizontalTimeline({
     },
   ]
 
-  const steps =
-    req.status === "cancelled"
+  const steps = isCatalog
+    ? catalogSteps
+    : req.status === "cancelled"
       ? [
           ...baseSteps.slice(0, 2),
           {

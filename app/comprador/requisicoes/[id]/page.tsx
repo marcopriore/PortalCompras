@@ -141,7 +141,41 @@ function HorizontalTimeline({
 }) {
   type StepStatus = "completed" | "active" | "pending" | "rejected"
 
-  const steps: {
+  const isCatalog = req.origin === "catalog"
+
+  const catalogSteps: {
+    key: string
+    label: string
+    status: StepStatus
+    date?: string | null
+  }[] = [
+    {
+      key: "created",
+      label: "Criada",
+      status: "completed",
+      date: req.created_at,
+    },
+    {
+      key: "order",
+      label: "Pedido",
+      status: orders.length > 0 ? "completed" : "pending",
+      date: orders[0]?.created_at ?? null,
+    },
+    {
+      key: "delivery",
+      label: "Entrega",
+      status: orders.some((o) => o.status === "completed")
+        ? "completed"
+        : orders.some((o) => ["processing", "sent"].includes(o.status))
+          ? "active"
+          : "pending",
+      date:
+        orders.find((o) => o.status === "completed")?.estimated_delivery_date ??
+        null,
+    },
+  ]
+
+  const standardSteps: {
     key: string
     label: string
     status: StepStatus
@@ -197,7 +231,7 @@ function HorizontalTimeline({
       key: "delivery",
       label: "Entrega",
       status:
-        req.status === "completed"
+        req.status === "completed" && req.origin !== "catalog"
           ? "completed"
           : orders.some((o) => o.status === "completed")
             ? "active"
@@ -205,6 +239,8 @@ function HorizontalTimeline({
       date: orders.find((o) => o.status === "completed")?.estimated_delivery_date,
     },
   ]
+
+  const steps = isCatalog ? catalogSteps : standardSteps
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 overflow-x-auto">
