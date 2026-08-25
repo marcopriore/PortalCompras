@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
 import {
   mapPurchaseOrderToApi,
+  PURCHASE_ORDER_ITEM_SELECT,
   type PurchaseOrderItemRow,
 } from "@/lib/api/external/mappers/purchase-order"
 import { apiError, apiSuccess } from "@/lib/api/external/responses"
@@ -48,16 +49,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
       const { data: items } = await service
         .from("purchase_order_items")
-        .select(
-          "material_code, material_description, quantity, unit_of_measure, unit_price, total_price, delivery_days",
-        )
+        .select(PURCHASE_ORDER_ITEM_SELECT)
         .eq("purchase_order_id", data.id)
         .order("material_code", { ascending: true })
 
       return apiSuccess({
         purchase_order: mapPurchaseOrderToApi(
           data,
-          (items ?? []) as PurchaseOrderItemRow[],
+          (items ?? []) as unknown as PurchaseOrderItemRow[],
         ),
       })
     },

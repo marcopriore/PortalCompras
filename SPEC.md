@@ -762,6 +762,35 @@ Orquestração: `lib/integrations/integrate-purchase-order.ts` → `dispatchOutb
 
 Fornecedor: `processing`, `completed`, `error` e `integration_error` → label **Pedido Aceito** (não expõe integração ERP).
 
+#### Payload outbound (`purchase_order.create` / `update`)
+
+Contrato JSON único (mesmo do `GET /api/v1/purchase-orders/{id}`), agrupado para mapeamento ERP (SAP/WSO2/Totvs), em `snake_case` dentro de `data`:
+
+| Bloco | Campos principais | Notas |
+|-------|-------------------|--------|
+| Raiz | `id`, `code`, `external_code`, `status` | IDs Valore ↔ ERP |
+| `organization` | `company_code`, `purchasing_organization`, `purchasing_group`, `purchase_order_type`, `currency` | Reservados (null até mapeamento tenant); `currency` default `BRL` |
+| `supplier` | `id`, `code`, `name`, `cnpj` | `code` via join `suppliers` |
+| `payment` | `terms_code`, `terms_description` | Descrição vinda de `payment_condition` do pedido |
+| `references` | `quotation_*`, `proposal_id`, `requisition_code` | Rastreabilidade compra |
+| `delivery` | `days`, `estimated_date`, `address` | Data `YYYY-MM-DD` |
+| `totals` | `amount`, `currency` | Cabeçalho |
+| `items[]` | `line_number`, material, qty/preço/imposto, `plant_code`/`site_code`, `contract`, `account_assignments[]` | Rateio estilo SAP; array vazio se sem rateio |
+
+Envelope HTTP ao ERP:
+
+```json
+{
+  "action": "purchase_order.create",
+  "entity": "purchase_orders",
+  "entity_id": "uuid",
+  "entity_code": "PO-2026-0001",
+  "data": { "...": "payload agrupado acima" }
+}
+```
+
+Mapper: `lib/api/external/mappers/purchase-order.ts` · carga outbound: `loadPurchaseOrderOutboundPayload`.
+
 #### Resposta esperada do ERP (`purchase_order.create`)
 
 ```json

@@ -275,6 +275,113 @@ export const API_DOC_ENDPOINTS: ApiDocEndpoint[] = [
 }`,
   },
   {
+    id: "purchase-orders-list",
+    group: "Pedidos",
+    method: "GET",
+    path: "/purchase-orders",
+    title: "Listar pedidos",
+    description:
+      "Lista pedidos do tenant com paginação. Payload agrupado no modelo ERP (organization, supplier, payment, references, delivery, totals, items).",
+    scope: "orders:read",
+    tenantFeature: "orders",
+    queryParams: [
+      { name: "page", type: "integer", description: "Página (1-based)", example: 1 },
+      { name: "page_size", type: "integer", description: "Tamanho da página (máx. 100)", example: 50 },
+      { name: "code", type: "string", description: "Filtro por code ou external_code" },
+      { name: "search", type: "string", description: "Busca em code, external_code, fornecedor" },
+      { name: "status", type: "string", description: "draft | sent | processing | completed | error | …" },
+      { name: "supplier_code", type: "string", description: "Código do fornecedor" },
+      { name: "created_since", type: "string (ISO 8601)", description: "Criados desde a data" },
+      { name: "updated_since", type: "string (ISO 8601)", description: "Alterados desde a data" },
+    ],
+    responseExample: `{
+  "data": {
+    "purchase_orders": [{
+      "code": "PO-2026-0001",
+      "external_code": "4500004022",
+      "status": "completed",
+      "organization": { "currency": "BRL", "company_code": null },
+      "supplier": { "code": "FORN-001", "name": "Fornecedor A", "cnpj": "12.345.678/0001-90" },
+      "payment": { "terms_description": "30 DDL" },
+      "totals": { "amount": 1250.0, "currency": "BRL" },
+      "items": []
+    }],
+    "page": 1, "page_size": 50, "total": 1, "total_pages": 1
+  }
+}`,
+  },
+  {
+    id: "purchase-orders-get",
+    group: "Pedidos",
+    method: "GET",
+    path: "/purchase-orders/{id}",
+    title: "Detalhe do pedido",
+    description:
+      "Retorna cabeçalho + itens. Mesmo contrato JSON do outbound purchase_order.create (snake_case, tags agrupadas para mapeamento SAP/Totvs).",
+    scope: "orders:read",
+    tenantFeature: "orders",
+    pathParams: [
+      { name: "id", type: "string", required: true, description: "UUID, code ou external_code" },
+    ],
+    responseExample: `{
+  "data": {
+    "purchase_order": {
+      "id": "uuid",
+      "code": "PO-2026-0001",
+      "external_code": null,
+      "status": "processing",
+      "organization": {
+        "company_code": null,
+        "purchasing_organization": null,
+        "purchasing_group": null,
+        "purchase_order_type": null,
+        "currency": "BRL"
+      },
+      "supplier": {
+        "id": "uuid",
+        "code": "FORN-001",
+        "name": "Fornecedor A",
+        "cnpj": "12.345.678/0001-90"
+      },
+      "payment": {
+        "terms_code": null,
+        "terms_description": "30 DDL"
+      },
+      "references": {
+        "quotation_code": "COT-2026-0036",
+        "requisition_code": "REQ-2026-0010",
+        "quotation_id": "uuid",
+        "proposal_id": "uuid"
+      },
+      "delivery": {
+        "days": 15,
+        "estimated_date": "2026-09-10",
+        "address": "Av. Exemplo, 100"
+      },
+      "totals": { "amount": 1250.0, "currency": "BRL" },
+      "notes": null,
+      "acceptance": { "accepted_at": "2026-08-25T18:00:00Z", "accepted_by_supplier": true },
+      "items": [{
+        "line_number": 1,
+        "material_code": "MAT-001",
+        "material_description": "Parafuso M8",
+        "quantity": 100,
+        "unit_of_measure": "UN",
+        "unit_price": 12.5,
+        "tax_percent": 0,
+        "total_price": 1250.0,
+        "currency": "BRL",
+        "delivery_days": 15,
+        "plant_code": null,
+        "site_code": null,
+        "contract": { "id": null, "item_id": null, "code": null },
+        "account_assignments": []
+      }]
+    }
+  }
+}`,
+  },
+  {
     id: "purchase-orders-pdf",
     group: "Pedidos",
     method: "GET",

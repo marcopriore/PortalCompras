@@ -292,9 +292,48 @@ export default function ApiDocsPage() {
   "entity": "purchase_orders",
   "entity_id": "uuid",
   "entity_code": "PO-2026-0001",
-  "data": { "...": "payload do pedido" }
+  "data": {
+    "code": "PO-2026-0001",
+    "external_code": null,
+    "status": "processing",
+    "organization": {
+      "company_code": null,
+      "purchasing_organization": null,
+      "purchasing_group": null,
+      "purchase_order_type": null,
+      "currency": "BRL"
+    },
+    "supplier": {
+      "code": "FORN-001",
+      "name": "Fornecedor A",
+      "cnpj": "12.345.678/0001-90"
+    },
+    "payment": {
+      "terms_code": null,
+      "terms_description": "30 DDL"
+    },
+    "references": {
+      "quotation_code": "COT-2026-0036",
+      "requisition_code": "REQ-2026-0010"
+    },
+    "delivery": {
+      "days": 15,
+      "estimated_date": "2026-09-10",
+      "address": "Av. Exemplo, 100"
+    },
+    "totals": { "amount": 1250.0, "currency": "BRL" },
+    "items": [{
+      "line_number": 1,
+      "material_code": "MAT-001",
+      "quantity": 100,
+      "unit_of_measure": "UN",
+      "unit_price": 12.5,
+      "total_price": 1250.0,
+      "account_assignments": []
+    }]
+  }
 }`}
-                label="Corpo JSON típico"
+                label="Corpo JSON típico (purchase_order.create)"
               />
             </div>
             <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-white/50">

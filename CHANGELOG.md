@@ -1,5 +1,16 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.97] — 2026-08-25
+
+### Loja de API — modelo de pedido ERP-ready (pacotes A+B)
+
+- Contrato JSON de pedido reestruturado (GET + outbound `purchase_order.create/update/delete`): blocos `organization`, `supplier`, `payment`, `references`, `delivery`, `totals`, `acceptance`, `items[]`
+- Itens com `line_number`, imposto, vínculo `contract`, `plant_code`/`site_code` (reservados) e `account_assignments[]` (rateio estilo SAP)
+- Docs `/docs/api` + OpenAPI: exemplos de list/detail de pedidos e payload outbound completo
+- SPEC §10.10: tabela do contrato outbound
+
+---
+
 ## [v2.19.96] — 2026-08-25
 
 ### Loja de API — Fase 2 (Relatórios) + docs UI

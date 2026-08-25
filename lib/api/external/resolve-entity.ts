@@ -27,7 +27,7 @@ export async function resolvePurchaseOrderRow(
 ) {
   let query = service
     .from("purchase_orders")
-    .select("*")
+    .select("*, suppliers(code, name, cnpj)")
     .eq("company_id", companyId)
 
   if (isUuid(idOrCode)) {

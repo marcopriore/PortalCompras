@@ -6,6 +6,7 @@ import {
 } from "@/lib/integrations/integrate-requisition-with-erp"
 import {
   mapPurchaseOrderToApi,
+  PURCHASE_ORDER_ITEM_SELECT,
   type PurchaseOrderItemRow,
 } from "@/lib/api/external/mappers/purchase-order"
 import {
@@ -66,7 +67,7 @@ export async function loadPurchaseOrderOutboundPayload(
   const service = createServiceRoleClient()
   const { data: row } = await service
     .from("purchase_orders")
-    .select("*")
+    .select("*, suppliers(code, name, cnpj)")
     .eq("id", orderId)
     .eq("company_id", companyId)
     .maybeSingle()
@@ -75,13 +76,11 @@ export async function loadPurchaseOrderOutboundPayload(
 
   const { data: items } = await service
     .from("purchase_order_items")
-    .select(
-      "material_code, material_description, quantity, unit_of_measure, unit_price, total_price, delivery_days",
-    )
+    .select(PURCHASE_ORDER_ITEM_SELECT)
     .eq("purchase_order_id", orderId)
     .order("material_code", { ascending: true })
 
-  return mapPurchaseOrderToApi(row, (items ?? []) as PurchaseOrderItemRow[])
+  return mapPurchaseOrderToApi(row, (items ?? []) as unknown as PurchaseOrderItemRow[])
 }
 
 export type TriggerOutboundResult = {
