@@ -316,6 +316,8 @@
 | v2.19.75 | Configurações técnicas por tenant (admin), proxy cooldown background tasks, hooks useTenantSettings |
 | v2.19.87 | Auto-retry outbound com backoff (transitório) + audit |
 | v2.19.88 | Catálogo de Compras: carrinho, checkout REQ+PO draft, paginação SQL, permissões, notificações |
+| v2.19.89 | Status REQ↔PO: awaiting_buyer/awaiting_supplier, migration 059, Pendente Aprovação |
+| v2.19.90 | Timeline (datas só concluídas) + número do pedido no detalhe da REQ |
 | v2.19.85 | Importação massiva de requisições via Excel; monitor integração em nova aba |
 | v2.19.84 | Testes unitários ampliados (143/14 arquivos) e rotina de docs sincronizada |
 | v2.19.83 | Configurações unificadas: abas Usuários, Perfis de Acesso, Integrações; deep link ?tab= |
@@ -366,7 +368,7 @@
 | /comprador/aprovacoes | ✅ |
 | /comprador/cotacoes/** | ✅ |
 | /comprador/cotacoes/[id]/equalizacao | ✅ complexo; benchmark % vs alvo / % vs média histórica; prefs em localStorage |
-| /comprador/catalogo | ✅ Catálogo de Compras (contratos ativos, carrinho, checkout → REQ+PO) |
+| /comprador/catalogo | ✅ Catálogo de Compras (contratos ativos, carrinho, checkout → REQ awaiting_buyer + PO draft) |
 | /solicitante/catalogo | ✅ Mesmo módulo (feature + nav.catalog) |
 | /comprador/pedidos/[id] | ✅ PDF + integração ERP (status processing/completed/error/integration_error) |
 | /comprador/integracoes/monitor | ✅ Monitor outbound/inbound (popup; admin tenant) |

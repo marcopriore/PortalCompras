@@ -1,5 +1,29 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.90] — 2026-08-25
+
+### Requisição — UX do ciclo do pedido
+
+- Timeline: data só em etapas concluídas (ou rejeitadas); aceite usa `accepted_at`
+- Detalhe da REQ (comprador e solicitante): campo **Número do Pedido** nas informações gerais
+- Testes de timeline em `__tests__/lib/requisitions-status.test.ts`
+
+---
+
+## [v2.19.89] — 2026-08-25
+
+### Status de requisição alinhados ao ciclo do pedido
+
+- Novos status: `awaiting_buyer` (Pendente Comprador), `awaiting_supplier` (Pendente Aceite Fornecedor)
+- Label de `pending`: **Pendente Aprovação** (antes “Aguardando”)
+- Checkout do catálogo e “novo pedido” passam a criar/atualizar REQ como `awaiting_buyer` (não mais `completed` antecipado)
+- Migration **059**: constraint + `map_po_status_to_requisition_status` + trigger `trg_sync_requisition_from_po` (PO → REQ)
+- Libs: `lib/requisitions/status.ts`, `lib/requisitions/timeline.ts`
+- Filtros/labels/timelines em solicitante e comprador
+- Validado: draft→`awaiting_buyer`, sent/processing→`awaiting_supplier`, completed→`completed`
+
+---
+
 ## [v2.19.88] — 2026-08-25
 
 ### Catálogo de Compras
@@ -7,7 +31,7 @@
 - Feature `purchase_catalog` + permissões `nav.catalog` / `catalog.order`
 - Telas `/comprador/catalogo` e `/solicitante/catalogo`: ofertas de contratos ativos com saldo
 - Carrinho por tenant; quantidade editável (+/− e digitação); checkout por fornecedor
-- Checkout cria **requisição `completed` (origin catalog) + pedido `draft` vinculados** (`purchase_orders.requisition_code`)
+- Checkout cria **requisição (`origin=catalog`) + pedido `draft` vinculados** (`purchase_orders.requisition_code`) — status da REQ alinhado ao PO a partir de v2.19.89 (`awaiting_buyer`, não `completed`)
 - Reserva de saldo de contrato no checkout; paginação no banco (RPCs `get_catalog_offers_page` / facets)
 - Migrations 054–058 (carrinho, RLS superadmin, origin catalog, paginação SQL, seed de permissões)
 - Notificação in-app + e-mail ao finalizar pedido do catálogo

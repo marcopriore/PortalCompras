@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.88
+## Versão atual: v2.19.90
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -41,7 +41,8 @@ Stack principal: Next.js 16, TypeScript, Tailwind/shadcn, Supabase (Auth + RLS),
 | `/login` | ✅ | Tela dividida comprador (azul) / solicitante (laranja); redirecionamento por `profile_type` |
 | `/solicitante` | ✅ | Listagem com filtros por status, data, busca, paginação 20/pág |
 | `/solicitante/nova` | ✅ | Busca no catálogo, tabela de itens, select prioridade, anexos |
-| `/solicitante/[id]` | ✅ | Timeline horizontal 5 etapas, informações gerais, itens, histórico |
+| `/solicitante/catalogo` | ✅ | Catálogo de Compras (mesmo módulo do comprador) |
+| `/solicitante/[id]` | ✅ | Timeline por origem (catálogo: 4 etapas; padrão: Criada → Aprovação → Cotação → Pendente Comprador → Aceite → Concluída); infos gerais com nº do pedido; histórico |
 | `/solicitante/[id]/editar` | ✅ | Editar e resubmeter após rejeição, mesmo fluxo de aprovação |
 
 ---
@@ -78,6 +79,8 @@ Stack principal: Next.js 16, TypeScript, Tailwind/shadcn, Supabase (Auth + RLS),
 | `/comprador/contratos` | ✅ listagem, métricas, filtros, isolamento tenant |
 | `/comprador/contratos/novo` | ✅ criação, rascunho livre, salvar e enviar para aceite, import Excel com validação |
 | `/comprador/contratos/[id]` | ✅ detalhe, edição por status, upload PDF, aceite/recusa, histórico |
+| `/comprador/catalogo` | ✅ Catálogo de Compras (ofertas de contrato, carrinho, checkout → REQ `awaiting_buyer` + PO `draft`) |
+| `/solicitante/catalogo` | ✅ Mesmo módulo (feature `purchase_catalog` + `nav.catalog`) |
 | `/comprador/cotacoes/[id]/equalizacao` | ✅ + IA Negociação (QuotationAIAnalysis) |
 
 ### Relatórios BI
@@ -354,9 +357,9 @@ Persistência em `company_settings` (`company_id`, `key`, `value`). Catálogo ti
 
 ---
 
-## 9. Backlog (estado atual — v2.19.88)
+## 9. Backlog (estado atual — v2.19.90)
 
-Revisado em 20/08/2026. **Foco atual:** diferenciação de produto e escala; Recebimento adiado.
+Revisado em 25/08/2026. **Foco atual:** diferenciação de produto e escala; Recebimento adiado.
 
 ### 9.0 Em foco agora
 
@@ -395,9 +398,9 @@ Revisado em 20/08/2026. **Foco atual:** diferenciação de produto e escala; Rec
 | # | Item | Notas |
 |---|------|-------|
 | 14 | **Migrar documentação de implantação para Notion** | Go-to-market |
-| 16 | **Catálogo de Compras** | ✅ v2.19.88 | Ofertas de contrato, carrinho, checkout cria REQ `completed` + PO `draft` vinculados; paginação DB; permissões; notificação |
 | 15 | **Auto-retry outbound com backoff** | ✅ v2.19.87 | Transient (rede/5xx/timeout); audit; Monitor após esgotar |
-| 16 | **Módulo de Recebimento + consumo por item REQ** | Adiado conscientemente; retomar muito à frente |
+| 16 | **Catálogo de Compras** | ✅ v2.19.88–v2.19.90 | Checkout: REQ `awaiting_buyer` (`origin=catalog`) + PO `draft` vinculados; sync REQ↔PO (`awaiting_supplier` / `completed`) via trigger 059; timeline e nº do pedido no detalhe |
+| 17 | **Módulo de Recebimento + consumo por item REQ** | Adiado conscientemente; retomar muito à frente |
 
 ### 9.4 Mapa de validação (lista de produto)
 
@@ -407,7 +410,8 @@ Revisado em 20/08/2026. **Foco atual:** diferenciação de produto e escala; Rec
 | API Store / gestão módulo+tenant | 🟡 | Inbound v1 + outbound pedidos + monitor v2 |
 | Monitor de Integração | ✅ | Reenvio condicional; admin-only config |
 | Documentação pública API | ✅ | `/docs/api` |
-| Consumo por item de REQ | ❌ | Backlog médio prazo |
+| Consumo por item de REQ | ❌ | Backlog médio prazo (junto com Recebimento) |
+| Catálogo de Compras | ✅ v2.19.88–90 | Checkout + sync REQ↔PO; validado 25/08/2026 |
 | Configurações por abas | ✅ v2.19.83 | Abas Usuários, Perfis de Acesso, Integrações; deep link `?tab=` |
 | Permissões Admin pelo Master | ✅ | Master edita via `/comprador/configuracoes?tab=permissoes` |
 | `hasPermission()` em ações | ✅ v2.19.82 | Botões críticos cobertos |
@@ -433,6 +437,8 @@ Revisado em 20/08/2026. **Foco atual:** diferenciação de produto e escala; Rec
 | White-label | Infraestrutura |
 
 ### Concluído recentemente
+- **Ciclo de status da requisição ↔ pedido (v2.19.89–v2.19.90)** — `awaiting_buyer` / `awaiting_supplier`; label `pending` = Pendente Aprovação; migration 059 + trigger `trg_sync_requisition_from_po`; timeline só com data em etapa concluída; nº do pedido nas infos gerais. Validado em 25/08/2026 (REQ-2026-0178/0179).
+- **Catálogo de Compras (v2.19.88)** — ofertas, carrinho, checkout REQ+PO, paginação SQL, permissões, notificações
 - **Integração ERP — pedidos (outbound operacional)** — v2.19.78: gatilho no aceite do fornecedor; status `processing` → `completed` / `error` / `integration_error`; IDs externos por entidade (`external_purchase_order_id`); monitor com reenvio condicional; config integrações só no admin (§10.10)
 - **Fix auth refresh + hydration mismatch** — `proxy.ts` cookies corretos; singleton Supabase
   client; `ValoreLogo` com IDs estáveis; Radix (Select/Dropdown) só após mount
