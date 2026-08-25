@@ -29,6 +29,7 @@ type TimelineQuotation = {
 type TimelineOrder = {
   status: string
   created_at: string
+  accepted_at?: string | null
   estimated_delivery_date?: string | null
 }
 
@@ -50,40 +51,46 @@ function completedStepStatus(reqStatus: string): RequisitionTimelineStepStatus {
   return reqStatus === "completed" ? "completed" : "pending"
 }
 
+/** Data só em etapa concluída (ou rejeitada). */
+function dateWhenDone(
+  status: RequisitionTimelineStepStatus,
+  date: string | null | undefined,
+): string | null {
+  if (status !== "completed" && status !== "rejected") return null
+  return date ?? null
+}
+
+function step(
+  key: string,
+  label: string,
+  status: RequisitionTimelineStepStatus,
+  date: string | null | undefined,
+): RequisitionTimelineStep {
+  return { key, label, status, date: dateWhenDone(status, date) }
+}
+
 /** Catálogo: Criada → Pendente Comprador → Aceite Fornecedor → Concluída */
 export function buildCatalogRequisitionTimeline(
   req: TimelineRequisition,
   orders: TimelineOrder[],
 ): RequisitionTimelineStep[] {
-  const orderDate = orders[0]?.created_at ?? null
-  const completedDate =
-    orders.find((o) => o.status === "completed")?.estimated_delivery_date ?? null
+  const buyerStatus = buyerStepStatus(req.status)
+  const supplierStatus = supplierStepStatus(req.status)
+  const doneStatus = completedStepStatus(req.status)
+
+  const supplierDoneAt =
+    orders.find((o) => o.accepted_at)?.accepted_at ?? null
+  const completedAt =
+    orders.find((o) => o.status === "completed")?.accepted_at ??
+    orders.find((o) => o.status === "completed")?.estimated_delivery_date ??
+    null
 
   return [
-    {
-      key: "created",
-      label: "Criada",
-      status: "completed",
-      date: req.created_at,
-    },
-    {
-      key: "awaiting_buyer",
-      label: "Pendente Comprador",
-      status: buyerStepStatus(req.status),
-      date: orderDate,
-    },
-    {
-      key: "awaiting_supplier",
-      label: "Aceite Fornecedor",
-      status: supplierStepStatus(req.status),
-      date: orderDate,
-    },
-    {
-      key: "completed",
-      label: "Concluída",
-      status: completedStepStatus(req.status),
-      date: completedDate,
-    },
+    step("created", "Criada", "completed", req.created_at),
+    // Sem sent_at no PO — data só quando a etapa tiver timestamp próprio
+    step("awaiting_buyer", "Pendente Comprador", buyerStatus, null),
+    step("awaiting_supplier", "Aceite Fornecedor", supplierStatus, supplierDoneAt),
+    step("completed", "Concluída", doneStatus, completedAt),
   ]
 }
 
@@ -97,70 +104,69 @@ export function buildStandardRequisitionTimeline(
   orders: TimelineOrder[],
   options?: { includeCancelledBranch?: boolean },
 ): RequisitionTimelineStep[] {
-  const orderDate = orders[0]?.created_at ?? null
-  const completedDate =
-    orders.find((o) => o.status === "completed")?.estimated_delivery_date ?? null
-
   const earlyStatuses = ["draft", "pending", "rejected", "cancelled"]
+  const buyerStatus = buyerStepStatus(req.status)
+  const supplierStatus = supplierStepStatus(req.status)
+  const doneStatus = completedStepStatus(req.status)
+
+  const approvalStatus: RequisitionTimelineStepStatus =
+    req.status === "draft"
+      ? "pending"
+      : req.status === "rejected"
+        ? "rejected"
+        : req.status === "cancelled"
+          ? "pending"
+          : req.status === "pending"
+            ? "active"
+            : "completed"
+
+  const quotationStatus: RequisitionTimelineStepStatus =
+    earlyStatuses.includes(req.status)
+      ? "pending"
+      : ["awaiting_buyer", "awaiting_supplier", "completed"].includes(
+            req.status,
+          ) ||
+          (quotation != null &&
+            ["completed", "cancelled"].includes(quotation.status))
+        ? "completed"
+        : quotation
+          ? "active"
+          : req.status === "approved"
+            ? "pending"
+            : "active"
+
+  const supplierDoneAt =
+    orders.find((o) => o.accepted_at)?.accepted_at ?? null
+  const completedAt =
+    orders.find((o) => o.status === "completed")?.accepted_at ??
+    orders.find((o) => o.status === "completed")?.estimated_delivery_date ??
+    null
+
+  const createdStatus: RequisitionTimelineStepStatus =
+    req.status === "draft" ? "active" : "completed"
 
   const baseSteps: RequisitionTimelineStep[] = [
-    {
-      key: "created",
-      label: req.status === "draft" ? "Rascunho" : "Criada",
-      status: req.status === "draft" ? "active" : "completed",
-      date: req.created_at,
-    },
-    {
-      key: "approval",
-      label: "Aprovação",
-      status:
-        req.status === "draft"
-          ? "pending"
-          : req.status === "rejected"
-            ? "rejected"
-            : req.status === "cancelled"
-              ? "pending"
-              : req.status === "pending"
-                ? "active"
-                : "completed",
-      date: req.approved_at ?? null,
-    },
-    {
-      key: "quotation",
-      label: "Cotação",
-      status: earlyStatuses.includes(req.status)
-        ? "pending"
-        : ["awaiting_buyer", "awaiting_supplier", "completed"].includes(
-              req.status,
-            ) ||
-            (quotation != null &&
-              ["completed", "cancelled"].includes(quotation.status))
-          ? "completed"
-          : quotation
-            ? "active"
-            : req.status === "approved"
-              ? "pending"
-              : "active",
-      date: quotation?.created_at ?? null,
-    },
-    {
-      key: "awaiting_buyer",
-      label: "Pendente Comprador",
-      status: buyerStepStatus(req.status),
-      date: orderDate,
-    },
-    {
-      key: "awaiting_supplier",
-      label: "Aceite Fornecedor",
-      status: supplierStepStatus(req.status),
-      date: orderDate,
-    },
-    {
-      key: "completed",
-      label: "Concluída",
-      status: completedStepStatus(req.status),
-      date: completedDate,
-    },
+    step(
+      "created",
+      req.status === "draft" ? "Rascunho" : "Criada",
+      createdStatus,
+      req.created_at,
+    ),
+    step("approval", "Aprovação", approvalStatus, req.approved_at ?? null),
+    step(
+      "quotation",
+      "Cotação",
+      quotationStatus,
+      quotation?.created_at ?? null,
+    ),
+    step("awaiting_buyer", "Pendente Comprador", buyerStatus, null),
+    step(
+      "awaiting_supplier",
+      "Aceite Fornecedor",
+      supplierStatus,
+      supplierDoneAt,
+    ),
+    step("completed", "Concluída", doneStatus, completedAt),
   ]
 
   if (options?.includeCancelledBranch && req.status === "cancelled") {

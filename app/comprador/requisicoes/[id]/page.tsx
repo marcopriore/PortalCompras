@@ -99,6 +99,7 @@ type PurchaseOrderInfo = {
   supplier_name: string
   total_price: number | null
   created_at: string
+  accepted_at?: string | null
   estimated_delivery_date: string | null
 }
 
@@ -407,7 +408,7 @@ export default function RequisicaoDetailPage({
         const { data: ordersData } = await supabase
           .from("purchase_orders")
           .select(
-            "id, code, status, supplier_name, total_price, created_at, estimated_delivery_date",
+            "id, code, status, supplier_name, total_price, created_at, accepted_at, estimated_delivery_date",
           )
           .eq("requisition_code", reqData.code)
           .order("created_at")
@@ -652,6 +653,24 @@ export default function RequisicaoDetailPage({
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Data de Aprovação</p>
               <p className="text-sm text-foreground font-medium">
                 {requisition.approved_at ? formatDateBR(requisition.approved_at) : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Número do Pedido</p>
+              <p className="text-sm text-foreground font-medium">
+                {orders.length === 0
+                  ? "—"
+                  : orders.map((o, idx) => (
+                      <span key={o.id}>
+                        {idx > 0 ? ", " : ""}
+                        <a
+                          href={`/comprador/pedidos/${o.id}`}
+                          className="text-primary hover:underline"
+                        >
+                          {o.code}
+                        </a>
+                      </span>
+                    ))}
               </p>
             </div>
           </div>

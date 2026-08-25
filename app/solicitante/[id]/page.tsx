@@ -81,6 +81,7 @@ type PurchaseOrderInfo = {
   supplier_name: string
   total_price: number | null
   created_at: string
+  accepted_at?: string | null
   estimated_delivery_date: string | null
 }
 
@@ -395,7 +396,7 @@ export default function SolicitanteDetailPage({
         supabase
           .from("purchase_orders")
           .select(
-            "id, code, status, supplier_name, total_price, created_at, estimated_delivery_date",
+            "id, code, status, supplier_name, total_price, created_at, accepted_at, estimated_delivery_date",
           )
           .eq("requisition_code", req.code)
           .order("created_at"),
@@ -615,6 +616,16 @@ export default function SolicitanteDetailPage({
                 </p>
                 <p className="text-sm text-foreground font-medium">
                   {requisition.approver_name ?? "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  Número do Pedido
+                </p>
+                <p className="text-sm text-foreground font-medium">
+                  {orders.length > 0
+                    ? orders.map((o) => o.code).join(", ")
+                    : "—"}
                 </p>
               </div>
             </div>

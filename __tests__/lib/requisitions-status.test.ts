@@ -55,10 +55,10 @@ describe("requisition timeline", () => {
     const steps = buildCatalogRequisitionTimeline(
       {
         status: "awaiting_buyer",
-        created_at: "2026-01-01",
+        created_at: "2026-01-01T10:00:00Z",
         origin: "catalog",
       },
-      [{ status: "draft", created_at: "2026-01-02" }],
+      [{ status: "draft", created_at: "2026-01-02T10:00:00Z" }],
     )
     expect(steps.map((s) => s.label)).toEqual([
       "Criada",
@@ -72,15 +72,38 @@ describe("requisition timeline", () => {
     )
   })
 
+  it("exibe data só em etapas concluídas", () => {
+    const steps = buildCatalogRequisitionTimeline(
+      {
+        status: "awaiting_buyer",
+        created_at: "2026-01-01T10:00:00Z",
+        origin: "catalog",
+      },
+      [{ status: "draft", created_at: "2026-01-02T10:00:00Z" }],
+    )
+    expect(steps.find((s) => s.key === "created")?.date).toBe(
+      "2026-01-01T10:00:00Z",
+    )
+    expect(steps.find((s) => s.key === "awaiting_buyer")?.date).toBeNull()
+    expect(steps.find((s) => s.key === "awaiting_supplier")?.date).toBeNull()
+    expect(steps.find((s) => s.key === "completed")?.date).toBeNull()
+  })
+
   it("padrão inclui aprovação e cotação antes do ciclo do pedido", () => {
     const steps = buildStandardRequisitionTimeline(
       {
         status: "awaiting_supplier",
-        created_at: "2026-01-01",
-        approved_at: "2026-01-02",
+        created_at: "2026-01-01T10:00:00Z",
+        approved_at: "2026-01-02T10:00:00Z",
       },
-      { status: "completed", created_at: "2026-01-03" },
-      [{ status: "sent", created_at: "2026-01-04" }],
+      { status: "completed", created_at: "2026-01-03T10:00:00Z" },
+      [
+        {
+          status: "sent",
+          created_at: "2026-01-04T10:00:00Z",
+          accepted_at: null,
+        },
+      ],
     )
     expect(steps.map((s) => s.label)).toEqual([
       "Criada",
@@ -93,8 +116,36 @@ describe("requisition timeline", () => {
     expect(steps.find((s) => s.key === "awaiting_buyer")?.status).toBe(
       "completed",
     )
+    expect(steps.find((s) => s.key === "awaiting_buyer")?.date).toBeNull()
     expect(steps.find((s) => s.key === "awaiting_supplier")?.status).toBe(
       "active",
+    )
+    expect(steps.find((s) => s.key === "awaiting_supplier")?.date).toBeNull()
+    expect(steps.find((s) => s.key === "approval")?.date).toBe(
+      "2026-01-02T10:00:00Z",
+    )
+  })
+
+  it("Aceite Fornecedor mostra accepted_at ao concluir", () => {
+    const steps = buildCatalogRequisitionTimeline(
+      {
+        status: "completed",
+        created_at: "2026-01-01T10:00:00Z",
+        origin: "catalog",
+      },
+      [
+        {
+          status: "completed",
+          created_at: "2026-01-02T10:00:00Z",
+          accepted_at: "2026-01-05T12:00:00Z",
+        },
+      ],
+    )
+    expect(steps.find((s) => s.key === "awaiting_supplier")?.date).toBe(
+      "2026-01-05T12:00:00Z",
+    )
+    expect(steps.find((s) => s.key === "completed")?.date).toBe(
+      "2026-01-05T12:00:00Z",
     )
   })
 })
