@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { BookOpen, ChevronRight, Copy, ExternalLink } from "lucide-react"
+import { BookOpen, ChevronRight, Copy } from "lucide-react"
 import { ValoreLogo } from "@/components/ui/valore-logo"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -172,24 +172,11 @@ export default function ApiDocsPage() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-[#0a0a12] text-white">
       <header className="z-20 shrink-0 border-b border-white/10 bg-[#0a0a12]">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <Link href="/">
-              <ValoreLogo size={28} showName nameColor="#ffffff" instance="api-docs" />
-            </Link>
-            <Badge className="bg-primary/20 text-primary border-primary/30">API v1</Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" asChild className="border-white/20 text-white">
-              <a href="/api/v1/openapi.json" target="_blank" rel="noreferrer">
-                <ExternalLink className="mr-2 h-4 w-4" />
-                OpenAPI JSON
-              </a>
-            </Button>
-            <Button size="sm" asChild>
-              <Link href="/login">Entrar no portal</Link>
-            </Button>
-          </div>
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-4 sm:px-6">
+          <Link href="/">
+            <ValoreLogo size={28} showName nameColor="#ffffff" instance="api-docs" />
+          </Link>
+          <Badge className="bg-primary/20 text-primary border-primary/30">API v1</Badge>
         </div>
       </header>
 
