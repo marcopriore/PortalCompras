@@ -1,5 +1,16 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.95] — 2026-08-25
+
+### Loja de API — Fase 2 (Convite de fornecedor)
+
+- Escopo `quotations:write`
+- `POST /api/v1/quotations/{id}/invites` — body `{ "supplier_code": "FORN-001" }`
+- Insere `quotation_suppliers`; se houver rodada `active`, cria proposta `invited`
+- 409 se já convidado ou cotação `completed`/`cancelled`; notificação in-app ao fornecedor
+
+---
+
 ## [v2.19.94] — 2026-08-25
 
 ### Loja de API — Fase 2 (Anexos de requisição)

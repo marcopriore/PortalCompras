@@ -1,6 +1,6 @@
 # Valore — Especificação do Sistema
 
-## Versão atual: v2.19.94
+## Versão atual: v2.19.95
 
 Documento de referência alinhado ao código e às migrations versionadas no repositório.
 
@@ -575,6 +575,7 @@ Identificador externo opcional: `external_code` em `requisitions` (migration fut
 | Externo → Valore | GET | `/api/v1/quotations` | Listar (status, datas, paginação) |
 | Externo → Valore | GET | `/api/v1/quotations/{id}` | Detalhe: itens, rodadas, fornecedores convidados |
 | Externo → Valore | GET | `/api/v1/quotations/{id}/proposals` | Propostas por **rodada** → fornecedor → itens respondidos (todos os status) |
+| Externo → Valore | POST | `/api/v1/quotations/{id}/invites` | Convidar fornecedor (`supplier_code`); cria proposta `invited` se houver rodada active |
 
 Sem POST/PUT/DELETE na Fase 1 — cotações são operadas no portal Valore.
 
@@ -652,7 +653,7 @@ Query: `round_number`, `supplier_code`, `status`. Status default: todos (`invite
 | **Contratos** | `GET /contracts`, `GET /contracts/{id}`, `GET .../balance`, `GET .../acceptances` | ✅ v2.19.92 — escopo `contracts:read`, feature `contracts` |
 | **Aprovações** | `GET /approvals`, `GET /approvals/{id}`, `POST .../approve`, `POST .../reject` | ✅ v2.19.93 — escopos `approvals:read\|write`; escrita só `flow=requisition` |
 | **Anexos** | `GET/POST /requisitions/{id}/attachments` | ✅ v2.19.94 — escopos `requisitions:read\|write`; multipart; URL assinada 1h |
-| Cotações | POST convite fornecedor (se demanda ERP) | ⬜ |
+| **Cotações** | `POST /quotations/{id}/invites` | ✅ v2.19.95 — escopo `quotations:write`; convite por `supplier_code` |
 | Relatórios | GET saving/spend JSON | ⬜ |
 
 ### 10.6 O que NÃO expor

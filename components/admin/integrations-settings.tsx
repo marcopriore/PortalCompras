@@ -78,6 +78,7 @@ const SCOPE_LABELS: Record<string, string> = {
   "requisitions:read": "Requisições — leitura",
   "requisitions:write": "Requisições — escrita",
   "quotations:read": "Cotações — leitura",
+  "quotations:write": "Cotações — convite de fornecedor",
   "orders:read": "Pedidos — leitura",
   "contracts:read": "Contratos — leitura",
   "approvals:read": "Aprovações — leitura",

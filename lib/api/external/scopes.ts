@@ -6,6 +6,7 @@ export const API_SCOPES = [
   "requisitions:read",
   "requisitions:write",
   "quotations:read",
+  "quotations:write",
   "orders:read",
   "contracts:read",
   "approvals:read",

@@ -241,6 +241,40 @@ export const API_DOC_ENDPOINTS: ApiDocEndpoint[] = [
 }`,
   },
   {
+    id: "quotations-invite",
+    group: "Cotações",
+    method: "POST",
+    path: "/quotations/{id}/invites",
+    title: "Convidar fornecedor",
+    description:
+      "Adiciona o fornecedor em quotation_suppliers. Se houver rodada active, cria quotation_proposals com status invited. Bloqueado se a cotação estiver completed ou cancelled.",
+    scope: "quotations:write",
+    tenantFeature: "quotations",
+    pathParams: [
+      { name: "id", type: "string", required: true, description: "UUID ou code da cotação" },
+    ],
+    bodyFields: [
+      {
+        name: "supplier_code",
+        type: "string",
+        required: true,
+        description: "Código do fornecedor no tenant",
+      },
+    ],
+    requestExample: `{ "supplier_code": "FORN-001" }`,
+    responseExample: `{
+  "data": {
+    "invitation": {
+      "quotation_code": "COT-2026-0026",
+      "supplier_code": "FORN-001",
+      "position": 2,
+      "round_number": 1,
+      "proposal_status": "invited"
+    }
+  }
+}`,
+  },
+  {
     id: "purchase-orders-pdf",
     group: "Pedidos",
     method: "GET",
