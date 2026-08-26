@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { seedDefaultTenantSettings } from '@/lib/settings/tenant-settings'
+import { seedDefaultTenantFeatures } from '@/lib/settings/seed-tenant-features'
 import {
   seedDefaultPasswordPolicy,
   buildDefaultPasswordPolicy,
@@ -119,6 +120,7 @@ export async function POST(request: Request) {
     try {
       await seedDefaultTenantSettings(supabaseAdmin, companyId)
       await seedDefaultPasswordPolicy(supabaseAdmin, companyId)
+      await seedDefaultTenantFeatures(supabaseAdmin, companyId)
       await seedSystemPermissionGroups(supabaseAdmin, companyId)
     } catch (settingsError) {
       console.error('create-tenant: seed settings/groups', settingsError)

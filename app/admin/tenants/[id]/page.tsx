@@ -16,6 +16,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -50,7 +59,9 @@ import {
   BrainCircuit,
   Sparkles,
   Plug2,
+  Trash2,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { logAudit } from '@/lib/audit'
 import { TenantSettingsTab } from '@/components/admin/tenant-settings-tab'
 import { TenantSecurityTab } from '@/components/admin/tenant-security-tab'
@@ -262,7 +273,8 @@ function getFeatureIcon(iconName: (typeof CORE_FEATURES)[number]['icon']) {
 function buildDefaultFeaturesState(): Record<string, boolean> {
   const s: Record<string, boolean> = {}
   for (const f of FEATURES) {
-    s[f.key] = true
+    // Ausência de linha em tenant_features = desligado no runtime (usePermissions)
+    s[f.key] = false
   }
   return s
 }
@@ -339,6 +351,10 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     status: 'active',
   })
   const [saving, setSaving] = useState(false)
+  const [deleteEligible, setDeleteEligible] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteConfirmName, setDeleteConfirmName] = useState('')
+  const [deleting, setDeleting] = useState(false)
   const [period, setPeriod] = useState<PeriodFilter>('30d')
   const [customFrom, setCustomFrom] = useState<string>('')
   const [customTo, setCustomTo] = useState<string>('')
@@ -466,6 +482,22 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
       }
 
       setLoading(false)
+
+      try {
+        const eligRes = await fetch(`/api/admin/tenants/${encodeURIComponent(id)}`, {
+          cache: 'no-store',
+        })
+        if (eligRes.ok) {
+          const payload = (await eligRes.json()) as {
+            data?: { eligible?: boolean }
+          }
+          setDeleteEligible(Boolean(payload.data?.eligible))
+        } else {
+          setDeleteEligible(false)
+        }
+      } catch {
+        setDeleteEligible(false)
+      }
     }
 
     fetchAll()
@@ -554,7 +586,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
       const supabase = createClient()
       const state: Record<string, boolean> = {}
       for (const f of FEATURES) {
-        state[f.key] = true
+        state[f.key] = false
       }
       const { data: featuresRes } = await supabase
         .from('tenant_features')
@@ -649,6 +681,37 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     router.push('/comprador')
   }
 
+  const handleDeleteTenant = async () => {
+    if (!tenant) return
+    if (deleteConfirmName.trim() !== tenant.name) {
+      toast.error('Digite o nome exato do tenant para confirmar.')
+      return
+    }
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/admin/tenants/${encodeURIComponent(tenant.id)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmName: deleteConfirmName.trim() }),
+      })
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string
+        name?: string
+      }
+      if (!res.ok) {
+        toast.error(payload.error || 'Não foi possível excluir o tenant.')
+        return
+      }
+      toast.success(`Tenant "${payload.name ?? tenant.name}" excluído.`)
+      setDeleteOpen(false)
+      router.push('/admin/tenants')
+    } catch {
+      toast.error('Erro inesperado ao excluir tenant.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -710,6 +773,19 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
             <LogIn className="w-4 h-4 mr-1.5" />
             Acessar
           </Button>
+          {isSuperAdmin && deleteEligible ? (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                setDeleteConfirmName('')
+                setDeleteOpen(true)
+              }}
+            >
+              <Trash2 className="w-4 h-4 mr-1.5" />
+              Excluir
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -1299,6 +1375,51 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          setDeleteOpen(open)
+          if (!open) setDeleteConfirmName('')
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir tenant definitivamente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação remove o tenant, usuários Auth e dados de seed. Só é
+              permitida quando não há requisições, cotações, pedidos, contratos,
+              itens nem fornecedores. Para tenants com histórico, use{' '}
+              <strong>Inativar</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="confirm-tenant-name">
+              Digite <span className="font-semibold">{tenant.name}</span> para
+              confirmar
+            </Label>
+            <Input
+              id="confirm-tenant-name"
+              value={deleteConfirmName}
+              onChange={(e) => setDeleteConfirmName(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancelar</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={
+                deleting || deleteConfirmName.trim() !== tenant.name
+              }
+              onClick={() => void handleDeleteTenant()}
+            >
+              {deleting ? 'Excluindo...' : 'Excluir definitivamente'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

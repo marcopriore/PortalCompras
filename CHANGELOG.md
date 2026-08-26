@@ -1,12 +1,28 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.99] — 2026-08-26
+
+### Exclusão de tenant vazio (superadmin)
+
+- `GET/DELETE /api/admin/tenants/{id}` — exclusão definitiva só sem dados de negócio (REQ/COT/PO/contratos/itens/fornecedores/API keys/logs)
+- UI detalhe do tenant: botão **Excluir** (confirmação pelo nome) quando elegível
+- Tenants com histórico continuam só com **Inativar**
+
+### Fix módulos Contratos / Catálogo em tenant novo
+
+- Seed de `tenant_features` na criação (todos enabled)
+- UI admin: feature sem linha no banco = desligada (alinha com o menu do comprador)
+
+---
+
 ## [v2.19.98] — 2026-08-26
 
 ### Fix criação de tenant + Admin inicial
 
 - `POST /api/admin/create-tenant`: valida senha/nome/CNPJ **antes** do insert; rollback se falhar depois; rejeita nome/CNPJ duplicados (409)
 - Primeiro usuário nasce com `role=admin`, `roles=['admin']`, `profile_type=buyer` (tipo de **portal**) + grupo de permissões Admin
-- Seed de grupos de sistema + centro de custo padrão `GERAL` no tenant novo
+- Seed de grupos de sistema + centro de custo padrão `GERAL` + **módulos** (`tenant_features` todos enabled)
+- Admin tenants: feature sem linha no banco aparece **desligada** (antes parecia ligada e Contratos/Catálogo sumiam do menu)
 - `useUser`: se `roles` estiver vazio (`{}`), usa o `role` legado — desbloqueia Configurações Empresa/Campos
 - Migration `061`: RLS de `cost_centers` permite superadmin gerenciar CC de qualquer tenant (seletor)
 
