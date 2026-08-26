@@ -52,7 +52,8 @@ async function resolveBuyerCompany(userId: string) {
 
 /**
  * GET /api/approvals/queue
- * Lista approval_requests do tenant (service role + sync de REQs órfãs).
+ * Fonte da verdade = status atual da entidade.
+ * Sync remove órfãos/duplicatas e cria faltantes; pending = 1:1 com REQs pending.
  */
 export async function GET() {
   try {
@@ -70,12 +71,39 @@ export async function GET() {
     const service = createServiceRoleClient()
     const synced = await syncPendingRequisitionApprovals(service, ctx.companyId)
 
-    let reqQuery = service
+    const { data: pendingReqs } = await service
+      .from("requisitions")
+      .select(
+        "id, code, title, cost_center, status, requester_name, created_at, priority",
+      )
+      .eq("company_id", ctx.companyId)
+      .eq("status", "pending")
+
+    let pendingArQuery = service
       .from("approval_requests")
       .select("*")
       .eq("company_id", ctx.companyId)
       .eq("flow", "requisition")
+      .eq("status", "pending")
       .order("created_at", { ascending: false })
+
+    if (!ctx.isAdmin) {
+      pendingArQuery = pendingArQuery.eq("approver_id", ctx.userId)
+    }
+
+    let historyArQuery = service
+      .from("approval_requests")
+      .select("*")
+      .eq("company_id", ctx.companyId)
+      .eq("flow", "requisition")
+      .neq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(200)
+
+    if (!ctx.isAdmin) {
+      historyArQuery = historyArQuery.eq("approver_id", ctx.userId)
+    }
+
     let orderQuery = service
       .from("approval_requests")
       .select("*")
@@ -84,29 +112,49 @@ export async function GET() {
       .order("created_at", { ascending: false })
 
     if (!ctx.isAdmin) {
-      reqQuery = reqQuery.eq("approver_id", ctx.userId)
       orderQuery = orderQuery.eq("approver_id", ctx.userId)
     }
 
-    const [{ data: reqData }, { data: orderData }] = await Promise.all([
-      reqQuery,
-      orderQuery,
-    ])
+    const [{ data: pendingArs }, { data: historyArs }, { data: orderData }] =
+      await Promise.all([pendingArQuery, historyArQuery, orderQuery])
 
-    const reqRequests = (reqData ?? []) as ApprovalRequestRow[]
+    const pendingReqIds = new Set((pendingReqs ?? []).map((r) => r.id as string))
+    const arByEntity = new Map<string, ApprovalRequestRow>()
+    for (const ar of (pendingArs ?? []) as ApprovalRequestRow[]) {
+      if (!pendingReqIds.has(ar.entity_id)) continue
+      if (!arByEntity.has(ar.entity_id)) arByEntity.set(ar.entity_id, ar)
+    }
+
+    // Uma linha pending por REQ pending (admin vê todas; aprovador só as dele)
+    const pendingRows: ApprovalRequestRow[] = []
+    for (const req of pendingReqs ?? []) {
+      const ar = arByEntity.get(req.id as string)
+      if (!ar) continue
+      if (!ctx.isAdmin && ar.approver_id !== ctx.userId) continue
+      pendingRows.push(ar)
+    }
+
+    const reqRequests = [
+      ...pendingRows,
+      ...((historyArs ?? []) as ApprovalRequestRow[]),
+    ]
+
+    const historyEntityIds = [
+      ...new Set(
+        ((historyArs ?? []) as ApprovalRequestRow[]).map((r) => r.entity_id),
+      ),
+    ]
     const orderRequests = (orderData ?? []) as ApprovalRequestRow[]
-
-    const reqEntityIds = [...new Set(reqRequests.map((r) => r.entity_id))]
     const orderEntityIds = [...new Set(orderRequests.map((r) => r.entity_id))]
 
-    const [reqsRes, ordsRes] = await Promise.all([
-      reqEntityIds.length > 0
+    const [histReqsRes, ordsRes] = await Promise.all([
+      historyEntityIds.length > 0
         ? service
             .from("requisitions")
             .select(
               "id, code, title, cost_center, status, requester_name, created_at, priority",
             )
-            .in("id", reqEntityIds)
+            .in("id", historyEntityIds)
         : Promise.resolve({ data: [] as unknown[] }),
       orderEntityIds.length > 0
         ? service
@@ -116,12 +164,18 @@ export async function GET() {
         : Promise.resolve({ data: [] as unknown[] }),
     ])
 
+    const requisitions = [
+      ...(pendingReqs ?? []),
+      ...(((histReqsRes.data ?? []) as NonNullable<typeof pendingReqs>)),
+    ]
+
     return NextResponse.json({
       data: {
         synced,
+        pending_count: pendingRows.length,
         requisition_requests: reqRequests,
         order_requests: orderRequests,
-        requisitions: reqsRes.data ?? [],
+        requisitions,
         orders: ordsRes.data ?? [],
       },
     })

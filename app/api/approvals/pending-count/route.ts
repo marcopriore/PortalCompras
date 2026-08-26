@@ -39,8 +39,8 @@ async function resolveBuyerCompany(userId: string) {
 
 /**
  * GET /api/approvals/pending-count
- * Conta aprovações pending do tenant selecionado (service role).
- * Faz sync de REQs pending sem approval_request (legado/seed).
+ * Admin/superadmin: conta REQs status=pending (igual ao card "Pendente Aprovação").
+ * Aprovador: conta ARs pending atribuídos a ele (após sync).
  */
 export async function GET() {
   try {
@@ -58,17 +58,27 @@ export async function GET() {
     const service = createServiceRoleClient()
     await syncPendingRequisitionApprovals(service, ctx.companyId)
 
-    let query = service
+    if (ctx.isAdmin) {
+      const { count, error } = await service
+        .from("requisitions")
+        .select("id", { count: "exact", head: true })
+        .eq("company_id", ctx.companyId)
+        .eq("status", "pending")
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      return NextResponse.json({
+        data: { count: count ?? 0, company_id: ctx.companyId },
+      })
+    }
+
+    const { count, error } = await service
       .from("approval_requests")
       .select("id", { count: "exact", head: true })
       .eq("company_id", ctx.companyId)
       .eq("status", "pending")
+      .eq("approver_id", ctx.userId)
 
-    if (!ctx.isAdmin) {
-      query = query.eq("approver_id", ctx.userId)
-    }
-
-    const { count, error } = await query
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }

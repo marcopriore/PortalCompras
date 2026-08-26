@@ -1,5 +1,16 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.108] — 2026-08-26
+
+### Fix — Fila de Aprovações = status real da REQ
+
+- Sync reconcilia: remove duplicatas/órfãos e cria faltantes (1 AR pending por REQ pending)
+- Badge admin/superadmin conta `requisitions.status=pending` (igual ao card)
+- Queue monta pending 1:1 com REQs pending; histórico separado
+- Migration `063_approval_requests_buyer_superadmin_rls.sql` (RLS buyer + superadmin)
+
+---
+
 ## [v2.19.107] — 2026-08-26
 
 ### Fix — Indicador e fila de Aprovações (superadmin / seed)
