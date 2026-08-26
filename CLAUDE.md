@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.108
+- Versão atual: v2.19.109
 
 ---
 
@@ -149,7 +149,8 @@
 | quotation_items | long_description, **source_requisition_code**; preços de referência alinhados ao catálogo quando aplicável |
 | supplier_terms | termos por tenant: `title`, `content`, `version`, `version_date`, `active` (um ativo por empresa) |
 | supplier_term_acceptances | aceite por pedido: `term_id`, `purchase_order_id`, `supplier_id`, `user_id`, `ip_address`, snapshot de versão |
-| supplier_categories | `company_id`, `supplier_id`, `category` — categorias atendidas (alinhadas ao `commodity_group` de `items`); UNIQUE (`supplier_id`, `category`) |
+| supplier_categories | `company_id`, `supplier_id`, `category` — categorias atendidas (nomes do cadastro `categories`); UNIQUE (`supplier_id`, `category`) |
+| categories | cadastro único por tenant: `code`, `name`, `active` — usado em itens (`commodity_group`) e fornecedores |
 | contracts | `company_id`, `supplier_id`, `code`, `title`, `type`, `status`, `start_date`, `end_date`, `value`, `file_url`, `notes`, `created_by` |
 | contract_status (enum) | `draft`, `active`, `expired`, `cancelled` |
 | contract_type (enum) | `fornecimento`, `servico`, `sla`, `nda`, `outro` |
@@ -386,6 +387,7 @@ node scripts/seed-supplier-axis.mjs --force
 | v2.19.99 | Exclusão definitiva de tenant vazio (superadmin) |
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
 | v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
+| v2.19.109 | Categorias unificadas + permissão erp.sync |
 | v2.19.108 | Aprovações: fila 1:1 com status real da REQ + RLS superadmin |
 | v2.19.107 | Fix badge/fila Aprovações (sync + API superadmin) |
 | v2.19.106 | Fix resubmeter REQ (superadmin) + portal fornecedor perfil/seed/loading |
@@ -450,7 +452,7 @@ node scripts/seed-supplier-axis.mjs --force
 | /comprador/itens | ✅ somente leitura, expansível, import/export Excel, sync ERP |
 | /comprador/fornecedores | ✅ modal detalhes, score fornecedor, categorias atendidas (`supplier_categories`), contagem pedidos, import/export Excel |
 | /comprador/relatorios | ✅ BI: Saving → Spend → Pedidos → Cotações; filtros globais; 4 exports Excel |
-| /comprador/configuracoes/** | ✅ inclui aba Termos de Fornecimento (admin) |
+| /comprador/configuracoes/** | ✅ inclui Categorias (cadastro único), Termos, Usuários, Perfis, Integrações |
 | /comprador/configuracoes/seguranca | ✅ 2FA TOTP real, layout side-by-side |
 | /admin/tenants/** | ✅ |
 | /admin/tenants/[id] | ✅ layout 3 blocos, métricas com período, funcionalidades inline |

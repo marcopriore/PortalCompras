@@ -118,6 +118,11 @@ export const PERMISSION_CATALOG: PermissionCatalogItem[] = [
   { key: "approval.order", label: "Fluxo Aprovação Pedido", group: "Aprovações" },
   { key: "export.excel", label: "Exportar Excel", group: "Dados" },
   { key: "import.excel", label: "Importar Excel", group: "Dados" },
+  {
+    key: "erp.sync",
+    label: "Sincronizar ERP (itens e fornecedores)",
+    group: "Dados",
+  },
   { key: "supplier.create", label: "Cadastrar Fornecedor", group: "Cadastros" },
   { key: "supplier.edit", label: "Editar Fornecedor", group: "Cadastros" },
   { key: "item.create", label: "Cadastrar Item", group: "Cadastros" },

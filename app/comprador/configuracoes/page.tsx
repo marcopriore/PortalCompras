@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { ConfiguracoesUsuariosTab } from "@/components/comprador/configuracoes-usuarios-tab"
 import { ConfiguracoesPermissoesTab } from "@/components/comprador/configuracoes-permissoes-tab"
 import { CostCentersSettings } from "@/components/comprador/cost-centers-settings"
+import { CategoriesSettings } from "@/components/comprador/categories-settings"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -58,6 +59,7 @@ import {
   Trash2,
   Upload,
   Settings2,
+  Tags,
   User,
   Users,
   Workflow,
@@ -321,6 +323,7 @@ type ActiveTab =
   | "aprovacoes"
   | "seguranca"
   | "campos"
+  | "categorias"
   | "termos"
   | "usuarios"
   | "permissoes"
@@ -328,7 +331,7 @@ type ActiveTab =
 
 const VALID_TABS = new Set<ActiveTab>([
   "empresa", "perfil", "notificacoes", "aprovacoes",
-  "seguranca", "campos", "termos", "usuarios", "permissoes", "integracoes",
+  "seguranca", "campos", "categorias", "termos", "usuarios", "permissoes", "integracoes",
 ])
 
 const PERSONAL_SETTINGS_TABS = new Set<ActiveTab>([
@@ -1846,6 +1849,9 @@ export default function ConfiguracoesPage() {
             ["aprovacoes", "Aprovações", Workflow],
             ["seguranca", "Segurança", Shield],
             ["campos", "Configuração de Campos", Settings2],
+            ...(canManageCompany
+              ? ([["categorias", "Categorias", Tags]] as const)
+              : []),
             ["termos", "Termos de Fornecimento", FileText],
             ...(canManageCompany ? [
               ["usuarios", "Usuários", Users],
@@ -3095,6 +3101,18 @@ export default function ConfiguracoesPage() {
               </CardContent>
             </Card>
           ) : null}
+        </div>
+      )}
+
+      {activeTab === "categorias" && (
+        <div className="grid gap-6">
+          {!canManageCompany ? (
+            <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
+              Apenas administradores podem gerenciar categorias.
+            </div>
+          ) : (
+            <CategoriesSettings />
+          )}
         </div>
       )}
 

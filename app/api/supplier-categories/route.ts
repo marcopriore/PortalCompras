@@ -1,52 +1,46 @@
 import { NextResponse } from "next/server"
-import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { createClient } from "@/lib/supabase/server"
+import { createServiceRoleClient } from "@/lib/supabase/service-role"
 
-async function getAuthedContext() {
-  const cookieStore = await cookies()
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
-            )
-          } catch {}
-        },
-      },
-    },
-  )
+export const runtime = "nodejs"
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) }
-  }
-
+async function resolveBuyerCompany(userId: string) {
+  const supabase = await createClient()
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_id")
-    .eq("id", user.id)
+    .select("company_id, is_superadmin, profile_type")
+    .eq("id", userId)
     .single()
 
-  if (!profile?.company_id) {
+  if (!profile || profile.profile_type !== "buyer") {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
+  }
+
+  let companyId = profile.company_id as string | null
+  if (profile.is_superadmin) {
+    const cookieStore = await cookies()
+    const selected = cookieStore.get("selected_company_id")?.value
+    if (selected) companyId = decodeURIComponent(selected)
+  }
+  if (!companyId) {
     return { error: NextResponse.json({ error: "Company not found" }, { status: 404 }) }
   }
 
-  return { supabase, companyId: profile.company_id as string }
+  return { companyId, userId }
 }
 
 export async function GET(request: Request) {
   try {
-    const ctx = await getAuthedContext()
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const ctx = await resolveBuyerCompany(user.id)
     if ("error" in ctx) return ctx.error
 
     const { searchParams } = new URL(request.url)
@@ -57,7 +51,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Missing supplier_id" }, { status: 400 })
     }
 
-    const { data: linkedRows, error: linkedError } = await ctx.supabase
+    const service = createServiceRoleClient()
+
+    const { data: linkedRows, error: linkedError } = await service
       .from("supplier_categories")
       .select("category")
       .eq("supplier_id", supplierId)
@@ -75,11 +71,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ categories })
     }
 
-    const { data: itemRows, error: availableError } = await ctx.supabase
-      .from("items")
-      .select("commodity_group")
+    const { data: masterRows, error: availableError } = await service
+      .from("categories")
+      .select("name")
       .eq("company_id", ctx.companyId)
-      .not("commodity_group", "is", null)
+      .eq("active", true)
+      .order("name", { ascending: true })
 
     if (availableError) {
       return NextResponse.json({ error: availableError.message }, { status: 500 })
@@ -87,11 +84,11 @@ export async function GET(request: Request) {
 
     const available = Array.from(
       new Set(
-        (itemRows ?? [])
-          .map((row) => (row.commodity_group as string | null)?.trim())
+        (masterRows ?? [])
+          .map((row) => (row.name as string | null)?.trim())
           .filter((category): category is string => Boolean(category)),
       ),
-    ).sort((a, b) => a.localeCompare(b, "pt-BR"))
+    )
 
     return NextResponse.json({ categories, available })
   } catch (error) {
@@ -102,7 +99,15 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await getAuthedContext()
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const ctx = await resolveBuyerCompany(user.id)
     if ("error" in ctx) return ctx.error
 
     const body = (await request.json()) as { supplier_id?: string; category?: string }
@@ -110,10 +115,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
     }
 
-    const { error } = await ctx.supabase.from("supplier_categories").insert({
+    const category = body.category.trim()
+    const service = createServiceRoleClient()
+
+    const { data: master } = await service
+      .from("categories")
+      .select("id")
+      .eq("company_id", ctx.companyId)
+      .eq("active", true)
+      .eq("name", category)
+      .maybeSingle()
+
+    if (!master) {
+      return NextResponse.json(
+        {
+          error:
+            "Categoria não cadastrada. Cadastre em Configurações → Categorias.",
+        },
+        { status: 400 },
+      )
+    }
+
+    const { error } = await service.from("supplier_categories").insert({
       company_id: ctx.companyId,
       supplier_id: body.supplier_id,
-      category: body.category.trim(),
+      category,
     })
 
     if (error) {
@@ -129,7 +155,15 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const ctx = await getAuthedContext()
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const ctx = await resolveBuyerCompany(user.id)
     if ("error" in ctx) return ctx.error
 
     const body = (await request.json()) as { supplier_id?: string; category?: string }
@@ -137,7 +171,8 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
     }
 
-    const { error } = await ctx.supabase
+    const service = createServiceRoleClient()
+    const { error } = await service
       .from("supplier_categories")
       .delete()
       .eq("supplier_id", body.supplier_id)

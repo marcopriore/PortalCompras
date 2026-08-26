@@ -70,6 +70,7 @@ export type PermissionKey =
   | "approval.order"
   | "export.excel"
   | "import.excel"
+  | "erp.sync"
   | "supplier.create"
   | "supplier.edit"
   | "item.create"
@@ -159,6 +160,7 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "approval.order",
   "export.excel",
   "import.excel",
+  "erp.sync",
   "supplier.create",
   "supplier.edit",
   "item.create",

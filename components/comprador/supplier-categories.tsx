@@ -142,13 +142,19 @@ export function SupplierCategories({
               <SelectValue placeholder="Selecionar categoria..." />
             </SelectTrigger>
             <SelectContent>
-              {available
-                .filter((cat) => !categories.includes(cat))
-                .map((cat) => (
-                  <SelectItem key={cat} value={cat} className="text-xs">
-                    {cat}
-                  </SelectItem>
-                ))}
+              {available.filter((cat) => !categories.includes(cat)).length === 0 ? (
+                <div className="px-2 py-3 text-xs text-muted-foreground">
+                  Nenhuma categoria ativa. Cadastre em Configurações → Categorias.
+                </div>
+              ) : (
+                available
+                  .filter((cat) => !categories.includes(cat))
+                  .map((cat) => (
+                    <SelectItem key={cat} value={cat} className="text-xs">
+                      {cat}
+                    </SelectItem>
+                  ))
+              )}
             </SelectContent>
           </Select>
           <Button

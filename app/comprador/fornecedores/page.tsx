@@ -5,6 +5,7 @@ import { format } from 'date-fns'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
+import { usePermissions } from '@/lib/hooks/usePermissions'
 import { useTenantSetting } from '@/lib/hooks/use-tenant-settings'
 import { useSupplierScores } from '@/lib/hooks/use-supplier-score'
 import { SupplierScoreBadge } from '@/components/ui/supplier-score-badge'
@@ -100,8 +101,10 @@ function getAvatarColor(name: string): string {
 
 export default function FornecedoresPage() {
   const { companyId, loading: userLoading, hasRole, isSuperAdmin } = useUser()
+  const { hasPermission } = usePermissions()
 
   const isMasterAdmin = isSuperAdmin || hasRole('admin')
+  const canSyncErp = isSuperAdmin || hasPermission('erp.sync')
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [orderCounts, setOrderCounts] = useState<Record<string, number>>({})
@@ -464,10 +467,12 @@ export default function FornecedoresPage() {
               Importar Excel
             </Button>
           )}
-          <Button variant="outline" size="sm" type="button" onClick={() => setErpSyncOpen(true)}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Sincronizar ERP
-          </Button>
+          {canSyncErp && (
+            <Button variant="outline" size="sm" type="button" onClick={() => setErpSyncOpen(true)}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Sincronizar ERP
+            </Button>
+          )}
         </div>
       </div>
 

@@ -6,6 +6,7 @@ import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
+import { usePermissions } from '@/lib/hooks/usePermissions'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -59,9 +60,11 @@ type ImportPreviewRow = {
 
 export default function ItensPage() {
   const { companyId, loading: userLoading, hasRole, isSuperAdmin } = useUser()
+  const { hasPermission, loading: permissionsLoading } = usePermissions()
 
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
+  const [masterCategories, setMasterCategories] = useState<string[]>([])
 
   const [search, setSearch] = useState('')
   const searchInputRef = useRef<HTMLDivElement>(null)
@@ -73,6 +76,7 @@ export default function ItensPage() {
   const [erpSyncOpen, setErpSyncOpen] = useState(false)
 
   const canImportExcel = isSuperAdmin || hasRole('admin')
+  const canSyncErp = isSuperAdmin || hasPermission('erp.sync')
 
   const [importOpen, setImportOpen] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
@@ -93,14 +97,14 @@ export default function ItensPage() {
   }, [items])
 
   const commodityGroups = useMemo(() => {
-    const groups = new Set<string>()
+    const groups = new Set<string>(masterCategories)
     items.forEach((item) => {
       if (item.commodity_group) {
         groups.add(item.commodity_group)
       }
     })
-    return Array.from(groups).sort()
-  }, [items])
+    return Array.from(groups).sort((a, b) => a.localeCompare(b, "pt-BR"))
+  }, [items, masterCategories])
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -120,6 +124,22 @@ export default function ItensPage() {
       )
     })
   }, [items, statusFilter, groupFilter, search])
+
+  const loadMasterCategories = useCallback(async () => {
+    if (!companyId) return
+    try {
+      const res = await fetch("/api/categories?active=1", { cache: "no-store" })
+      if (!res.ok) return
+      const payload = (await res.json()) as {
+        data?: { categories?: { name: string }[] }
+      }
+      setMasterCategories(
+        (payload.data?.categories ?? []).map((c) => c.name).filter(Boolean),
+      )
+    } catch {
+      /* ignore */
+    }
+  }, [companyId])
 
   const loadItems = useCallback(async () => {
     if (!companyId) return
@@ -148,8 +168,10 @@ export default function ItensPage() {
   }, [companyId])
 
   useEffect(() => {
+    if (userLoading || !companyId) return
     void loadItems()
-  }, [loadItems])
+    void loadMasterCategories()
+  }, [userLoading, companyId, loadItems, loadMasterCategories])
 
   async function handleDownloadTemplate() {
     const ExcelJS = (await import('exceljs')).default
@@ -456,10 +478,12 @@ export default function ItensPage() {
             <Download className="mr-2 h-4 w-4" />
             Baixar Base
           </Button>
-          <Button variant="outline" size="sm" type="button" onClick={() => setErpSyncOpen(true)}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Sincronizar ERP
-          </Button>
+          {canSyncErp && (
+            <Button variant="outline" size="sm" type="button" onClick={() => setErpSyncOpen(true)}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Sincronizar ERP
+            </Button>
+          )}
         </div>
       </div>
 

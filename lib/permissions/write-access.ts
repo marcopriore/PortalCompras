@@ -22,6 +22,7 @@ export const WRITE_PERMISSION_KEYS: PermissionKey[] = [
   "approval.requisition",
   "approval.order",
   "import.excel",
+  "erp.sync",
   "supplier.create",
   "supplier.edit",
   "item.create",

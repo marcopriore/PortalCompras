@@ -1,5 +1,17 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.109] — 2026-08-26
+
+### Categorias unificadas + permissão ERP sync
+
+- Tabela `categories` (código/nome/ativo por tenant) + seed a partir de `items.commodity_group` e `supplier_categories`
+- Configurações → **Categorias** (`?tab=categorias`) — CRUD para checklist de implantação / alinhamento ERP
+- Picklist de categorias do fornecedor lê o cadastro mestre (não mais distinct dos itens)
+- Permissão **`erp.sync`**: botão "Sincronizar ERP" em Itens e Fornecedores (admin por padrão; liberável por grupo)
+- Migration `064_categories_and_erp_sync_permission.sql`
+
+---
+
 ## [v2.19.108] — 2026-08-26
 
 ### Fix — Fila de Aprovações = status real da REQ
