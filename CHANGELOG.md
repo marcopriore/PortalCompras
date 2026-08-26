@@ -1,5 +1,16 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.107] — 2026-08-26
+
+### Fix — Indicador e fila de Aprovações (superadmin / seed)
+
+- POC tinha 23 REQs `pending` e só 1 `approval_requests` (seed/legado); badge lia a fila via RLS do `company_id` do profile
+- Sync automático: cria `approval_requests` faltantes para REQs pending
+- APIs service role: `GET /api/approvals/pending-count`, `GET /api/approvals/queue`, `POST /api/approvals/[id]/decide`
+- Sidebar + tela `/comprador/aprovacoes` passam a usar as APIs (tenant do cookie)
+
+---
+
 ## [v2.19.106] — 2026-08-26
 
 ### Fix — Resubmeter requisição (comprador / superadmin)

@@ -4,8 +4,6 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { createClient } from "@/lib/supabase/client"
-import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
@@ -168,7 +166,7 @@ function getPriorityMeta(priority: Priority): { label: string; className: string
 
 export default function AprovacoesPage() {
   const router = useRouter()
-  const { companyId, userId, hasRole, loading: userLoading } = useUser()
+  const { companyId, userId, loading: userLoading } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
   const [loading, setLoading] = React.useState(true)
 
@@ -208,74 +206,54 @@ export default function AprovacoesPage() {
       approvalContextRef.current.userId === started.userId
 
     if (!silent) setLoading(true)
-    const supabase = createClient()
-    const isAdmin = hasRole("admin")
 
-    let reqQuery = supabase
-      .from("approval_requests")
-      .select("*")
-      .eq("company_id", companyId)
-      .eq("flow", "requisition")
-    if (!isAdmin) {
-      reqQuery = reqQuery.eq("approver_id", userId)
+    try {
+      const res = await fetch("/api/approvals/queue", { cache: "no-store" })
+      const payload = (await res.json()) as {
+        error?: string
+        data?: {
+          requisition_requests: ApprovalRequest[]
+          order_requests: ApprovalRequest[]
+          requisitions: Requisition[]
+          orders: PurchaseOrder[]
+        }
+      }
+
+      if (!res.ok) {
+        if (!silent) toast.error(payload.error || "Erro ao carregar aprovações.")
+        if (stillHere() && !silent) setLoading(false)
+        return
+      }
+
+      const reqRequests = payload.data?.requisition_requests ?? []
+      const orderRequests = payload.data?.order_requests ?? []
+      const requisitions = payload.data?.requisitions ?? []
+      const orders = payload.data?.orders ?? []
+
+      const reqMap = new Map(requisitions.map((r) => [r.id, r]))
+      const orderMap = new Map(orders.map((o) => [o.id, o]))
+
+      if (!stillHere()) return
+      setRequisitionRows(
+        reqRequests.map((request) => ({
+          request,
+          requisition: reqMap.get(request.entity_id) ?? null,
+        })),
+      )
+      setOrderRows(
+        orderRequests.map((request) => ({
+          request,
+          order: orderMap.get(request.entity_id) ?? null,
+        })),
+      )
+      setLastUpdated(new Date())
+      window.dispatchEvent(new Event("approval-updated"))
+    } catch {
+      if (!silent) toast.error("Erro ao carregar aprovações.")
+    } finally {
+      if (stillHere() && !silent) setLoading(false)
     }
-    let orderQuery = supabase
-      .from("approval_requests")
-      .select("*")
-      .eq("company_id", companyId)
-      .eq("flow", "order")
-    if (!isAdmin) {
-      orderQuery = orderQuery.eq("approver_id", userId)
-    }
-
-    const [{ data: reqData }, { data: orderData }] = await Promise.all([
-      reqQuery.order("created_at", { ascending: false }),
-      orderQuery.order("created_at", { ascending: false }),
-    ])
-
-    const reqRequests = (reqData ?? []) as ApprovalRequest[]
-    const orderRequests = (orderData ?? []) as ApprovalRequest[]
-
-    const reqEntityIds = [...new Set(reqRequests.map((r) => r.entity_id))]
-    const orderEntityIds = [...new Set(orderRequests.map((r) => r.entity_id))]
-
-    let requisitions: Requisition[] = []
-    let orders: PurchaseOrder[] = []
-
-    if (reqEntityIds.length > 0) {
-      const { data: reqs } = await supabase
-        .from("requisitions")
-        .select("id, code, title, cost_center, status, requester_name, created_at, priority")
-        .in("id", reqEntityIds)
-      requisitions = (reqs ?? []) as Requisition[]
-    }
-    if (orderEntityIds.length > 0) {
-      const { data: ords } = await supabase
-        .from("purchase_orders")
-        .select("id, code, total_price, supplier_name, status, created_at")
-        .in("id", orderEntityIds)
-      orders = (ords ?? []) as PurchaseOrder[]
-    }
-
-    const reqMap = new Map(requisitions.map((r) => [r.id, r]))
-    const orderMap = new Map(orders.map((o) => [o.id, o]))
-
-    if (!stillHere()) return
-    setRequisitionRows(
-      reqRequests.map((request) => ({
-        request,
-        requisition: reqMap.get(request.entity_id) ?? null,
-      })),
-    )
-    setOrderRows(
-      orderRequests.map((request) => ({
-        request,
-        order: orderMap.get(request.entity_id) ?? null,
-      })),
-    )
-    setLastUpdated(new Date())
-    if (!silent) setLoading(false)
-  }, [companyId, userId, hasRole, userLoading])
+  }, [companyId, userId, userLoading])
 
   React.useEffect(() => {
     if (userLoading || !companyId || !userId) return
@@ -356,81 +334,17 @@ export default function AprovacoesPage() {
   ) => {
     if (!companyId || !userId) return
     setActionLoading(requestId)
-    const supabase = createClient()
 
     try {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", userId)
-        .single()
-      const approverName = (profile as { full_name?: string } | null)?.full_name ?? ""
-
-      await supabase
-        .from("approval_requests")
-        .update({
-          status: "approved",
-          decided_at: new Date().toISOString(),
-        })
-        .eq("id", requestId)
-
-      const { data: approvalRows, error: fetchErr } = await supabase
-        .from("approval_requests")
-        .select("status")
-        .eq("entity_id", entityId)
-        .eq("flow", flow)
-      if (fetchErr) {
-        toast.error("Erro ao verificar aprovações. Tente novamente.")
+      const res = await fetch(`/api/approvals/${requestId}/decide`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve" }),
+      })
+      const payload = (await res.json()) as { error?: string }
+      if (!res.ok) {
+        toast.error(payload.error || "Erro ao aprovar. Tente novamente.")
         return
-      }
-      const rows = (approvalRows ?? []) as { status: string }[]
-      const total = rows.filter((r) => r.status !== "rejected").length
-      const approved = rows.filter((r) => r.status === "approved").length
-      const isAllApproved = total > 0 && total === approved
-
-      if (isAllApproved) {
-        const table = flow === "requisition" ? "requisitions" : "purchase_orders"
-        const { data: updatedRows, error: updateErr } = await supabase
-          .from(table)
-          .update({
-            status: "approved",
-            approved_at: new Date().toISOString(),
-            approver_name: approverName,
-          })
-          .eq("id", entityId)
-          .select("id")
-        if (updateErr) {
-          toast.error("Erro ao atualizar status. Tente novamente.")
-          return
-        }
-        if (!updatedRows || updatedRows.length === 0) {
-          toast.error("Não foi possível atualizar o status (possível bloqueio de permissão).")
-          return
-        }
-
-        if (flow === "requisition") {
-          const { data: req } = await supabase
-            .from("requisitions")
-            .select("requester_id, requester_name, code")
-            .eq("id", entityId)
-            .single()
-
-          if (req?.requester_id) {
-            void notifyWithEmail({
-              userId: req.requester_id,
-              companyId,
-              type: "requisition.approved",
-              title: "Requisição aprovada",
-              body: `Sua requisição ${req.code} foi aprovada e está disponível para cotação.`,
-              entity: "requisition",
-              entityId,
-              subject: `Requisição Aprovada — ${req.code}`,
-              html: `<p>Sua requisição <strong>${req.code}</strong> foi aprovada.</p>
-           <p>Ela já está disponível para abertura de cotação.</p>`,
-              emailPrefKey: "requisition_approval_email",
-            })
-          }
-        }
       }
 
       toast.success(
@@ -440,7 +354,7 @@ export default function AprovacoesPage() {
       )
       await loadData()
       window.dispatchEvent(new Event("approval-updated"))
-    } catch (e) {
+    } catch {
       toast.error("Erro ao aprovar. Tente novamente.")
     } finally {
       setActionLoading(null)
@@ -457,50 +371,17 @@ export default function AprovacoesPage() {
     if (!rejectTarget || !rejectReason.trim() || !companyId) return
     const rejectionReason = rejectReason.trim()
     setRejectSaving(true)
-    const supabase = createClient()
 
     try {
-      await supabase
-        .from("approval_requests")
-        .update({
-          status: "rejected",
-          rejection_reason: rejectionReason,
-          decided_at: new Date().toISOString(),
-        })
-        .eq("id", rejectTarget.requestId)
-
-      const table =
-        rejectTarget.flow === "requisition" ? "requisitions" : "purchase_orders"
-      await supabase
-        .from(table)
-        .update({
-          status: "rejected",
-          rejection_reason: rejectionReason,
-        })
-        .eq("id", rejectTarget.entityId)
-
-      if (rejectTarget.flow === "requisition") {
-        const { data: req } = await supabase
-          .from("requisitions")
-          .select("requester_id, code")
-          .eq("id", rejectTarget.entityId)
-          .single()
-
-        if (req?.requester_id) {
-          void notifyWithEmail({
-            userId: req.requester_id,
-            companyId,
-            type: "requisition.rejected",
-            title: "Requisição reprovada",
-            body: `Sua requisição ${req.code} foi reprovada. Motivo: ${rejectionReason}`,
-            entity: "requisition",
-            entityId: rejectTarget.entityId,
-            subject: `Requisição Reprovada — ${req.code}`,
-            html: `<p>Sua requisição <strong>${req.code}</strong> foi reprovada.</p>
-           <p><strong>Motivo:</strong> ${rejectionReason}</p>`,
-            emailPrefKey: "requisition_approval_email",
-          })
-        }
+      const res = await fetch(`/api/approvals/${rejectTarget.requestId}/decide`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reject", reason: rejectionReason }),
+      })
+      const payload = (await res.json()) as { error?: string }
+      if (!res.ok) {
+        toast.error(payload.error || "Erro ao reprovar. Tente novamente.")
+        return
       }
 
       toast.success(
@@ -513,7 +394,7 @@ export default function AprovacoesPage() {
       setRejectReason("")
       await loadData()
       window.dispatchEvent(new Event("approval-updated"))
-    } catch (e) {
+    } catch {
       toast.error("Erro ao reprovar. Tente novamente.")
     } finally {
       setRejectSaving(false)

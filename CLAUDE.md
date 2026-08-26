@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.106
+- Versão atual: v2.19.107
 
 ---
 
@@ -386,6 +386,7 @@ node scripts/seed-supplier-axis.mjs --force
 | v2.19.99 | Exclusão definitiva de tenant vazio (superadmin) |
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
 | v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
+| v2.19.107 | Fix badge/fila Aprovações (sync + API superadmin) |
 | v2.19.106 | Fix resubmeter REQ (superadmin) + portal fornecedor perfil/seed/loading |
 | v2.19.105 | Admin fornecedores: listar tenants + colunas numéricas centradas |
 | v2.19.104 | Seed one-shot fornecedor mesmo CNPJ em 2+ tenants |

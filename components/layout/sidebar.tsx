@@ -11,7 +11,6 @@ import {
   getDefaultCompradorHref,
   type CompradorAccessContext,
 } from "@/lib/permissions/comprador-nav"
-import { createClient } from "@/lib/supabase/client"
 import {
   LayoutDashboard,
   FileText,
@@ -127,26 +126,25 @@ export function Sidebar({ type }: SidebarProps) {
 
   useEffect(() => {
     if (type !== "comprador" || !companyId || !userId) return
-    const supabase = createClient()
-    const isAdmin = hasRole("admin")
 
     const fetchPendingCount = async () => {
-      let query = supabase
-        .from("approval_requests")
-        .select("*", { count: "exact", head: true })
-        .eq("company_id", companyId)
-        .eq("status", "pending")
-      if (!isAdmin) {
-        query = query.eq("approver_id", userId)
+      try {
+        const res = await fetch("/api/approvals/pending-count", { cache: "no-store" })
+        if (!res.ok) {
+          setPendingApprovals(0)
+          return
+        }
+        const payload = (await res.json()) as { data?: { count?: number } }
+        setPendingApprovals(payload.data?.count ?? 0)
+      } catch {
+        setPendingApprovals(0)
       }
-      const { count } = await query
-      setPendingApprovals(count ?? 0)
     }
 
-    fetchPendingCount()
+    void fetchPendingCount()
     window.addEventListener("approval-updated", fetchPendingCount)
     return () => window.removeEventListener("approval-updated", fetchPendingCount)
-  }, [type, companyId, userId, hasRole])
+  }, [type, companyId, userId])
 
   return (
     <aside
