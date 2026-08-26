@@ -1,5 +1,13 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.100] — 2026-08-26
+
+### Seletor de tenant
+
+- Superadmin: seletor do portal comprador lista só tenants `active` (inativos acessíveis via Admin → Acessar)
+
+---
+
 ## [v2.19.99] — 2026-08-26
 
 ### Exclusão de tenant vazio (superadmin)

@@ -65,6 +65,7 @@ export default async function CompradorLayout({
     const { data: companiesData } = await supabase
       .from("companies")
       .select("id, name")
+      .eq("status", "active")
       .order("name", { ascending: true })
 
     companies = (companiesData as LayoutCompany[]) ?? []
