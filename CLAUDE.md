@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.104
+- Versão atual: v2.19.105
 
 ---
 
@@ -372,6 +372,7 @@ node scripts/seed-cross-tenant-supplier.mjs --company-ids=<uuid1>,<uuid2>
 | v2.19.99 | Exclusão definitiva de tenant vazio (superadmin) |
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
 | v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
+| v2.19.105 | Admin fornecedores: listar tenants + colunas numéricas centradas |
 | v2.19.104 | Seed one-shot fornecedor mesmo CNPJ em 2+ tenants |
 | v2.19.103 | Admin: lista global de fornecedores cross-tenant |
 | v2.19.102 | Script seed one-shot Apresentação POC |

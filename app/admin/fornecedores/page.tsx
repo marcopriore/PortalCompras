@@ -3,10 +3,12 @@
 import * as React from "react"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { Building2, Eye, RefreshCw, Search, Users } from "lucide-react"
+import { Building2, Eye, List, RefreshCw, Search, Users } from "lucide-react"
 import { toast } from "sonner"
-import type { GlobalSupplierRow } from "@/lib/admin/global-suppliers"
-import { Badge } from "@/components/ui/badge"
+import type {
+  GlobalSupplierRow,
+  GlobalSupplierTenant,
+} from "@/lib/admin/global-suppliers"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -64,6 +66,10 @@ export default function AdminFornecedoresPage() {
   const [search, setSearch] = React.useState("")
   const [searchDraft, setSearchDraft] = React.useState("")
   const [detail, setDetail] = React.useState<GlobalSupplierRow | null>(null)
+  const [tenantsDialog, setTenantsDialog] = React.useState<{
+    supplierName: string
+    tenants: GlobalSupplierTenant[]
+  } | null>(null)
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -171,9 +177,9 @@ export default function AdminFornecedoresPage() {
               <TableHead>Fornecedor</TableHead>
               <TableHead>CNPJ</TableHead>
               <TableHead>Tenants / clientes</TableHead>
-              <TableHead className="text-right">Cotações</TableHead>
-              <TableHead className="text-right">Pedidos</TableHead>
-              <TableHead className="text-right">Usuários</TableHead>
+              <TableHead className="text-center">Cotações</TableHead>
+              <TableHead className="text-center">Pedidos</TableHead>
+              <TableHead className="text-center">Usuários</TableHead>
               <TableHead>Último login</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
@@ -205,26 +211,36 @@ export default function AdminFornecedoresPage() {
                     {formatCnpj(row.cnpj)}
                   </TableCell>
                   <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {row.tenants.slice(0, 3).map((t) => (
-                        <Badge key={t.supplier_id} variant="secondary" className="text-xs">
-                          {t.company_name}
-                        </Badge>
-                      ))}
-                      {row.tenants.length > 3 ? (
-                        <Badge variant="outline" className="text-xs">
-                          +{row.tenants.length - 3}
-                        </Badge>
-                      ) : null}
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground tabular-nums">
+                        {row.tenants.length}{" "}
+                        {row.tenants.length === 1 ? "tenant" : "tenants"}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-xs"
+                        disabled={row.tenants.length === 0}
+                        onClick={() =>
+                          setTenantsDialog({
+                            supplierName: row.name,
+                            tenants: row.tenants,
+                          })
+                        }
+                      >
+                        <List className="h-3.5 w-3.5" />
+                        Listar
+                      </Button>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="text-center tabular-nums">
                     {row.quotations_count}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="text-center tabular-nums">
                     {row.orders_count}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="text-center tabular-nums">
                     {row.users_count}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
@@ -285,7 +301,7 @@ export default function AdminFornecedoresPage() {
                 <p className="mb-2 text-xs font-medium text-muted-foreground">
                   Tenants / clientes ({detail.tenants.length})
                 </p>
-                <ul className="space-y-2 rounded-md border border-border p-3">
+                <ul className="max-h-48 space-y-2 overflow-y-auto rounded-md border border-border p-3">
                   {detail.tenants.map((t) => (
                     <li
                       key={t.supplier_id}
@@ -316,6 +332,40 @@ export default function AdminFornecedoresPage() {
               <p className="text-xs text-muted-foreground">
                 Último login: {formatLogin(detail.last_login_at)}
               </p>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(tenantsDialog)}
+        onOpenChange={(o) => !o && setTenantsDialog(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Tenants / clientes</DialogTitle>
+          </DialogHeader>
+          {tenantsDialog ? (
+            <div className="space-y-3 text-sm">
+              <p className="text-muted-foreground">
+                {tenantsDialog.supplierName} · {tenantsDialog.tenants.length}{" "}
+                {tenantsDialog.tenants.length === 1 ? "tenant" : "tenants"}
+              </p>
+              <ul className="max-h-72 space-y-2 overflow-y-auto rounded-md border border-border p-3">
+                {tenantsDialog.tenants.map((t) => (
+                  <li
+                    key={t.supplier_id}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span className="font-medium text-foreground">
+                      {t.company_name}
+                    </span>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {t.code}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
         </DialogContent>

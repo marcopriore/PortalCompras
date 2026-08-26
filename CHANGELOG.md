@@ -1,5 +1,14 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.105] — 2026-08-26
+
+### Admin — Fornecedores globais (UX)
+
+- Coluna Tenants: contagem + botão **Listar** (dialog) em vez de badges na grid
+- Colunas Cotações / Pedidos / Usuários centralizadas
+
+---
+
 ## [v2.19.104] — 2026-08-26
 
 ### Seed — fornecedor cross-tenant
