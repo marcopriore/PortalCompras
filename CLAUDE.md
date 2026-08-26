@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.102
+- Versão atual: v2.19.103
 
 ---
 
@@ -215,6 +215,9 @@
 - `app/api/purchase-orders/[id]/erp-integration/route.ts`
 - `app/api/comprador/integration-logs/route.ts`
 - `app/api/admin/integration-logs/route.ts`
+- `app/api/admin/suppliers/route.ts`
+- `lib/admin/global-suppliers.ts`
+- `app/admin/fornecedores/`
 - `app/comprador/integracoes/monitor/`
 - `lib/proxy/background-tasks.ts`, `lib/proxy/load-background-tasks-cooldown.ts`
 - `components/admin/tenant-settings-tab.tsx`
@@ -356,6 +359,7 @@ node scripts/seed-poc-tenant.mjs --force   # ignora guard se já houver itens
 | v2.19.99 | Exclusão definitiva de tenant vazio (superadmin) |
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
 | v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
+| v2.19.103 | Admin: lista global de fornecedores cross-tenant |
 | v2.19.102 | Script seed one-shot Apresentação POC |
 | v2.19.85 | Importação massiva de requisições via Excel; monitor integração em nova aba |
 | v2.19.84 | Testes unitários ampliados (143/14 arquivos) e rotina de docs sincronizada |
@@ -418,6 +422,7 @@ node scripts/seed-poc-tenant.mjs --force   # ignora guard se já houver itens
 | /comprador/configuracoes/seguranca | ✅ 2FA TOTP real, layout side-by-side |
 | /admin/tenants/** | ✅ |
 | /admin/tenants/[id] | ✅ layout 3 blocos, métricas com período, funcionalidades inline |
+| /admin/fornecedores | ✅ Lista global cross-tenant (CNPJ), métricas e último login |
 | /admin/logs | ✅ paginação server-side, filtros combinados |
 | /admin/integracoes | ✅ API keys + endpoints + monitor (superadmin) |
 | /docs/api | ✅ Documentação pública Loja de API |

@@ -1,5 +1,15 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.103] — 2026-08-26
+
+### Admin — Fornecedores globais
+
+- Nova tela `/admin/fornecedores` (superadmin): lista cross-tenant agregada por CNPJ
+- Colunas: dados do fornecedor, tenants/clientes, cotações, pedidos, usuários, último login (`supplier.login`)
+- API `GET /api/admin/suppliers` (service role + paginação/busca)
+
+---
+
 ## [v2.19.102] — 2026-08-26
 
 ### Seed demo — Apresentação POC

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { LogOut, Building2, ScrollText, Radio } from "lucide-react"
+import { LogOut, Building2, ScrollText, Radio, Truck } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -45,6 +45,7 @@ export default function AdminLayout({
 
   const getTitle = () => {
     if (pathname.startsWith("/admin/tenants")) return "Tenants"
+    if (pathname.startsWith("/admin/fornecedores")) return "Fornecedores"
     if (pathname.startsWith("/admin/integracoes")) return "Integrações"
     if (pathname.startsWith("/admin/logs")) return "Logs do Sistema"
     return "Admin"
@@ -52,6 +53,7 @@ export default function AdminLayout({
 
   const navItems = [
     { href: "/admin/tenants", label: "Tenants", icon: Building2 },
+    { href: "/admin/fornecedores", label: "Fornecedores", icon: Truck },
     { href: "/admin/integracoes", label: "Integrações", icon: Radio },
     { href: "/admin/logs", label: "Logs", icon: ScrollText },
   ]
