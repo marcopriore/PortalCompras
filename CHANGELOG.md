@@ -1,5 +1,14 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.102] — 2026-08-26
+
+### Seed demo — Apresentação POC
+
+- Script one-shot `scripts/seed-poc-tenant.mjs` + `npm run seed:poc` (service role; não é migration)
+- Popula tenant `Apresentação POC`: mestres, 61 usuários Auth, REQ/COT/PO/contratos/alçadas
+
+---
+
 ## [v2.19.101] — 2026-08-26
 
 ### Regras — PRD sem dados de teste

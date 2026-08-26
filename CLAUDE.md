@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.101
+- Versão atual: v2.19.102
 
 ---
 
@@ -270,6 +270,23 @@
 - Dados reais: Admin ou ERP após o deploy
 - Lixo de teste em PRD: inativar ou excluir no Supabase/Admin — **não** via migration de “cleanup” com UUIDs hardcodeados de sessão
 
+### Seed demo — Apresentação POC (one-shot)
+
+Script **fora** de migration: `scripts/seed-poc-tenant.mjs`
+
+```bash
+# .env.local apontando para o projeto Supabase alvo (PRD/staging)
+npm run seed:poc
+# ou
+node scripts/seed-poc-tenant.mjs --company-id=<uuid>
+node scripts/seed-poc-tenant.mjs --force   # ignora guard se já houver itens
+```
+
+- Resolve tenant pelo nome `Apresentação POC` (ou `--company-id`)
+- Senha de todos: `Valore@POC2026` · e-mails `*@apresentacao-poc.demo`
+- Volumes: 260 itens, 100 fornecedores, 50 CC, 61 usuários, 250 REQ, 100 COT, 77 PO, 10 contratos, 5 alçadas
+- **Não** versionar dump SQL com dados de PRD; reexecutar o script se precisar recriar (após limpeza manual)
+
 ---
 
 ## VERSIONAMENTO GIT
@@ -339,6 +356,7 @@
 | v2.19.99 | Exclusão definitiva de tenant vazio (superadmin) |
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
 | v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
+| v2.19.102 | Script seed one-shot Apresentação POC |
 | v2.19.85 | Importação massiva de requisições via Excel; monitor integração em nova aba |
 | v2.19.84 | Testes unitários ampliados (143/14 arquivos) e rotina de docs sincronizada |
 | v2.19.83 | Configurações unificadas: abas Usuários, Perfis de Acesso, Integrações; deep link ?tab= |

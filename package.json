@@ -13,7 +13,8 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:unit:ui": "vitest --ui",
-    "api-key:create": "node scripts/create-api-key.mjs"
+    "api-key:create": "node scripts/create-api-key.mjs",
+    "seed:poc": "node scripts/seed-poc-tenant.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
