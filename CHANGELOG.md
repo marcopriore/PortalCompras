@@ -1,5 +1,22 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.106] — 2026-08-26
+
+### Fix — Resubmeter requisição (comprador / superadmin)
+
+- Causa: RLS do UPDATE só aceitava `profiles.company_id` = tenant da REQ; Master Valore (superadmin, Empresa Teste) em Apresentação POC atualizava **0 linhas** sem erro
+- `POST /api/requisitions/[id]/resubmit` (service role + cookie `selected_company_id`) — resubmete de forma confiável
+- Migration `062_requisitions_buyer_superadmin_rls.sql`: SELECT/UPDATE liberam `is_superadmin` (aplicar no SQL Editor se o histórico de migrations estiver dessincronizado)
+
+### Portal fornecedor
+
+- Fix: `/fornecedor/cotacoes` não ficava sem loading quando não havia convites (early `return`)
+- Soft-fail na leitura de `companies` (RLS) para não derrubar a lista
+- Nova tela `/fornecedor/perfil` (dados cadastrais) + item no menu
+- Seed one-shot `npm run seed:supplier-axis` (CNPJ Axis / 18 cotações / 12 pedidos)
+
+---
+
 ## [v2.19.105] — 2026-08-26
 
 ### Admin — Fornecedores globais (UX)

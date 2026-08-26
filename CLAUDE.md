@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.105
+- Versão atual: v2.19.106
 
 ---
 
@@ -303,6 +303,20 @@ node scripts/seed-cross-tenant-supplier.mjs --company-ids=<uuid1>,<uuid2>
 - Upsert do mesmo CNPJ `11.222.333/0001-81` (`CROSS-001` / *Fornecedor Cross-Tenant Demo*) em 2+ tenants active
 - Serve para validar `/admin/fornecedores` (agregação por CNPJ)
 
+### Seed demo — portal fornecedor Axis (one-shot)
+
+Script: `scripts/seed-supplier-axis.mjs`
+
+```bash
+npm run seed:supplier-axis
+node scripts/seed-supplier-axis.mjs --company-id=<uuid>
+node scripts/seed-supplier-axis.mjs --force
+```
+
+- CNPJ `58.043.646/0001-36` · e-mail `contato@axisstrategy.com.br` (admin do fornecedor)
+- Garante supplier + profile; cria 18 cotações, 12 pedidos e 1 contrato no tenant alvo
+- Senha se usuário novo: `Valore@Axis2026`
+
 ---
 
 ## VERSIONAMENTO GIT
@@ -372,6 +386,7 @@ node scripts/seed-cross-tenant-supplier.mjs --company-ids=<uuid1>,<uuid2>
 | v2.19.99 | Exclusão definitiva de tenant vazio (superadmin) |
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
 | v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
+| v2.19.106 | Fix resubmeter REQ (superadmin) + portal fornecedor perfil/seed/loading |
 | v2.19.105 | Admin fornecedores: listar tenants + colunas numéricas centradas |
 | v2.19.104 | Seed one-shot fornecedor mesmo CNPJ em 2+ tenants |
 | v2.19.103 | Admin: lista global de fornecedores cross-tenant |
@@ -447,6 +462,8 @@ node scripts/seed-cross-tenant-supplier.mjs --company-ids=<uuid1>,<uuid2>
 | /fornecedor/pedidos | ✅ Listagem com métricas |
 | /fornecedor/pedidos/[id] | ✅ Aceite com modal de termos, recusa, data entrega, PDF |
 | /termos/[company_id] | ✅ Termos ativos (público, sem login) |
+| /fornecedor/usuarios | ✅ Gestão de usuários do portal fornecedor |
+| /fornecedor/perfil | ✅ Dados cadastrais do fornecedor (somente leitura) |
 | /fornecedor/atividades | ✅ Histórico completo paginado |
 
 ---

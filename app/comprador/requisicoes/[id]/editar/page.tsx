@@ -415,171 +415,46 @@ export default function EditarRequisicaoPage({
       return
     }
 
-    const supabase = createClient()
     setSaving(true)
 
     try {
-      const { data: profileRes } = await supabase
-        .from("profiles")
-        .select("full_name")
-        .eq("id", userId)
-        .single()
-
-      const requesterName = (profileRes as { full_name?: string } | null)?.full_name ?? ""
-      const costCenterTrimmed = (form.costCenter ?? "").trim()
-      const costCenterForInsert = costCenterTrimmed || null
-      const costCenterForRpc = costCenterTrimmed || ""
-
-      const { error: updateErr } = await supabase
-        .from("requisitions")
-        .update({
+      const res = await fetch(`/api/requisitions/${id}/resubmit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           title: form.title.trim(),
           description: form.description.trim() || null,
-          cost_center: costCenterForInsert,
+          cost_center: (form.costCenter ?? "").trim(),
           priority: form.priority,
-          needed_by: form.neededBy ? new Date(`${form.neededBy}T00:00:00`).toISOString() : null,
-          rejection_reason: null,
-          approver_id: null,
-          approver_name: null,
-          approved_at: null,
-          status: "pending",
-        })
-        .eq("id", id)
-
-      if (updateErr) {
-        toast.error("Erro ao atualizar a requisição.")
-        return
-      }
-
-      const { error: deleteItemsErr } = await supabase
-        .from("requisition_items")
-        .delete()
-        .eq("requisition_id", id)
-
-      if (deleteItemsErr) {
-        toast.error("Erro ao remover itens antigos.")
-        return
-      }
-
-      const payloadItems = items.map((it) => ({
-        requisition_id: id,
-        company_id: companyId,
-        material_code: (it.materialCode ?? "").trim() || null,
-        material_description: it.materialDescription.trim(),
-        quantity: Math.max(1, Number(it.quantity) || 1),
-        unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
-        commodity_group: (it.commodityGroup ?? "").trim() || null,
-        observations: (it.observations ?? "").trim() || null,
-      }))
-
-      const { error: insertItemsErr } = await supabase
-        .from("requisition_items")
-        .insert(payloadItems)
-
-      if (insertItemsErr) {
-        toast.error("Erro ao salvar os itens da requisição.")
-        return
-      }
-
-      await supabase
-        .from("approval_requests")
-        .delete()
-        .eq("entity_id", id)
-        .eq("flow", "requisition")
-
-      const { data: tfRow } = await supabase
-        .from("tenant_features")
-        .select("enabled")
-        .eq("company_id", companyId)
-        .eq("feature_key", "approval_requisition")
-        .maybeSingle()
-
-      const enabled = (tfRow as { enabled?: boolean } | null)?.enabled ?? false
-
-      if (!enabled) {
-        await supabase
-          .from("requisitions")
-          .update({
-            status: "approved",
-            approved_at: new Date().toISOString(),
-            approver_name: "Aprovação automática (fluxo desabilitado)",
-          })
-          .eq("id", id)
-        await logAudit({
-          eventType: "quotation.updated",
-          description: `Requisição ${requisitionCode} resubmetida e aprovada automaticamente`,
-          companyId,
-          userId,
-          userName: requesterName,
-          entity: "requisitions",
-          entityId: id,
-        }).catch(() => {})
-        router.push("/comprador/requisicoes")
-        return
-      }
-
-      const { data: approverData } = await supabase.rpc("get_approver_for_requisition", {
-        p_company_id: companyId,
-        p_cost_center: costCenterForRpc,
+          needed_by: form.neededBy || null,
+          items: items.map((it) => ({
+            material_code: (it.materialCode ?? "").trim() || null,
+            material_description: it.materialDescription.trim(),
+            quantity: Math.max(1, Number(it.quantity) || 1),
+            unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
+            commodity_group: (it.commodityGroup ?? "").trim() || null,
+            observations: (it.observations ?? "").trim() || null,
+          })),
+        }),
       })
 
-      const firstRow = Array.isArray(approverData) ? approverData[0] : approverData
-      const approverId = (firstRow as { approver_id?: string | null } | null)?.approver_id ?? null
-      const approverName = (firstRow as { approver_name?: string | null } | null)?.approver_name ?? null
+      const payload = (await res.json()) as {
+        error?: string
+        data?: { status?: string; auto_approved?: boolean }
+      }
 
-      if (!approverId) {
-        await supabase
-          .from("requisitions")
-          .update({
-            status: "approved",
-            approved_at: new Date().toISOString(),
-            approver_name: "Aprovação automática (sem regra configurada para este CC)",
-          })
-          .eq("id", id)
-        await logAudit({
-          eventType: "quotation.updated",
-          description: `Requisição ${requisitionCode} resubmetida e aprovada automaticamente`,
-          companyId,
-          userId,
-          userName: requesterName,
-          entity: "requisitions",
-          entityId: id,
-        }).catch(() => {})
-        router.push("/comprador/requisicoes")
+      if (!res.ok) {
+        toast.error(payload.error || "Erro ao resubmeter a requisição.")
         return
       }
 
-      await supabase
-        .from("requisitions")
-        .update({
-          approver_id: approverId,
-          approver_name: approverName,
-          status: "pending",
-        })
-        .eq("id", id)
-
-      await supabase.from("approval_requests").insert({
-        company_id: companyId,
-        flow: "requisition",
-        entity_id: id,
-        approver_id: approverId,
-        approver_name: approverName,
-        status: "pending",
-      })
-
-      await logAudit({
-        eventType: "quotation.updated",
-        description: `Requisição ${requisitionCode} resubmetida para aprovação`,
-        companyId,
-        userId,
-        userName: requesterName,
-        entity: "requisitions",
-        entityId: id,
-      }).catch(() => {})
-
-      toast.success("Requisição resubmetida com sucesso.")
+      if (payload.data?.auto_approved) {
+        toast.success("Requisição resubmetida e aprovada automaticamente.")
+      } else {
+        toast.success("Requisição resubmetida com sucesso.")
+      }
       router.push("/comprador/requisicoes")
-    } catch (err) {
+    } catch {
       toast.error("Erro ao salvar. Tente novamente.")
     } finally {
       setSaving(false)

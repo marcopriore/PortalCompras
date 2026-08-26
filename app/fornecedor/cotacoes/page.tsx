@@ -404,13 +404,17 @@ export default function FornecedorCotacoesPage() {
               .from("companies")
               .select("id, name, cnpj")
               .in("id", companyIds)
-            if (companiesErr) throw companiesErr
-            companyMap = Object.fromEntries(
-              (companiesData ?? []).map((c) => [
-                c.id,
-                { name: c.name, cnpj: c.cnpj ?? null },
-              ]),
-            )
+            // RLS do fornecedor pode negar companies sem PO — não bloquear a lista
+            if (companiesErr) {
+              console.warn("Empresas (cliente) não disponíveis via RLS:", companiesErr.message)
+            } else {
+              companyMap = Object.fromEntries(
+                (companiesData ?? []).map((c) => [
+                  c.id,
+                  { name: c.name, cnpj: c.cnpj ?? null },
+                ]),
+              )
+            }
           }
 
           const roundsRes = await supabase
@@ -468,51 +472,52 @@ export default function FornecedorCotacoesPage() {
       }
 
       try {
-        if (quotationIds.length === 0) return
-        const myProposalsRes = await supabase
-          .from("quotation_proposals")
-          .select("quotation_id, round_id, status")
-          .eq("supplier_id", supplierId)
-          .in("quotation_id", quotationIds)
+        if (quotationIds.length > 0) {
+          const myProposalsRes = await supabase
+            .from("quotation_proposals")
+            .select("quotation_id, round_id, status")
+            .eq("supplier_id", supplierId)
+            .in("quotation_id", quotationIds)
 
-        if (myProposalsRes.error) throw myProposalsRes.error
-        const myProposalsRows = (myProposalsRes.data ?? []) as ProposalRow[]
+          if (myProposalsRes.error) throw myProposalsRes.error
+          const myProposalsRows = (myProposalsRes.data ?? []) as ProposalRow[]
 
-        const priority: Record<string, number> = {
-          selected: 4,
-          submitted: 3,
-          invited: 2,
-          rejected: 1,
-        }
-
-        const proposalStatusByQuotation = new Map<string, string>()
-        const proposalRankByQuotation = new Map<string, number>()
-
-        for (const p of myProposalsRows) {
-          const cur = proposalRankByQuotation.get(p.quotation_id) ?? 0
-          const next = priority[p.status] ?? 0
-          if (next > cur) {
-            proposalRankByQuotation.set(p.quotation_id, next)
-            proposalStatusByQuotation.set(p.quotation_id, p.status)
+          const priority: Record<string, number> = {
+            selected: 4,
+            submitted: 3,
+            invited: 2,
+            rejected: 1,
           }
-        }
 
-        if (stillHere()) {
-          setTableRows((prev) =>
-            prev.map((r) => ({
-              ...r,
-              proposalStatus: proposalStatusByQuotation.get(r.id) ?? null,
-            })),
-          )
+          const proposalStatusByQuotation = new Map<string, string>()
+          const proposalRankByQuotation = new Map<string, number>()
+
+          for (const p of myProposalsRows) {
+            const cur = proposalRankByQuotation.get(p.quotation_id) ?? 0
+            const next = priority[p.status] ?? 0
+            if (next > cur) {
+              proposalRankByQuotation.set(p.quotation_id, next)
+              proposalStatusByQuotation.set(p.quotation_id, p.status)
+            }
+          }
+
+          if (stillHere()) {
+            setTableRows((prev) =>
+              prev.map((r) => ({
+                ...r,
+                proposalStatus: proposalStatusByQuotation.get(r.id) ?? null,
+              })),
+            )
+          }
         }
       } catch (err) {
         console.error("Erro ao carregar propostas fornecedor:", err)
         if (stillHere()) setError(true)
-      }
-
-      if (stillHere()) {
-        setLastUpdated(new Date())
-        if (!silent) setLoading(false)
+      } finally {
+        if (stillHere()) {
+          setLastUpdated(new Date())
+          if (!silent) setLoading(false)
+        }
       }
     },
     [supplierId, userLoading],

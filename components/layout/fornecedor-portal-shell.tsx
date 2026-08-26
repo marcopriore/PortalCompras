@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LogOut,
   ShoppingCart,
+  UserCircle,
   Users,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -43,6 +44,7 @@ const navItems = [
   { href: "/fornecedor/pedidos", label: "Pedidos", icon: ShoppingCart },
   { href: "/fornecedor/contratos", label: "Contratos", icon: FileSignature },
   { href: "/fornecedor/usuarios", label: "Usuários", icon: Users },
+  { href: "/fornecedor/perfil", label: "Perfil", icon: UserCircle },
 ] as const
 
 export interface FornecedorPortalShellProps {
@@ -226,6 +228,13 @@ export default function FornecedorPortalShell({
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onClick={() => router.push("/fornecedor/perfil")}
+                    >
+                      <UserCircle className="mr-2 h-4 w-4" />
+                      Perfil
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       className="cursor-pointer text-destructive focus:text-destructive"
                       onClick={() => void handleLogout()}
