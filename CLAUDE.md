@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.103
+- Versão atual: v2.19.104
 
 ---
 
@@ -290,6 +290,19 @@ node scripts/seed-poc-tenant.mjs --force   # ignora guard se já houver itens
 - Volumes: 260 itens, 100 fornecedores, 50 CC, 61 usuários, 250 REQ, 100 COT, 77 PO, 10 contratos, 5 alçadas
 - **Não** versionar dump SQL com dados de PRD; reexecutar o script se precisar recriar (após limpeza manual)
 
+### Seed demo — fornecedor cross-tenant (one-shot)
+
+Script: `scripts/seed-cross-tenant-supplier.mjs`
+
+```bash
+npm run seed:cross-supplier
+node scripts/seed-cross-tenant-supplier.mjs --limit=3
+node scripts/seed-cross-tenant-supplier.mjs --company-ids=<uuid1>,<uuid2>
+```
+
+- Upsert do mesmo CNPJ `11.222.333/0001-81` (`CROSS-001` / *Fornecedor Cross-Tenant Demo*) em 2+ tenants active
+- Serve para validar `/admin/fornecedores` (agregação por CNPJ)
+
 ---
 
 ## VERSIONAMENTO GIT
@@ -359,6 +372,7 @@ node scripts/seed-poc-tenant.mjs --force   # ignora guard se já houver itens
 | v2.19.99 | Exclusão definitiva de tenant vazio (superadmin) |
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
 | v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
+| v2.19.104 | Seed one-shot fornecedor mesmo CNPJ em 2+ tenants |
 | v2.19.103 | Admin: lista global de fornecedores cross-tenant |
 | v2.19.102 | Script seed one-shot Apresentação POC |
 | v2.19.85 | Importação massiva de requisições via Excel; monitor integração em nova aba |

@@ -1,5 +1,14 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.104] — 2026-08-26
+
+### Seed — fornecedor cross-tenant
+
+- Script one-shot `scripts/seed-cross-tenant-supplier.mjs` + `npm run seed:cross-supplier`
+- Upsert do mesmo CNPJ em 2+ tenants (validação de `/admin/fornecedores`)
+
+---
+
 ## [v2.19.103] — 2026-08-26
 
 ### Admin — Fornecedores globais
