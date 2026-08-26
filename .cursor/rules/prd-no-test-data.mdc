@@ -1,0 +1,46 @@
+---
+description: Proíbe levar dados de teste/seed de negócio para PRD via migrations ou commits
+alwaysApply: true
+---
+
+# PRD — sem dados de teste
+
+## Regra crítica
+
+Commits e migrations que vão para **produção (PRD)** **não podem** carregar dados de negócio ou tenants de teste.
+
+O banco de PRD é populado só por:
+- schema/migrations (DDL + seeds de **sistema** genéricos)
+- operação manual / Admin (criar tenant, usuários reais)
+- integrações ERP do cliente
+
+## O que NÃO versionar em `supabase/migrations/`
+
+- `INSERT` de `companies`, `profiles`, usuários Auth, cotações, pedidos, contratos, itens, fornecedores de teste
+- UUIDs fixos de “Empresa Teste”, Cotrijal, ICON Maq, etc. em migrations novas
+- dumps, fixtures ou scripts que assumem dados locais e rodam no deploy
+
+## O que PODE ir em migration
+
+- `CREATE`/`ALTER`/`DROP` de tabelas, índices, RLS, functions, triggers
+- Seeds de **sistema** sem tenant real: ex. catálogo de permission keys, defaults de registry — preferir seed no **código** na criação do tenant (`create-tenant`, `seedDefaultTenantFeatures`, etc.)
+- `INSERT INTO tenant_features` / similares **só** se forem genéricos e não amarrados a `company_id` de teste; preferir seed por tenant no app
+
+## Seeds de teste (local / staging)
+
+- IDs e e-mails de teste ficam documentados em `CLAUDE.md` (seção SEEDS DE TESTE) **apenas como referência local**
+- Nunca usar esses IDs em migrations novas nem em scripts de “setup PRD”
+- Limpeza de lixo em PRD: SQL manual no Supabase (como exclusão forçada de tenant), não via migration de app
+
+## Checklist antes de commit/push para main (PRD)
+
+1. Diff de `supabase/migrations/**` sem `INSERT` de dados de negócio por `company_id` conhecido de teste
+2. Sem arquivos `.sql` / seeds com dump de PRD ou cópia de ambiente local
+3. Features/settings default: seed no **create-tenant** (código), não hardcode de tenant em migration
+4. Se precisar de dado mínimo em PRD: criar pelo Admin após o deploy
+
+## Tenants
+
+- Tenant com histórico: **inativar** (`status = inactive`) — some do seletor
+- Tenant vazio / lixo de teste: exclusão via Admin (API) ou SQL controlado no Supabase
+- Nunca “recriar” o mesmo lixo via migration no próximo release

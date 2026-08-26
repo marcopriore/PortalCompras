@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.100
+- Versão atual: v2.19.101
 
 ---
 
@@ -255,10 +255,20 @@
 
 ## SEEDS DE TESTE
 
+> **Somente referência local/staging.** Nunca embutir estes IDs em migrations nem scripts de deploy para PRD.
+> Ver `.cursor/rules/prd-no-test-data.mdc`.
+
 - Empresa Teste: `00000000-0000-0000-0000-000000000001`
 - Usuário teste (buyer): `c3cff1ca-1c4b-4f59-bc48-686b0ac1d4a7` (teste@procuremax.com.br)
 - Cotação referência: `aaaaaaaa-0000-0000-0000-000000000001` (COT-2026-0026)
 - Cotação ativa: `3c1a465b-f4d4-461e-a0b5-ab7609d6480d` (COT-2026-0036)
+
+### Deploy / PRD
+
+- Migrations: DDL + seeds de sistema genéricos (sem tenant de teste)
+- Defaults de módulo/settings: seed no **create-tenant** / libs (`seedDefaultTenantFeatures`, etc.)
+- Dados reais: Admin ou ERP após o deploy
+- Lixo de teste em PRD: inativar ou excluir no Supabase/Admin — **não** via migration de “cleanup” com UUIDs hardcodeados de sessão
 
 ---
 
@@ -328,6 +338,7 @@
 | v2.19.98 | Fix criação de tenant (sem duplicar) + Admin inicial com roles |
 | v2.19.99 | Exclusão definitiva de tenant vazio (superadmin) |
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
+| v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
 | v2.19.85 | Importação massiva de requisições via Excel; monitor integração em nova aba |
 | v2.19.84 | Testes unitários ampliados (143/14 arquivos) e rotina de docs sincronizada |
 | v2.19.83 | Configurações unificadas: abas Usuários, Perfis de Acesso, Integrações; deep link ?tab= |

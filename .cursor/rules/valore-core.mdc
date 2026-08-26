@@ -23,6 +23,7 @@ alwaysApply: true
 - Sempre incluir company_id em todas as queries de tabelas de negócio
 - proposal_items sempre requerem round_id — nunca inserir sem ele
 - RLS está ativo — queries sem company_id correto retornarão vazio silenciosamente
+- **PRD sem dados de teste:** migrations = schema/sistema; sem INSERT de companies/usuários/cotações/pedidos de teste — ver rule `prd-no-test-data.mdc`
 
 ## Componentes e UI
 - Sempre usar tokens do design system: bg-background, bg-card, text-foreground, etc.
@@ -66,6 +67,7 @@ alwaysApply: true
 - Prefixo fix: para correções
 - Prefixo refactor: para refatorações sem mudança de comportamento
 - Tags semânticas: vX.X.X após cada entrega validada
+- Antes de push para `main`/PRD: conferir que o commit **não** leva dados de teste (rule `prd-no-test-data.mdc`)
 
 ---
 

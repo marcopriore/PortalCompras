@@ -1,5 +1,14 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.101] — 2026-08-26
+
+### Regras — PRD sem dados de teste
+
+- Nova rule `.cursor/rules/prd-no-test-data.mdc` (alwaysApply)
+- `valore-core.mdc` + `CLAUDE.md`: migrations/commits não levam INSERT de tenants/usuários/cotações de teste para PRD
+
+---
+
 ## [v2.19.100] — 2026-08-26
 
 ### Seletor de tenant
