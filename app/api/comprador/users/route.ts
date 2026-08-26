@@ -26,7 +26,13 @@ export async function GET() {
       .eq("id", ctx.userId)
       .single()
 
-    const roles = (actor?.roles as string[] | null) ?? []
+    const rolesRaw = (actor?.roles as string[] | null) ?? []
+    const roles =
+      Array.isArray(rolesRaw) && rolesRaw.filter(Boolean).length > 0
+        ? rolesRaw.filter(Boolean)
+        : actor?.role
+          ? [String(actor.role)]
+          : []
     const isTenantAdmin =
       ctx.isSuperAdmin ||
       actor?.role === "admin" ||

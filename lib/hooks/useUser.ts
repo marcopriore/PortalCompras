@@ -73,8 +73,16 @@ export function useUser() {
       }
       setCompanyName(embeddedName)
       setIsSuperAdmin(Boolean(p?.is_superadmin))
+      const rolesFromArray = Array.isArray(p?.roles)
+        ? p.roles.filter((r): r is string => typeof r === 'string' && r.length > 0)
+        : []
+      // roles DEFAULT '{}' no banco — se vazio, cair no role legado (ex.: admin na criação)
       setRoles(
-        Array.isArray(p?.roles) ? p.roles : p?.role ? [p.role] : [],
+        rolesFromArray.length > 0
+          ? rolesFromArray
+          : p?.role
+            ? [p.role]
+            : [],
       )
       setLoading(false)
     }

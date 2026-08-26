@@ -128,6 +128,7 @@ export default function AdminTenantsPage() {
   }
 
   const createTenant = async () => {
+    if (submitting) return
     if (
       !form.name.trim() ||
       !form.adminName.trim() ||
@@ -149,10 +150,10 @@ export default function AdminTenantsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: form.name,
+          name: form.name.trim(),
           cnpj: form.cnpj || null,
-          adminName: form.adminName,
-          adminEmail: form.adminEmail,
+          adminName: form.adminName.trim(),
+          adminEmail: form.adminEmail.trim(),
           adminPassword: form.adminPassword,
         }),
       })
@@ -163,24 +164,26 @@ export default function AdminTenantsPage() {
         // eslint-disable-next-line no-console
         console.error('Erro ao criar tenant via API:', payload)
         toast.error(payload?.error || 'Erro ao criar tenant.')
-        setSubmitting(false)
         return
       }
 
       const company = payload.company as Company
 
-      setTenants((prev) => [company, ...prev])
+      setTenants((prev) => {
+        if (prev.some((t) => t.id === company.id)) return prev
+        return [company, ...prev]
+      })
       setForm(initialForm)
       setFormOpen(false)
       toast.success('Tenant criado com sucesso!')
 
       await logAudit({
         eventType: 'tenant.created',
-        description: `Tenant "${form.name}" criado`,
-        userName: form.adminName,
+        description: `Tenant "${company.name}" criado`,
+        userName: form.adminName.trim(),
         entity: 'companies',
         entityId: company.id,
-        metadata: { name: form.name, cnpj: form.cnpj },
+        metadata: { name: company.name, cnpj: form.cnpj },
       })
     } catch (err) {
       // eslint-disable-next-line no-console

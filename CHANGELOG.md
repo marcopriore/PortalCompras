@@ -1,5 +1,17 @@
 # Changelog — Valore Portal de Compras
 
+## [v2.19.98] — 2026-08-26
+
+### Fix criação de tenant + Admin inicial
+
+- `POST /api/admin/create-tenant`: valida senha/nome/CNPJ **antes** do insert; rollback se falhar depois; rejeita nome/CNPJ duplicados (409)
+- Primeiro usuário nasce com `role=admin`, `roles=['admin']`, `profile_type=buyer` (tipo de **portal**) + grupo de permissões Admin
+- Seed de grupos de sistema + centro de custo padrão `GERAL` no tenant novo
+- `useUser`: se `roles` estiver vazio (`{}`), usa o `role` legado — desbloqueia Configurações Empresa/Campos
+- Migration `061`: RLS de `cost_centers` permite superadmin gerenciar CC de qualquer tenant (seletor)
+
+---
+
 ## [v2.19.97] — 2026-08-25
 
 ### Loja de API — modelo de pedido ERP-ready (pacotes A+B)
