@@ -200,6 +200,9 @@
 
 ## NOVOS HOOKS/LIBS/COMPONENTES
 
+- `components/support/support-page.tsx`
+- `lib/axisdesk/client.ts`, `lib/axisdesk/types.ts`, `lib/axisdesk/support-context.ts`
+- `app/api/support/tickets/route.ts`, `app/api/support/tickets/[id]/acoes/route.ts`
 - `lib/hooks/use-auto-refresh.ts`
 - `lib/hooks/use-polling-interval.ts`
 - `lib/hooks/use-tenant-settings.ts`
@@ -490,6 +493,14 @@ node scripts/seed-supplier-axis.mjs --force
 - generate_contract_code() via RPC (não gerar no frontend)
 - Upload PDF: service role só para Storage; ownership via cliente autenticado
 - Aceite cross-tenant: service role necessário (fornecedor lê contrato do comprador)
+
+## Suporte (AxisDesk)
+- `AXISDESK_API_KEY`: nunca `NEXT_PUBLIC_`, nunca no client — usada em `lib/axisdesk/client.ts`
+- `AXISDESK_BASE_URL`: opcional; default `https://suporte.axisstrategy.com.br`
+- Proxy interno: `app/api/support/tickets` (GET/POST) e `app/api/support/tickets/[id]/acoes` (POST)
+- Tela: `/comprador/suporte` e `/solicitante/suporte` via `components/support/support-page.tsx`
+- `tenant_id_externo` = `company_id` do tenant ativo; solicitante usa `impersonatedUserId` quando em impersonação
+- Spec operacional: `docs/AXISDESK-INTEGRACAO.md`
 
 ## IA & Analytics
 - ANTHROPIC_API_KEY: nunca NEXT_PUBLIC_, nunca no client

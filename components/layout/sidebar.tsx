@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   FileSignature,
   Store,
+  LifeBuoy,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ValoreLogo } from "@/components/ui/valore-logo"
@@ -51,6 +52,7 @@ const buyerNavItems: NavItem[] = [
   { title: "Itens", href: "/comprador/itens", icon: Package },
   { title: "Fornecedores", href: "/comprador/fornecedores", icon: Building2 },
   { title: "Relatórios", href: "/comprador/relatorios", icon: BarChart3 },
+  { title: "Suporte", href: "/comprador/suporte", icon: LifeBuoy },
   { title: "Configurações", href: "/comprador/configuracoes?tab=perfil", icon: Settings },
 ]
 
@@ -65,6 +67,7 @@ const supplierNavItems: NavItem[] = [
 const solicitanteNavItems: NavItem[] = [
   { title: "Requisições", href: "/solicitante", icon: ClipboardList },
   { title: "Catálogo", href: "/solicitante/catalogo", icon: Store },
+  { title: "Suporte", href: "/solicitante/suporte", icon: LifeBuoy },
   {
     title: "Configurações",
     href: "/solicitante/configuracoes?tab=perfil",
