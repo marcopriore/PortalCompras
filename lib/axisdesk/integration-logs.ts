@@ -5,10 +5,7 @@ export const AXISDESK_INTEGRATION_NAME = "AxisDesk"
 
 export const AXISDESK_OUTBOUND_ACTIONS = {
   TICKET_CREATE: "axisdesk.ticket.create",
-  TICKET_LIST: "axisdesk.ticket.list",
-  TICKET_DETAIL: "axisdesk.ticket.detail",
   TICKET_ACTION: "axisdesk.ticket.action",
-  CATEGORIES_LIST: "axisdesk.categories.list",
 } as const
 
 const AXISDESK_ENDPOINT_ACTIONS = Object.values(AXISDESK_OUTBOUND_ACTIONS)

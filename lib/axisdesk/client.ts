@@ -212,11 +212,6 @@ export async function listTickets(
   const result = await axisDeskFetch<AxisDeskChamado[]>(
     `/api/chamados?${params.toString()}`,
     { method: "GET" },
-    {
-      companyId: tenantIdExterno,
-      action: AXISDESK_OUTBOUND_ACTIONS.TICKET_LIST,
-      requestPayload: { tenant_id_externo: tenantIdExterno, status: status ?? null },
-    },
   )
 
   if (!result.ok) return result
@@ -234,11 +229,6 @@ export async function getCategorias(
   const result = await axisDeskFetch<AxisDeskCategoria[]>(
     `/api/categorias${query ? `?${query}` : ""}`,
     { method: "GET" },
-    {
-      companyId: tenantIdExterno,
-      action: AXISDESK_OUTBOUND_ACTIONS.CATEGORIES_LIST,
-      requestPayload: { tipo: tipo ?? null },
-    },
   )
 
   if (!result.ok) return result
@@ -253,15 +243,6 @@ export async function getTicketDetail(
   return axisDeskFetch<AxisDeskChamadoDetalhe>(
     `/api/chamados/${chamadoId}?${params.toString()}`,
     { method: "GET" },
-    {
-      companyId: tenantIdExterno,
-      action: AXISDESK_OUTBOUND_ACTIONS.TICKET_DETAIL,
-      entityId: chamadoId,
-      requestPayload: {
-        chamado_id: chamadoId,
-        tenant_id_externo: tenantIdExterno,
-      },
-    },
   )
 }
 
