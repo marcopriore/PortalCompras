@@ -21,7 +21,7 @@ export async function GET(request: Request) {
       tipo = tipoParam as AxisDeskChamadoTipo
     }
 
-    const result = await getCategorias(tipo)
+    const result = await getCategorias(ctx.tenantIdExterno, tipo)
     if (!result.ok) {
       return NextResponse.json(
         { error: result.message },

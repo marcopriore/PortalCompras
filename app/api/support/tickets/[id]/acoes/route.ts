@@ -69,6 +69,7 @@ export async function POST(
 
     const result = await executeAction(
       id,
+      ctx.tenantIdExterno,
       acao as AxisDeskChamadoAcao,
       mensagem,
       anexos,
