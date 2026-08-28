@@ -1,10 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { Eye, Headphones, Plus, RefreshCw } from "lucide-react"
+import { Download, Eye, Headphones, Plus, RefreshCw, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -36,9 +36,21 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { TableRowActions } from "@/components/ui/table-row-actions"
 import { AttachmentFileList } from "@/components/support/attachment-file-list"
 import { CharacterCounter } from "@/components/support/character-counter"
+import { exportSupportTicketsExcel } from "@/lib/axisdesk/export-support-tickets"
+import {
+  applySupportListFilters,
+  buildSupportListSearchParams,
+  getCategoriaFilterOptions,
+  getResponsavelFilterOptions,
+  hasActiveSupportListFilters,
+  parseSupportListFilters,
+  sanitizeCategoriaFilter,
+  type SupportListFilters,
+} from "@/lib/axisdesk/support-list-filters"
 import type {
   AxisDeskAnexo,
   AxisDeskCategoria,
@@ -86,6 +98,8 @@ const INITIAL_CREATE_FORM: CreateFormState = {
   anexos: [],
 }
 
+const TABLE_COL_COUNT = 9
+
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "—"
   const d = new Date(iso)
@@ -95,21 +109,72 @@ function formatDateTime(iso: string | null | undefined): string {
 
 export function SupportPage({ portal }: SupportPageProps) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const detailBase =
     portal === "comprador" ? "/comprador/suporte" : "/solicitante/suporte"
+
+  const filters = React.useMemo(
+    () => parseSupportListFilters(searchParams),
+    [searchParams],
+  )
 
   const [tickets, setTickets] = React.useState<AxisDeskChamado[]>([])
   const [loading, setLoading] = React.useState(true)
   const [refreshing, setRefreshing] = React.useState(false)
-  const [statusFilter, setStatusFilter] = React.useState<string[]>([])
+  const [exporting, setExporting] = React.useState(false)
 
   const [createOpen, setCreateOpen] = React.useState(false)
   const [createForm, setCreateForm] =
     React.useState<CreateFormState>(INITIAL_CREATE_FORM)
   const [creating, setCreating] = React.useState(false)
 
-  const [categorias, setCategorias] = React.useState<AxisDeskCategoria[]>([])
-  const [categoriasLoading, setCategoriasLoading] = React.useState(false)
+  const [createCategorias, setCreateCategorias] = React.useState<AxisDeskCategoria[]>([])
+  const [createCategoriasLoading, setCreateCategoriasLoading] =
+    React.useState(false)
+  const [filterCategorias, setFilterCategorias] = React.useState<AxisDeskCategoria[]>(
+    [],
+  )
+
+  const [qDraft, setQDraft] = React.useState(filters.q)
+
+  React.useEffect(() => {
+    setQDraft(filters.q)
+  }, [filters.q])
+
+  const replaceFilters = React.useCallback(
+    (patch: Partial<SupportListFilters>) => {
+      const shouldResetPage = !("page" in patch)
+      let next: SupportListFilters = {
+        ...filters,
+        ...patch,
+        page: shouldResetPage ? 1 : (patch.page ?? filters.page),
+      }
+
+      if (patch.tipo !== undefined) {
+        next.categoria = sanitizeCategoriaFilter(
+          next.categoria,
+          filterCategorias,
+          next.tipo,
+        )
+      }
+
+      const qs = buildSupportListSearchParams(next).toString()
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
+    },
+    [filters, filterCategorias, pathname, router],
+  )
+
+  const replaceFiltersRef = React.useRef(replaceFilters)
+  replaceFiltersRef.current = replaceFilters
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (qDraft === filters.q) return
+      replaceFiltersRef.current({ q: qDraft })
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [qDraft, filters.q])
 
   const loadTickets = React.useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -135,8 +200,25 @@ export function SupportPage({ portal }: SupportPageProps) {
     }
   }, [])
 
-  const loadCategorias = React.useCallback(async (tipo: AxisDeskChamadoTipo) => {
-    setCategoriasLoading(true)
+  const loadFilterCategorias = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/support/categorias", { cache: "no-store" })
+      const payload = (await res.json()) as {
+        data?: AxisDeskCategoria[]
+        error?: string
+      }
+      if (!res.ok) {
+        setFilterCategorias([])
+        return
+      }
+      setFilterCategorias(payload.data ?? [])
+    } catch {
+      setFilterCategorias([])
+    }
+  }, [])
+
+  const loadCreateCategorias = React.useCallback(async (tipo: AxisDeskChamadoTipo) => {
+    setCreateCategoriasLoading(true)
     try {
       const res = await fetch(`/api/support/categorias?tipo=${tipo}`, {
         cache: "no-store",
@@ -147,38 +229,60 @@ export function SupportPage({ portal }: SupportPageProps) {
       }
       if (!res.ok) {
         toast.error(payload.error ?? "Erro ao carregar categorias.")
-        setCategorias([])
+        setCreateCategorias([])
         return
       }
-      setCategorias(payload.data ?? [])
+      setCreateCategorias(payload.data ?? [])
     } catch {
       toast.error("Erro ao carregar categorias.")
-      setCategorias([])
+      setCreateCategorias([])
     } finally {
-      setCategoriasLoading(false)
+      setCreateCategoriasLoading(false)
     }
   }, [])
 
   React.useEffect(() => {
     void loadTickets()
-  }, [loadTickets])
+    void loadFilterCategorias()
+  }, [loadTickets, loadFilterCategorias])
 
   React.useEffect(() => {
     if (!createOpen) return
-    void loadCategorias(createForm.tipo)
-  }, [createOpen, createForm.tipo, loadCategorias])
+    void loadCreateCategorias(createForm.tipo)
+  }, [createOpen, createForm.tipo, loadCreateCategorias])
 
-  const filteredTickets = React.useMemo(() => {
-    if (statusFilter.length === 0) return tickets
-    return tickets.filter((t) => statusFilter.includes(t.status))
-  }, [tickets, statusFilter])
-
-  const selectedCategoria = React.useMemo(
-    () => categorias.find((c) => c.id === createForm.categoriaId) ?? null,
-    [categorias, createForm.categoriaId],
+  const filteredTickets = React.useMemo(
+    () => applySupportListFilters(tickets, filters),
+    [tickets, filters],
   )
 
-  const subcategorias = selectedCategoria?.subcategorias ?? []
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredTickets.length / TABLE_PAGE_SIZE),
+  )
+  const currentPage = Math.min(Math.max(filters.page, 1), totalPages)
+
+  const paginatedTickets = React.useMemo(() => {
+    const start = (currentPage - 1) * TABLE_PAGE_SIZE
+    return filteredTickets.slice(start, start + TABLE_PAGE_SIZE)
+  }, [filteredTickets, currentPage])
+
+  const categoriaFilterOptions = React.useMemo(
+    () => getCategoriaFilterOptions(filterCategorias, filters.tipo),
+    [filterCategorias, filters.tipo],
+  )
+
+  const responsavelFilterOptions = React.useMemo(
+    () => getResponsavelFilterOptions(tickets),
+    [tickets],
+  )
+
+  const selectedCreateCategoria = React.useMemo(
+    () => createCategorias.find((c) => c.id === createForm.categoriaId) ?? null,
+    [createCategorias, createForm.categoriaId],
+  )
+
+  const subcategorias = selectedCreateCategoria?.subcategorias ?? []
 
   const canSubmitCreate =
     createForm.titulo.trim().length > 0 &&
@@ -188,11 +292,11 @@ export function SupportPage({ portal }: SupportPageProps) {
     createForm.categoriaId.length > 0 &&
     createForm.subcategoriaId.length > 0 &&
     !creating &&
-    !categoriasLoading
+    !createCategoriasLoading
 
   const resetCreateForm = () => {
     setCreateForm(INITIAL_CREATE_FORM)
-    setCategorias([])
+    setCreateCategorias([])
   }
 
   const handleTipoChange = (tipo: AxisDeskChamadoTipo) => {
@@ -253,6 +357,24 @@ export function SupportPage({ portal }: SupportPageProps) {
     }
   }
 
+  const handleExportExcel = async () => {
+    if (filteredTickets.length === 0) return
+    setExporting(true)
+    try {
+      await exportSupportTicketsExcel(filteredTickets)
+      toast.success("Planilha exportada com sucesso.")
+    } catch {
+      toast.error("Erro ao exportar planilha.")
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const clearFilters = () => {
+    setQDraft("")
+    router.replace(pathname, { scroll: false })
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -286,24 +408,177 @@ export function SupportPage({ portal }: SupportPageProps) {
       </div>
 
       <Card>
-        <CardHeader className="pb-3">
+        <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
           <CardTitle className="text-base">Chamados do tenant</CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">
+              {filteredTickets.length} resultado(s)
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={exporting || loading || filteredTickets.length === 0}
+              onClick={() => void handleExportExcel()}
+            >
+              <Download className="mr-2 h-4 w-4" />
+              {exporting ? "Exportando…" : "Exportar Excel"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-3">
-            <MultiSelectFilter
-              label="Status"
-              width="w-48"
-              options={AXISDESK_STATUS_OPTIONS.map((o) => ({
-                value: o.value,
-                label: o.label,
-              }))}
-              selected={statusFilter}
-              onChange={setStatusFilter}
-            />
+          <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+            <div className="flex flex-wrap gap-3">
+              <div className="flex flex-col w-48 shrink-0">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  Título
+                </p>
+                <div className="relative">
+                  <Input
+                    placeholder="Buscar por título…"
+                    value={qDraft}
+                    onChange={(e) => setQDraft(e.target.value)}
+                    className="pr-8"
+                  />
+                  {qDraft.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setQDraft("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      aria-label="Limpar busca"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  Tipo
+                </p>
+                <MultiSelectFilter
+                  label="Tipo"
+                  width="w-40"
+                  options={AXISDESK_TIPO_OPTIONS.map((o) => ({
+                    value: o.value,
+                    label: o.label,
+                  }))}
+                  selected={filters.tipo}
+                  onChange={(values) => replaceFilters({ tipo: values })}
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  Status
+                </p>
+                <MultiSelectFilter
+                  label="Status"
+                  width="w-48"
+                  options={AXISDESK_STATUS_OPTIONS.map((o) => ({
+                    value: o.value,
+                    label: o.label,
+                  }))}
+                  selected={filters.status}
+                  onChange={(values) => replaceFilters({ status: values })}
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  Prioridade
+                </p>
+                <MultiSelectFilter
+                  label="Prioridade"
+                  width="w-40"
+                  options={AXISDESK_PRIORIDADE_OPTIONS.map((o) => ({
+                    value: o.value,
+                    label: o.label,
+                  }))}
+                  selected={filters.prioridade}
+                  onChange={(values) => replaceFilters({ prioridade: values })}
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  Categoria
+                </p>
+                <MultiSelectFilter
+                  label="Categoria"
+                  width="w-48"
+                  options={categoriaFilterOptions}
+                  selected={filters.categoria}
+                  onChange={(values) => replaceFilters({ categoria: values })}
+                />
+              </div>
+
+              <div className="flex flex-col">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  Responsável
+                </p>
+                <MultiSelectFilter
+                  label="Responsável"
+                  width="w-48"
+                  options={responsavelFilterOptions}
+                  selected={filters.responsavel}
+                  onChange={(values) => replaceFilters({ responsavel: values })}
+                />
+              </div>
+
+              <div className="flex flex-col w-40 shrink-0">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  SLA de
+                </p>
+                <Input
+                  type="date"
+                  value={filters.slaDe}
+                  onChange={(e) => replaceFilters({ slaDe: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col w-40 shrink-0">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  SLA até
+                </p>
+                <Input
+                  type="date"
+                  value={filters.slaAte}
+                  onChange={(e) => replaceFilters({ slaAte: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col w-40 shrink-0">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  Criado de
+                </p>
+                <Input
+                  type="date"
+                  value={filters.criadoDe}
+                  onChange={(e) => replaceFilters({ criadoDe: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col w-40 shrink-0">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  Criado até
+                </p>
+                <Input
+                  type="date"
+                  value={filters.criadoAte}
+                  onChange={(e) => replaceFilters({ criadoAte: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {hasActiveSupportListFilters(filters) && (
+              <div className="flex justify-end">
+                <Button type="button" variant="ghost" size="sm" onClick={clearFilters}>
+                  Limpar filtros
+                </Button>
+              </div>
+            )}
           </div>
 
-          <div className="rounded-md border border-border">
+          <div className="rounded-md border border-border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -311,6 +586,8 @@ export function SupportPage({ portal }: SupportPageProps) {
                   <TableHead>Tipo</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Prioridade</TableHead>
+                  <TableHead>Categoria</TableHead>
+                  <TableHead>Responsável</TableHead>
                   <TableHead>SLA</TableHead>
                   <TableHead>Criado em</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
@@ -320,28 +597,28 @@ export function SupportPage({ portal }: SupportPageProps) {
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={TABLE_COL_COUNT}
                       className="text-center py-8 text-muted-foreground"
                     >
                       Carregando chamados…
                     </TableCell>
                   </TableRow>
-                ) : filteredTickets.length === 0 ? (
+                ) : paginatedTickets.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={TABLE_COL_COUNT}
                       className="text-center py-8 text-muted-foreground"
                     >
                       Nenhum chamado encontrado.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredTickets.map((ticket) => (
+                  paginatedTickets.map((ticket) => (
                     <TableRow key={ticket.id}>
-                      <TableCell className="font-medium max-w-[240px] truncate">
+                      <TableCell className="font-medium max-w-[220px] truncate">
                         {ticket.titulo}
                       </TableCell>
-                      <TableCell className="capitalize">
+                      <TableCell>
                         {AXISDESK_TIPO_OPTIONS.find((o) => o.value === ticket.tipo)
                           ?.label ?? ticket.tipo}
                       </TableCell>
@@ -352,6 +629,12 @@ export function SupportPage({ portal }: SupportPageProps) {
                       </TableCell>
                       <TableCell>
                         {getAxisDeskPrioridadeLabel(ticket.prioridade)}
+                      </TableCell>
+                      <TableCell className="max-w-[160px] truncate">
+                        {ticket.categoria?.nome ?? "—"}
+                      </TableCell>
+                      <TableCell className="max-w-[160px] truncate">
+                        {ticket.solicitante?.nome ?? "—"}
                       </TableCell>
                       <TableCell>{formatDateTime(ticket.sla_prazo)}</TableCell>
                       <TableCell>{formatDateTime(ticket.created_at)}</TableCell>
@@ -371,6 +654,12 @@ export function SupportPage({ portal }: SupportPageProps) {
                 )}
               </TableBody>
             </Table>
+            <TablePagination
+              page={currentPage}
+              total={filteredTickets.length}
+              onPageChange={(page) => replaceFilters({ page })}
+              disabled={loading}
+            />
           </div>
         </CardContent>
       </Card>
@@ -416,19 +705,19 @@ export function SupportPage({ portal }: SupportPageProps) {
                     subcategoriaId: "",
                   }))
                 }
-                disabled={categoriasLoading || categorias.length === 0}
+                disabled={createCategoriasLoading || createCategorias.length === 0}
               >
                 <SelectTrigger id="categoria">
                   <SelectValue
                     placeholder={
-                      categoriasLoading
+                      createCategoriasLoading
                         ? "Carregando categorias…"
                         : "Selecione a categoria"
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {categorias.map((c) => (
+                  {createCategorias.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.nome}
                     </SelectItem>

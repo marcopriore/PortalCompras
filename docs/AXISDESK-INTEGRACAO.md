@@ -143,16 +143,30 @@ Corpo:
 
 Regras de transição (a ação só é aceita se o chamado estiver no status certo):
 
-| Ação                 | Status exigido       | Novo status        |
-|-----------------------|------------------------|----------------------|
-| `usuario_respondeu`   | `pendente_usuario`     | `em_atendimento`     |
-| `usuario_aprovou`     | `validacao_usuario`    | `pendente_publicacao`|
-| `usuario_reprovou`    | `validacao_usuario`    | `em_atendimento`     |
-| `usuario_cancelou`    | `pendente_usuario`     | `cancelado`          |
+| Ação                 | Status exigido                  | Novo status        |
+|-----------------------|-----------------------------------|----------------------|
+| `usuario_respondeu`   | `pendente_usuario`               | `em_atendimento`     |
+| `usuario_aprovou`     | `validacao_usuario`              | `pendente_publicacao`|
+| `usuario_reprovou`    | `validacao_usuario`              | `em_atendimento`     |
+| `usuario_cancelou`    | `pendente_usuario` ou `reprovado`| `cancelado`          |
+| `usuario_reenviou`    | `reprovado`                      | `aberto`             |
+
+`usuario_reenviou` aceita `mensagem` opcional (registrada como comentário) e
+`anexos` opcionais — mesmo formato das outras ações. Use-a quando quiser dar
+ao usuário a opção de reabrir e reenviar um chamado que a equipe reprovou.
 
 Respostas: `200` com o chamado atualizado. `404` se o chamado não existir ou
 pertencer a outro sistema satélite. `409` se o chamado não estiver no status
 exigido para a ação. `400` se `usuario_reprovou` vier sem `mensagem`.
+
+## Limites de caracteres
+
+A API impõe limites (retorna `400` se excedidos) — trate-os como obrigatórios
+no formulário do satélite, não só como validação de servidor:
+
+- `titulo` (POST /api/chamados): máximo 200 caracteres
+- `descricao` (POST /api/chamados): máximo 2000 caracteres
+- `mensagem` (POST /api/chamados/<id>/acoes): máximo 2000 caracteres
 
 ## Categorias e subcategorias
 
