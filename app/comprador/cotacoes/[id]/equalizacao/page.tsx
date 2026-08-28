@@ -99,6 +99,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSupplierScores } from "@/lib/hooks/use-supplier-score"
 import { toast } from "sonner"
+import { formatDateBR } from "@/lib/formato-data"
 
 type QuotationItem = {
   id: string
@@ -327,13 +328,6 @@ async function notifySuppliersQuotationStatus(
   } catch {
     // notificações não devem interromper o fluxo da cotação
   }
-}
-
-function formatDateBR(iso: string | null): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  return d.toLocaleDateString("pt-BR")
 }
 
 /** Rótulo de status no export Excel (item_status + preço cotado). */

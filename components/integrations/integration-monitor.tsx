@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateTimeSecondsBR } from "@/lib/formato-data"
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -411,9 +410,7 @@ export function IntegrationMonitor({
             )}
             {!loading &&
               data?.logs.map((log) => {
-                const created = format(new Date(log.created_at), "dd/MM/yyyy HH:mm:ss", {
-                  locale: ptBR,
-                })
+                const created = formatDateTimeSecondsBR(log.created_at)
 
                 if (log.direction === "inbound") {
                   return (

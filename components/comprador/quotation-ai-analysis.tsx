@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { formatDateTimeBR } from "@/lib/formato-data"
 import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
 import {
   AlertCircle,
@@ -74,13 +75,6 @@ function formatBRL(value: number): string {
     style: "currency",
     currency: "BRL",
   }).format(value)
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  })
 }
 
 function formatCountdown(seconds: number): string {
@@ -251,7 +245,7 @@ export function QuotationAIAnalysis({
     }
     wsResumo.addRow([])
     wsResumo.addRow(["Cotação", quotationCode ?? "—"])
-    wsResumo.addRow(["Gerado em", generatedAt ? formatDateTime(generatedAt) : "—"])
+    wsResumo.addRow(["Gerado em", generatedAt ? formatDateTimeBR(generatedAt, true) : "—"])
     wsResumo.addRow([])
     wsResumo.addRow(["Resumo Executivo"])
     wsResumo.getRow(6).getCell(1).font = { bold: true }
@@ -376,7 +370,7 @@ export function QuotationAIAnalysis({
           <Sparkles className="h-4 w-4 text-violet-500" />
           <span className="text-sm font-semibold">Análise por IA</span>
           {generatedAt && (
-            <span className="text-xs text-muted-foreground">· {formatDateTime(generatedAt)}</span>
+            <span className="text-xs text-muted-foreground">· {formatDateTimeBR(generatedAt, true)}</span>
           )}
           {highAlerts > 0 && (
             <Badge className="bg-destructive/10 text-destructive border-0 text-xs">

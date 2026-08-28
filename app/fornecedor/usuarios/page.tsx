@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateBR } from "@/lib/formato-data"
 import { toast } from "sonner"
 import {
   Ban,
@@ -299,7 +298,7 @@ export default function FornecedorUsuariosPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {format(new Date(user.created_at), "dd/MM/yyyy", { locale: ptBR })}
+                      {formatDateBR(user.created_at)}
                     </TableCell>
                     <TableCell className="text-right">
                       <TableRowActions

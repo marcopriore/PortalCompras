@@ -1,29 +1,19 @@
-/** Formata string de data tipo YYYY-MM-DD para dd/mm/aaaa */
-export function formatDateBR(dateStr: string | null | undefined): string {
-  if (!dateStr) return ""
-  const [y, m, d] = dateStr.split("-")
-  if (!y || !m || !d) return dateStr
-  return `${d}/${m}/${y}`
-}
-
-/** Formata ISO timestamp para dd/mm/aaaa (data local). Com `includeTime`, inclui HH:mm. */
-export function formatDateTimeBR(
-  dateStr: string | null | undefined,
-  includeTime = false,
-): string {
-  if (!dateStr) return "—"
-  const d = new Date(dateStr)
-  if (Number.isNaN(d.getTime())) return "—"
-  const dd = String(d.getDate()).padStart(2, "0")
-  const mm = String(d.getMonth() + 1).padStart(2, "0")
-  const yyyy = d.getFullYear()
-  if (!includeTime) {
-    return `${dd}/${mm}/${yyyy}`
-  }
-  const hh = String(d.getHours()).padStart(2, "0")
-  const min = String(d.getMinutes()).padStart(2, "0")
-  return `${dd}/${mm}/${yyyy} ${hh}:${min}`
-}
+export {
+  VALORE_LOCALE,
+  VALORE_TIME_ZONE,
+  formatDateBR,
+  formatDateQueryBR,
+  formatDateShortBR,
+  formatDateTimeBR,
+  formatDateTimeCompactBR,
+  formatDateTimeLongBR,
+  formatDateTimeSecondsBR,
+  formatExportDateStamp,
+  formatExportFileTimestamp,
+  formatMonthShortBR,
+  formatNowBR,
+  formatTodayStampDDMMYYYY,
+} from "@/lib/formato-data"
 
 /** Prazo em formato data (YYYY-MM-DD) já passou em relação ao dia civil atual */
 export function isExpiredDate(dateStr: string | null | undefined): boolean {

@@ -1,7 +1,6 @@
 import { randomBytes } from "crypto"
 import { NextResponse } from "next/server"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateTimeLongBR } from "@/lib/formato-data"
 import { getBuyerContext } from "@/lib/auth/buyer-context"
 import { sendEmail } from "@/lib/email/send-email"
 import { templateSupplierPortalInvite } from "@/lib/email/templates"
@@ -129,9 +128,7 @@ export async function POST(request: Request) {
       supplierName: supplier.name,
       buyerCompanyName: company?.name ?? "Comprador",
       inviteUrl,
-      expiresAtLabel: format(new Date(invite.expires_at), "dd/MM/yyyy 'às' HH:mm", {
-        locale: ptBR,
-      }),
+      expiresAtLabel: formatDateTimeLongBR(invite.expires_at),
     })
 
     const emailSent = await sendEmail({ to: email, subject, html })

@@ -17,7 +17,8 @@ import { createClient } from "@/lib/supabase/client"
 import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
 import { cn } from "@/lib/utils"
-import { formatDateBR, isExpiredDate, isUrgentDate } from "@/lib/utils/date-helpers"
+import { formatDateBR, formatDateTimeBR } from "@/lib/formato-data"
+import { isExpiredDate, isUrgentDate } from "@/lib/utils/date-helpers"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -564,8 +565,8 @@ export default function FornecedorCotacaoPropostaPage({
     if (!iso) return null
     const dt = new Date(iso)
     if (Number.isNaN(dt.getTime())) return null
-    const data = dt.toLocaleDateString("pt-BR")
-    const hora = dt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    const data = formatDateBR(iso)
+    const hora = formatDateTimeBR(iso, true).split(" ").slice(1).join(" ")
     return { data, hora }
   }, [activeRoundProposal?.updated_at])
 

@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateBR } from "@/lib/formato-data"
 import {
   CheckCircle,
   Clock,
@@ -378,7 +377,7 @@ export default function FornecedorPedidosPage() {
                   {pageRows.map((r, idx) => {
                     const meta = getPOStatusForSupplier(r.status)
                     const created = r.created_at
-                      ? format(new Date(r.created_at), "dd/MM/yyyy", { locale: ptBR })
+                      ? formatDateBR(r.created_at)
                       : "—"
                     return (
                       <TableRow key={r.id}>

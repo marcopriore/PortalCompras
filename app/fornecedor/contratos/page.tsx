@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { format, parseISO } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateBR } from "@/lib/formato-data"
 import {
   CheckCircle,
   Clock,
@@ -276,13 +275,9 @@ export default function FornecedorContratosPage() {
                         ?.label ?? c.contract_kind}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm">
-                      {format(parseISO(c.start_date), "dd/MM/yyyy", {
-                        locale: ptBR,
-                      })}{" "}
+                      {formatDateBR(c.start_date)}{" "}
                       –{" "}
-                      {format(parseISO(c.end_date), "dd/MM/yyyy", {
-                        locale: ptBR,
-                      })}
+                      {formatDateBR(c.end_date)}
                     </TableCell>
                     <TableCell>
                       <Badge className={sd.className}>{sd.label}</Badge>

@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Image,
 } from "@react-pdf/renderer"
+import { formatDateBR, formatNowBR } from "@/lib/formato-data"
 
 const PRIMARY = "#4f46e5"
 const GRAY = "#6b7280"
@@ -204,14 +205,6 @@ const money = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
 })
 
-function formatDateBR(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const s = String(iso).trim().slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return String(iso)
-  const [y, m, d] = s.split("-")
-  return `${d}/${m}/${y}`
-}
-
 function formatCNPJ(cnpj: string | null): string {
   if (!cnpj) return "—"
   const d = cnpj.replace(/\D/g, "")
@@ -266,7 +259,7 @@ type Props = {
 
 export function PurchaseOrderPDF({ order, items, company }: Props) {
   const companyName = company?.trade_name || company?.name || "Empresa"
-  const now = new Date().toLocaleDateString("pt-BR")
+  const now = formatNowBR()
 
   const grandTotal = items.reduce((sum, item) => {
     return sum + (item.total_price ?? item.quantity * item.unit_price)

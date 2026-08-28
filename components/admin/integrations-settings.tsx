@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateShortBR } from "@/lib/formato-data"
 import Link from "next/link"
 import {
   BookOpen,
@@ -376,7 +375,7 @@ export function IntegrationsSettings({ companyId }: IntegrationsSettingsProps) {
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {key.last_used_at
-                          ? format(new Date(key.last_used_at), "dd/MM/yy HH:mm", { locale: ptBR })
+                          ? formatDateShortBR(key.last_used_at)
                           : "—"}
                       </TableCell>
                       <TableCell>

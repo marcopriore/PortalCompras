@@ -2,8 +2,7 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateTimeBR } from "@/lib/formato-data"
 import { Mail, Plus, KeyRound, UserPlus, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -287,9 +286,7 @@ export function SupplierPortalUsers({
               <p className="font-medium">Convite pendente</p>
               <p className="text-muted-foreground text-xs mt-0.5">
                 {pendingInvite.email} — expira{" "}
-                {format(new Date(pendingInvite.expires_at), "dd/MM/yyyy HH:mm", {
-                  locale: ptBR,
-                })}
+                {formatDateTimeBR(pendingInvite.expires_at, true)}
               </p>
             </div>
           ) : null}

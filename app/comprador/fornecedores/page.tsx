@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { format } from 'date-fns'
+import { formatExportFileTimestamp } from '@/lib/formato-data'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
@@ -254,7 +254,7 @@ export default function FornecedoresPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `fornecedores_valore_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`
+    a.download = `fornecedores_valore_${formatExportFileTimestamp()}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
   }

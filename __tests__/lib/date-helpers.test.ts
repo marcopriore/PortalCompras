@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest"
 import {
   formatDateBR,
   formatDateTimeBR,
-  isExpiredDate,
-  isUrgentDate,
-} from "@/lib/utils/date-helpers"
+  formatDateTimeLongBR,
+} from "@/lib/formato-data"
+import { isExpiredDate, isUrgentDate } from "@/lib/utils/date-helpers"
 
 describe("formatDateBR", () => {
   it("formata data YYYY-MM-DD para DD/MM/AAAA sem shift de timezone", () => {
@@ -19,16 +19,23 @@ describe("formatDateBR", () => {
   it("retorna string vazia para string vazia", () => {
     expect(formatDateBR("")).toBe("")
   })
+  it("formata ISO usando fuso de Brasília", () => {
+    expect(formatDateBR("2026-03-15T02:30:00.000Z")).toBe("14/03/2026")
+  })
 })
 
 describe("formatDateTimeBR", () => {
-  it("formata ISO com data e hora", () => {
-    const result = formatDateTimeBR("2026-03-15T14:30:00.000Z", true)
-    expect(result).toMatch(/15\/03\/2026/)
+  it("formata ISO com data e hora em Brasília", () => {
+    expect(formatDateTimeBR("2026-03-15T14:30:00.000Z", true)).toBe("15/03/2026 11:30")
   })
-  it("sem includeTime retorna só data", () => {
-    const result = formatDateTimeBR("2026-03-15T14:30:00.000Z")
-    expect(result).toMatch(/15\/03\/2026/)
+  it("sem includeTime retorna só data em Brasília", () => {
+    expect(formatDateTimeBR("2026-03-15T14:30:00.000Z")).toBe("15/03/2026")
+  })
+})
+
+describe("formatDateTimeLongBR", () => {
+  it("formata com separador às em Brasília", () => {
+    expect(formatDateTimeLongBR("2026-03-15T14:30:00.000Z")).toBe("15/03/2026 às 11:30")
   })
 })
 

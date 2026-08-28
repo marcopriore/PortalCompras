@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { format, parseISO } from "date-fns"
+import { formatDateBR } from "@/lib/formato-data"
 import { FileText } from "lucide-react"
 import {
   Card,
@@ -124,7 +124,7 @@ export default function ContratoTermosPublicPage({
                 <p className="text-muted-foreground">Vigência</p>
                 <p className="font-medium">
                   {contract?.start_date && contract?.end_date
-                    ? `${format(parseISO(contract.start_date), "dd/MM/yyyy")} – ${format(parseISO(contract.end_date), "dd/MM/yyyy")}`
+                    ? `${formatDateBR(contract.start_date)} – ${formatDateBR(contract.end_date)}`
                     : "—"}
                 </p>
               </div>

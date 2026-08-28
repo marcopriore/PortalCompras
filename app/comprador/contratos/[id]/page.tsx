@@ -4,12 +4,11 @@ import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   differenceInDays,
-  format,
   isBefore,
   parseISO,
   startOfDay,
 } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateBR, formatDateTimeBR } from "@/lib/formato-data"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
@@ -1230,11 +1229,11 @@ export default function ContratoPage({
                   <p className="text-xs text-muted-foreground">Vigência</p>
                   <p className="text-sm font-medium">
                     {contract.start_date
-                      ? format(parseISO(contract.start_date), "dd/MM/yyyy", { locale: ptBR })
+                      ? formatDateBR(contract.start_date)
                       : "—"}{" "}
                     –{" "}
                     {contract.end_date
-                      ? format(parseISO(contract.end_date), "dd/MM/yyyy", { locale: ptBR })
+                      ? formatDateBR(contract.end_date)
                       : "—"}
                   </p>
                 </div>
@@ -2120,7 +2119,7 @@ export default function ContratoPage({
                   ) : null}
                 </div>
                 <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                  {format(parseISO(a.created_at), "dd/MM/yyyy HH:mm")}
+                  {formatDateTimeBR(a.created_at, true)}
                 </span>
               </div>
             ))}

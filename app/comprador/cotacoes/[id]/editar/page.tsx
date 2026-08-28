@@ -3,7 +3,7 @@
 import * as React from "react"
 import { use } from "react"
 import { useRouter } from "next/navigation"
-import { format } from "date-fns"
+import { formatDateBR, formatDateQueryBR, formatNowBR } from "@/lib/formato-data"
 import { ptBR } from "date-fns/locale"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
@@ -171,10 +171,7 @@ export default function EditarCotacaoPage({
   const [requisitionsLoading, setRequisitionsLoading] = React.useState(false)
   const [selectedReqIds, setSelectedReqIds] = React.useState<string[]>([])
 
-  const today = React.useMemo(
-    () => format(new Date(), "dd/MM/yyyy", { locale: ptBR }),
-    [],
-  )
+  const today = React.useMemo(() => formatNowBR(), [])
 
   const debouncedItemSearch = useDebounce(itemSearch, SEARCH_DEBOUNCE_MS)
   const debouncedSupplierSearch = useDebounce(supplierSearch, SEARCH_DEBOUNCE_MS)
@@ -791,7 +788,7 @@ export default function EditarCotacaoPage({
                     }`}
                   >
                     {deadline ? (
-                      format(deadline, "dd/MM/yyyy")
+                      formatDateBR(formatDateQueryBR(deadline))
                     ) : (
                       <span className="text-muted-foreground">
                         Selecione uma data
@@ -1212,9 +1209,7 @@ export default function EditarCotacaoPage({
                           {req.title}
                         </span>
                         <span className="text-xs text-muted-foreground ml-auto flex-shrink-0">
-                          {format(new Date(req.created_at), "dd/MM/yyyy", {
-                            locale: ptBR,
-                          })}
+                          {formatDateBR(req.created_at)}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">

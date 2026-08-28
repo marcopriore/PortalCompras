@@ -1,18 +1,10 @@
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateTimeBR, formatExportFileTimestamp } from "@/lib/formato-data"
 import type { AxisDeskChamado } from "@/lib/axisdesk/types"
 import {
   AXISDESK_TIPO_OPTIONS,
   getAxisDeskPrioridadeLabel,
   getAxisDeskStatusLabel,
 } from "@/lib/axisdesk/types"
-
-function formatExportDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  return format(d, "dd/MM/yyyy HH:mm", { locale: ptBR })
-}
 
 export async function exportSupportTicketsExcel(
   tickets: AxisDeskChamado[],
@@ -49,8 +41,8 @@ export async function exportSupportTicketsExcel(
       prioridade: getAxisDeskPrioridadeLabel(ticket.prioridade),
       categoria: ticket.categoria?.nome ?? "—",
       responsavel: ticket.solicitante?.nome ?? "—",
-      sla: formatExportDateTime(ticket.sla_prazo),
-      criado_em: formatExportDateTime(ticket.created_at),
+      sla: formatDateTimeBR(ticket.sla_prazo, true),
+      criado_em: formatDateTimeBR(ticket.created_at, true),
     })
   }
 
@@ -61,7 +53,7 @@ export async function exportSupportTicketsExcel(
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
-  a.download = `chamados_suporte_${format(new Date(), "yyyyMMdd_HHmm")}.xlsx`
+  a.download = `chamados_suporte_${formatExportFileTimestamp()}.xlsx`
   a.click()
   URL.revokeObjectURL(url)
 }

@@ -1,8 +1,11 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import {
+  formatDateTimeBR,
+  formatDateTimeLongBR,
+  formatExportFileTimestamp,
+} from '@/lib/formato-data'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
@@ -296,7 +299,7 @@ export default function ItensPage() {
               ? 'Importação Excel'
               : 'Cadastro Manual',
         ultima_sincronizacao: item.sync_at
-          ? format(new Date(item.sync_at), 'dd/MM/yyyy HH:mm', { locale: ptBR })
+          ? formatDateTimeBR(item.sync_at, true)
           : '',
       })
 
@@ -318,7 +321,7 @@ export default function ItensPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `itens_valore_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`
+    a.download = `itens_valore_${formatExportFileTimestamp()}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -465,7 +468,7 @@ export default function ItensPage() {
           {lastSync && (
             <span className="text-xs text-muted-foreground">
               Última atualização:{' '}
-              {format(new Date(lastSync), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+              {formatDateTimeLongBR(lastSync)}
             </span>
           )}
           {canImportExcel && (

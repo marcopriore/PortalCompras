@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { format, differenceInDays, parseISO, startOfDay } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateBR } from "@/lib/formato-data"
+import { differenceInDays, parseISO, startOfDay } from "date-fns"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useTenant } from "@/contexts/tenant-context"
@@ -358,11 +358,11 @@ export default function ContratosPage() {
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-sm">
                     {c.start_date
-                      ? format(parseISO(c.start_date), "dd/MM/yyyy", { locale: ptBR })
+                      ? formatDateBR(c.start_date)
                       : "—"}{" "}
                     –{" "}
                     {c.end_date
-                      ? format(parseISO(c.end_date), "dd/MM/yyyy", { locale: ptBR })
+                      ? formatDateBR(c.end_date)
                       : "—"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">

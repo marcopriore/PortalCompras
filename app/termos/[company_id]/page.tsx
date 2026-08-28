@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
+import { formatDateBR } from "@/lib/formato-data"
 import { notFound } from "next/navigation"
 import { FileText } from "lucide-react"
 
@@ -29,12 +30,7 @@ export default async function TermosPage({
   const company = companyRes.data
   const companyName = company?.trade_name || company?.name || "Empresa"
 
-  const versionDate = new Date(term.version_date).toLocaleDateString("pt-BR", {
-    timeZone: "UTC",
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  })
+  const versionDate = formatDateBR(term.version_date)
 
   return (
     <div className="min-h-screen bg-gray-50">

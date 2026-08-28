@@ -2,8 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateBR, formatDateTimeBR, formatTodayStampDDMMYYYY } from "@/lib/formato-data"
 import { createClient } from "@/lib/supabase/client"
 import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
@@ -75,7 +74,6 @@ import { toast } from "sonner"
 import type { LucideIcon } from "lucide-react"
 import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
 import { getBuyerOrderErrorCopy } from "@/lib/integrations/erp-errors"
-import { formatDateBR, formatDateTimeBR } from "@/lib/utils/date-helpers"
 import { buildContractItemLineNumberMap } from "@/lib/contracts/contract-balance-helpers"
 
 type PurchaseOrderStatus =
@@ -431,18 +429,6 @@ function buildTimeline(order: PurchaseOrder, logs: AuditLog[]): TimelineEvent[] 
   return merged
 }
 
-function formatDateBRDateOnly(value: string | null | undefined): string {
-  if (!value) return "—"
-  const s = String(value).trim()
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const [y, m, d] = s.split("-").map(Number)
-    return format(new Date(y, m - 1, d), "dd/MM/yyyy", { locale: ptBR })
-  }
-  const d = new Date(s)
-  if (Number.isNaN(d.getTime())) return "—"
-  return format(d, "dd/MM/yyyy", { locale: ptBR })
-}
-
 function addCalendarDaysFromAcceptedAt(acceptedAtIso: string, days: number): string {
   const d = new Date(acceptedAtIso)
   if (Number.isNaN(d.getTime())) return ""
@@ -455,21 +441,17 @@ function addCalendarDaysFromAcceptedAt(acceptedAtIso: string, days: number): str
 
 function getOrderEstimatedDeliveryLabel(order: PurchaseOrder): string {
   if (order.estimated_delivery_date) {
-    return formatDateBRDateOnly(order.estimated_delivery_date)
+    return formatDateBR(order.estimated_delivery_date) || "—"
   }
   if (order.accepted_at && order.delivery_days != null && order.delivery_days > 0) {
     const ymd = addCalendarDaysFromAcceptedAt(order.accepted_at, order.delivery_days)
-    return ymd ? formatDateBRDateOnly(ymd) : "—"
+    return ymd ? formatDateBR(ymd) || "—" : "—"
   }
   return "—"
 }
 
 function getTodayDDMMYYYY() {
-  const now = new Date()
-  const dd = String(now.getDate()).padStart(2, "0")
-  const mm = String(now.getMonth() + 1).padStart(2, "0")
-  const yyyy = String(now.getFullYear())
-  return `${dd}${mm}${yyyy}`
+  return formatTodayStampDDMMYYYY()
 }
 
 async function downloadExcel(workbook: any, filename: string) {
@@ -1303,7 +1285,7 @@ export default function PurchaseOrderDetailPage({
         [
           "Data Criação:",
           order.created_at
-            ? format(new Date(order.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })
+            ? formatDateTimeBR(order.created_at, true)
             : "—",
         ],
       ]
@@ -1475,7 +1457,7 @@ export default function PurchaseOrderDetailPage({
   }
 
   const createdAtLabel = order.created_at
-    ? format(new Date(order.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })
+    ? formatDateTimeBR(order.created_at, true)
     : "—"
 
   const statusDisplay = getPOStatusForBuyer(order.status)

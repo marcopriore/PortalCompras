@@ -2,8 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateBR, formatDateTimeBR } from "@/lib/formato-data"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -326,7 +325,7 @@ export default function PedidosPage() {
           supplier: order.supplier_name,
           cnpj: order.supplier_cnpj ?? "—",
           createdAt: order.created_at
-            ? format(new Date(order.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })
+            ? formatDateTimeBR(order.created_at, true)
             : "—",
           items: order.purchase_order_items?.length ?? 0,
           total: money.format(order.total_price ?? 0),
@@ -617,9 +616,7 @@ export default function PedidosPage() {
                       const statusMeta = getPOStatusForBuyer(order.status)
                       const itemsCount = order.purchase_order_items?.length ?? 0
                       const created = order.created_at
-                        ? format(new Date(order.created_at), "dd/MM/yyyy", {
-                            locale: ptBR,
-                          })
+                        ? formatDateBR(order.created_at)
                         : "—"
                       const prazo =
                         order.delivery_days != null ? `${order.delivery_days} dias` : "—"

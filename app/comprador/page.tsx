@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { FileText, ShoppingCart, TrendingDown, TrendingUp, Clock, Eye } from "lucide-react"
-import { endOfMonth, format, startOfMonth, subMonths } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { endOfMonth, startOfMonth, subMonths } from "date-fns"
+import { formatDateBR, formatMonthShortBR } from "@/lib/formato-data"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -545,9 +545,8 @@ export default function CompradorDashboard() {
       for (let i = 5; i >= 0; i--) {
         const d = subMonths(now, i)
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-        const month = format(d, "MMM", { locale: ptBR })
-        const formattedMonth = month.charAt(0).toUpperCase() + month.slice(1).replace(".", "")
-        monthBuckets.push({ key, month: formattedMonth, values: [] })
+        const month = formatMonthShortBR(d)
+        monthBuckets.push({ key, month, values: [] })
       }
       const bucketByKey = new Map(monthBuckets.map((b) => [b.key, b]))
       const monthlyOrdersRaw = (ltMonthlyRes.data as OrderLeadRow[] | null) ?? []
@@ -920,9 +919,7 @@ export default function CompradorDashboard() {
                             </TableCell>
                             <TableCell className="text-muted-foreground">
                               {activity.created_at
-                                ? format(new Date(activity.created_at), "dd/MM/yyyy", {
-                                    locale: ptBR,
-                                  })
+                                ? formatDateBR(activity.created_at)
                                 : "-"}
                             </TableCell>
                             <TableCell className="text-right">

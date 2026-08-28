@@ -14,6 +14,7 @@ import {
   parseContractPoLinkPrompt,
 } from "@/lib/contracts/contract-balance-settings"
 import { logAudit } from "@/lib/audit"
+import { formatDateBR } from "@/lib/formato-data"
 import { toast } from "sonner"
 import * as XLSX from "xlsx"
 
@@ -3134,9 +3135,7 @@ export default function ConfiguracoesPage() {
                   <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs text-green-700">
                     <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
                     Termos ativos — Versão {activeTerm.version} (
-                    {new Date(activeTerm.version_date).toLocaleDateString("pt-BR", {
-                      timeZone: "UTC",
-                    })}
+                    {formatDateBR(activeTerm.version_date)}
                     )
                   </div>
                 )}

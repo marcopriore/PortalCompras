@@ -2,11 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import {
-  format,
-  parseISO,
-} from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateBR, formatDateTimeBR } from "@/lib/formato-data"
 import { toast } from "sonner"
 import {
   ArrowLeft,
@@ -411,13 +407,9 @@ export default function FornecedorContratoDetalhePage({
             <div>
               <p className="text-xs text-muted-foreground">Vigência</p>
               <p className="text-sm font-medium">
-                {format(parseISO(contract.start_date), "dd/MM/yyyy", {
-                  locale: ptBR,
-                })}{" "}
+                {formatDateBR(contract.start_date)}{" "}
                 –{" "}
-                {format(parseISO(contract.end_date), "dd/MM/yyyy", {
-                  locale: ptBR,
-                })}
+                {formatDateBR(contract.end_date)}
               </p>
             </div>
             <div>
@@ -561,7 +553,7 @@ export default function FornecedorContratoDetalhePage({
             {supplierTerms ? (
               <p className="text-xs text-muted-foreground">
                 Versão {supplierTerms.version} ·{" "}
-                {format(parseISO(supplierTerms.version_date), "dd/MM/yyyy")}
+                {formatDateBR(supplierTerms.version_date)}
               </p>
             ) : null}
           </DialogHeader>
@@ -659,7 +651,7 @@ export default function FornecedorContratoDetalhePage({
                   ) : null}
                 </div>
                 <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-                  {format(parseISO(a.created_at), "dd/MM/yyyy HH:mm")}
+                  {formatDateTimeBR(a.created_at, true)}
                 </span>
               </div>
             ))}

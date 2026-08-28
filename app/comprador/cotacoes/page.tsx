@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { formatDateBR, formatDateTimeBR } from "@/lib/formato-data"
 import {
   Plus,
   Eye,
@@ -220,13 +221,13 @@ export default function CotacoesPage() {
       header: "Data Limite",
       cell: (item) =>
         item.response_deadline
-          ? new Date(item.response_deadline).toLocaleDateString("pt-BR")
+          ? formatDateBR(item.response_deadline)
           : "-",
     },
     {
       key: "created_at",
       header: "Criado em",
-      cell: (item) => new Date(item.created_at).toLocaleDateString("pt-BR"),
+      cell: (item) => formatDateBR(item.created_at),
     },
     {
       key: "responsible_name",
@@ -454,21 +455,6 @@ export default function CotacoesPage() {
       cell.alignment = { horizontal: "center", vertical: "middle" }
     })
 
-    const formatDateOnly = (value: string | null) => {
-      if (!value) return "—"
-      const d = new Date(value)
-      if (Number.isNaN(d.getTime())) return "—"
-      return d.toLocaleDateString("pt-BR")
-    }
-
-    const formatDateTime = (value: string) => {
-      const d = new Date(value)
-      if (Number.isNaN(d.getTime())) return "—"
-      const date = d.toLocaleDateString("pt-BR")
-      const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
-      return `${date} ${time}`
-    }
-
     filtered.forEach((q, idx) => {
       ws.addRow({
         code: q.code,
@@ -476,8 +462,8 @@ export default function CotacoesPage() {
         status: getStatusLabel(q.status),
         category: q.category ?? "—",
         payment: q.payment_condition ?? "—",
-        deadline: q.response_deadline ? formatDateOnly(q.response_deadline) : "—",
-        createdAt: formatDateTime(q.created_at),
+        deadline: q.response_deadline ? formatDateBR(q.response_deadline) : "—",
+        createdAt: formatDateTimeBR(q.created_at, true),
         responsible: formatResponsibleName(q.responsible_name),
       })
 

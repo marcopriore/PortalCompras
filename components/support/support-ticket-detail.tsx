@@ -2,8 +2,6 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
 import {
   ArrowLeft,
   ChevronRight,
@@ -44,17 +42,11 @@ import {
   getAxisDeskStatusVariant,
   getHistoricoEntryDate,
 } from "@/lib/axisdesk/types"
+import { formatDateTimeBR } from "@/lib/formato-data"
 
 type SupportTicketDetailProps = {
   ticketId: string
   portal: "comprador" | "solicitante"
-}
-
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  return format(d, "dd/MM/yyyy HH:mm", { locale: ptBR })
 }
 
 function getAvailableActions(
@@ -337,7 +329,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
                                 · {item.autorTipo}
                               </span>
                             </span>
-                            <span>{formatDateTime(item.createdAt)}</span>
+                            <span>{formatDateTimeBR(item.createdAt, true)}</span>
                           </div>
                           <p className="mt-2 text-sm whitespace-pre-wrap">
                             {item.mensagem}
@@ -359,7 +351,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
                                 ) : null}
                                 Anexo
                               </span>
-                              <span>{formatDateTime(item.createdAt)}</span>
+                              <span>{formatDateTimeBR(item.createdAt, true)}</span>
                             </div>
                             <a
                               href={item.url}
@@ -401,7 +393,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
                         <span className="font-medium text-foreground">
                           {entry.alterado_por}
                         </span>
-                        <span>{formatDateTime(getHistoricoEntryDate(entry))}</span>
+                        <span>{formatDateTimeBR(getHistoricoEntryDate(entry), true)}</span>
                       </div>
                       <p className="mt-2">
                         <span className="text-muted-foreground">Campo: </span>
@@ -433,11 +425,11 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
             <CardContent className="space-y-3 text-sm">
               <div>
                 <span className="text-muted-foreground">Criado em: </span>
-                {formatDateTime(ticket.created_at)}
+                {formatDateTimeBR(ticket.created_at, true)}
               </div>
               <div>
                 <span className="text-muted-foreground">SLA: </span>
-                {formatDateTime(ticket.sla_prazo)}
+                {formatDateTimeBR(ticket.sla_prazo, true)}
               </div>
               {ticket.solicitante && (
                 <div>

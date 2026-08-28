@@ -2,8 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateBR, formatDateQueryBR } from "@/lib/formato-data"
 import { CheckCircle, ChevronLeft, Clock, Download, Package, XCircle } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
@@ -96,18 +95,6 @@ const money = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
 })
 
-function formatDateBR(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const s = String(iso).trim()
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const [y, m, d] = s.split("-").map(Number)
-    return format(new Date(y, m - 1, d), "dd/MM/yyyy", { locale: ptBR })
-  }
-  const d = new Date(s)
-  if (Number.isNaN(d.getTime())) return "—"
-  return format(d, "dd/MM/yyyy", { locale: ptBR })
-}
-
 function toDateInputValue(iso: string | null | undefined): string {
   if (!iso) return ""
   const s = String(iso).trim()
@@ -115,13 +102,12 @@ function toDateInputValue(iso: string | null | undefined): string {
   if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s.slice(0, 10)
   const d = new Date(s)
   if (Number.isNaN(d.getTime())) return ""
-  return format(d, "yyyy-MM-dd")
+  return formatDateQueryBR(d)
 }
 
 function formatDateInputToBR(yyyyMmDd: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(yyyyMmDd)) return "—"
-  const [y, m, d] = yyyyMmDd.split("-").map(Number)
-  return format(new Date(y, m - 1, d), "dd/MM/yyyy", { locale: ptBR })
+  return formatDateBR(yyyyMmDd) || "—"
 }
 
 export default function FornecedorPedidoDetalhePage({

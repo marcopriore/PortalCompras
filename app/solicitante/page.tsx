@@ -2,8 +2,13 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import {
+  formatDateBR,
+  formatDateTimeBR,
+  formatDateTimeCompactBR,
+  formatDateTimeLongBR,
+  formatExportFileTimestamp,
+} from "@/lib/formato-data"
 import { createClient } from "@/lib/supabase/client"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
@@ -84,13 +89,6 @@ function getPriorityMeta(priority: string) {
     default:
       return { label: "Normal", className: "bg-gray-100 text-gray-700" }
   }
-}
-
-function formatDateBR(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  return format(d, "dd/MM/yyyy", { locale: ptBR })
 }
 
 function SolicitantePageInner() {
@@ -311,9 +309,7 @@ function SolicitantePageInner() {
           neededBy: formatDateBR(r.needed_by),
           priority: getPriorityMeta(r.priority).label,
           status: getStatusMeta(r.status).label,
-          createdAt: format(new Date(r.created_at), "dd/MM/yyyy HH:mm", {
-            locale: ptBR,
-          }),
+          createdAt: formatDateTimeBR(r.created_at, true),
         })
       })
 
@@ -323,7 +319,7 @@ function SolicitantePageInner() {
       })
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
-      const stamp = format(new Date(), "yyyyMMdd_HHmm")
+      const stamp = formatExportFileTimestamp()
       a.href = url
       a.download = `requisicoes_solicitante_${stamp}.xlsx`
       a.click()

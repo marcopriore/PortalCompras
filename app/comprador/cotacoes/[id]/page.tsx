@@ -4,6 +4,7 @@ import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
+import { formatDateBR } from '@/lib/formato-data'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
 import { usePermissions } from '@/lib/hooks/usePermissions'
@@ -747,14 +748,14 @@ export default function QuotationDetailsPage({
                   <Label>Data Limite de Resposta</Label>
                   <div className="rounded-md bg-muted/40 px-3 py-2 text-sm">
                     {quotation.response_deadline
-                      ? new Date(quotation.response_deadline).toLocaleDateString('pt-BR')
+                      ? formatDateBR(quotation.response_deadline)
                       : '-'}
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Data de Criação</Label>
                   <div className="rounded-md bg-muted/40 px-3 py-2 text-sm">
-                    {new Date(quotation.created_at).toLocaleDateString('pt-BR')}
+                    {formatDateBR(quotation.created_at)}
                   </div>
                 </div>
                 <div className="space-y-1.5">

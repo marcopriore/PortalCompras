@@ -4,8 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import { formatDateBR, formatExportDateStamp } from '@/lib/formato-data'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -432,9 +431,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
         tipo: p.profile_type === 'supplier' ? 'Fornecedor' : 'Comprador',
         roles: profileRolesLabel(p),
         status: p.status === 'active' ? 'Ativo' : 'Inativo',
-        criado_em: format(new Date(p.created_at), 'dd/MM/yyyy', {
-          locale: ptBR,
-        }),
+        criado_em: formatDateBR(p.created_at),
       })
     }
 
@@ -445,7 +442,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `usuarios_${tenant?.name ?? 'tenant'}_${format(new Date(), 'yyyyMMdd')}.xlsx`
+    a.download = `usuarios_${tenant?.name ?? 'tenant'}_${formatExportDateStamp()}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -853,9 +850,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                   Data de Criação
                 </p>
                 <p className="text-sm font-medium text-foreground">
-                  {format(new Date(tenant.created_at), 'dd/MM/yyyy', {
-                    locale: ptBR,
-                  })}
+                  {formatDateBR(tenant.created_at)}
                 </p>
               </div>
             </div>
@@ -1283,11 +1278,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
                           </Badge>
                         </TableCell>
                         <TableCell className="px-3 py-2 align-top text-sm text-muted-foreground">
-                          {format(
-                            new Date(profile.created_at),
-                            'dd/MM/yyyy',
-                            { locale: ptBR },
-                          )}
+                          {formatDateBR(profile.created_at)}
                         </TableCell>
                       </TableRow>
                     ))}

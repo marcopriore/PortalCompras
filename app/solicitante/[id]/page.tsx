@@ -2,8 +2,11 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import {
+  formatDateBR,
+  formatDateTimeCompactBR,
+  formatDateTimeLongBR,
+} from "@/lib/formato-data"
 import { createClient } from "@/lib/supabase/client"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
@@ -187,7 +190,7 @@ function HorizontalTimeline({
                 <p className={`text-xs font-medium ${colorMap.text}`}>{step.label}</p>
                 {step.date && (
                   <p className="text-xs text-muted-foreground text-center">
-                    {format(new Date(step.date), "dd/MM HH:mm", { locale: ptBR })}
+                    {formatDateTimeCompactBR(step.date)}
                   </p>
                 )}
               </div>
@@ -220,9 +223,7 @@ function HistorySection({
             <p className="text-sm font-medium text-foreground">Requisição criada</p>
             <p className="text-xs text-muted-foreground">
               Por {req.requester_name ?? "solicitante"} ·{" "}
-              {format(new Date(req.created_at), "dd/MM/yyyy 'às' HH:mm", {
-                locale: ptBR,
-              })}
+              {formatDateTimeLongBR(req.created_at)}
             </p>
           </div>
         </div>
@@ -271,9 +272,7 @@ function HistorySection({
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {format(new Date(h.decided_at ?? h.created_at), "dd/MM/yyyy 'às' HH:mm", {
-                    locale: ptBR,
-                  })}
+                  {formatDateTimeLongBR(h.decided_at ?? h.created_at)}
                 </p>
               </div>
             </div>
@@ -309,9 +308,7 @@ function HistorySection({
                     : `Liberada — cotação ${(log.metadata?.quotation_code as string) ?? ""} cancelada`}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {format(new Date(log.created_at), "dd/MM/yyyy 'às' HH:mm", {
-                    locale: ptBR,
-                  })}
+                  {formatDateTimeLongBR(log.created_at)}
                 </p>
               </div>
             </div>
@@ -591,7 +588,7 @@ export default function SolicitanteDetailPage({
                   Data de Criação
                 </p>
                 <p className="text-sm text-foreground font-medium">
-                  {format(new Date(requisition.created_at), "dd/MM/yyyy", { locale: ptBR })}
+                  {formatDateBR(requisition.created_at)}
                 </p>
               </div>
               <div>
@@ -600,7 +597,7 @@ export default function SolicitanteDetailPage({
                 </p>
                 <p className="text-sm text-foreground font-medium">
                   {requisition.needed_by
-                    ? format(new Date(requisition.needed_by), "dd/MM/yyyy", { locale: ptBR })
+                    ? formatDateBR(requisition.needed_by)
                     : "—"}
                 </p>
               </div>

@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { AlertCircle, Clock, RefreshCw, Sparkles } from "lucide-react"
+import { formatDateTimeBR } from "@/lib/formato-data"
 import { useUser } from "@/lib/hooks/useUser"
 import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
 import { Badge } from "@/components/ui/badge"
@@ -65,13 +66,6 @@ function formatCountdown(seconds: number): string {
   if (seconds >= 3600) return "1h 00min"
   if (seconds >= 60) return `${Math.floor(seconds / 60)}min ${seconds % 60}s`
   return `${seconds}s`
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  })
 }
 
 function renderInsights(text: string): React.ReactElement {
@@ -228,7 +222,7 @@ export function SpendAIInsights() {
         {cache && (
           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            Gerado em {formatDateTime(cache.generatedAt)} · Período: {cache.period} dias
+            Gerado em {formatDateTimeBR(cache.generatedAt, true)} · Período: {cache.period} dias
           </p>
         )}
       </CardHeader>

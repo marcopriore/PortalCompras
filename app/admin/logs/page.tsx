@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import { formatDateTimeBR, formatDateTimeSecondsBR } from '@/lib/formato-data'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import {
@@ -562,9 +561,7 @@ export default function AdminLogsPage() {
                 return (
                   <TableRow key={log.id} className="hover:bg-muted/50 transition-colors">
                     <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                      {format(new Date(log.created_at), 'dd/MM/yyyy HH:mm:ss', {
-                        locale: ptBR,
-                      })}
+                      {formatDateTimeSecondsBR(log.created_at)}
                     </TableCell>
                     <TableCell>
                       <span
@@ -674,7 +671,7 @@ export default function AdminLogsPage() {
                   Saída: {aiLogDialog.data.output_tokens?.toLocaleString('pt-BR') ?? 0} tokens
                 </span>
                 <span>
-                  {new Date(aiLogDialog.data.created_at).toLocaleString('pt-BR')}
+                  {formatDateTimeBR(aiLogDialog.data.created_at, true)}
                 </span>
               </div>
             )}

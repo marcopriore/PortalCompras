@@ -2,8 +2,11 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import {
+  formatDateBR,
+  formatDateTimeCompactBR,
+  formatDateTimeLongBR,
+} from "@/lib/formato-data"
 
 import { createClient } from "@/lib/supabase/client"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -195,7 +198,7 @@ function HorizontalTimeline({
                 <p className={`text-xs font-medium ${colorMap.text}`}>{step.label}</p>
                 {step.date && (
                   <p className="text-xs text-muted-foreground text-center">
-                    {format(new Date(step.date), "dd/MM HH:mm", { locale: ptBR })}
+                    {formatDateTimeCompactBR(step.date)}
                   </p>
                 )}
               </div>
@@ -228,9 +231,7 @@ function HistorySection({
             <p className="text-sm font-medium text-foreground">Requisição criada</p>
             <p className="text-xs text-muted-foreground">
               Por {req.requester_name ?? "solicitante"} ·{" "}
-              {format(new Date(req.created_at), "dd/MM/yyyy 'às' HH:mm", {
-                locale: ptBR,
-              })}
+              {formatDateTimeLongBR(req.created_at)}
             </p>
           </div>
         </div>
@@ -279,9 +280,7 @@ function HistorySection({
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  {format(new Date(h.decided_at ?? h.created_at), "dd/MM/yyyy 'às' HH:mm", {
-                    locale: ptBR,
-                  })}
+                  {formatDateTimeLongBR(h.decided_at ?? h.created_at)}
                 </p>
               </div>
             </div>
@@ -317,9 +316,7 @@ function HistorySection({
                     : `Liberada — cotação ${(log.metadata?.quotation_code as string) ?? ""} cancelada`}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {format(new Date(log.created_at), "dd/MM/yyyy 'às' HH:mm", {
-                    locale: ptBR,
-                  })}
+                  {formatDateTimeLongBR(log.created_at)}
                 </p>
               </div>
             </div>
@@ -332,13 +329,6 @@ function HistorySection({
 
 function getStatusMeta(status: RequisitionStatus): { label: string; className: string } {
   return getRequisitionStatusMeta(status)
-}
-
-function formatDateBR(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  return format(d, "dd/MM/yyyy", { locale: ptBR })
 }
 
 export default function RequisicaoDetailPage({

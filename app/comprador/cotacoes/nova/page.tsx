@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { format } from 'date-fns'
+import { formatDateBR, formatDateQueryBR, formatNowBR } from '@/lib/formato-data'
 import { ptBR } from 'date-fns/locale'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
@@ -157,7 +157,7 @@ function NovaCotacaoContent() {
   const debouncedItemSearch = useDebounce(itemSearch, ITEM_SEARCH_DEBOUNCE_MS)
   const debouncedSupplierSearch = useDebounce(supplierSearch, SUPPLIER_SEARCH_DEBOUNCE_MS)
 
-  const today = useMemo(() => format(new Date(), 'dd/MM/yyyy', { locale: ptBR }), [])
+  const today = useMemo(() => formatNowBR(), [])
 
   useEffect(() => {
     if (!companyId) return
@@ -665,7 +665,7 @@ function NovaCotacaoContent() {
                     variant="outline"
                     className={`w-full justify-between font-normal ${errors.deadline ? 'border-destructive ring-1 ring-destructive/30' : ''}`}
                   >
-                    {deadline ? format(deadline, 'dd/MM/yyyy') : <span className="text-muted-foreground">Selecione uma data</span>}
+                    {deadline ? formatDateBR(formatDateQueryBR(deadline)) : <span className="text-muted-foreground">Selecione uma data</span>}
                     <CalendarIcon className="h-4 w-4" />
                   </Button>
                 </PopoverTrigger>
@@ -999,7 +999,7 @@ function NovaCotacaoContent() {
                           {req.title}
                         </span>
                         <span className="text-xs text-muted-foreground ml-auto flex-shrink-0">
-                          {format(new Date(req.created_at), 'dd/MM/yyyy', { locale: ptBR })}
+                          {formatDateBR(req.created_at)}
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">

@@ -2,9 +2,8 @@
 
 import * as React from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
 import { Download, Eye, Headphones, Plus, RefreshCw, X } from "lucide-react"
+import { formatDateTimeBR } from "@/lib/formato-data"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -99,13 +98,6 @@ const INITIAL_CREATE_FORM: CreateFormState = {
 }
 
 const TABLE_COL_COUNT = 9
-
-function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  return format(d, "dd/MM/yyyy HH:mm", { locale: ptBR })
-}
 
 export function SupportPage({ portal }: SupportPageProps) {
   const router = useRouter()
@@ -636,8 +628,8 @@ export function SupportPage({ portal }: SupportPageProps) {
                       <TableCell className="max-w-[160px] truncate">
                         {ticket.solicitante?.nome ?? "—"}
                       </TableCell>
-                      <TableCell>{formatDateTime(ticket.sla_prazo)}</TableCell>
-                      <TableCell>{formatDateTime(ticket.created_at)}</TableCell>
+                      <TableCell>{formatDateTimeBR(ticket.sla_prazo, true)}</TableCell>
+                      <TableCell>{formatDateTimeBR(ticket.created_at, true)}</TableCell>
                       <TableCell className="text-right">
                         <TableRowActions
                           actions={[

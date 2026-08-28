@@ -1,4 +1,4 @@
-import { format } from "date-fns"
+import { formatDateQueryBR } from "@/lib/formato-data"
 import type { AxisDeskCategoria, AxisDeskChamado } from "@/lib/axisdesk/types"
 
 export type SupportListFilters = {
@@ -89,7 +89,7 @@ function localDateKey(iso: string | null | undefined): string | null {
   if (!iso) return null
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return null
-  return format(d, "yyyy-MM-dd")
+  return formatDateQueryBR(d)
 }
 
 function matchesDateRange(

@@ -1,8 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateTimeBR } from "@/lib/formato-data"
 import { Building2, Eye, List, RefreshCw, Search, Users } from "lucide-react"
 import { toast } from "sonner"
 import type {
@@ -51,11 +50,7 @@ function formatCnpj(cnpj: string | null): string {
 
 function formatLogin(iso: string | null): string {
   if (!iso) return "—"
-  try {
-    return format(new Date(iso), "dd/MM/yyyy HH:mm", { locale: ptBR })
-  } catch {
-    return "—"
-  }
+  return formatDateTimeBR(iso, true)
 }
 
 export default function AdminFornecedoresPage() {

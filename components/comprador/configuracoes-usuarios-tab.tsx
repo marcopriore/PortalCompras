@@ -7,8 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
 import { useImpersonation } from '@/contexts/impersonation-context'
 import { logAudit } from '@/lib/audit'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import { formatDateBR } from '@/lib/formato-data'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -1124,9 +1123,7 @@ export function ConfiguracoesUsuariosTab({
                     )}
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top text-sm text-muted-foreground">
-                    {format(new Date(profile.created_at), 'dd/MM/yyyy', {
-                      locale: ptBR,
-                    })}
+                    {formatDateBR(profile.created_at)}
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top text-right">
                     {(currentIsAdmin || canImpersonate) && (

@@ -25,9 +25,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { formatDateBR } from '@/lib/formato-data'
 import { Building2, CheckCircle2, Users, Eye, LogIn, Plus } from 'lucide-react'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 import { logAudit } from '@/lib/audit'
 import { useUser } from '@/lib/hooks/useUser'
 
@@ -314,9 +313,7 @@ export default function AdminTenantsPage() {
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top text-sm text-muted-foreground">
                     {tenant.created_at
-                      ? format(new Date(tenant.created_at), 'dd/MM/yyyy', {
-                          locale: ptBR,
-                        })
+                      ? formatDateBR(tenant.created_at)
                       : '-'}
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top text-right">

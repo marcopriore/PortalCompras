@@ -1,8 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { format, subMonths } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { subMonths } from "date-fns"
+import {
+  formatDateBR,
+  formatMonthShortBR,
+} from "@/lib/formato-data"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/use-toast"
@@ -441,7 +444,7 @@ export default function RelatoriosPage() {
           return fornecedorFilter.includes(sn)
         })
         .reduce((acc, po) => {
-          const month = format(new Date(po.created_at), "MMM/yy", { locale: ptBR })
+          const month = `${formatMonthShortBR(po.created_at)}/${formatDateBR(po.created_at).slice(-2)}`
           acc[month] = (acc[month] ?? 0) + Number(po.total_price ?? 0)
           return acc
         }, {} as Record<string, number>)
@@ -494,10 +497,10 @@ export default function RelatoriosPage() {
       for (let i = 5; i >= 0; i--) {
         const d = subMonths(new Date(), i)
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-        const m = format(d, "MMM", { locale: ptBR }).replace(".", "")
+        const m = formatMonthShortBR(d)
         processoBuckets.push({
           key,
-          month: m.charAt(0).toUpperCase() + m.slice(1),
+          month: m,
           values: [],
         })
       }
@@ -662,10 +665,8 @@ export default function RelatoriosPage() {
     for (let i = monthsBack - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-      const monthLabel = d
-        .toLocaleDateString("pt-BR", { month: "short" })
-        .replace(".", "")
-      const label = monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1)
+      const monthLabel = formatMonthShortBR(d)
+      const label = monthLabel
       buckets.push({ key, label, total: 0 })
     }
     const index = new Map(buckets.map((b) => [b.key, b]))
@@ -803,7 +804,7 @@ export default function RelatoriosPage() {
         hasAny = true
 
         if (po?.created_at) {
-          const month = format(new Date(po.created_at), "MMM/yy", { locale: ptBR })
+          const month = `${formatMonthShortBR(po.created_at)}/${formatDateBR(po.created_at).slice(-2)}`
           monthMap.set(month, (monthMap.get(month) ?? 0) + saving)
         }
 
@@ -1258,7 +1259,7 @@ export default function RelatoriosPage() {
 
         const row = ws.addRow({
           pedido: po?.code ?? "—",
-          data: po?.created_at ? new Date(po.created_at).toLocaleDateString("pt-BR") : "—",
+          data: po?.created_at ? formatDateBR(po.created_at) : "—",
           fornecedor: po?.supplier_name ?? "—",
           codigo: item.material_code ?? "—",
           descricao: item.material_description ?? "—",
@@ -1386,9 +1387,9 @@ export default function RelatoriosPage() {
             : null
           return {
             pedido: po.code,
-            dataPedido: new Date(po.created_at).toLocaleDateString("pt-BR"),
+            dataPedido: formatDateBR(po.created_at),
             requisicao: po.requisition_code ?? "—",
-            dataReq: reqDate ? new Date(reqDate).toLocaleDateString("pt-BR") : "—",
+            dataReq: reqDate ? formatDateBR(reqDate) : "—",
             dias,
             comprador: po.created_by ? (buyerMap.get(po.created_by) ?? "—") : "—",
             fornecedor: po.supplier_name ?? "—",

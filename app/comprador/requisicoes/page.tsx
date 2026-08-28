@@ -2,8 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { format } from "date-fns"
-import { ptBR } from "date-fns/locale"
+import { formatDateBR } from "@/lib/formato-data"
 
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
@@ -64,13 +63,6 @@ export function getPriorityMeta(priority: Priority): { label: string; className:
     case "critical":
       return { label: "Crítica", className: "bg-red-100 text-red-800" }
   }
-}
-
-function formatDateBR(iso: string | null): string {
-  if (!iso) return "—"
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return "—"
-  return format(d, "dd/MM/yyyy", { locale: ptBR })
 }
 
 export default function RequisicoesPage() {
