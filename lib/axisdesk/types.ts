@@ -243,6 +243,16 @@ export function getHistoricoEntryDate(entry: AxisDeskHistoricoEntry): string {
   return entry.created_at ?? entry.data ?? ""
 }
 
+export function sortHistoricoDesc(
+  historico: AxisDeskHistoricoEntry[] = [],
+): AxisDeskHistoricoEntry[] {
+  return [...historico].sort(
+    (a, b) =>
+      new Date(getHistoricoEntryDate(b)).getTime() -
+      new Date(getHistoricoEntryDate(a)).getTime(),
+  )
+}
+
 export function formatHistoricoValue(
   campo: string,
   valor: string | null,

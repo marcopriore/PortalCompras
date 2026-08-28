@@ -41,6 +41,7 @@ import {
   getAxisDeskStatusLabel,
   getAxisDeskStatusVariant,
   getHistoricoEntryDate,
+  sortHistoricoDesc,
 } from "@/lib/axisdesk/types"
 import { formatDateTimeBR } from "@/lib/formato-data"
 
@@ -211,6 +212,11 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
     [ticket],
   )
 
+  const historicoItems = React.useMemo(
+    () => (ticket ? sortHistoricoDesc(ticket.historico ?? []) : []),
+    [ticket],
+  )
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
@@ -374,7 +380,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
             </CardContent>
           </Card>
 
-          {(ticket.historico?.length ?? 0) > 0 && (
+          {historicoItems.length > 0 && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -384,7 +390,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {(ticket.historico ?? []).map((entry, index) => (
+                  {historicoItems.map((entry, index) => (
                     <div
                       key={entry.id ?? `hist-${index}`}
                       className="rounded-lg border border-border bg-muted/20 p-3 text-sm"
