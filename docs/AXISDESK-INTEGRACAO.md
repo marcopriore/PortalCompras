@@ -154,6 +154,53 @@ Respostas: `200` com o chamado atualizado. `404` se o chamado não existir ou
 pertencer a outro sistema satélite. `409` se o chamado não estiver no status
 exigido para a ação. `400` se `usuario_reprovou` vier sem `mensagem`.
 
+## Categorias e subcategorias
+
+```
+GET /api/categorias?tipo=<opcional: incidente|melhoria>
+x-api-key: <chave>
+```
+
+Retorna as categorias ativas (com subcategorias ativas aninhadas) do(s) tipo(s)
+pedido(s). Sem `tipo`, retorna as duas listas.
+
+```json
+[
+  {
+    "id": "uuid",
+    "tipo": "incidente",
+    "nome": "Acesso e Login",
+    "subcategorias": [{ "id": "uuid", "nome": "Não consegue logar" }]
+  }
+]
+```
+
+Use essas listas para popular selects em cascata (Categoria → Subcategoria) no
+formulário de abertura de chamado.
+
+## Categorização ao criar um chamado
+
+O `POST /api/chamados` (seção acima) aceita dois campos opcionais adicionais
+no corpo: `categoria_id` e `subcategoria_id` (uuids vindos de `GET
+/api/categorias`). Se enviados, são validados contra o `tipo` do chamado —
+`400` se a categoria não existir/estiver inativa/for de outro tipo, ou se a
+subcategoria não pertencer à categoria enviada. Tornar esses campos
+obrigatórios no formulário é uma decisão de cada satélite, não da API.
+
+## Detalhe completo de um chamado
+
+```
+GET /api/chamados/<id>?tenant_id_externo=<id>
+x-api-key: <chave>
+```
+
+Retorna o chamado com todos os campos do `GET /api/chamados` (listagem) mais:
+`categoria`/`subcategoria` (id + nome), `comentarios` (cronológico, com
+`autor_tipo`, `autor_nome`, `mensagem`, `created_at`), `anexos` (com `url`
+assinada, válida por 1h) e `historico` (mudanças de campo, cronológico).
+`tenant_id_externo` é obrigatório na query, para reforçar ownership. `404` se
+o chamado não existir ou pertencer a outro sistema satélite.
+
 ## Identidade visual
 
 Não é necessário levar a identidade visual do AxisDesk (cores, tipografia)

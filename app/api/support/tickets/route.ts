@@ -63,6 +63,10 @@ export async function POST(request: Request) {
         ? body.contexto_origem.trim()
         : undefined
     const prioridade = body.prioridade
+    const categoriaId =
+      typeof body.categoria_id === "string" ? body.categoria_id.trim() : ""
+    const subcategoriaId =
+      typeof body.subcategoria_id === "string" ? body.subcategoria_id.trim() : ""
 
     if (!VALID_TIPOS.has(tipo as AxisDeskChamadoTipo)) {
       return NextResponse.json({ error: "Tipo inválido." }, { status: 400 })
@@ -73,6 +77,18 @@ export async function POST(request: Request) {
     if (!descricao) {
       return NextResponse.json(
         { error: "Descrição é obrigatória." },
+        { status: 400 },
+      )
+    }
+    if (!categoriaId) {
+      return NextResponse.json(
+        { error: "Categoria é obrigatória." },
+        { status: 400 },
+      )
+    }
+    if (!subcategoriaId) {
+      return NextResponse.json(
+        { error: "Subcategoria é obrigatória." },
         { status: 400 },
       )
     }
@@ -105,6 +121,8 @@ export async function POST(request: Request) {
       tipo: tipo as AxisDeskChamadoTipo,
       titulo,
       descricao,
+      categoria_id: categoriaId,
+      subcategoria_id: subcategoriaId,
       ...(contextoOrigem ? { contexto_origem: contextoOrigem } : {}),
       ...(prioridadeValue ? { prioridade: prioridadeValue } : {}),
       ...(anexos ? { anexos } : {}),

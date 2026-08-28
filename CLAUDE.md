@@ -200,9 +200,9 @@
 
 ## NOVOS HOOKS/LIBS/COMPONENTES
 
-- `components/support/support-page.tsx`
+- `components/support/support-page.tsx`, `components/support/support-ticket-detail.tsx`
 - `lib/axisdesk/client.ts`, `lib/axisdesk/types.ts`, `lib/axisdesk/support-context.ts`
-- `app/api/support/tickets/route.ts`, `app/api/support/tickets/[id]/acoes/route.ts`
+- `app/api/support/tickets/route.ts`, `app/api/support/tickets/[id]/route.ts`, `app/api/support/tickets/[id]/acoes/route.ts`, `app/api/support/categorias/route.ts`
 - `lib/hooks/use-auto-refresh.ts`
 - `lib/hooks/use-polling-interval.ts`
 - `lib/hooks/use-tenant-settings.ts`

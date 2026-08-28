@@ -1,9 +1,10 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
-import { Headphones, Plus, RefreshCw } from "lucide-react"
+import { Eye, Headphones, Plus, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -36,13 +37,11 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { TableRowActions } from "@/components/ui/table-row-actions"
-import { Eye } from "lucide-react"
 import type {
   AxisDeskAnexo,
+  AxisDeskCategoria,
   AxisDeskChamado,
-  AxisDeskChamadoAcao,
   AxisDeskChamadoPrioridade,
-  AxisDeskChamadoStatus,
   AxisDeskChamadoTipo,
 } from "@/lib/axisdesk/types"
 import {
@@ -60,6 +59,8 @@ type SupportPageProps = {
 
 type CreateFormState = {
   tipo: AxisDeskChamadoTipo
+  categoriaId: string
+  subcategoriaId: string
   titulo: string
   descricao: string
   prioridade: AxisDeskChamadoPrioridade
@@ -68,6 +69,8 @@ type CreateFormState = {
 
 const INITIAL_CREATE_FORM: CreateFormState = {
   tipo: "incidente",
+  categoriaId: "",
+  subcategoriaId: "",
   titulo: "",
   descricao: "",
   prioridade: "media",
@@ -104,26 +107,11 @@ async function fileToAnexo(file: File): Promise<AxisDeskAnexo> {
   }
 }
 
-function getAvailableActions(
-  status: AxisDeskChamadoStatus,
-): { acao: AxisDeskChamadoAcao; label: string; destructive?: boolean }[] {
-  switch (status) {
-    case "pendente_usuario":
-      return [
-        { acao: "usuario_respondeu", label: "Responder" },
-        { acao: "usuario_cancelou", label: "Cancelar chamado", destructive: true },
-      ]
-    case "validacao_usuario":
-      return [
-        { acao: "usuario_aprovou", label: "Aprovar solução" },
-        { acao: "usuario_reprovou", label: "Reprovar solução", destructive: true },
-      ]
-    default:
-      return []
-  }
-}
-
 export function SupportPage({ portal }: SupportPageProps) {
+  const router = useRouter()
+  const detailBase =
+    portal === "comprador" ? "/comprador/suporte" : "/solicitante/suporte"
+
   const [tickets, setTickets] = React.useState<AxisDeskChamado[]>([])
   const [loading, setLoading] = React.useState(true)
   const [refreshing, setRefreshing] = React.useState(false)
@@ -134,14 +122,8 @@ export function SupportPage({ portal }: SupportPageProps) {
     React.useState<CreateFormState>(INITIAL_CREATE_FORM)
   const [creating, setCreating] = React.useState(false)
 
-  const [detailTicket, setDetailTicket] = React.useState<AxisDeskChamado | null>(
-    null,
-  )
-  const [actionMessage, setActionMessage] = React.useState("")
-  const [actionAnexo, setActionAnexo] = React.useState<File | null>(null)
-  const [actionLoading, setActionLoading] = React.useState(false)
-  const [pendingAction, setPendingAction] =
-    React.useState<AxisDeskChamadoAcao | null>(null)
+  const [categorias, setCategorias] = React.useState<AxisDeskCategoria[]>([])
+  const [categoriasLoading, setCategoriasLoading] = React.useState(false)
 
   const loadTickets = React.useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -167,28 +149,75 @@ export function SupportPage({ portal }: SupportPageProps) {
     }
   }, [])
 
+  const loadCategorias = React.useCallback(async (tipo: AxisDeskChamadoTipo) => {
+    setCategoriasLoading(true)
+    try {
+      const res = await fetch(`/api/support/categorias?tipo=${tipo}`, {
+        cache: "no-store",
+      })
+      const payload = (await res.json()) as {
+        data?: AxisDeskCategoria[]
+        error?: string
+      }
+      if (!res.ok) {
+        toast.error(payload.error ?? "Erro ao carregar categorias.")
+        setCategorias([])
+        return
+      }
+      setCategorias(payload.data ?? [])
+    } catch {
+      toast.error("Erro ao carregar categorias.")
+      setCategorias([])
+    } finally {
+      setCategoriasLoading(false)
+    }
+  }, [])
+
   React.useEffect(() => {
     void loadTickets()
   }, [loadTickets])
+
+  React.useEffect(() => {
+    if (!createOpen) return
+    void loadCategorias(createForm.tipo)
+  }, [createOpen, createForm.tipo, loadCategorias])
 
   const filteredTickets = React.useMemo(() => {
     if (statusFilter.length === 0) return tickets
     return tickets.filter((t) => statusFilter.includes(t.status))
   }, [tickets, statusFilter])
 
+  const selectedCategoria = React.useMemo(
+    () => categorias.find((c) => c.id === createForm.categoriaId) ?? null,
+    [categorias, createForm.categoriaId],
+  )
+
+  const subcategorias = selectedCategoria?.subcategorias ?? []
+
+  const canSubmitCreate =
+    createForm.titulo.trim().length > 0 &&
+    createForm.descricao.trim().length > 0 &&
+    createForm.categoriaId.length > 0 &&
+    createForm.subcategoriaId.length > 0 &&
+    !creating &&
+    !categoriasLoading
+
   const resetCreateForm = () => {
     setCreateForm(INITIAL_CREATE_FORM)
+    setCategorias([])
+  }
+
+  const handleTipoChange = (tipo: AxisDeskChamadoTipo) => {
+    setCreateForm((f) => ({
+      ...f,
+      tipo,
+      categoriaId: "",
+      subcategoriaId: "",
+    }))
   }
 
   const handleCreate = async () => {
-    if (!createForm.titulo.trim()) {
-      toast.error("Informe o título do chamado.")
-      return
-    }
-    if (!createForm.descricao.trim()) {
-      toast.error("Informe a descrição do chamado.")
-      return
-    }
+    if (!canSubmitCreate) return
 
     setCreating(true)
     try {
@@ -202,6 +231,8 @@ export function SupportPage({ portal }: SupportPageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tipo: createForm.tipo,
+          categoria_id: createForm.categoriaId,
+          subcategoria_id: createForm.subcategoriaId,
           titulo: createForm.titulo.trim(),
           descricao: createForm.descricao.trim(),
           prioridade: createForm.prioridade,
@@ -224,94 +255,15 @@ export function SupportPage({ portal }: SupportPageProps) {
       setCreateOpen(false)
       resetCreateForm()
       await loadTickets(true)
-      if (payload.data) setDetailTicket(payload.data)
+      if (payload.data?.id) {
+        router.push(`${detailBase}/${payload.data.id}`)
+      }
     } catch {
       toast.error("Erro ao criar chamado.")
     } finally {
       setCreating(false)
     }
   }
-
-  const handleExecuteAction = async (acao: AxisDeskChamadoAcao) => {
-    if (!detailTicket) return
-
-    if (acao === "usuario_reprovou" && !actionMessage.trim()) {
-      toast.error("Informe o motivo da reprovação.")
-      return
-    }
-
-    if (acao === "usuario_respondeu" && !actionMessage.trim() && !actionAnexo) {
-      toast.error("Informe uma mensagem ou anexe um arquivo.")
-      return
-    }
-
-    setActionLoading(true)
-    setPendingAction(acao)
-    try {
-      let anexos: AxisDeskAnexo[] | undefined
-      if (actionAnexo) {
-        anexos = [await fileToAnexo(actionAnexo)]
-      }
-
-      const res = await fetch(
-        `/api/support/tickets/${detailTicket.id}/acoes`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            acao,
-            ...(actionMessage.trim() ? { mensagem: actionMessage.trim() } : {}),
-            ...(anexos ? { anexos } : {}),
-          }),
-        },
-      )
-
-      const payload = (await res.json()) as {
-        data?: AxisDeskChamado
-        error?: string
-      }
-
-      if (!res.ok) {
-        toast.error(payload.error ?? "Erro ao executar ação.")
-        return
-      }
-
-      toast.success("Ação registrada com sucesso.")
-      setActionMessage("")
-      setActionAnexo(null)
-      if (payload.data) {
-        setDetailTicket(payload.data)
-      }
-      await loadTickets(true)
-    } catch {
-      toast.error("Erro ao executar ação.")
-    } finally {
-      setActionLoading(false)
-      setPendingAction(null)
-    }
-  }
-
-  const openDetail = (ticket: AxisDeskChamado) => {
-    setDetailTicket(ticket)
-    setActionMessage("")
-    setActionAnexo(null)
-    setPendingAction(null)
-  }
-
-  const closeDetail = () => {
-    setDetailTicket(null)
-    setActionMessage("")
-    setActionAnexo(null)
-    setPendingAction(null)
-  }
-
-  const detailActions = detailTicket
-    ? getAvailableActions(detailTicket.status)
-    : []
-
-  const showActionForm =
-    detailActions.some((a) => a.acao === "usuario_respondeu") ||
-    detailActions.some((a) => a.acao === "usuario_reprovou")
 
   return (
     <div className="space-y-6">
@@ -379,13 +331,19 @@ export function SupportPage({ portal }: SupportPageProps) {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell
+                      colSpan={7}
+                      className="text-center py-8 text-muted-foreground"
+                    >
                       Carregando chamados…
                     </TableCell>
                   </TableRow>
                 ) : filteredTickets.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell
+                      colSpan={7}
+                      className="text-center py-8 text-muted-foreground"
+                    >
                       Nenhum chamado encontrado.
                     </TableCell>
                   </TableRow>
@@ -415,7 +373,7 @@ export function SupportPage({ portal }: SupportPageProps) {
                             {
                               label: "Ver Detalhes",
                               icon: Eye,
-                              onClick: () => openDetail(ticket),
+                              href: `${detailBase}/${ticket.id}`,
                             },
                           ]}
                         />
@@ -436,7 +394,7 @@ export function SupportPage({ portal }: SupportPageProps) {
           if (!open) resetCreateForm()
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Novo chamado</DialogTitle>
           </DialogHeader>
@@ -445,12 +403,7 @@ export function SupportPage({ portal }: SupportPageProps) {
               <Label htmlFor="tipo">Tipo</Label>
               <Select
                 value={createForm.tipo}
-                onValueChange={(v) =>
-                  setCreateForm((f) => ({
-                    ...f,
-                    tipo: v as AxisDeskChamadoTipo,
-                  }))
-                }
+                onValueChange={(v) => handleTipoChange(v as AxisDeskChamadoTipo)}
               >
                 <SelectTrigger id="tipo">
                   <SelectValue />
@@ -459,6 +412,58 @@ export function SupportPage({ portal }: SupportPageProps) {
                   {AXISDESK_TIPO_OPTIONS.map((o) => (
                     <SelectItem key={o.value} value={o.value}>
                       {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="categoria">Categoria</Label>
+              <Select
+                value={createForm.categoriaId || undefined}
+                onValueChange={(v) =>
+                  setCreateForm((f) => ({
+                    ...f,
+                    categoriaId: v,
+                    subcategoriaId: "",
+                  }))
+                }
+                disabled={categoriasLoading || categorias.length === 0}
+              >
+                <SelectTrigger id="categoria">
+                  <SelectValue
+                    placeholder={
+                      categoriasLoading
+                        ? "Carregando categorias…"
+                        : "Selecione a categoria"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {categorias.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="subcategoria">Subcategoria</Label>
+              <Select
+                value={createForm.subcategoriaId || undefined}
+                onValueChange={(v) =>
+                  setCreateForm((f) => ({ ...f, subcategoriaId: v }))
+                }
+                disabled={!createForm.categoriaId || subcategorias.length === 0}
+              >
+                <SelectTrigger id="subcategoria">
+                  <SelectValue placeholder="Selecione a subcategoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subcategorias.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.nome}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -533,118 +538,14 @@ export function SupportPage({ portal }: SupportPageProps) {
             >
               Cancelar
             </Button>
-            <Button type="button" onClick={() => void handleCreate()} disabled={creating}>
+            <Button
+              type="button"
+              onClick={() => void handleCreate()}
+              disabled={!canSubmitCreate}
+            >
               {creating ? "Enviando…" : "Criar chamado"}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={Boolean(detailTicket)} onOpenChange={(open) => !open && closeDetail()}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          {detailTicket && (
-            <>
-              <DialogHeader>
-                <DialogTitle>{detailTicket.titulo}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="flex flex-wrap gap-2">
-                  <StatusBadge variant={getAxisDeskStatusVariant(detailTicket.status)}>
-                    {getAxisDeskStatusLabel(detailTicket.status)}
-                  </StatusBadge>
-                  <StatusBadge variant="muted">
-                    {getAxisDeskPrioridadeLabel(detailTicket.prioridade)}
-                  </StatusBadge>
-                  <StatusBadge variant="info">
-                    {AXISDESK_TIPO_OPTIONS.find((o) => o.value === detailTicket.tipo)
-                      ?.label ?? detailTicket.tipo}
-                  </StatusBadge>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Criado em: </span>
-                    {formatDateTime(detailTicket.created_at)}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">SLA: </span>
-                    {formatDateTime(detailTicket.sla_prazo)}
-                  </div>
-                  {detailTicket.solicitante && (
-                    <div className="sm:col-span-2">
-                      <span className="text-muted-foreground">Solicitante: </span>
-                      {detailTicket.solicitante.nome} ({detailTicket.solicitante.email})
-                    </div>
-                  )}
-                  {detailTicket.contexto_origem && (
-                    <div className="sm:col-span-2">
-                      <span className="text-muted-foreground">Origem: </span>
-                      {detailTicket.contexto_origem}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Descrição</Label>
-                  <p className="text-sm whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3">
-                    {detailTicket.descricao}
-                  </p>
-                </div>
-
-                {showActionForm && (
-                  <div className="space-y-3 border-t border-border pt-4">
-                    <Label htmlFor="action-message">
-                      {detailActions.some((a) => a.acao === "usuario_reprovou")
-                        ? "Mensagem / motivo"
-                        : "Mensagem (opcional)"}
-                    </Label>
-                    <Textarea
-                      id="action-message"
-                      value={actionMessage}
-                      onChange={(e) => setActionMessage(e.target.value)}
-                      rows={3}
-                      placeholder={
-                        detailTicket.status === "validacao_usuario"
-                          ? "Descreva o motivo se for reprovar a solução"
-                          : "Informações adicionais para a equipe de suporte"
-                      }
-                    />
-                    {detailActions.some((a) => a.acao === "usuario_respondeu") && (
-                      <div className="space-y-2">
-                        <Label htmlFor="action-anexo">Anexo (opcional)</Label>
-                        <Input
-                          id="action-anexo"
-                          type="file"
-                          onChange={(e) =>
-                            setActionAnexo(e.target.files?.[0] ?? null)
-                          }
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {detailActions.length > 0 && (
-                  <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-                    {detailActions.map((action) => (
-                      <Button
-                        key={action.acao}
-                        type="button"
-                        variant={action.destructive ? "destructive" : "default"}
-                        size="sm"
-                        disabled={actionLoading}
-                        onClick={() => void handleExecuteAction(action.acao)}
-                      >
-                        {actionLoading && pendingAction === action.acao
-                          ? "Processando…"
-                          : action.label}
-                      </Button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
         </DialogContent>
       </Dialog>
     </div>

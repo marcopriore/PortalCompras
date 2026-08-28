@@ -1,6 +1,9 @@
 import type {
+  AxisDeskCategoria,
   AxisDeskChamado,
+  AxisDeskChamadoDetalhe,
   AxisDeskChamadoStatus,
+  AxisDeskChamadoTipo,
   AxisDeskClientResult,
   AxisDeskCreateTicketPayload,
   AxisDeskAnexo,
@@ -123,6 +126,33 @@ export async function listTickets(
 
   if (!result.ok) return result
   return { ok: true, data: Array.isArray(result.data) ? result.data : [] }
+}
+
+export async function getCategorias(
+  tipo?: AxisDeskChamadoTipo,
+): Promise<AxisDeskClientResult<AxisDeskCategoria[]>> {
+  const params = new URLSearchParams()
+  if (tipo) params.set("tipo", tipo)
+
+  const query = params.toString()
+  const result = await axisDeskFetch<AxisDeskCategoria[]>(
+    `/api/categorias${query ? `?${query}` : ""}`,
+    { method: "GET" },
+  )
+
+  if (!result.ok) return result
+  return { ok: true, data: Array.isArray(result.data) ? result.data : [] }
+}
+
+export async function getTicketDetail(
+  chamadoId: string,
+  tenantIdExterno: string,
+): Promise<AxisDeskClientResult<AxisDeskChamadoDetalhe>> {
+  const params = new URLSearchParams({ tenant_id_externo: tenantIdExterno })
+  return axisDeskFetch<AxisDeskChamadoDetalhe>(
+    `/api/chamados/${chamadoId}?${params.toString()}`,
+    { method: "GET" },
+  )
 }
 
 export async function executeAction(
