@@ -20,12 +20,20 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { Textarea } from "@/components/ui/textarea"
+import { AttachmentFileList } from "@/components/support/attachment-file-list"
+import { CharacterCounter } from "@/components/support/character-counter"
 import type {
   AxisDeskAnexo,
   AxisDeskChamadoAcao,
   AxisDeskChamadoDetalhe,
   AxisDeskChamadoStatus,
 } from "@/lib/axisdesk/types"
+import {
+  AXISDESK_MAX_TEXTO,
+  filesToAnexos,
+  mergeSelectedFiles,
+  removeSelectedFile,
+} from "@/lib/axisdesk/support-form"
 import {
   AXISDESK_TIPO_OPTIONS,
   buildAxisDeskActivityFeed,
@@ -49,29 +57,6 @@ function formatDateTime(iso: string | null | undefined): string {
   return format(d, "dd/MM/yyyy HH:mm", { locale: ptBR })
 }
 
-async function fileToAnexo(file: File): Promise<AxisDeskAnexo> {
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result
-      if (typeof result !== "string") {
-        reject(new Error("Falha ao ler arquivo."))
-        return
-      }
-      const comma = result.indexOf(",")
-      resolve(comma >= 0 ? result.slice(comma + 1) : result)
-    }
-    reader.onerror = () => reject(new Error("Falha ao ler arquivo."))
-    reader.readAsDataURL(file)
-  })
-
-  return {
-    nome_arquivo: file.name,
-    tipo_mime: file.type || "application/octet-stream",
-    conteudo_base64: base64,
-  }
-}
-
 function getAvailableActions(
   status: AxisDeskChamadoStatus,
 ): { acao: AxisDeskChamadoAcao; label: string; destructive?: boolean }[] {
@@ -86,6 +71,11 @@ function getAvailableActions(
         { acao: "usuario_aprovou", label: "Aprovar solução" },
         { acao: "usuario_reprovou", label: "Reprovar solução", destructive: true },
       ]
+    case "reprovado":
+      return [
+        { acao: "usuario_reenviou", label: "Reenviar chamado" },
+        { acao: "usuario_cancelou", label: "Cancelar chamado", destructive: true },
+      ]
     default:
       return []
   }
@@ -99,7 +89,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
   const [refreshing, setRefreshing] = React.useState(false)
 
   const [actionMessage, setActionMessage] = React.useState("")
-  const [actionAnexo, setActionAnexo] = React.useState<File | null>(null)
+  const [actionAnexos, setActionAnexos] = React.useState<File[]>([])
   const [actionLoading, setActionLoading] = React.useState(false)
   const [pendingAction, setPendingAction] =
     React.useState<AxisDeskChamadoAcao | null>(null)
@@ -145,8 +135,17 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
       return
     }
 
-    if (acao === "usuario_respondeu" && !actionMessage.trim() && !actionAnexo) {
+    if (
+      acao === "usuario_respondeu" &&
+      !actionMessage.trim() &&
+      actionAnexos.length === 0
+    ) {
       toast.error("Informe uma mensagem ou anexe um arquivo.")
+      return
+    }
+
+    if (actionMessage.length > AXISDESK_MAX_TEXTO) {
+      toast.error(`Mensagem deve ter no máximo ${AXISDESK_MAX_TEXTO} caracteres.`)
       return
     }
 
@@ -154,8 +153,11 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
     setPendingAction(acao)
     try {
       let anexos: AxisDeskAnexo[] | undefined
-      if (actionAnexo) {
-        anexos = [await fileToAnexo(actionAnexo)]
+      if (
+        (acao === "usuario_respondeu" || acao === "usuario_reenviou") &&
+        actionAnexos.length > 0
+      ) {
+        anexos = await filesToAnexos(actionAnexos)
       }
 
       const res = await fetch(`/api/support/tickets/${ticket.id}/acoes`, {
@@ -163,7 +165,9 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           acao,
-          ...(actionMessage.trim() ? { mensagem: actionMessage.trim() } : {}),
+          ...(actionMessage.trim() && acao !== "usuario_cancelou"
+            ? { mensagem: actionMessage.trim() }
+            : {}),
           ...(anexos ? { anexos } : {}),
         }),
       })
@@ -180,7 +184,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
 
       toast.success("Ação registrada com sucesso.")
       setActionMessage("")
-      setActionAnexo(null)
+      setActionAnexos([])
       await loadTicket(true)
     } catch {
       toast.error("Erro ao executar ação.")
@@ -191,9 +195,21 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
   }
 
   const detailActions = ticket ? getAvailableActions(ticket.status) : []
-  const showActionForm =
+  const showMessageField =
     detailActions.some((a) => a.acao === "usuario_respondeu") ||
-    detailActions.some((a) => a.acao === "usuario_reprovou")
+    detailActions.some((a) => a.acao === "usuario_reprovou") ||
+    detailActions.some((a) => a.acao === "usuario_reenviou")
+  const showAttachmentsField =
+    detailActions.some((a) => a.acao === "usuario_respondeu") ||
+    detailActions.some((a) => a.acao === "usuario_reenviou")
+  const messageRequired = detailActions.some((a) => a.acao === "usuario_reprovou")
+  const messagePlaceholder = ticket
+    ? ticket.status === "validacao_usuario"
+      ? "Descreva o motivo se for reprovar a solução"
+      : ticket.status === "reprovado"
+        ? "Explique o reenvio do chamado (opcional)"
+        : "Informações adicionais para a equipe de suporte"
+    : ""
 
   const activityItems = React.useMemo(
     () =>
@@ -438,41 +454,55 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
             </CardContent>
           </Card>
 
-          {(detailActions.length > 0 || showActionForm) && (
+          {(detailActions.length > 0 || showMessageField) && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base">Ações</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {showActionForm && (
+                {showMessageField && (
                   <div className="space-y-3">
                     <div className="space-y-2">
                       <Label htmlFor="action-message">
-                        {detailActions.some((a) => a.acao === "usuario_reprovou")
+                        {messageRequired
                           ? "Mensagem / motivo"
                           : "Mensagem (opcional)"}
                       </Label>
                       <Textarea
                         id="action-message"
                         value={actionMessage}
+                        maxLength={AXISDESK_MAX_TEXTO}
                         onChange={(e) => setActionMessage(e.target.value)}
                         rows={3}
-                        placeholder={
-                          ticket.status === "validacao_usuario"
-                            ? "Descreva o motivo se for reprovar a solução"
-                            : "Informações adicionais para a equipe de suporte"
-                        }
+                        placeholder={messagePlaceholder}
+                      />
+                      <CharacterCounter
+                        current={actionMessage.length}
+                        max={AXISDESK_MAX_TEXTO}
                       />
                     </div>
-                    {detailActions.some((a) => a.acao === "usuario_respondeu") && (
+                    {showAttachmentsField && (
                       <div className="space-y-2">
-                        <Label htmlFor="action-anexo">Anexo (opcional)</Label>
+                        <Label htmlFor="action-anexos">Anexos (opcional)</Label>
                         <Input
-                          id="action-anexo"
+                          id="action-anexos"
                           type="file"
+                          multiple
+                          disabled={actionLoading}
                           onChange={(e) =>
-                            setActionAnexo(e.target.files?.[0] ?? null)
+                            setActionAnexos((current) =>
+                              mergeSelectedFiles(current, e.target.files),
+                            )
                           }
+                        />
+                        <AttachmentFileList
+                          files={actionAnexos}
+                          onRemove={(index) =>
+                            setActionAnexos((current) =>
+                              removeSelectedFile(current, index),
+                            )
+                          }
+                          disabled={actionLoading}
                         />
                       </div>
                     )}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { executeAction } from "@/lib/axisdesk/client"
 import { getSupportContext } from "@/lib/axisdesk/support-context"
+import { AXISDESK_MAX_TEXTO } from "@/lib/axisdesk/support-form"
 import type { AxisDeskAnexo, AxisDeskChamadoAcao } from "@/lib/axisdesk/types"
 
 const VALID_ACOES = new Set<AxisDeskChamadoAcao>([
@@ -8,6 +9,7 @@ const VALID_ACOES = new Set<AxisDeskChamadoAcao>([
   "usuario_aprovou",
   "usuario_reprovou",
   "usuario_cancelou",
+  "usuario_reenviou",
 ])
 
 function isValidAnexo(value: unknown): value is AxisDeskAnexo {
@@ -48,6 +50,13 @@ export async function POST(
     if (acao === "usuario_reprovou" && !mensagem) {
       return NextResponse.json(
         { error: "Motivo é obrigatório para reprovar." },
+        { status: 400 },
+      )
+    }
+
+    if (mensagem && mensagem.length > AXISDESK_MAX_TEXTO) {
+      return NextResponse.json(
+        { error: `Mensagem deve ter no máximo ${AXISDESK_MAX_TEXTO} caracteres.` },
         { status: 400 },
       )
     }

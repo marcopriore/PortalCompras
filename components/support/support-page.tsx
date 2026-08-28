@@ -37,6 +37,8 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { TableRowActions } from "@/components/ui/table-row-actions"
+import { AttachmentFileList } from "@/components/support/attachment-file-list"
+import { CharacterCounter } from "@/components/support/character-counter"
 import type {
   AxisDeskAnexo,
   AxisDeskCategoria,
@@ -44,6 +46,13 @@ import type {
   AxisDeskChamadoPrioridade,
   AxisDeskChamadoTipo,
 } from "@/lib/axisdesk/types"
+import {
+  AXISDESK_MAX_TEXTO,
+  AXISDESK_MAX_TITULO,
+  filesToAnexos,
+  mergeSelectedFiles,
+  removeSelectedFile,
+} from "@/lib/axisdesk/support-form"
 import {
   AXISDESK_PRIORIDADE_OPTIONS,
   AXISDESK_STATUS_OPTIONS,
@@ -64,7 +73,7 @@ type CreateFormState = {
   titulo: string
   descricao: string
   prioridade: AxisDeskChamadoPrioridade
-  anexo: File | null
+  anexos: File[]
 }
 
 const INITIAL_CREATE_FORM: CreateFormState = {
@@ -74,7 +83,7 @@ const INITIAL_CREATE_FORM: CreateFormState = {
   titulo: "",
   descricao: "",
   prioridade: "media",
-  anexo: null,
+  anexos: [],
 }
 
 function formatDateTime(iso: string | null | undefined): string {
@@ -82,29 +91,6 @@ function formatDateTime(iso: string | null | undefined): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return "—"
   return format(d, "dd/MM/yyyy HH:mm", { locale: ptBR })
-}
-
-async function fileToAnexo(file: File): Promise<AxisDeskAnexo> {
-  const base64 = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result
-      if (typeof result !== "string") {
-        reject(new Error("Falha ao ler arquivo."))
-        return
-      }
-      const comma = result.indexOf(",")
-      resolve(comma >= 0 ? result.slice(comma + 1) : result)
-    }
-    reader.onerror = () => reject(new Error("Falha ao ler arquivo."))
-    reader.readAsDataURL(file)
-  })
-
-  return {
-    nome_arquivo: file.name,
-    tipo_mime: file.type || "application/octet-stream",
-    conteudo_base64: base64,
-  }
 }
 
 export function SupportPage({ portal }: SupportPageProps) {
@@ -196,7 +182,9 @@ export function SupportPage({ portal }: SupportPageProps) {
 
   const canSubmitCreate =
     createForm.titulo.trim().length > 0 &&
+    createForm.titulo.length <= AXISDESK_MAX_TITULO &&
     createForm.descricao.trim().length > 0 &&
+    createForm.descricao.length <= AXISDESK_MAX_TEXTO &&
     createForm.categoriaId.length > 0 &&
     createForm.subcategoriaId.length > 0 &&
     !creating &&
@@ -222,8 +210,8 @@ export function SupportPage({ portal }: SupportPageProps) {
     setCreating(true)
     try {
       let anexos: AxisDeskAnexo[] | undefined
-      if (createForm.anexo) {
-        anexos = [await fileToAnexo(createForm.anexo)]
+      if (createForm.anexos.length > 0) {
+        anexos = await filesToAnexos(createForm.anexos)
       }
 
       const res = await fetch("/api/support/tickets", {
@@ -474,10 +462,15 @@ export function SupportPage({ portal }: SupportPageProps) {
               <Input
                 id="titulo"
                 value={createForm.titulo}
+                maxLength={AXISDESK_MAX_TITULO}
                 onChange={(e) =>
                   setCreateForm((f) => ({ ...f, titulo: e.target.value }))
                 }
                 placeholder="Resumo do problema ou solicitação"
+              />
+              <CharacterCounter
+                current={createForm.titulo.length}
+                max={AXISDESK_MAX_TITULO}
               />
             </div>
             <div className="space-y-2">
@@ -485,11 +478,16 @@ export function SupportPage({ portal }: SupportPageProps) {
               <Textarea
                 id="descricao"
                 value={createForm.descricao}
+                maxLength={AXISDESK_MAX_TEXTO}
                 onChange={(e) =>
                   setCreateForm((f) => ({ ...f, descricao: e.target.value }))
                 }
                 rows={4}
                 placeholder="Descreva com o máximo de detalhes possível"
+              />
+              <CharacterCounter
+                current={createForm.descricao.length}
+                max={AXISDESK_MAX_TEXTO}
               />
             </div>
             <div className="space-y-2">
@@ -516,16 +514,27 @@ export function SupportPage({ portal }: SupportPageProps) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="anexo">Anexo (opcional)</Label>
+              <Label htmlFor="anexos">Anexos (opcional)</Label>
               <Input
-                id="anexo"
+                id="anexos"
                 type="file"
+                multiple
                 onChange={(e) =>
                   setCreateForm((f) => ({
                     ...f,
-                    anexo: e.target.files?.[0] ?? null,
+                    anexos: mergeSelectedFiles(f.anexos, e.target.files),
                   }))
                 }
+              />
+              <AttachmentFileList
+                files={createForm.anexos}
+                onRemove={(index) =>
+                  setCreateForm((f) => ({
+                    ...f,
+                    anexos: removeSelectedFile(f.anexos, index),
+                  }))
+                }
+                disabled={creating}
               />
             </div>
           </div>

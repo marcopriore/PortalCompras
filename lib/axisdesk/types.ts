@@ -18,6 +18,7 @@ export type AxisDeskChamadoAcao =
   | "usuario_aprovou"
   | "usuario_reprovou"
   | "usuario_cancelou"
+  | "usuario_reenviou"
 
 export type AxisDeskAnexo = {
   nome_arquivo: string

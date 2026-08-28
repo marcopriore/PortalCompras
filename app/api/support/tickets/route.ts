@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server"
 import { createTicket, listTickets } from "@/lib/axisdesk/client"
 import { getSupportContext } from "@/lib/axisdesk/support-context"
+import {
+  AXISDESK_MAX_TEXTO,
+  AXISDESK_MAX_TITULO,
+} from "@/lib/axisdesk/support-form"
 import type {
   AxisDeskChamadoPrioridade,
   AxisDeskChamadoTipo,
@@ -74,9 +78,21 @@ export async function POST(request: Request) {
     if (!titulo) {
       return NextResponse.json({ error: "Título é obrigatório." }, { status: 400 })
     }
+    if (titulo.length > AXISDESK_MAX_TITULO) {
+      return NextResponse.json(
+        { error: `Título deve ter no máximo ${AXISDESK_MAX_TITULO} caracteres.` },
+        { status: 400 },
+      )
+    }
     if (!descricao) {
       return NextResponse.json(
         { error: "Descrição é obrigatória." },
+        { status: 400 },
+      )
+    }
+    if (descricao.length > AXISDESK_MAX_TEXTO) {
+      return NextResponse.json(
+        { error: `Descrição deve ter no máximo ${AXISDESK_MAX_TEXTO} caracteres.` },
         { status: 400 },
       )
     }
