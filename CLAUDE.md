@@ -497,7 +497,9 @@ node scripts/seed-supplier-axis.mjs --force
 ## Suporte (AxisDesk)
 - `AXISDESK_API_KEY`: nunca `NEXT_PUBLIC_`, nunca no client — usada em `lib/axisdesk/client.ts`
 - `AXISDESK_BASE_URL`: opcional; default `https://suporte.axisstrategy.com.br`
+- `AXISDESK_WEBHOOK_SECRET`: segredo validado no header `x-axisdesk-secret` em `app/api/support/webhook/route.ts` (server-only)
 - Proxy interno: `app/api/support/tickets` (GET/POST) e `app/api/support/tickets/[id]/acoes` (POST)
+- Webhook inbound: `POST /api/support/webhook` — notificação in-app via `createNotification()` (service role)
 - Tela: `/comprador/suporte` e `/solicitante/suporte` via `components/support/support-page.tsx`
 - `tenant_id_externo` = `company_id` do tenant ativo; solicitante usa `impersonatedUserId` quando em impersonação
 - Spec operacional: `docs/AXISDESK-INTEGRACAO.md`

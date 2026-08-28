@@ -88,6 +88,13 @@ function resolveNotificationRoute(
     return buyerRoutes.contract ?? null
   }
 
+  if (type.startsWith("support") || entity === "support_ticket") {
+    if (profileType === "requester") {
+      return `/solicitante/suporte/${entityId}`
+    }
+    return `/comprador/suporte/${entityId}`
+  }
+
   if (profileType === "supplier") return supplierRoutes[entity ?? ""] ?? null
   if (profileType === "requester") return requesterRoutes[entity ?? ""] ?? null
   return buyerRoutes[entity ?? ""] ?? null
@@ -114,6 +121,8 @@ function getNotificationIcon(type: string) {
     "contract.expired": { icon: Calendar, color: "text-red-500" },
     "contract.low_balance": { icon: AlertTriangle, color: "text-amber-600" },
     "contract.integration_error": { icon: AlertTriangle, color: "text-red-600" },
+    "support.status_changed": { icon: FileText, color: "text-blue-500" },
+    "support.comment": { icon: FileText, color: "text-indigo-500" },
   }
   return map[type] ?? { icon: Bell, color: "text-muted-foreground" }
 }
