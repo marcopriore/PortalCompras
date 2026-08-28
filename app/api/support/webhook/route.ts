@@ -7,17 +7,30 @@ import { buildSupportWebhookNotification } from "@/lib/axisdesk/webhook"
 
 export const runtime = "nodejs"
 
-const webhookSchema = z.object({
-  evento: z.enum(["status_alterado", "comentario"]),
-  chamado_id: z.string().min(1),
-  tenant_id_externo: z.string().min(1),
-  solicitante_id_externo: z.string().min(1),
-  timestamp: z.string().min(1),
-  status_novo: z.string().optional(),
-  mensagem: z.string().optional(),
-  motivo: z.string().optional(),
-  autor: z.string().optional(),
-})
+const webhookSchema = z.discriminatedUnion("evento", [
+  z.object({
+    evento: z.literal("teste"),
+    chamado_id: z.string().optional(),
+    tenant_id_externo: z.string().optional(),
+    solicitante_id_externo: z.string().optional(),
+    timestamp: z.string().optional(),
+    status_novo: z.string().optional(),
+    mensagem: z.string().optional(),
+    motivo: z.string().optional(),
+    autor: z.string().optional(),
+  }),
+  z.object({
+    evento: z.enum(["status_alterado", "comentario"]),
+    chamado_id: z.string().min(1),
+    tenant_id_externo: z.string().min(1),
+    solicitante_id_externo: z.string().min(1),
+    timestamp: z.string().min(1),
+    status_novo: z.string().optional(),
+    mensagem: z.string().optional(),
+    motivo: z.string().optional(),
+    autor: z.string().optional(),
+  }),
+])
 
 function verifyWebhookSecret(received: string | null): boolean {
   const expected = process.env.AXISDESK_WEBHOOK_SECRET?.trim()
@@ -50,6 +63,11 @@ export async function POST(request: Request) {
     }
 
     const event = parsed.data
+
+    if (event.evento === "teste") {
+      return NextResponse.json({ ok: true, recebido: "teste" })
+    }
+
     const service = createServiceRoleClient()
 
     const { data: profile } = await service
