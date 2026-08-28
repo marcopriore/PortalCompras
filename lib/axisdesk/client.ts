@@ -9,6 +9,10 @@ import type {
   AxisDeskAnexo,
   AxisDeskChamadoAcao,
 } from "@/lib/axisdesk/types"
+import {
+  AXISDESK_OUTBOUND_ACTIONS,
+  logAxisDeskOutbound,
+} from "@/lib/axisdesk/integration-logs"
 
 const DEFAULT_BASE_URL = "https://suporte.axisstrategy.com.br"
 
@@ -58,17 +62,45 @@ async function parseJsonSafe(res: Response): Promise<unknown> {
   }
 }
 
+type AxisDeskFetchMeta = {
+  companyId: string
+  action: string
+  entityId?: string
+  entityCode?: string
+  requestPayload?: unknown
+}
+
 async function axisDeskFetch<T>(
   path: string,
   init?: RequestInit,
+  meta?: AxisDeskFetchMeta,
 ): Promise<AxisDeskClientResult<T>> {
   const apiKey = getApiKey()
+  const method = init?.method ?? "GET"
+  const startedAt = Date.now()
+
   if (!apiKey) {
+    const message =
+      "Integração com suporte não configurada (AXISDESK_API_KEY ausente)."
+    if (meta) {
+      await logAxisDeskOutbound({
+        companyId: meta.companyId,
+        action: meta.action,
+        method,
+        path,
+        durationMs: Date.now() - startedAt,
+        responseStatus: 500,
+        success: false,
+        errorMessage: message,
+        entityId: meta.entityId,
+        entityCode: meta.entityCode,
+        requestPayload: meta.requestPayload,
+      })
+    }
     return {
       ok: false,
       status: 500,
-      message:
-        "Integração com suporte não configurada (AXISDESK_API_KEY ausente).",
+      message,
     }
   }
 
@@ -84,21 +116,71 @@ async function axisDeskFetch<T>(
     })
 
     const body = await parseJsonSafe(res)
+    const durationMs = Date.now() - startedAt
 
     if (!res.ok) {
+      const message = mapHttpError(res.status, body)
+      if (meta) {
+        await logAxisDeskOutbound({
+          companyId: meta.companyId,
+          action: meta.action,
+          method,
+          path,
+          durationMs,
+          responseStatus: res.status,
+          success: false,
+          errorMessage: message,
+          entityId: meta.entityId,
+          entityCode: meta.entityCode,
+          requestPayload: meta.requestPayload,
+          responseBody: body,
+        })
+      }
       return {
         ok: false,
         status: res.status,
-        message: mapHttpError(res.status, body),
+        message,
       }
+    }
+
+    if (meta) {
+      await logAxisDeskOutbound({
+        companyId: meta.companyId,
+        action: meta.action,
+        method,
+        path,
+        durationMs,
+        responseStatus: res.status,
+        success: true,
+        entityId: meta.entityId,
+        entityCode: meta.entityCode,
+        requestPayload: meta.requestPayload,
+        responseBody: body,
+      })
     }
 
     return { ok: true, data: body as T }
   } catch {
+    const message = "Não foi possível conectar ao sistema de suporte."
+    if (meta) {
+      await logAxisDeskOutbound({
+        companyId: meta.companyId,
+        action: meta.action,
+        method,
+        path,
+        durationMs: Date.now() - startedAt,
+        responseStatus: null,
+        success: false,
+        errorMessage: message,
+        entityId: meta.entityId,
+        entityCode: meta.entityCode,
+        requestPayload: meta.requestPayload,
+      })
+    }
     return {
       ok: false,
       status: 500,
-      message: "Não foi possível conectar ao sistema de suporte.",
+      message,
     }
   }
 }
@@ -106,10 +188,18 @@ async function axisDeskFetch<T>(
 export async function createTicket(
   payload: AxisDeskCreateTicketPayload,
 ): Promise<AxisDeskClientResult<AxisDeskChamado>> {
-  return axisDeskFetch<AxisDeskChamado>("/api/chamados", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  })
+  return axisDeskFetch<AxisDeskChamado>(
+    "/api/chamados",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    {
+      companyId: payload.tenant_id_externo,
+      action: AXISDESK_OUTBOUND_ACTIONS.TICKET_CREATE,
+      requestPayload: payload,
+    },
+  )
 }
 
 export async function listTickets(
@@ -122,6 +212,11 @@ export async function listTickets(
   const result = await axisDeskFetch<AxisDeskChamado[]>(
     `/api/chamados?${params.toString()}`,
     { method: "GET" },
+    {
+      companyId: tenantIdExterno,
+      action: AXISDESK_OUTBOUND_ACTIONS.TICKET_LIST,
+      requestPayload: { tenant_id_externo: tenantIdExterno, status: status ?? null },
+    },
   )
 
   if (!result.ok) return result
@@ -129,6 +224,7 @@ export async function listTickets(
 }
 
 export async function getCategorias(
+  tenantIdExterno: string,
   tipo?: AxisDeskChamadoTipo,
 ): Promise<AxisDeskClientResult<AxisDeskCategoria[]>> {
   const params = new URLSearchParams()
@@ -138,6 +234,11 @@ export async function getCategorias(
   const result = await axisDeskFetch<AxisDeskCategoria[]>(
     `/api/categorias${query ? `?${query}` : ""}`,
     { method: "GET" },
+    {
+      companyId: tenantIdExterno,
+      action: AXISDESK_OUTBOUND_ACTIONS.CATEGORIES_LIST,
+      requestPayload: { tipo: tipo ?? null },
+    },
   )
 
   if (!result.ok) return result
@@ -152,11 +253,21 @@ export async function getTicketDetail(
   return axisDeskFetch<AxisDeskChamadoDetalhe>(
     `/api/chamados/${chamadoId}?${params.toString()}`,
     { method: "GET" },
+    {
+      companyId: tenantIdExterno,
+      action: AXISDESK_OUTBOUND_ACTIONS.TICKET_DETAIL,
+      entityId: chamadoId,
+      requestPayload: {
+        chamado_id: chamadoId,
+        tenant_id_externo: tenantIdExterno,
+      },
+    },
   )
 }
 
 export async function executeAction(
   chamadoId: string,
+  tenantIdExterno: string,
   acao: AxisDeskChamadoAcao,
   mensagem?: string,
   anexos?: AxisDeskAnexo[],
@@ -169,8 +280,17 @@ export async function executeAction(
     body.anexos = anexos
   }
 
-  return axisDeskFetch<AxisDeskChamado>(`/api/chamados/${chamadoId}/acoes`, {
-    method: "POST",
-    body: JSON.stringify(body),
-  })
+  return axisDeskFetch<AxisDeskChamado>(
+    `/api/chamados/${chamadoId}/acoes`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+    {
+      companyId: tenantIdExterno,
+      action: AXISDESK_OUTBOUND_ACTIONS.TICKET_ACTION,
+      entityId: chamadoId,
+      requestPayload: body,
+    },
+  )
 }
