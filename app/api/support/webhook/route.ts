@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createNotification } from "@/lib/notify"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
-import { buildSupportWebhookNotification } from "@/lib/axisdesk/webhook"
+import { buildSupportWebhookNotification, resolveWebhookRecipient } from "@/lib/axisdesk/webhook"
 
 export const runtime = "nodejs"
 
@@ -63,6 +63,7 @@ export async function POST(request: Request) {
     }
 
     const event = parsed.data
+    console.log(`webhook recebido: evento=${event.evento}`)
 
     if (event.evento === "teste") {
       return NextResponse.json({ ok: true, recebido: "teste" })
@@ -70,30 +71,32 @@ export async function POST(request: Request) {
 
     const service = createServiceRoleClient()
 
-    const { data: profile } = await service
-      .from("profiles")
-      .select("company_id, profile_type, status")
-      .eq("id", event.solicitante_id_externo)
-      .maybeSingle()
+    const recipient = await resolveWebhookRecipient(
+      service,
+      event.solicitante_id_externo,
+      event.tenant_id_externo,
+    )
 
-    if (
-      !profile?.company_id ||
-      profile.status !== "active" ||
-      profile.company_id !== event.tenant_id_externo
-    ) {
+    if (!recipient.ok) {
       console.error("support webhook: recipient profile not found or mismatch", {
-        solicitante_id_externo: event.solicitante_id_externo,
-        tenant_id_externo: event.tenant_id_externo,
+        reason: recipient.reason,
+        ...recipient.logContext,
       })
-      return NextResponse.json({ ok: true })
+      return NextResponse.json(
+        {
+          error: "Recipient not found",
+          code: recipient.reason,
+        },
+        { status: 422 },
+      )
     }
 
     const notification = buildSupportWebhookNotification(event)
 
     const inserted = await createNotification(
       {
-        userId: event.solicitante_id_externo,
-        companyId: event.tenant_id_externo,
+        userId: recipient.userId,
+        companyId: recipient.companyId,
         type: notification.type,
         title: notification.title,
         body: notification.body,

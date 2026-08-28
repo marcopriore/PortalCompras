@@ -17,6 +17,13 @@ const PUBLIC_FORNECEDOR_ROUTES = [
   "/fornecedor/alterar-senha",
 ] as const
 
+/** API servidor-a-servidor — sem sessão; autenticação no próprio handler. */
+const SERVER_TO_SERVER_API_ROUTES = ["/api/support/webhook"] as const
+
+function isServerToServerApiPath(pathname: string): boolean {
+  return SERVER_TO_SERVER_API_ROUTES.some((route) => pathname === route)
+}
+
 function isPublicFornecedorPath(pathname: string): boolean {
   return PUBLIC_FORNECEDOR_ROUTES.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
@@ -52,6 +59,11 @@ function redirectWithSessionCookies(
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+
+  if (isServerToServerApiPath(pathname)) {
+    return NextResponse.next()
+  }
+
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set("x-pathname", pathname)
 
@@ -232,5 +244,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
+  // Rotas de página autenticadas; /api/* fica fora do proxy (auth por rota).
+  // Se incluir /api no matcher, manter SERVER_TO_SERVER_API_ROUTES excluídas.
   matcher: ["/comprador/:path*", "/fornecedor/:path*", "/admin/:path*", "/login"],
 }
