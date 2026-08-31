@@ -65,6 +65,7 @@ import {
   CheckCircle,
   XCircle,
   Package,
+  Store,
 } from "lucide-react"
 import { ContractImportExcelDialog } from "@/components/comprador/contract-import-excel-dialog"
 import { CreatePoFromContractDialog } from "@/components/comprador/create-po-from-contract-dialog"
@@ -266,6 +267,7 @@ export default function ContratoPage({
   const [form, setForm] = React.useState<FormState | null>(null)
   const [saving, setSaving] = React.useState(false)
   const [sendingForAcceptance, setSendingForAcceptance] = React.useState(false)
+  const [catalogToggling, setCatalogToggling] = React.useState(false)
   const [createPoOpen, setCreatePoOpen] = React.useState(false)
   const [uploading, setUploading] = React.useState(false)
   const [generatingPdf, setGeneratingPdf] = React.useState(false)
@@ -327,6 +329,7 @@ export default function ContratoPage({
     isSuperAdmin
   const canEditContract = canWrite("contract.edit") || isSuperAdmin
   const canCreateOrder = canWrite("order.create") || isSuperAdmin
+  const purchaseCatalogEnabled = hasFeature("purchase_catalog") || isSuperAdmin
 
   function showConfirm(
     title: string,
@@ -571,6 +574,48 @@ export default function ContratoPage({
         }
       },
     )
+  }
+
+  async function handleCatalogAvailability(available: boolean) {
+    if (!contract || !canEditContract) return
+
+    const title = available
+      ? "Disponibilizar para Catálogo"
+      : "Retirar do Catálogo"
+    const description = available
+      ? "Os itens deste contrato passarão a aparecer no catálogo de compras. Deseja continuar?"
+      : "Os itens deste contrato deixarão de aparecer no catálogo de compras. Deseja continuar?"
+
+    showConfirm(title, description, async () => {
+      setCatalogToggling(true)
+      try {
+        const res = await fetch(`/api/contracts/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ catalog_available: available }),
+        })
+        const data = (await res.json()) as {
+          contract?: Contract
+          error?: string
+        }
+        if (!res.ok) {
+          toast.error(data.error ?? "Não foi possível atualizar o catálogo.")
+          return
+        }
+        if (data.contract) {
+          setContract(data.contract)
+        } else {
+          await loadContract()
+        }
+        toast.success(
+          available
+            ? "Contrato disponibilizado no catálogo."
+            : "Contrato retirado do catálogo.",
+        )
+      } finally {
+        setCatalogToggling(false)
+      }
+    })
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1078,6 +1123,11 @@ export default function ContratoPage({
                     {CONTRACT_STATUSES.find((s) => s.value === contract.status)
                       ?.label ?? contract.status}
                   </Badge>
+                  {purchaseCatalogEnabled && contract.catalog_available ? (
+                    <Badge variant="outline" className="text-xs">
+                      No Catálogo
+                    </Badge>
+                  ) : null}
                 </div>
                 <h1 className="text-2xl font-semibold tracking-tight mt-1">
                   {contract.title}
@@ -1111,6 +1161,37 @@ export default function ContratoPage({
               >
                 <Package className="h-4 w-4" />
                 Criar Pedido
+              </Button>
+            ) : null}
+            {purchaseCatalogEnabled &&
+            contract.status === "active" &&
+            canEditContract &&
+            !contract.catalog_available ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleCatalogAvailability(true)}
+                disabled={catalogToggling}
+                className="gap-1.5"
+              >
+                <Store className="h-4 w-4" />
+                {catalogToggling ? "Salvando..." : "Disponibilizar para Catálogo"}
+              </Button>
+            ) : null}
+            {purchaseCatalogEnabled &&
+            contract.catalog_available &&
+            canEditContract ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleCatalogAvailability(false)}
+                disabled={catalogToggling}
+                className="gap-1.5"
+              >
+                <Store className="h-4 w-4" />
+                {catalogToggling ? "Salvando..." : "Retirar do Catálogo"}
               </Button>
             ) : null}
             {contract.status !== "cancelled" &&

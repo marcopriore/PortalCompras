@@ -64,6 +64,7 @@ function normalizeFilterArray(values?: string[]): string[] | null {
 
 export type CatalogOffersBuildOptions = {
   search?: string
+  contractSearch?: string
   commodityGroups?: string[]
   supplierIds?: string[]
   offset?: number
@@ -87,6 +88,7 @@ export async function buildCatalogOffers(
   const offset = Math.max(0, options?.offset ?? 0)
   const limit = options?.limit ?? 18
   const search = options?.search?.trim() || null
+  const contractSearch = options?.contractSearch?.trim() || null
   const commodityGroups = normalizeFilterArray(options?.commodityGroups)
   const supplierIds = normalizeFilterArray(options?.supplierIds)
 
@@ -99,6 +101,7 @@ export async function buildCatalogOffers(
       p_supplier_ids: supplierIds,
       p_offset: offset,
       p_limit: limit,
+      p_contract_search: contractSearch,
     },
   )
 
@@ -121,6 +124,7 @@ export async function buildCatalogOffers(
         p_search: search,
         p_commodity_groups: commodityGroups,
         p_supplier_ids: supplierIds,
+        p_contract_search: contractSearch,
       },
     )
 

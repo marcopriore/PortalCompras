@@ -60,6 +60,7 @@ function makeContract(
     payment_condition_description: null,
     contract_terms: null,
     erp_code: null,
+    catalog_available: overrides.catalog_available ?? false,
     quotation_id: overrides.quotation_id ?? null,
     file_url: null,
     notes: null,

@@ -39,6 +39,7 @@ import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-paginati
 import { TableRowActions } from "@/components/ui/table-row-actions"
 import { AttachmentFileList } from "@/components/support/attachment-file-list"
 import { CharacterCounter } from "@/components/support/character-counter"
+import { useTenant } from "@/contexts/tenant-context"
 import { exportSupportTicketsExcel } from "@/lib/axisdesk/export-support-tickets"
 import {
   applySupportListFilters,
@@ -103,6 +104,9 @@ export function SupportPage({ portal }: SupportPageProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const { companyId } = useTenant()
+  const companyIdRef = React.useRef(companyId)
+  companyIdRef.current = companyId
   const detailBase =
     portal === "comprador" ? "/comprador/suporte" : "/solicitante/suporte"
 
@@ -168,46 +172,70 @@ export function SupportPage({ portal }: SupportPageProps) {
     return () => window.clearTimeout(timer)
   }, [qDraft, filters.q])
 
-  const loadTickets = React.useCallback(async (silent = false) => {
-    if (!silent) setLoading(true)
-    else setRefreshing(true)
-    try {
-      const res = await fetch("/api/support/tickets", { cache: "no-store" })
-      const payload = (await res.json()) as {
-        data?: AxisDeskChamado[]
-        error?: string
-      }
-      if (!res.ok) {
-        toast.error(payload.error ?? "Erro ao carregar chamados.")
+  const loadTickets = React.useCallback(
+    async (silent = false) => {
+      if (!companyId) {
         setTickets([])
+        setLoading(false)
+        setRefreshing(false)
         return
       }
-      setTickets(payload.data ?? [])
-    } catch {
-      toast.error("Erro ao carregar chamados.")
-      setTickets([])
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
+      const started = companyId
+      const stillHere = () => companyIdRef.current === started
+
+      if (!silent) setLoading(true)
+      else setRefreshing(true)
+      try {
+        const res = await fetch("/api/support/tickets", { cache: "no-store" })
+        const payload = (await res.json()) as {
+          data?: AxisDeskChamado[]
+          error?: string
+        }
+        if (!stillHere()) return
+        if (!res.ok) {
+          toast.error(payload.error ?? "Erro ao carregar chamados.")
+          setTickets([])
+          return
+        }
+        setTickets(payload.data ?? [])
+      } catch {
+        if (!stillHere()) return
+        toast.error("Erro ao carregar chamados.")
+        setTickets([])
+      } finally {
+        if (stillHere()) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+      }
+    },
+    [companyId],
+  )
 
   const loadFilterCategorias = React.useCallback(async () => {
+    if (!companyId) {
+      setFilterCategorias([])
+      return
+    }
+    const started = companyId
+    const stillHere = () => companyIdRef.current === started
     try {
       const res = await fetch("/api/support/categorias", { cache: "no-store" })
       const payload = (await res.json()) as {
         data?: AxisDeskCategoria[]
         error?: string
       }
+      if (!stillHere()) return
       if (!res.ok) {
         setFilterCategorias([])
         return
       }
       setFilterCategorias(payload.data ?? [])
     } catch {
+      if (!stillHere()) return
       setFilterCategorias([])
     }
-  }, [])
+  }, [companyId])
 
   const loadCreateCategorias = React.useCallback(async (tipo: AxisDeskChamadoTipo) => {
     setCreateCategoriasLoading(true)
@@ -234,9 +262,18 @@ export function SupportPage({ portal }: SupportPageProps) {
   }, [])
 
   React.useEffect(() => {
+    setTickets([])
+    setFilterCategorias([])
+    setCreateOpen(false)
+    setCreateForm(INITIAL_CREATE_FORM)
+    if (!companyId) {
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
     void loadTickets()
     void loadFilterCategorias()
-  }, [loadTickets, loadFilterCategorias])
+  }, [companyId, loadTickets, loadFilterCategorias])
 
   React.useEffect(() => {
     if (!createOpen) return

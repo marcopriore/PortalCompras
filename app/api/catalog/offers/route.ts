@@ -38,6 +38,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const search = searchParams.get("search") ?? undefined
+    const contractSearch = searchParams.get("contract_search") ?? undefined
     const commodityGroups = searchParams.getAll("commodity_group").filter(Boolean)
     const supplierIds = searchParams.getAll("supplier_id").filter(Boolean)
 
@@ -53,6 +54,7 @@ export async function GET(request: Request) {
 
     const result = await buildCatalogOffers(db, ctx.companyId, {
       search,
+      contractSearch,
       commodityGroups,
       supplierIds,
       offset,

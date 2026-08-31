@@ -30,6 +30,7 @@ const baseContract: Contract = {
   payment_condition_description: null,
   contract_terms: null,
   erp_code: null,
+  catalog_available: false,
   quotation_id: null,
   file_url: null,
   notes: null,

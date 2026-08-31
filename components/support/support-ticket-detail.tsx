@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import {
   ArrowLeft,
   ChevronRight,
@@ -26,6 +27,7 @@ import type {
   AxisDeskChamadoDetalhe,
   AxisDeskChamadoStatus,
 } from "@/lib/axisdesk/types"
+import { useTenant } from "@/contexts/tenant-context"
 import {
   AXISDESK_MAX_TEXTO,
   filesToAnexos,
@@ -75,7 +77,11 @@ function getAvailableActions(
 }
 
 export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailProps) {
+  const router = useRouter()
   const listHref = portal === "comprador" ? "/comprador/suporte" : "/solicitante/suporte"
+  const { companyId } = useTenant()
+  const companyIdRef = React.useRef(companyId)
+  companyIdRef.current = companyId
 
   const [ticket, setTicket] = React.useState<AxisDeskChamadoDetalhe | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -89,6 +95,15 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
 
   const loadTicket = React.useCallback(
     async (silent = false) => {
+      if (!companyId) {
+        setTicket(null)
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
+      const started = companyId
+      const stillHere = () => companyIdRef.current === started
+
       if (!silent) setLoading(true)
       else setRefreshing(true)
       try {
@@ -99,6 +114,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
           data?: AxisDeskChamadoDetalhe
           error?: string
         }
+        if (!stillHere()) return
         if (!res.ok) {
           toast.error(payload.error ?? "Erro ao carregar chamado.")
           if (!silent) setTicket(null)
@@ -106,19 +122,42 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
         }
         setTicket(payload.data ?? null)
       } catch {
+        if (!stillHere()) return
         toast.error("Erro ao carregar chamado.")
         if (!silent) setTicket(null)
       } finally {
-        setLoading(false)
-        setRefreshing(false)
+        if (stillHere()) {
+          setLoading(false)
+          setRefreshing(false)
+        }
       }
     },
-    [ticketId],
+    [ticketId, companyId],
   )
 
+  const prevCompanyIdRef = React.useRef<string | null>(null)
+
   React.useEffect(() => {
+    if (!companyId) {
+      setTicket(null)
+      setLoading(false)
+      setRefreshing(false)
+      return
+    }
+    if (
+      prevCompanyIdRef.current &&
+      prevCompanyIdRef.current !== companyId
+    ) {
+      prevCompanyIdRef.current = companyId
+      router.replace(listHref)
+      return
+    }
+    prevCompanyIdRef.current = companyId
+    setTicket(null)
+    setActionMessage("")
+    setActionAnexos([])
     void loadTicket()
-  }, [loadTicket])
+  }, [companyId, loadTicket, listHref, router])
 
   const handleExecuteAction = async (acao: AxisDeskChamadoAcao) => {
     if (!ticket) return

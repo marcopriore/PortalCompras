@@ -126,7 +126,8 @@ export async function resolveCartOfferLine(
         contract_kind,
         supplier_id,
         start_date,
-        end_date
+        end_date,
+        catalog_available
       )
     `,
     )
@@ -146,6 +147,7 @@ export async function resolveCartOfferLine(
           supplier_id: string
           start_date: string | null
           end_date: string | null
+          catalog_available: boolean
         }
       | Array<{
           id: string
@@ -155,6 +157,7 @@ export async function resolveCartOfferLine(
           supplier_id: string
           start_date: string | null
           end_date: string | null
+          catalog_available: boolean
         }>
       | null,
   )
@@ -177,6 +180,8 @@ export async function resolveCartOfferLine(
   }
 
   if (item.eliminated || !item.material_code?.trim()) return null
+
+  if (!contract.catalog_available) return null
 
   if (
     !isContractEligibleForPurchaseOrder({

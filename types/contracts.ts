@@ -105,6 +105,7 @@ export interface Contract {
   payment_condition_description: string | null
   contract_terms: string | null
   erp_code: string | null
+  catalog_available: boolean
   quotation_id: string | null
   file_url: string | null
   notes: string | null
@@ -200,6 +201,7 @@ export function contractFromRow(row: unknown): Contract {
       : null,
     contract_terms: r.contract_terms ? String(r.contract_terms) : null,
     erp_code: r.erp_code ? String(r.erp_code) : null,
+    catalog_available: Boolean(r.catalog_available ?? false),
     quotation_id: r.quotation_id ? String(r.quotation_id) : null,
     file_url: r.file_url ? String(r.file_url) : null,
     notes: r.notes ? String(r.notes) : null,

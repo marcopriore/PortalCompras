@@ -211,6 +211,39 @@ export async function PATCH(request: Request, context: RouteCtx) {
       patch.erp_code =
         body.erp_code === null ? null : String(body.erp_code)
     }
+    if (body.catalog_available !== undefined) {
+      if (typeof body.catalog_available !== "boolean") {
+        return NextResponse.json(
+          { error: "Invalid catalog_available" },
+          { status: 400 },
+        )
+      }
+      if (body.catalog_available) {
+        const { data: current, error: fetchError } = await ctx.supabase
+          .from("contracts")
+          .select("status")
+          .eq("id", id)
+          .eq("company_id", ctx.companyId)
+          .maybeSingle()
+
+        if (fetchError) {
+          return NextResponse.json({ error: fetchError.message }, { status: 500 })
+        }
+        if (!current) {
+          return NextResponse.json({ error: "Not found" }, { status: 404 })
+        }
+        if (current.status !== "active") {
+          return NextResponse.json(
+            {
+              error:
+                "Somente contratos ativos podem ser disponibilizados no catálogo.",
+            },
+            { status: 400 },
+          )
+        }
+      }
+      patch.catalog_available = body.catalog_available
+    }
 
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 })

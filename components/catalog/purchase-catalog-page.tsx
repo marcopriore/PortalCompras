@@ -67,6 +67,7 @@ function buildOffersQueryParams(
   offset: number,
   includeFacets: boolean,
   debouncedSearch: string,
+  debouncedContractSearch: string,
   groupFilter: string[],
   supplierFilter: string[],
 ) {
@@ -75,6 +76,9 @@ function buildOffersQueryParams(
   params.set("limit", String(CATALOG_PAGE_SIZE))
   if (includeFacets) params.set("include_facets", "1")
   if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim())
+  if (debouncedContractSearch.trim()) {
+    params.set("contract_search", debouncedContractSearch.trim())
+  }
   for (const group of groupFilter) {
     if (group.trim()) params.append("commodity_group", group)
   }
@@ -118,6 +122,8 @@ export function PurchaseCatalogPage({
   const [initialCartLoaded, setInitialCartLoaded] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const debouncedSearch = useDebouncedValue(search, 350)
+  const [contractSearch, setContractSearch] = React.useState("")
+  const debouncedContractSearch = useDebouncedValue(contractSearch, 350)
   const [groupFilter, setGroupFilter] = React.useState<string[]>([])
   const [supplierFilter, setSupplierFilter] = React.useState<string[]>([])
   const [cartOpen, setCartOpen] = React.useState(false)
@@ -158,6 +164,7 @@ export function PurchaseCatalogPage({
           offset,
           mode === "replace",
           debouncedSearch,
+          debouncedContractSearch,
           groupFilter,
           supplierFilter,
         )
@@ -200,7 +207,7 @@ export function PurchaseCatalogPage({
         }
       }
     },
-    [companyId, canBrowse, debouncedSearch, groupFilter, supplierFilter],
+    [companyId, canBrowse, debouncedSearch, debouncedContractSearch, groupFilter, supplierFilter],
   )
 
   React.useEffect(() => {
@@ -536,10 +543,17 @@ export function PurchaseCatalogPage({
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar item, contrato ou fornecedor..."
+            placeholder="Buscar item ou fornecedor..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
+          />
+        </div>
+        <div className="w-48">
+          <Input
+            placeholder="Nº contrato (Valore/ERP)"
+            value={contractSearch}
+            onChange={(e) => setContractSearch(e.target.value)}
           />
         </div>
         <MultiSelectFilter
