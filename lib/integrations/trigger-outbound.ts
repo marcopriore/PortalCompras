@@ -15,6 +15,8 @@ import {
 } from "@/lib/api/external/mappers/requisition"
 import { dispatchOutboundIntegration } from "@/lib/integrations/dispatch"
 import { integrateContractWithErp } from "@/lib/integrations/integrate-contract-with-erp"
+import { applyImplantationToPurchaseOrderPayload } from "@/lib/integrations/purchase-order-outbound"
+import { loadImplantationConfig } from "@/lib/settings/tenant-implantation-settings"
 import type { OutboundIntegrationAction } from "@/lib/integrations/types"
 import type { RequisitionOutboundPayload } from "@/lib/integrations/requisition-outbound"
 
@@ -80,7 +82,9 @@ export async function loadPurchaseOrderOutboundPayload(
     .eq("purchase_order_id", orderId)
     .order("material_code", { ascending: true })
 
-  return mapPurchaseOrderToApi(row, (items ?? []) as unknown as PurchaseOrderItemRow[])
+  const mapped = mapPurchaseOrderToApi(row, (items ?? []) as unknown as PurchaseOrderItemRow[])
+  const implantation = await loadImplantationConfig(service, companyId)
+  return applyImplantationToPurchaseOrderPayload(mapped, implantation)
 }
 
 export type TriggerOutboundResult = {
@@ -98,6 +102,12 @@ export async function triggerOutboundIntegration(
 ): Promise<TriggerOutboundResult> {
   const enabled = await isTenantFeatureEnabled(companyId, "api_integrations")
   if (!enabled) {
+    return { skipped: true, dispatched: false }
+  }
+
+  const service = createServiceRoleClient()
+  const implantation = await loadImplantationConfig(service, companyId)
+  if (!implantation.erpIntegrationEnabled) {
     return { skipped: true, dispatched: false }
   }
 

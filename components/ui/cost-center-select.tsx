@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { cn } from "@/lib/utils"
 
 export type CostCenterOption = {
   id: string
@@ -24,6 +25,9 @@ type CostCenterSelectProps = {
   required?: boolean
   disabled?: boolean
   label?: string
+  hideLabel?: boolean
+  triggerClassName?: string
+  invalid?: boolean
   /** Carrega também inativos (útil na edição se o CC atual estiver inativo). */
   includeInactiveCodes?: string[]
   className?: string
@@ -36,6 +40,9 @@ export function CostCenterSelect({
   required = false,
   disabled = false,
   label = "Centro de Custo",
+  hideLabel = false,
+  triggerClassName,
+  invalid = false,
   includeInactiveCodes = [],
   className,
 }: CostCenterSelectProps) {
@@ -85,17 +92,24 @@ export function CostCenterSelect({
   }, [companyId, includeInactiveCodes.join("|")])
 
   return (
-    <div className={className ?? "space-y-2"}>
-      <Label>
-        {label}
-        {required ? " *" : ""}
-      </Label>
+    <div className={className ?? (hideLabel ? "space-y-0" : "space-y-2")}>
+      {!hideLabel ? (
+        <Label>
+          {label}
+          {required ? " *" : ""}
+        </Label>
+      ) : null}
       <Select
         value={value || undefined}
         onValueChange={onChange}
         disabled={disabled || loading || options.length === 0}
       >
-        <SelectTrigger>
+        <SelectTrigger
+          className={cn(
+            triggerClassName,
+            invalid && "border-destructive focus:ring-destructive",
+          )}
+        >
           <SelectValue
             placeholder={
               loading

@@ -24,6 +24,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { Input } from "@/components/ui/input"
+import { PercentInput, PriceInput, QuantityInput } from "@/components/ui/numeric-field-inputs"
+import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -267,6 +269,7 @@ export default function FornecedorCotacaoPropostaPage({
 }) {
   const { id: quotationId } = React.use(params)
   const { userId, supplierId, loading: userLoading } = useUser()
+  const { maxQuantity, priceDecimalPlaces, percentDecimalPlaces } = useNumericLimits()
 
   const [loading, setLoading] = React.useState(true)
   const [loadError, setLoadError] = React.useState<string | null>(null)
@@ -311,7 +314,7 @@ export default function FornecedorCotacaoPropostaPage({
   const [selectedItemIds, setSelectedItemIds] = React.useState<Set<string>>(
     () => new Set(),
   )
-  const [globalDiscount, setGlobalDiscount] = React.useState("")
+  const [globalDiscount, setGlobalDiscount] = React.useState(0)
   const [importWizardOpen, setImportWizardOpen] = React.useState(false)
 
   const refreshProposalForRound = React.useCallback(
@@ -523,7 +526,7 @@ export default function FornecedorCotacaoPropostaPage({
   React.useEffect(() => {
     setItemPage(1)
     setSelectedItemIds(new Set())
-    setGlobalDiscount("")
+    setGlobalDiscount(0)
     setShowSubmitWarning(false)
     setSubmitWarningCount(0)
   }, [selectedRoundId])
@@ -683,7 +686,7 @@ export default function FornecedorCotacaoPropostaPage({
 
   const applyGlobalDiscount = React.useCallback(() => {
     if (!canEditActiveForm) return
-    const pct = Number.parseFloat(globalDiscount)
+    const pct = globalDiscount
     if (Number.isNaN(pct) || pct < 0 || pct > 100) return
     let updatedCount = 0
     setItemRows((prev) =>
@@ -1162,14 +1165,11 @@ export default function FornecedorCotacaoPropostaPage({
                   <label className="text-sm text-muted-foreground whitespace-nowrap">
                     % Desconto
                   </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.01}
+                  <PercentInput
                     value={globalDiscount}
-                    onChange={(e) => setGlobalDiscount(e.target.value)}
-                    className="w-20 h-9 border border-border rounded-md bg-background px-2 text-sm text-foreground"
+                    decimalPlaces={percentDecimalPlaces}
+                    onValueChange={setGlobalDiscount}
+                    className="w-20 h-9"
                     placeholder="0"
                   />
                   <Button
@@ -1287,19 +1287,14 @@ export default function FornecedorCotacaoPropostaPage({
                   </td>
                   <td className="px-2 py-3 text-right tabular-nums">{qty}</td>
                   <td className="px-2 py-3">
-                    <Input
-                      type="number"
-                      min={1}
-                      step={1}
-                      className={cn(
-                        "w-24",
-                        priceDisabled && readOnlyFieldClass,
-                      )}
+                    <QuantityInput
+                      className={cn("w-24", priceDisabled && readOnlyFieldClass)}
                       disabled={priceDisabled}
-                      value={row.delivery_days ?? ""}
-                      onChange={(e) =>
+                      value={row.delivery_days ?? 0}
+                      maxQuantity={9999}
+                      onValueChange={(val) =>
                         updateItemRow(qi.id, {
-                          delivery_days: e.target.value ? Math.max(1, Number(e.target.value)) : null,
+                          delivery_days: val > 0 ? val : null,
                         })
                       }
                     />
@@ -1314,18 +1309,13 @@ export default function FornecedorCotacaoPropostaPage({
                     )}
                   </td>
                   <td className="px-2 py-3">
-                    <Input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      className={cn(
-                        "w-28",
-                        priceDisabled && readOnlyFieldClass,
-                      )}
+                    <PriceInput
+                      className={cn("w-28", priceDisabled && readOnlyFieldClass)}
                       disabled={priceDisabled}
                       value={row.unit_price}
-                      onChange={(e) =>
-                        updateItemRow(qi.id, { unit_price: Number(e.target.value) || 0 })
+                      decimalPlaces={priceDecimalPlaces}
+                      onValueChange={(val) =>
+                        updateItemRow(qi.id, { unit_price: val })
                       }
                     />
                     {changedVsPrevious ? (
@@ -1341,19 +1331,13 @@ export default function FornecedorCotacaoPropostaPage({
                     ) : null}
                   </td>
                   <td className="px-2 py-3">
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={0.01}
-                      className={cn(
-                        "w-24",
-                        priceDisabled && readOnlyFieldClass,
-                      )}
+                    <PercentInput
+                      className={cn("w-24", priceDisabled && readOnlyFieldClass)}
                       disabled={priceDisabled}
-                      value={row.tax_percent || ""}
-                      onChange={(e) =>
-                        updateItemRow(qi.id, { tax_percent: Number(e.target.value) || 0 })
+                      value={row.tax_percent}
+                      decimalPlaces={percentDecimalPlaces}
+                      onValueChange={(val) =>
+                        updateItemRow(qi.id, { tax_percent: val })
                       }
                     />
                   </td>

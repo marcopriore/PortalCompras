@@ -21,6 +21,8 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { PriceInput, QuantityInput } from "@/components/ui/numeric-field-inputs"
+import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -258,6 +260,7 @@ export default function ContratoPage({
   const { companyId } = useTenant()
   const { hasFeature, hasPermission, canWrite, loading: permissionsLoading } = usePermissions()
   const contractBalanceEnabled = hasFeature("contract_balance") || isSuperAdmin
+  const { maxQuantity, priceDecimalPlaces } = useNumericLimits()
 
   const [contract, setContract] = React.useState<Contract | null>(null)
   const [responsibleName, setResponsibleName] = React.useState("—")
@@ -1921,24 +1924,15 @@ export default function ContratoPage({
                             </TableCell>
                             <TableCell className="text-right">
                               {canEditLine ? (
-                                <Input
+                                <QuantityInput
                                   className="h-7 w-20 text-xs text-right"
-                                  type="number"
-                                  min={0.0001}
-                                  step="any"
                                   value={item.quantity_contracted}
-                                  onChange={(e) => {
-                                    const n = parseFloat(e.target.value)
+                                  maxQuantity={maxQuantity}
+                                  onValueChange={(val) => {
                                     setEditItems((prev) =>
                                       prev.map((x) =>
                                         x.id === item.id
-                                          ? {
-                                              ...x,
-                                              quantity_contracted:
-                                                Number.isFinite(n) && n > 0
-                                                  ? n
-                                                  : x.quantity_contracted,
-                                            }
+                                          ? { ...x, quantity_contracted: val }
                                           : x,
                                       ),
                                     )
@@ -1952,25 +1946,14 @@ export default function ContratoPage({
                             </TableCell>
                             <TableCell className="text-right">
                               {canEditLine ? (
-                                <Input
+                                <PriceInput
                                   className="h-7 w-24 text-xs text-right"
-                                  type="number"
-                                  min={0}
-                                  step="any"
                                   value={item.unit_price}
-                                  onChange={(e) => {
-                                    const n = parseFloat(e.target.value)
+                                  decimalPlaces={priceDecimalPlaces}
+                                  onValueChange={(val) => {
                                     setEditItems((prev) =>
                                       prev.map((x) =>
-                                        x.id === item.id
-                                          ? {
-                                              ...x,
-                                              unit_price:
-                                                Number.isFinite(n) && n >= 0
-                                                  ? n
-                                                  : x.unit_price,
-                                            }
-                                          : x,
+                                        x.id === item.id ? { ...x, unit_price: val } : x,
                                       ),
                                     )
                                   }}
@@ -1983,32 +1966,17 @@ export default function ContratoPage({
                             </TableCell>
                             <TableCell className="text-right">
                               {canEditLine ? (
-                                <Input
+                                <QuantityInput
                                   className="h-7 w-20 text-xs text-right"
-                                  type="number"
-                                  min={0}
-                                  value={
-                                    item.delivery_days == null
-                                      ? ""
-                                      : item.delivery_days
-                                  }
-                                  onChange={(e) => {
-                                    const v = e.target.value
-                                    const n =
-                                      v === ""
-                                        ? null
-                                        : parseInt(v, 10)
+                                  value={item.delivery_days ?? 0}
+                                  maxQuantity={9999}
+                                  onValueChange={(val) => {
                                     setEditItems((prev) =>
                                       prev.map((x) =>
                                         x.id === item.id
                                           ? {
                                               ...x,
-                                              delivery_days:
-                                                v === ""
-                                                  ? null
-                                                  : Number.isNaN(n)
-                                                    ? x.delivery_days
-                                                    : n,
+                                              delivery_days: val > 0 ? val : null,
                                             }
                                           : x,
                                       ),

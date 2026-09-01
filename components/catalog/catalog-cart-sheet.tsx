@@ -22,6 +22,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
+import { clampQuantity } from "@/lib/validation/numeric-input"
+import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("pt-BR", {
@@ -55,12 +57,14 @@ function CartQuantityInput({
   quantity,
   syncing,
   disabled,
+  maxQuantity,
   onQuantityChange,
 }: {
   itemId: string
   quantity: number
   syncing: boolean
   disabled?: boolean
+  maxQuantity: number
   onQuantityChange: (itemId: string, quantity: number) => void
 }) {
   const [draft, setDraft] = React.useState(String(quantity))
@@ -73,11 +77,12 @@ function CartQuantityInput({
   const commitDraft = () => {
     const parsed = Number(draft.replace(",", "."))
     if (!Number.isFinite(parsed) || parsed < 1) {
-      setDraft(String(Math.max(1, quantity)))
-      if (quantity < 1) onQuantityChange(itemId, 1)
+      const fallback = clampQuantity(Math.max(1, quantity), maxQuantity)
+      setDraft(String(fallback))
+      if (quantity !== fallback) onQuantityChange(itemId, fallback)
       return
     }
-    const next = Math.floor(parsed)
+    const next = clampQuantity(Math.floor(parsed), maxQuantity)
     setDraft(String(next))
     if (next !== quantity) onQuantityChange(itemId, next)
   }
@@ -89,7 +94,9 @@ function CartQuantityInput({
         variant="ghost"
         size="icon"
         className="h-8 w-8 rounded-none rounded-l-lg"
-        onClick={() => onQuantityChange(itemId, Math.max(1, quantity - 1))}
+        onClick={() =>
+          onQuantityChange(itemId, clampQuantity(Math.max(1, quantity - 1), maxQuantity))
+        }
         disabled={disabled || syncing || quantity <= 1}
       >
         <Minus className="h-3.5 w-3.5" />
@@ -107,12 +114,12 @@ function CartQuantityInput({
             commitDraft()
           }}
           onChange={(e) => {
-            const raw = e.target.value.replace(/[^\d]/g, "")
+            const raw = e.target.value.replace(/[^\d]/g, "").slice(0, 7)
             setDraft(raw)
             if (raw === "") return
             const next = Number(raw)
             if (!Number.isFinite(next) || next < 1) return
-            onQuantityChange(itemId, next)
+            onQuantityChange(itemId, clampQuantity(next, maxQuantity))
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur()
@@ -134,8 +141,10 @@ function CartQuantityInput({
         variant="ghost"
         size="icon"
         className="h-8 w-8 rounded-none rounded-r-lg"
-        onClick={() => onQuantityChange(itemId, quantity + 1)}
-        disabled={disabled || syncing}
+        onClick={() =>
+          onQuantityChange(itemId, clampQuantity(quantity + 1, maxQuantity))
+        }
+        disabled={disabled || syncing || quantity >= maxQuantity}
       >
         <Plus className="h-3.5 w-3.5" />
       </Button>
@@ -166,6 +175,7 @@ export function CatalogCartSheet({
   onRemove,
   onQuantityChange,
 }: CatalogCartSheetProps) {
+  const { maxQuantity } = useNumericLimits()
   const supplierGroups = React.useMemo(
     () => groupBySupplier(cart.items),
     [cart.items],
@@ -264,6 +274,7 @@ export function CatalogCartSheet({
                               itemId={item.id}
                               quantity={item.quantity}
                               syncing={syncing}
+                              maxQuantity={maxQuantity}
                               onQuantityChange={onQuantityChange}
                             />
                             <div className="text-right">

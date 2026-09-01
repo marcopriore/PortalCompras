@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.109
+- Versão atual: v2.19.110
 
 ---
 
@@ -56,7 +56,8 @@
 - Tabela genérica de configurações por tenant: `company_id`, `key`, `value` (text)
 - Upsert: `onConflict: "company_id,key"`
 - **Comprador:** `lead_time_target_days`, `contract_po_link_prompt_enabled`, etc. (`/comprador/configuracoes`)
-- **Superadmin (técnicas):** registry em `lib/settings/tenant-settings-registry.ts` — polling, cache IA, score, alertas contrato, cooldown proxy; UI em `/admin/tenants/[id]` → Configurações
+- **Superadmin (técnicas):** registry em `lib/settings/tenant-settings-registry.ts` — polling, cache IA, score, alertas contrato, cooldown proxy, **limites numéricos** (`numeric_quantity_max_digits`, `numeric_price_decimal_places`); UI em `/admin/tenants/[id]` → Configurações
+- **Superadmin (negócio / implantação):** registry em `lib/settings/tenant-feature-settings-registry.ts` — classificação/rateio, POR, ERP outbound, `erp_vendor`; mesma UI admin; hook `useTenantFeatureConfig()` (alias `useImplantationConfig()`); doc **`docs/CONFIGURACOES-TENANT-NEGOCIO.md`**
 - **Score fornecedor:** `score_weight_price` — peso Preço (padrão 40%); editável no admin tenant
 
 ### Qualidade de código
@@ -144,7 +145,9 @@
 | notification_preferences | user_id, company_id, campos legados + `*_bell` e `*_email` por tipo |
 | requisitions | status: draft/pending/approved/rejected/in_quotation/awaiting_buyer/awaiting_supplier/completed/cancelled (+ buyer_review legado) |
 | purchase_orders | status: draft/sent/processing/completed/cancelled/refused/error; supplier_id, accepted_at, accepted_by_supplier, estimated_delivery_date, cancellation_reason, delivery_date_change_reason, created_by, quotation_id |
-| purchase_order_items | delivery_days por item |
+| purchase_order_items | delivery_days por item; **price_unit** (POR: 1/10/100/1000/10000); **requisition_item_id**, **source_requisition_code**; classificação contábil por linha |
+| purchase_order_item_account_assignments | Rateio contábil por linha de pedido (migration 066) |
+| requisition_item_account_assignments | Rateio contábil por linha de requisição (migration 070) |
 | items | long_description; **Saving:** `target_price`, `last_purchase_price`, `average_price` |
 | quotation_items | long_description, **source_requisition_code**; preços de referência alinhados ao catálogo quando aplicável |
 | supplier_terms | termos por tenant: `title`, `content`, `version`, `version_date`, `active` (um ativo por empresa) |
@@ -195,6 +198,10 @@
 - **Busca catálogo (itens/fornecedores) em cotações:** `.or(\`campo.ilike.${termo}\`)` — termo no formato `%texto%`, **sem** aspas duplas extras na string do filtro.
 - **Audit log (requisição):** registrar `requisition.created` (criação), `requisition.in_quotation` (vínculo à cotação), `requisition.approved` (liberação após cancelamento da cotação — evento no `audit_logs`, não confundir com fluxo de aprovação manual).
 - **Equalização:** preferências de colunas em `localStorage` key `valore:equalizacao:column_visibility` (sub-opções de preço unitário / benchmark).
+- **POR (pedido):** `total_linha = quantidade × preço_unitário × POR` quando `por_enabled`; exibir com `computePurchaseOrderLineTotal` / `computePoLineTotal` — não confiar só em `total_price` gravado na linha.
+- **Classificação contábil (REQ/PO):** K/F/P/A/X + coletor + rateio; condicional a `account_assignment_enabled`; herança REQ→PO; omitir no outbound ERP se desligado (`applyImplantationToPurchaseOrderPayload`).
+- **Limites numéricos:** `useNumericLimits()` — dígitos em quantidade e casas decimais em preço (tenant); percentual fixo 2 casas.
+- **Aprovações no detalhe:** `EntityApprovalActions` em `/comprador/requisicoes/[id]` e `/comprador/pedidos/[id]` — mesma API `/api/approvals/[id]/decide` da grid.
 
 ---
 
@@ -257,6 +264,22 @@
 - `app/api/contracts/[id]/route.ts`
 - `app/api/contracts/[id]/upload/route.ts`
 - Storage bucket: `contract-files` (público)
+- **Implantação tenant:** `docs/CONFIGURACOES-TENANT-NEGOCIO.md`
+- `lib/settings/tenant-feature-settings-registry.ts`, `lib/settings/tenant-feature-settings.ts`
+- `lib/hooks/use-tenant-feature-config.ts` (`useImplantationConfig` alias)
+- `lib/hooks/use-numeric-limits.ts`
+- `lib/validation/numeric-input.ts`, `lib/purchase-order-line-total.ts`
+- `lib/integrations/purchase-order-outbound.ts`
+- `lib/excel/purchase-order-detail-export.ts`
+- `lib/pdf/purchase-order-pdf-data.ts`
+- `lib/po-account-assignment.ts`, `lib/po-account-assignment-persist.ts`, `lib/requisition-account-assignment-persist.ts`
+- `lib/requisitions/line-items-helpers.ts`, `lib/requisitions/account-config-bridge.ts`
+- `components/ui/numeric-field-inputs.tsx`, `components/ui/required-label.tsx`
+- `components/comprador/entity-approval-actions.tsx`
+- `components/comprador/po-item-account-config-cells.tsx`, `components/comprador/po-account-apportionment-dialog.tsx`
+- `components/requisitions/requisition-line-items-section.tsx`, `requisition-line-items-detail-section.tsx`
+- `app/api/tenant-feature-config/route.ts`
+- `types/po-account-assignment.ts`
 
 ---
 
@@ -391,6 +414,7 @@ node scripts/seed-supplier-axis.mjs --force
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
 | v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
 | v2.19.109 | Categorias unificadas + permissão erp.sync |
+| v2.19.110 | Config tenant negócio (POR, classificação/rateio, limites numéricos), REQ/PO contábil, aprovações no detalhe, fix totais POR, PDF/Excel pedido, RLS superadmin 068–073 |
 | v2.19.108 | Aprovações: fila 1:1 com status real da REQ + RLS superadmin |
 | v2.19.107 | Fix badge/fila Aprovações (sync + API superadmin) |
 | v2.19.106 | Fix resubmeter REQ (superadmin) + portal fornecedor perfil/seed/loading |
@@ -426,6 +450,13 @@ node scripts/seed-supplier-axis.mjs --force
 - `040_api_store.sql` — API keys, integration endpoints/logs, `external_code` em REQ/PO.
 - `041_purchase_order_erp_integration.sql` — `purchase_orders.erp_error_message`.
 - `042_purchase_order_integration_error_status.sql` — status `integration_error` + trigger contrato.
+- `066_purchase_order_account_assignments.sql` — classificação/rateio por linha de pedido.
+- `067_purchase_order_item_requisition_source.sql` — `requisition_item_id`, `source_requisition_code` em PO items.
+- `068_purchase_orders_buyer_superadmin_rls.sql` — RLS pedidos/superadmin cross-tenant.
+- `069_requisitions_insert_superadmin_rls.sql` — insert REQ superadmin com tenant selecionado.
+- `070_requisition_item_account_assignments.sql` — classificação/rateio por linha de requisição.
+- `071_purchase_order_item_price_unit.sql` — coluna `price_unit` (POR).
+- `072_contracts_superadmin_rls.sql`, `073_superadmin_rls_remaining.sql` — RLS superadmin demais tabelas comprador.
 
 ### RLS (referência)
 - **requisitions: requester cancela proprias** — UPDATE: `USING (requester_id = auth.uid() AND status = 'pending')` + `WITH CHECK (status = 'cancelled' …)`.

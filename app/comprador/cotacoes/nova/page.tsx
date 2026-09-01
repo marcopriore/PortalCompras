@@ -11,6 +11,8 @@ import { usePermissions } from '@/lib/hooks/usePermissions'
 import { logAudit } from '@/lib/audit'
 import { SuggestSuppliersButton } from '@/components/comprador/suggest-suppliers-button'
 import { Button } from '@/components/ui/button'
+import { QuantityInput } from '@/components/ui/numeric-field-inputs'
+import { useNumericLimits } from '@/lib/hooks/use-numeric-limits'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -123,6 +125,7 @@ export default function Page() {
 function NovaCotacaoContent() {
   const router = useRouter()
   const { canWrite, loading: permLoading } = usePermissions()
+  const { maxQuantity } = useNumericLimits()
 
   const searchParams = useSearchParams()
   const requisitionId = searchParams.get('requisition_id')
@@ -299,13 +302,9 @@ function NovaCotacaoContent() {
     setItemSearch('')
   }
 
-  const updateItemQuantity = (code: string, value: string) => {
+  const updateItemQuantity = (code: string, quantity: number) => {
     setSelectedItems(prev =>
-      prev.map((i) => {
-        if (i.code !== code) return i
-        const n = Number(value)
-        return { ...i, quantity: Number.isFinite(n) && n > 0 ? n : 1 }
-      }),
+      prev.map((i) => (i.code === code ? { ...i, quantity } : i)),
     )
   }
 
@@ -826,7 +825,12 @@ function NovaCotacaoContent() {
                     </td>
                     <td className="px-2 py-2 align-top">{item.unit_of_measure}</td>
                     <td className="px-2 py-2 align-top">
-                      <Input type="number" min={1} value={item.quantity} onChange={e => updateItemQuantity(item.code, e.target.value)} className="w-20" />
+                      <QuantityInput
+                        value={item.quantity}
+                        maxQuantity={maxQuantity}
+                        onValueChange={(quantity) => updateItemQuantity(item.code, quantity)}
+                        className="w-20"
+                      />
                     </td>
                     <td className="px-2 py-2 align-top text-right">
                       <Button type="button" variant="ghost" size="icon" onClick={() => setSelectedItems(p => p.filter(i => i.code !== item.code))}>

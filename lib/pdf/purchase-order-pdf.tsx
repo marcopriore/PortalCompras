@@ -7,6 +7,7 @@ import {
   Image,
 } from "@react-pdf/renderer"
 import { formatDateBR, formatNowBR } from "@/lib/formato-data"
+import { computePurchaseOrderLineTotal } from "@/lib/purchase-order-line-total"
 
 const PRIMARY = "#4f46e5"
 const GRAY = "#6b7280"
@@ -237,6 +238,7 @@ export type PurchaseOrderPDFItem = {
   quantity: number
   unit_of_measure: string | null
   unit_price: number
+  price_unit: number
   tax_percent: number | null
   total_price: number | null
 }
@@ -255,15 +257,29 @@ type Props = {
   order: PurchaseOrderPDFOrder
   items: PurchaseOrderPDFItem[]
   company: PurchaseOrderPDFCompany
+  porEnabled?: boolean
 }
 
-export function PurchaseOrderPDF({ order, items, company }: Props) {
+function lineTotalForPdf(
+  item: PurchaseOrderPDFItem,
+  porEnabled: boolean,
+): number {
+  return computePurchaseOrderLineTotal(
+    item.quantity,
+    item.unit_price,
+    item.price_unit,
+    porEnabled,
+  )
+}
+
+export function PurchaseOrderPDF({ order, items, company, porEnabled = false }: Props) {
   const companyName = company?.trade_name || company?.name || "Empresa"
   const now = formatNowBR()
 
-  const grandTotal = items.reduce((sum, item) => {
-    return sum + (item.total_price ?? item.quantity * item.unit_price)
-  }, 0)
+  const grandTotal = items.reduce(
+    (sum, item) => sum + lineTotalForPdf(item, porEnabled),
+    0,
+  )
 
   return (
     <Document title={`Pedido ${order.code}`} author={companyName} subject="Pedido de Compra">
@@ -396,7 +412,7 @@ export function PurchaseOrderPDF({ order, items, company }: Props) {
                 {item.tax_percent != null ? `${item.tax_percent}%` : "—"}
               </Text>
               <Text style={[styles.tableCell, styles.colTotal]}>
-                {money.format(item.total_price ?? item.quantity * item.unit_price)}
+                {money.format(lineTotalForPdf(item, porEnabled))}
               </Text>
             </View>
           ))}

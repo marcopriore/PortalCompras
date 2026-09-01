@@ -17,6 +17,8 @@ import {
 } from "@/lib/quotations/ownership"
 import { SuggestSuppliersButton } from "@/components/comprador/suggest-suppliers-button"
 import { Button } from "@/components/ui/button"
+import { QuantityInput } from "@/components/ui/numeric-field-inputs"
+import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
@@ -142,6 +144,7 @@ export default function EditarCotacaoPage({
     hasRole,
     hasPermission,
   })
+  const { maxQuantity } = useNumericLimits()
 
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -411,16 +414,9 @@ export default function EditarCotacaoPage({
     setItemSearch("")
   }
 
-  const updateItemQuantity = (code: string, value: string) => {
+  const updateItemQuantity = (code: string, quantity: number) => {
     setSelectedItems((prev) =>
-      prev.map((i) => {
-        if (i.code !== code) return i
-        const n = Number(value)
-        return {
-          ...i,
-          quantity: Number.isFinite(n) && n > 0 ? n : 1,
-        }
-      }),
+      prev.map((i) => (i.code === code ? { ...i, quantity } : i)),
     )
   }
 
@@ -1004,12 +1000,11 @@ export default function EditarCotacaoPage({
                       {item.unit_of_measure}
                     </td>
                     <td className="px-2 py-2 align-top">
-                      <Input
-                        type="number"
-                        min={1}
+                      <QuantityInput
                         value={item.quantity}
-                        onChange={(e) =>
-                          updateItemQuantity(item.code, e.target.value)
+                        maxQuantity={maxQuantity}
+                        onValueChange={(quantity) =>
+                          updateItemQuantity(item.code, quantity)
                         }
                         className="w-20"
                       />

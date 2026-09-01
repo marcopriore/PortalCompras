@@ -741,7 +741,7 @@ export default function AprovacoesPage() {
                                     {
                                       label: "Ver Detalhes",
                                       icon: Eye,
-                                      href: `/comprador/pedidos/${row.request.entity_id}`,
+                                      href: `/comprador/pedidos/${row.request.entity_id}?from=aprovacoes`,
                                     },
                                     {
                                       label: "Aprovar",
@@ -1040,7 +1040,7 @@ export default function AprovacoesPage() {
                                     {
                                       label: "Ver Detalhes",
                                       icon: Eye,
-                                      href: `/comprador/pedidos/${row.request.entity_id}`,
+                                      href: `/comprador/pedidos/${row.request.entity_id}?from=aprovacoes`,
                                     },
                                     {
                                       label: "Aprovar",

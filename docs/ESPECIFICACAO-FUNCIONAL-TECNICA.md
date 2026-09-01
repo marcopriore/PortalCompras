@@ -1,10 +1,10 @@
 # Valore — Especificação Funcional e Técnica
 
 **Produto:** Portal de Compras (SaaS multi-tenant)  
-**Versão de referência:** v2.19.86 (código + migrations até 047)  
-**Data:** 20/08/2026  
+**Versão de referência:** v2.19.110 (código + migrations até 073)  
+**Data:** 01/09/2026  
 
-Documento consolidado: o que o sistema **é**, o que **faz**, **regras/condicionais** e como está **implementado**. Complementa `SPEC.md` (detalhe operacional) e `HANDOFF.md` (contexto de sessão).
+Documento consolidado: o que o sistema **é**, o que **faz**, **regras/condicionais** e como está **implementado**. Complementa `SPEC.md` (detalhe operacional), `docs/CONFIGURACOES-TENANT-NEGOCIO.md` (implantação por tenant) e `HANDOFF.md` (contexto de sessão).
 
 ---
 
@@ -78,6 +78,7 @@ Valore digitaliza o ciclo de compras corporativas com três portais, inteligênc
 - RLS ativo; superadmin usa cookie `selected_company_id` para atuar no tenant.
 - Features licenciadas por tenant: `tenant_features`.
 - Configurações genéricas: `company_settings` (`company_id`, `key`, `value`).
+- **Implantação por tenant** (set/2026): flags de negócio (classificação/rateio, POR, ERP outbound) e limites numéricos no admin — ver **`docs/CONFIGURACOES-TENANT-NEGOCIO.md`**.
 
 ### 2.3 Portais e autenticação
 

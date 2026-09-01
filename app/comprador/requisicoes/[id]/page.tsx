@@ -8,8 +8,11 @@ import {
   formatDateTimeLongBR,
 } from "@/lib/formato-data"
 
+import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { createDraftFromRequisition } from "@/lib/purchase-orders/create-draft-from-requisition"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -22,14 +25,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 
 import {
   AlertCircle,
@@ -54,20 +49,16 @@ import {
   buildCatalogRequisitionTimeline,
   buildStandardRequisitionTimeline,
 } from "@/lib/requisitions/timeline"
+import { REQUISITION_ITEM_ACCOUNT_SELECT } from "@/lib/requisitions/line-items-helpers"
+import {
+  RequisitionLineItemsDetailSection,
+  type RequisitionDetailLineItem,
+} from "@/components/requisitions/requisition-line-items-detail-section"
+import { EntityApprovalActions } from "@/components/comprador/entity-approval-actions"
 
 type Priority = "normal" | "urgent" | "critical"
 
-type RequisitionItem = {
-  id: string
-  material_code: string | null
-  material_description: string
-  quantity: number
-  unit_of_measure: string | null
-  estimated_price: number | null
-  commodity_group: string | null
-  observations: string | null
-  created_at?: string | null
-}
+type RequisitionItem = RequisitionDetailLineItem
 
 type Requisition = {
   id: string
@@ -339,6 +330,7 @@ export default function RequisicaoDetailPage({
   const router = useRouter()
   const searchParams = useSearchParams()
   const { hasFeature, hasPermission } = usePermissions()
+  const { companyId, userId } = useUser()
   const { id } = React.use(params)
 
   const backHref = searchParams.get("from") === "aprovacoes" ? "/comprador/aprovacoes" : "/comprador/requisicoes"
@@ -355,87 +347,81 @@ export default function RequisicaoDetailPage({
   const [auditLogs, setAuditLogs] = React.useState<AuditLog[]>([])
   const [attachments, setAttachments] = React.useState<RequisitionAttachment[]>([])
   const [attachmentsLoading, setAttachmentsLoading] = React.useState(true)
+  const [creatingPo, setCreatingPo] = React.useState(false)
+
+  const loadRequisitionDetail = React.useCallback(async () => {
+    if (!id || !companyId) return
+    const supabase = createClient()
+    setLoading(true)
+
+    const [rRes, iRes] = await Promise.all([
+      supabase.from("requisitions").select("*").eq("id", id).eq("company_id", companyId).single(),
+      supabase
+        .from("requisition_items")
+        .select(REQUISITION_ITEM_ACCOUNT_SELECT)
+        .eq("requisition_id", id)
+        .eq("company_id", companyId)
+        .order("created_at"),
+    ])
+
+    const reqData = ((rRes.data as Requisition | null) ?? null) as Requisition | null
+
+    let linked: { id: string; code: string } | null = null
+    let quotationInfo: QuotationInfo | null = null
+    const quotationId = reqData?.quotation_id
+    if (quotationId) {
+      const { data: qFull } = await supabase
+        .from("quotations")
+        .select("id, code, status, created_at")
+        .eq("id", quotationId)
+        .single()
+
+      if (qFull?.id && qFull?.code) {
+        linked = { id: qFull.id as string, code: qFull.code as string }
+        quotationInfo = qFull as QuotationInfo
+      }
+    }
+
+    setLinkedQuotation(linked)
+    setQuotationData(quotationInfo)
+
+    if (reqData?.code) {
+      const { data: ordersData } = await supabase
+        .from("purchase_orders")
+        .select(
+          "id, code, status, supplier_name, total_price, created_at, accepted_at, estimated_delivery_date",
+        )
+        .eq("requisition_code", reqData.code)
+        .order("created_at")
+      setOrders((ordersData as PurchaseOrderInfo[]) ?? [])
+    } else {
+      setOrders([])
+    }
+
+    const { data: historyData } = await supabase
+      .from("approval_requests")
+      .select("id, status, approver_name, rejection_reason, decided_at, created_at")
+      .eq("entity_id", id)
+      .eq("flow", "requisition")
+      .order("created_at", { ascending: true })
+
+    const { data: auditData } = await supabase
+      .from("audit_logs")
+      .select("id, event_type, description, created_at, user_name, metadata")
+      .eq("entity", "requisitions")
+      .eq("entity_id", id)
+      .order("created_at", { ascending: true })
+
+    setHistory((historyData as ApprovalHistory[]) ?? [])
+    setAuditLogs((auditData ?? []) as AuditLog[])
+    setRequisition(reqData)
+    setItems(((iRes.data as unknown) as RequisitionItem[]) ?? [])
+    setLoading(false)
+  }, [id, companyId])
 
   React.useEffect(() => {
-    if (!id) return
-    const supabase = createClient()
-    let alive = true
-
-    const run = async () => {
-      setLoading(true)
-      const [rRes, iRes] = await Promise.all([
-        supabase.from("requisitions").select("*").eq("id", id).single(),
-        supabase
-          .from("requisition_items")
-          .select("*")
-          .eq("requisition_id", id)
-          .order("created_at"),
-      ])
-
-      if (!alive) return
-      const reqData = ((rRes.data as any) ?? null) as Requisition | null
-
-      let linked: { id: string; code: string } | null = null
-      let quotationInfo: QuotationInfo | null = null
-      const quotationId = reqData?.quotation_id
-      if (quotationId) {
-        const { data: qFull } = await supabase
-          .from("quotations")
-          .select("id, code, status, created_at")
-          .eq("id", quotationId)
-          .single()
-
-        if (qFull?.id && qFull?.code) {
-          linked = { id: qFull.id as string, code: qFull.code as string }
-          quotationInfo = qFull as QuotationInfo
-        }
-      }
-
-      setLinkedQuotation(linked)
-      setQuotationData(quotationInfo)
-
-      if (reqData?.code) {
-        const { data: ordersData } = await supabase
-          .from("purchase_orders")
-          .select(
-            "id, code, status, supplier_name, total_price, created_at, accepted_at, estimated_delivery_date",
-          )
-          .eq("requisition_code", reqData.code)
-          .order("created_at")
-        if (!alive) return
-        setOrders((ordersData as PurchaseOrderInfo[]) ?? [])
-      } else {
-        setOrders([])
-      }
-
-      const { data: historyData } = await supabase
-        .from("approval_requests")
-        .select("id, status, approver_name, rejection_reason, decided_at, created_at")
-        .eq("entity_id", id)
-        .eq("flow", "requisition")
-        .order("created_at", { ascending: true })
-
-      const { data: auditData } = await supabase
-        .from("audit_logs")
-        .select("id, event_type, description, created_at, user_name, metadata")
-        .eq("entity", "requisitions")
-        .eq("entity_id", id)
-        .order("created_at", { ascending: true })
-
-      if (!alive) return
-      setHistory((historyData as ApprovalHistory[]) ?? [])
-      setAuditLogs((auditData ?? []) as AuditLog[])
-
-      setRequisition(reqData)
-      setItems(((iRes.data as unknown) as RequisitionItem[]) ?? [])
-      setLoading(false)
-    }
-
-    run()
-    return () => {
-      alive = false
-    }
-  }, [id])
+    void loadRequisitionDetail()
+  }, [loadRequisitionDetail])
 
   React.useEffect(() => {
     if (!id) return
@@ -473,9 +459,26 @@ export default function RequisicaoDetailPage({
     router.push(`/comprador/cotacoes/nova?requisition_id=${requisition.id}`)
   }
 
-  const handleGerarPedido = () => {
-    if (!requisition) return
-    router.push(`/comprador/pedidos/novo?requisitionId=${requisition.id}`)
+  const handleGerarPedido = async () => {
+    if (!requisition || !companyId || !userId || creatingPo) return
+    setCreatingPo(true)
+    try {
+      const supabase = createClient()
+      const result = await createDraftFromRequisition(supabase, {
+        companyId,
+        userId,
+        requisitionId: requisition.id,
+      })
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+      router.push(`/comprador/pedidos/${result.purchaseOrderId}`)
+    } catch {
+      toast.error("Não foi possível criar o pedido.")
+    } finally {
+      setCreatingPo(false)
+    }
   }
 
   const canCreateOrder =
@@ -536,6 +539,12 @@ export default function RequisicaoDetailPage({
         </div>
 
         <div className="flex items-center gap-2">
+          <EntityApprovalActions
+            flow="requisition"
+            entityId={id}
+            companyId={companyId}
+            onDecided={loadRequisitionDetail}
+          />
           {linkedQuotation && hasFeature("quotations") && (
             <button
               onClick={() =>
@@ -574,9 +583,18 @@ export default function RequisicaoDetailPage({
             </Button>
           )}
           {canCreateOrder && (
-            <Button type="button" variant="outline" onClick={handleGerarPedido}>
-              <ShoppingCart className="h-4 w-4 mr-2" />
-              Gerar Pedido
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleGerarPedido()}
+              disabled={creatingPo}
+            >
+              {creatingPo ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <ShoppingCart className="h-4 w-4 mr-2" />
+              )}
+              {creatingPo ? "Criando..." : "Gerar Pedido"}
             </Button>
           )}
         </div>
@@ -667,44 +685,7 @@ export default function RequisicaoDetailPage({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <CardTitle>Itens da Requisição</CardTitle>
-          </div>
-          <Badge variant="outline" className="text-xs">
-            {items.length} item{items.length === 1 ? "" : "s"}
-          </Badge>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Código</TableHead>
-                  <TableHead>Descrição Curta</TableHead>
-                  <TableHead className="text-right">Qtd</TableHead>
-                  <TableHead>Unidade</TableHead>
-                  <TableHead>Grupo</TableHead>
-                  <TableHead>Observações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((it) => (
-                  <TableRow key={it.id}>
-                    <TableCell className="font-mono">{it.material_code ?? "—"}</TableCell>
-                    <TableCell className="font-medium">{it.material_description}</TableCell>
-                    <TableCell className="text-right">{it.quantity}</TableCell>
-                    <TableCell>{it.unit_of_measure ?? "—"}</TableCell>
-                    <TableCell>{it.commodity_group ?? "—"}</TableCell>
-                    <TableCell>{it.observations ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      <RequisitionLineItemsDetailSection companyId={companyId} items={items} />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">

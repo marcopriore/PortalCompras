@@ -25,6 +25,8 @@ import {
   FileSignature,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { PriceInput } from "@/components/ui/numeric-field-inputs"
+import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
@@ -256,21 +258,6 @@ function toDisplayableMoney(v: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-/** Interpreta texto de preço (pt-BR com vírgula decimal ou ponto). */
-function parseTargetPriceInput(s: string): number | null {
-  let t = s.trim().replace(/[R$\s]/gi, "")
-  if (!t) return null
-  const lastComma = t.lastIndexOf(",")
-  const lastDot = t.lastIndexOf(".")
-  if (lastComma > -1 && (lastDot === -1 || lastComma > lastDot)) {
-    t = t.replace(/\./g, "").replace(",", ".")
-  } else {
-    t = t.replace(/,/g, "")
-  }
-  const n = Number(t)
-  return Number.isFinite(n) ? n : null
-}
-
 function formatMoneyOrDash(v: unknown) {
   const n = toDisplayableMoney(v)
   return n != null ? formatCurrency(n) : "—"
@@ -466,6 +453,7 @@ export default function EqualizacaoPage({
     hasPermission,
   })
   const contractBalanceEnabled = hasFeature("contract_balance")
+  const { priceDecimalPlaces } = useNumericLimits()
 
   // Next.js 16: params é Promise
   const { id } = React.use(params)
@@ -482,8 +470,7 @@ export default function EqualizacaoPage({
   const [finishingQuotation, setFinishingQuotation] = React.useState(false)
   const [targetPrices, setTargetPrices] = React.useState<Record<string, number | null>>({})
   const [savingTargetPrices, setSavingTargetPrices] = React.useState<Record<string, boolean>>({})
-  const [targetPriceFocusId, setTargetPriceFocusId] = React.useState<string | null>(null)
-  const [targetPriceDraft, setTargetPriceDraft] = React.useState<Record<string, string>>({})
+  const targetPricePendingRef = React.useRef<Record<string, number | null>>({})
   const [columnVisibility, setColumnVisibilityRaw] = React.useState<Record<string, boolean>>(() => {
     try {
       const stored = localStorage.getItem(COLUMN_VISIBILITY_KEY)
@@ -3271,59 +3258,27 @@ export default function EqualizacaoPage({
                                 {formatMoneyOrDash(targetPrices[qi.id])}
                               </span>
                             ) : (
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                autoComplete="off"
-                                value={
-                                  targetPriceFocusId === qi.id
-                                    ? (targetPriceDraft[qi.id] ?? "")
-                                    : (() => {
-                                        const n = toDisplayableMoney(targetPrices[qi.id])
-                                        return n != null ? formatCurrency(n) : ""
-                                      })()
-                                }
-                                placeholder="R$ —"
-                                onFocus={() => {
-                                  setTargetPriceFocusId(qi.id)
-                                  const n = toDisplayableMoney(targetPrices[qi.id])
-                                  setTargetPriceDraft((d) => ({
-                                    ...d,
-                                    [qi.id]:
-                                      n != null
-                                        ? new Intl.NumberFormat("pt-BR", {
-                                            minimumFractionDigits: 0,
-                                            maximumFractionDigits: 6,
-                                            useGrouping: false,
-                                          }).format(n)
-                                        : "",
-                                  }))
-                                }}
-                                onChange={(e) => {
-                                  if (targetPriceFocusId !== qi.id) return
-                                  setTargetPriceDraft((d) => ({
-                                    ...d,
-                                    [qi.id]: e.target.value,
-                                  }))
-                                }}
-                                onBlur={() => {
-                                  const parsed = parseTargetPriceInput(
-                                    targetPriceDraft[qi.id] ?? "",
-                                  )
-                                  const val = parsed != null && parsed >= 0 ? parsed : null
-                                  setTargetPriceFocusId((id) => (id === qi.id ? null : id))
-                                  setTargetPriceDraft((d) => {
-                                    const next = { ...d }
-                                    delete next[qi.id]
-                                    return next
-                                  })
-                                  setTargetPrices((prev) => ({ ...prev, [qi.id]: val }))
+                              <PriceInput
+                                value={toDisplayableMoney(targetPrices[qi.id]) ?? 0}
+                                decimalPlaces={priceDecimalPlaces}
+                                placeholder="0"
+                                onValueChange={(val) => {
+                                  const stored = val > 0 ? val : null
+                                  targetPricePendingRef.current[qi.id] = stored
+                                  setTargetPrices((prev) => ({ ...prev, [qi.id]: stored }))
                                   setQuotationItems((prev) =>
                                     prev.map((item) =>
-                                      item.id === qi.id ? { ...item, target_price: val } : item,
+                                      item.id === qi.id
+                                        ? { ...item, target_price: stored }
+                                        : item,
                                     ),
                                   )
-                                  void handleSaveTargetPrice(qi.id, val)
+                                }}
+                                onBlur={() => {
+                                  void handleSaveTargetPrice(
+                                    qi.id,
+                                    targetPricePendingRef.current[qi.id] ?? null,
+                                  )
                                 }}
                                 className={cn(
                                   "w-full h-8 px-1.5 text-xs text-center rounded border border-transparent",

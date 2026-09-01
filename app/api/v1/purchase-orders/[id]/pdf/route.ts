@@ -13,6 +13,7 @@ import {
   type PurchaseOrderPDFItem,
   type PurchaseOrderPDFOrder,
 } from "@/lib/pdf/purchase-order-pdf"
+import { loadTenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
 
 export const runtime = "nodejs"
 
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         const orderId = order.id as string
 
-        const [itemsRes, companyRes] = await Promise.all([
+        const [itemsRes, companyRes, featureConfig] = await Promise.all([
           service
             .from("purchase_order_items")
             .select("*")
@@ -69,6 +70,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             .select("name, cnpj, logo_url")
             .eq("id", ctx.companyId)
             .single(),
+          loadTenantFeatureConfig(service, ctx.companyId),
         ])
 
         const pdfItems: PurchaseOrderPDFItem[] = (itemsRes.data ?? []).map(
@@ -79,6 +81,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             quantity: Number(raw.quantity ?? 0),
             unit_of_measure: raw.unit_of_measure != null ? String(raw.unit_of_measure) : null,
             unit_price: Number(raw.unit_price ?? 0),
+            price_unit: raw.price_unit != null ? Number(raw.price_unit) : 1,
             tax_percent: raw.tax_percent != null ? Number(raw.tax_percent) : null,
             total_price: raw.total_price != null ? Number(raw.total_price) : null,
           }),
@@ -92,6 +95,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             order: pdfOrder,
             items: pdfItems,
             company: pdfCompany,
+            porEnabled: featureConfig.porEnabled,
           }) as Parameters<typeof renderToBuffer>[0],
         )
 

@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { formatDateBR, formatDateTimeBR, formatTodayStampDDMMYYYY } from "@/lib/formato-data"
 import { createClient } from "@/lib/supabase/client"
 import { notifyWithEmail } from "@/lib/notify-with-email"
@@ -13,12 +14,6 @@ import {
   formatResponsibleName,
   isBuyerOrHigherProfile,
 } from "@/lib/quotations/ownership"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Dialog,
   DialogContent,
@@ -27,6 +22,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Select,
   SelectContent,
@@ -60,12 +62,16 @@ import {
   CheckCircle,
   CheckCircle2,
   ChevronLeft,
+  ClipboardList,
   Download,
   FileEdit,
   FileText,
+  Loader2,
   Package,
   Pencil,
+  Search,
   Send,
+  Trash2,
   UserRoundPlus,
   X,
   XCircle,
@@ -75,6 +81,34 @@ import type { LucideIcon } from "lucide-react"
 import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
 import { getBuyerOrderErrorCopy } from "@/lib/integrations/erp-errors"
 import { buildContractItemLineNumberMap } from "@/lib/contracts/contract-balance-helpers"
+import { PoItemAccountConfigTableCells } from "@/components/comprador/po-item-account-config-cells"
+import { EntityApprovalActions } from "@/components/comprador/entity-approval-actions"
+import {
+  parseItemAccountConfigFromDb,
+  validateAllAccountConfigsForSubmit,
+  type ItemAccountConfigEdit,
+  type ItemAccountConfigFieldErrors,
+} from "@/lib/po-account-assignment"
+import { savePurchaseOrderAccountConfigs } from "@/lib/po-account-assignment-persist"
+import { copyRequisitionAccountConfigToPurchaseOrderItem } from "@/lib/requisitions/account-config-bridge"
+import type { PurchaseOrderItemAccountAssignmentInput } from "@/types/po-account-assignment"
+import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
+import { useImplantationConfig } from "@/lib/hooks/use-implantation-config"
+import { QuantityInput, PriceInput } from "@/components/ui/numeric-field-inputs"
+import {
+  computeLineTotal,
+  invalidFieldClass,
+  isPorValue,
+  POR_OPTIONS,
+  type PorValue,
+  validatePrice,
+  validateQuantity,
+} from "@/lib/validation/numeric-input"
+import { cn } from "@/lib/utils"
+import {
+  buildPurchaseOrderDetailWorkbook,
+  downloadExcelWorkbook,
+} from "@/lib/excel/purchase-order-detail-export"
 
 type PurchaseOrderStatus =
   | "draft"
@@ -121,12 +155,18 @@ type PurchaseOrderItem = {
   quantity: number
   unit_of_measure: string | null
   unit_price: number
+  price_unit: number
   tax_percent: number | null
   total_price: number | null
   contract_id: string | null
   contract_item_id: string | null
   contract_code: string | null
   contract_item_line: number | null
+  requisition_item_id: string | null
+  source_requisition_code: string | null
+  account_assignment_category: string | null
+  account_assignment_distribution: string | null
+  account_assignments: PurchaseOrderItemAccountAssignmentInput[]
 }
 
 type EditItem = {
@@ -135,9 +175,63 @@ type EditItem = {
   material_description: string
   unit_of_measure: string
   unit_price: number
+  price_unit: number
   tax_percent: number | null
   quantity: number
   max_quantity: number | null
+  requisition_item_id: string | null
+  source_requisition_code: string | null
+}
+
+type PoLineFieldErrors = {
+  quantity?: boolean
+  unit_price?: boolean
+  price_unit?: boolean
+}
+
+type PoHeaderFieldErrors = {
+  supplier?: boolean
+  payment_condition?: boolean
+  delivery_address?: boolean
+}
+
+type DraftSupplier = {
+  id: string
+  name: string
+  cnpj: string | null
+  code: string
+}
+
+type RequisitionOption = {
+  id: string
+  code: string
+  title: string
+  created_at: string
+  items: {
+    id: string
+    material_code: string | null
+    material_description: string
+    unit_of_measure: string | null
+    quantity: number
+  }[]
+}
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = React.useState<T>(value)
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedValue(value), delay)
+    return () => clearTimeout(t)
+  }, [value, delay])
+  return debouncedValue
+}
+
+function formatPersistError(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) return error.message
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message: unknown }).message
+    if (typeof message === "string" && message.trim()) return message
+  }
+  return fallback
 }
 
 function useViewOnceBanner(storageKey: string, active: boolean) {
@@ -454,19 +548,8 @@ function getTodayDDMMYYYY() {
   return formatTodayStampDDMMYYYY()
 }
 
-async function downloadExcel(workbook: any, filename: string) {
-  const buffer = await workbook.xlsx.writeBuffer()
-  const blob = new Blob([buffer], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+async function downloadExcel(workbook: Awaited<ReturnType<typeof buildPurchaseOrderDetailWorkbook>>, filename: string) {
+  await downloadExcelWorkbook(workbook, filename)
 }
 
 export default function PurchaseOrderDetailPage({
@@ -475,9 +558,28 @@ export default function PurchaseOrderDetailPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const backHref =
+    searchParams.get("from") === "aprovacoes" ? "/comprador/aprovacoes" : "/comprador/pedidos"
   const { companyId, userId, loading: userLoading } = useUser()
   const { hasPermission } = usePermissions()
   const { id } = React.use(params)
+  const { maxQuantity, priceDecimalPlaces } = useNumericLimits()
+  const {
+    accountAssignmentEnabled,
+    porEnabled,
+  } = useImplantationConfig()
+
+  const linePor = React.useCallback(
+    (priceUnit: number) => (porEnabled && isPorValue(priceUnit) ? priceUnit : 1),
+    [porEnabled],
+  )
+
+  const computePoLineTotal = React.useCallback(
+    (quantity: number, unitPrice: number, priceUnit: number) =>
+      computeLineTotal(quantity, unitPrice, linePor(priceUnit)),
+    [linePor],
+  )
 
   const [order, setOrder] = React.useState<PurchaseOrder | null>(null)
   const [orderLogs, setOrderLogs] = React.useState<AuditLog[]>([])
@@ -509,6 +611,7 @@ export default function PurchaseOrderDetailPage({
     items: EditItem[]
   } | null>(null)
   const [savingEdit, setSavingEdit] = React.useState(false)
+  const [savingDraft, setSavingDraft] = React.useState(false)
   const [responsibleName, setResponsibleName] = React.useState("—")
   const [delegateOpen, setDelegateOpen] = React.useState(false)
   const [delegateTargetId, setDelegateTargetId] = React.useState("")
@@ -516,6 +619,30 @@ export default function PurchaseOrderDetailPage({
     { id: string; full_name: string | null }[]
   >([])
   const [delegating, setDelegating] = React.useState(false)
+  const [accountConfigs, setAccountConfigs] = React.useState<
+    Record<string, ItemAccountConfigEdit>
+  >({})
+  const [accountConfigErrors, setAccountConfigErrors] = React.useState<
+    Record<string, ItemAccountConfigFieldErrors>
+  >({})
+  const [lineItemFieldErrors, setLineItemFieldErrors] = React.useState<
+    Record<string, PoLineFieldErrors>
+  >({})
+  const [headerFieldErrors, setHeaderFieldErrors] = React.useState<PoHeaderFieldErrors>({})
+
+  const [draftSupplier, setDraftSupplier] = React.useState<DraftSupplier | null>(null)
+  const [supplierSearch, setSupplierSearch] = React.useState("")
+  const [supplierResults, setSupplierResults] = React.useState<DraftSupplier[]>([])
+  const [supplierSearchLoading, setSupplierSearchLoading] = React.useState(false)
+  const debouncedSupplierSearch = useDebounce(supplierSearch, 300)
+
+  const [reqDialogOpen, setReqDialogOpen] = React.useState(false)
+  const [requisitions, setRequisitions] = React.useState<RequisitionOption[]>([])
+  const [requisitionsLoading, setRequisitionsLoading] = React.useState(false)
+  const [selectedReqIds, setSelectedReqIds] = React.useState<string[]>([])
+  const [requisitionIdByCode, setRequisitionIdByCode] = React.useState<Record<string, string>>(
+    {},
+  )
 
   const fetchOrderData = React.useCallback(
     async (options?: { silent?: boolean }) => {
@@ -540,6 +667,7 @@ export default function PurchaseOrderDetailPage({
               quantity,
               unit_of_measure,
               unit_price,
+              price_unit,
               tax_percent,
               total_price,
               contract_id,
@@ -548,6 +676,23 @@ export default function PurchaseOrderDetailPage({
               contract_items:contract_item_id (
                 contract_id,
                 contracts:contract_id (code)
+              ),
+              requisition_item_id,
+              source_requisition_code,
+              account_assignment_category,
+              account_assignment_distribution,
+              purchase_order_item_account_assignments (
+                sequence,
+                apportionment_percent,
+                currency,
+                ledger_account_code,
+                business_area,
+                controlling_area,
+                cost_center_code,
+                internal_order_id,
+                wbs_element,
+                asset_number,
+                profit_center
               )`,
             )
             .eq("purchase_order_id", id)
@@ -598,6 +743,9 @@ export default function PurchaseOrderDetailPage({
                   contracts?: { code?: string } | { code?: string }[] | null
                 }[]
               | null
+            purchase_order_item_account_assignments?:
+              | PurchaseOrderItemAccountAssignmentInput[]
+              | null
           }
         >
         let lineNumberMap = new Map<string, number>()
@@ -647,6 +795,37 @@ export default function PurchaseOrderDetailPage({
               : itemEmbed?.contract_id
                 ? String(itemEmbed.contract_id)
                 : null
+          const assignmentRows = (
+            row.purchase_order_item_account_assignments ?? []
+          ).map((assignment) => ({
+            sequence: Number(assignment.sequence ?? 1),
+            apportionment_percent: Number(assignment.apportionment_percent ?? 0),
+            currency: assignment.currency != null ? String(assignment.currency) : "BRL",
+            ledger_account_code:
+              assignment.ledger_account_code != null
+                ? String(assignment.ledger_account_code)
+                : null,
+            business_area:
+              assignment.business_area != null ? String(assignment.business_area) : null,
+            controlling_area:
+              assignment.controlling_area != null
+                ? String(assignment.controlling_area)
+                : null,
+            cost_center_code:
+              assignment.cost_center_code != null
+                ? String(assignment.cost_center_code)
+                : null,
+            internal_order_id:
+              assignment.internal_order_id != null
+                ? String(assignment.internal_order_id)
+                : null,
+            wbs_element:
+              assignment.wbs_element != null ? String(assignment.wbs_element) : null,
+            asset_number:
+              assignment.asset_number != null ? String(assignment.asset_number) : null,
+            profit_center:
+              assignment.profit_center != null ? String(assignment.profit_center) : null,
+          }))
           return {
             id: String(row.id ?? ""),
             material_code: String(row.material_code ?? ""),
@@ -655,6 +834,10 @@ export default function PurchaseOrderDetailPage({
             unit_of_measure:
               row.unit_of_measure != null ? String(row.unit_of_measure) : null,
             unit_price: Number(row.unit_price ?? 0),
+            price_unit:
+              row.price_unit != null && isPorValue(Number(row.price_unit))
+                ? Number(row.price_unit)
+                : 1,
             tax_percent: row.tax_percent != null ? Number(row.tax_percent) : null,
             total_price: row.total_price != null ? Number(row.total_price) : null,
             contract_id: resolvedContractId,
@@ -667,14 +850,116 @@ export default function PurchaseOrderDetailPage({
             contract_item_line: contractItemId
               ? (lineNumberMap.get(contractItemId) ?? null)
               : null,
+            requisition_item_id:
+              row.requisition_item_id != null ? String(row.requisition_item_id) : null,
+            source_requisition_code:
+              row.source_requisition_code != null
+                ? String(row.source_requisition_code)
+                : null,
+            account_assignment_category:
+              row.account_assignment_category != null
+                ? String(row.account_assignment_category)
+                : null,
+            account_assignment_distribution:
+              row.account_assignment_distribution != null
+                ? String(row.account_assignment_distribution)
+                : "",
+            account_assignments: assignmentRows,
           }
         })
+        const configs = Object.fromEntries(
+          poItems.map((item) => [
+            item.id,
+            parseItemAccountConfigFromDb(
+              item.account_assignment_category,
+              item.account_assignment_distribution,
+              item.account_assignments,
+            ),
+          ]),
+        )
         setItems(poItems)
+        setAccountConfigs(configs)
         setPaymentOptions(((paymentsRes.data as PaymentConditionOption[]) ?? []) as PaymentConditionOption[])
         if (logsRes.error) {
           setOrderLogs([])
         } else {
           setOrderLogs((logsRes.data as AuditLog[]) ?? [])
+        }
+
+        if (loadedOrder?.status === "draft") {
+          const reqItemIds = poItems
+            .map((item) => item.requisition_item_id)
+            .filter((value): value is string => Boolean(value))
+          let maxQtyByReqItem: Record<string, number> = {}
+          if (reqItemIds.length > 0) {
+            const { data: reqItemsData } = await supabase
+              .from("requisition_items")
+              .select("id, quantity")
+              .in("id", reqItemIds)
+            maxQtyByReqItem = Object.fromEntries(
+              (reqItemsData ?? []).map((row) => [String(row.id), Number(row.quantity)]),
+            )
+          }
+
+          setEditItems(
+            poItems.map((item) => ({
+              id: item.id,
+              material_code: item.material_code,
+              material_description: item.material_description,
+              unit_of_measure: item.unit_of_measure ?? "",
+              unit_price: Number(item.unit_price),
+              price_unit: item.price_unit,
+              tax_percent: item.tax_percent,
+              quantity: Number(item.quantity),
+              max_quantity: item.requisition_item_id
+                ? (maxQtyByReqItem[item.requisition_item_id] ?? null)
+                : null,
+              requisition_item_id: item.requisition_item_id,
+              source_requisition_code: item.source_requisition_code,
+            })),
+          )
+
+          if (loadedOrder.supplier_id) {
+            const { data: supplierRow } = await supabase
+              .from("suppliers")
+              .select("id, name, cnpj, code")
+              .eq("id", loadedOrder.supplier_id)
+              .maybeSingle()
+            if (supplierRow) {
+              setDraftSupplier(supplierRow as DraftSupplier)
+            } else {
+              setDraftSupplier({
+                id: loadedOrder.supplier_id,
+                name: loadedOrder.supplier_name,
+                cnpj: loadedOrder.supplier_cnpj,
+                code: "",
+              })
+            }
+          } else {
+            setDraftSupplier(null)
+          }
+
+          const reqCodes = new Set<string>()
+          for (const item of poItems) {
+            if (item.source_requisition_code) reqCodes.add(item.source_requisition_code)
+          }
+          if (loadedOrder.requisition_code) {
+            for (const code of loadedOrder.requisition_code.split(",").map((c) => c.trim())) {
+              if (code) reqCodes.add(code)
+            }
+          }
+          if (reqCodes.size > 0 && companyId) {
+            const { data: reqRows } = await supabase
+              .from("requisitions")
+              .select("id, code")
+              .eq("company_id", companyId)
+              .in("code", [...reqCodes])
+            setRequisitionIdByCode(
+              Object.fromEntries((reqRows ?? []).map((row) => [String(row.code), String(row.id)])),
+            )
+          } else {
+            setRequisitionIdByCode({})
+          }
         }
       } finally {
         if (!silent) setLoading(false)
@@ -689,10 +974,56 @@ export default function PurchaseOrderDetailPage({
 
   React.useEffect(() => {
     if (!order) return
+    setEditForm({
+      payment_condition: order.payment_condition ?? "",
+      delivery_days: order.delivery_days != null ? String(order.delivery_days) : "",
+      delivery_address: order.delivery_address ?? "",
+      observations: order.observations ?? "",
+    })
+  }, [
+    order?.id,
+    order?.payment_condition,
+    order?.delivery_days,
+    order?.delivery_address,
+    order?.observations,
+  ])
+
+  React.useEffect(() => {
+    if (!order) return
     if (["cancelled", "sent"].includes(order.status)) {
       setIsEditing(false)
     }
   }, [order?.status])
+
+  React.useEffect(() => {
+    if (!companyId || debouncedSupplierSearch.trim().length < 2) {
+      setSupplierResults([])
+      return
+    }
+
+    let alive = true
+    const run = async () => {
+      setSupplierSearchLoading(true)
+      const supabase = createClient()
+      const term = `%${debouncedSupplierSearch.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`
+      const { data } = await supabase
+        .from("suppliers")
+        .select("id, name, cnpj, code")
+        .eq("company_id", companyId)
+        .eq("status", "active")
+        .or(`name.ilike.${term},code.ilike.${term},cnpj.ilike.${term}`)
+        .limit(20)
+
+      if (!alive) return
+      setSupplierResults((data as DraftSupplier[]) ?? [])
+      setSupplierSearchLoading(false)
+    }
+
+    void run()
+    return () => {
+      alive = false
+    }
+  }, [companyId, debouncedSupplierSearch])
 
   React.useEffect(() => {
     if (!order || order.status !== "processing" || !id || !companyId) return
@@ -815,21 +1146,73 @@ export default function PurchaseOrderDetailPage({
 
   const handleConfirmOrder = async () => {
     if (!order || !companyId) return
+
+    const isManualDraft = order.status === "draft" && editItems.length > 0
+    if (isManualDraft) {
+      if (!validateDraftForConfirm()) return
+    } else {
+      if (editForm.delivery_days.trim()) {
+        const d = parseInt(editForm.delivery_days, 10)
+        if (Number.isNaN(d) || d < 1) {
+          toast.error("Prazo de entrega deve ser um número inteiro a partir de 1.")
+          return
+        }
+      }
+      if (!validateAccountConfigsAndSetErrors()) return
+    }
+
     setConfirmingPedido(true)
     try {
       const supabase = createClient()
+
+      if (isManualDraft) {
+        const saved = await persistDraftForConfirm()
+        if (!saved) return
+        await updateLinkedRequisitionsOnConfirm()
+      } else {
+        const accountResult = await savePurchaseOrderAccountConfigs(
+          supabase,
+          companyId,
+          accountConfigs,
+        )
+        if (!accountResult.ok) {
+          toast.error(accountResult.message)
+          return
+        }
+        const { error: headerError } = await supabase
+          .from("purchase_orders")
+          .update({
+            payment_condition: editForm.payment_condition.trim() || null,
+            delivery_days: editForm.delivery_days.trim()
+              ? (() => {
+                  const n = parseInt(editForm.delivery_days, 10)
+                  return Number.isNaN(n) ? null : n
+                })()
+              : null,
+            delivery_address: editForm.delivery_address.trim() || null,
+            observations: editForm.observations.trim() || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", order.id)
+          .eq("company_id", companyId)
+        if (headerError) throw headerError
+      }
+
       const { error } = await supabase
         .from("purchase_orders")
-        .update({ status: "sent" })
+        .update({
+          status: "sent",
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", order.id)
         .eq("company_id", companyId)
       if (error) throw error
       void notifySupplierOrderSent({
         id: order.id,
         code: order.code,
-        supplier_name: order.supplier_name,
+        supplier_name: draftSupplier?.name ?? order.supplier_name,
         company_id: order.company_id,
-        supplier_id: order.supplier_id ?? null,
+        supplier_id: draftSupplier?.id ?? order.supplier_id ?? null,
       })
       toast.success("Pedido enviado ao fornecedor. Aguardando aceite.")
       await fetchOrderData({ silent: true })
@@ -937,9 +1320,12 @@ export default function PurchaseOrderDetailPage({
       material_description: item.material_description,
       unit_of_measure: item.unit_of_measure ?? "",
       unit_price: Number(item.unit_price),
+      price_unit: item.price_unit,
       tax_percent: item.tax_percent != null ? Number(item.tax_percent) : null,
       quantity: Number(item.quantity),
       max_quantity: null as number | null,
+      requisition_item_id: item.requisition_item_id,
+      source_requisition_code: item.source_requisition_code,
     }))
 
     setEditSnapshot({ form: initialForm, items: initialItems })
@@ -982,6 +1368,18 @@ export default function PurchaseOrderDetailPage({
       setEditForm(editSnapshot.form)
       setEditItems(editSnapshot.items)
     }
+    setAccountConfigs(
+      Object.fromEntries(
+        items.map((item) => [
+          item.id,
+          parseItemAccountConfigFromDb(
+            item.account_assignment_category,
+            item.account_assignment_distribution,
+            item.account_assignments,
+          ),
+        ]),
+      ),
+    )
     setEditSnapshot(null)
     setIsEditing(false)
   }
@@ -1067,36 +1465,528 @@ export default function PurchaseOrderDetailPage({
 
     const itemResults = await Promise.all(
       editItems.map((row) =>
-        supabase.from("purchase_order_items").update({ quantity: row.quantity }).eq("id", row.id),
+        supabase
+          .from("purchase_order_items")
+          .update({
+            quantity: row.quantity,
+            unit_price: row.unit_price,
+            price_unit: row.price_unit,
+          })
+          .eq("id", row.id)
+          .eq("company_id", companyId),
       ),
     )
     const firstItemErr = itemResults.find((r) => r.error)?.error
     if (firstItemErr) throw firstItemErr
+
+    const accountResult = await savePurchaseOrderAccountConfigs(
+      supabase,
+      companyId,
+      accountConfigs,
+    )
+    if (!accountResult.ok) {
+      toast.error(accountResult.message)
+      return false
+    }
     return true
   }
 
-  const validateEditForm = () => {
+  const validateAccountConfigsAndSetErrors = React.useCallback(() => {
+    if (!accountAssignmentEnabled) {
+      setAccountConfigErrors({})
+      return true
+    }
+    const sourceItems =
+      isEditing || (order?.status === "draft" && editItems.length > 0)
+        ? editItems.map((item) => ({ id: item.id, material_code: item.material_code }))
+        : items.map((item) => ({ id: item.id, material_code: item.material_code }))
+
+    const result = validateAllAccountConfigsForSubmit(sourceItems, accountConfigs)
+    if (!result.ok) {
+      setAccountConfigErrors(result.errorsByItemId)
+      toast.error(result.firstMessage)
+      return false
+    }
+    setAccountConfigErrors({})
+    return true
+  }, [accountAssignmentEnabled, accountConfigs, editItems, isEditing, items, order?.status])
+
+  async function loadAvailableRequisitions() {
+    if (!companyId) return
+    setRequisitionsLoading(true)
+    try {
+      const supabase = createClient()
+      const { data: reqs } = await supabase
+        .from("requisitions")
+        .select("id, code, title, created_at")
+        .eq("company_id", companyId)
+        .in("status", ["approved", "in_quotation"])
+        .order("created_at", { ascending: false })
+
+      if (!reqs || reqs.length === 0) {
+        setRequisitions([])
+        return
+      }
+
+      const { data: allItems } = await supabase
+        .from("requisition_items")
+        .select(
+          "id, requisition_id, material_code, material_description, unit_of_measure, quantity",
+        )
+        .in(
+          "requisition_id",
+          reqs.map((r) => r.id),
+        )
+
+      type ReqItemRow = {
+        id: string
+        requisition_id: string
+        material_code: string | null
+        material_description: string
+        unit_of_measure: string | null
+        quantity: number
+      }
+
+      const itemsByReq: Record<string, ReqItemRow[]> = {}
+      for (const row of (allItems ?? []) as ReqItemRow[]) {
+        if (!itemsByReq[row.requisition_id]) itemsByReq[row.requisition_id] = []
+        itemsByReq[row.requisition_id].push(row)
+      }
+
+      setRequisitions(
+        reqs.map((r) => ({
+          id: r.id,
+          code: r.code,
+          title: r.title,
+          created_at: r.created_at,
+          items: (itemsByReq[r.id] ?? []).map((i) => ({
+            id: i.id,
+            material_code: i.material_code,
+            material_description: i.material_description,
+            unit_of_measure: i.unit_of_measure,
+            quantity: i.quantity,
+          })),
+        })),
+      )
+    } finally {
+      setRequisitionsLoading(false)
+    }
+  }
+
+  const handleImportRequisitions = async () => {
+    if (!order || !companyId) return
+    const selected = requisitions.filter((r) => selectedReqIds.includes(r.id))
+    const existingReqItemIds = new Set(
+      editItems.map((line) => line.requisition_item_id).filter(Boolean) as string[],
+    )
+    const newLines: EditItem[] = []
+
+    for (const req of selected) {
+      for (const item of req.items) {
+        if (existingReqItemIds.has(item.id)) continue
+        existingReqItemIds.add(item.id)
+        newLines.push({
+          id: `pending-${item.id}`,
+          material_code: item.material_code ?? "",
+          material_description: item.material_description,
+          unit_of_measure: item.unit_of_measure ?? "",
+          unit_price: 0,
+          price_unit: 1,
+          tax_percent: null,
+          quantity: item.quantity ?? 1,
+          max_quantity: item.quantity ?? 1,
+          requisition_item_id: item.id,
+          source_requisition_code: req.code,
+        })
+      }
+    }
+
+    if (newLines.length === 0) {
+      toast.warning("Todos os itens selecionados já estão no pedido.")
+      setReqDialogOpen(false)
+      setSelectedReqIds([])
+      return
+    }
+
+    const supabase = createClient()
+    const { data: inserted, error } = await supabase
+      .from("purchase_order_items")
+      .insert(
+        newLines.map((line) => ({
+          purchase_order_id: order.id,
+          company_id: companyId,
+          material_code: line.material_code,
+          material_description: line.material_description,
+          quantity: line.quantity,
+          unit_of_measure: line.unit_of_measure,
+          unit_price: 0,
+          price_unit: 1,
+          tax_percent: null,
+          delivery_days: null,
+          requisition_item_id: line.requisition_item_id,
+          source_requisition_code: line.source_requisition_code,
+        })),
+      )
+      .select("id, requisition_item_id")
+
+    if (error || !inserted) {
+      toast.error(error?.message ?? "Não foi possível importar os itens.")
+      return
+    }
+
+    const copyResults = await Promise.all(
+      inserted.map((row) => {
+        const requisitionItemId = row.requisition_item_id as string | null
+        if (!requisitionItemId) return Promise.resolve({ ok: true as const })
+        return copyRequisitionAccountConfigToPurchaseOrderItem(
+          supabase,
+          companyId,
+          requisitionItemId,
+          String(row.id),
+        )
+      }),
+    )
+    const firstCopyError = copyResults.find(
+      (result): result is { ok: false; message: string } => !result.ok,
+    )
+    if (firstCopyError) {
+      toast.error(firstCopyError.message)
+      return
+    }
+
+    const insertedLines: EditItem[] = newLines.map((line, index) => ({
+      ...line,
+      id: String(inserted[index]?.id ?? line.id),
+    }))
+
+    setEditItems((prev) => [...prev, ...insertedLines])
+    setItems((prev) => [
+      ...prev,
+      ...insertedLines.map((line) => ({
+        id: line.id,
+        material_code: line.material_code,
+        material_description: line.material_description,
+        quantity: line.quantity,
+        unit_of_measure: line.unit_of_measure,
+        unit_price: line.unit_price,
+        price_unit: line.price_unit,
+        tax_percent: line.tax_percent,
+        total_price: computePoLineTotal(line.quantity, line.unit_price, line.price_unit),
+        contract_id: null,
+        contract_item_id: null,
+        contract_code: null,
+        contract_item_line: null,
+        requisition_item_id: line.requisition_item_id,
+        source_requisition_code: line.source_requisition_code,
+        account_assignment_category: null,
+        account_assignment_distribution: "",
+        account_assignments: [],
+      })),
+    ])
+
+    const reqCodes = new Set<string>()
+    for (const line of [...editItems, ...insertedLines]) {
+      if (line.source_requisition_code) reqCodes.add(line.source_requisition_code)
+    }
+    if (order.requisition_code) {
+      for (const code of order.requisition_code.split(",").map((c) => c.trim())) {
+        if (code) reqCodes.add(code)
+      }
+    }
+    const requisitionCodeHeader = [...reqCodes].sort().join(", ")
+    await supabase
+      .from("purchase_orders")
+      .update({ requisition_code: requisitionCodeHeader || null })
+      .eq("id", order.id)
+      .eq("company_id", companyId)
+
+    const { data: reqRows } = await supabase
+      .from("requisitions")
+      .select("id, code")
+      .eq("company_id", companyId)
+      .in("code", [...reqCodes])
+    setRequisitionIdByCode(
+      Object.fromEntries((reqRows ?? []).map((row) => [String(row.code), String(row.id)])),
+    )
+
+    toast.success(`${insertedLines.length} item(s) importado(s).`)
+    setReqDialogOpen(false)
+    setSelectedReqIds([])
+    await fetchOrderData({ silent: true })
+  }
+
+  const removeDraftLine = async (lineId: string) => {
+    if (!order || !companyId || editItems.length <= 1) return
+    const supabase = createClient()
+    const { error } = await supabase
+      .from("purchase_order_items")
+      .delete()
+      .eq("id", lineId)
+      .eq("purchase_order_id", order.id)
+    if (error) {
+      toast.error("Não foi possível remover o item.")
+      return
+    }
+    setEditItems((prev) => prev.filter((line) => line.id !== lineId))
+    setItems((prev) => prev.filter((line) => line.id !== lineId))
+  }
+
+  const persistDraftData = async (): Promise<boolean> => {
+    if (!order || !companyId) return false
+
+    const totalPrice = editItems.reduce(
+      (sum, line) => sum + computePoLineTotal(line.quantity, line.unit_price, line.price_unit),
+      0,
+    )
+    const headerDaysRaw = editForm.delivery_days.trim()
+    const headerDays = headerDaysRaw ? parseInt(headerDaysRaw, 10) : null
+
+    const supabase = createClient()
+    const orderUpdate: Record<string, unknown> = {
+      payment_condition: editForm.payment_condition.trim() || null,
+      delivery_days:
+        headerDays != null && !Number.isNaN(headerDays) && headerDays > 0 ? headerDays : null,
+      delivery_address: editForm.delivery_address.trim() || null,
+      observations: editForm.observations.trim() || null,
+      total_price: Math.round(totalPrice * 100) / 100,
+      updated_at: new Date().toISOString(),
+    }
+
+    if (draftSupplier) {
+      orderUpdate.supplier_id = draftSupplier.id
+      orderUpdate.supplier_name = draftSupplier.name
+      orderUpdate.supplier_cnpj = draftSupplier.cnpj
+    }
+
+    const { data: updatedOrder, error: orderError } = await supabase
+      .from("purchase_orders")
+      .update(orderUpdate)
+      .eq("id", order.id)
+      .eq("company_id", companyId)
+      .select("id")
+      .maybeSingle()
+
+    if (orderError) throw orderError
+    if (!updatedOrder) {
+      throw new Error("Sem permissão para salvar o pedido neste tenant.")
+    }
+
+    if (editItems.length > 0) {
+      const itemResults = await Promise.all(
+        editItems.map((row) =>
+          supabase
+            .from("purchase_order_items")
+            .update({
+              quantity: row.quantity,
+              unit_price: row.unit_price,
+              price_unit: row.price_unit,
+              total_price: computePoLineTotal(
+                row.quantity,
+                row.unit_price,
+                row.price_unit,
+              ),
+            })
+            .eq("id", row.id)
+            .eq("company_id", companyId)
+            .select("id")
+            .maybeSingle(),
+        ),
+      )
+      const firstItemErr = itemResults.find((r) => r.error)?.error
+      if (firstItemErr) throw firstItemErr
+      const missingItem = itemResults.find((r) => !r.data)
+      if (missingItem) {
+        throw new Error("Sem permissão para salvar um ou mais itens do pedido.")
+      }
+    }
+
+    const accountResult = await savePurchaseOrderAccountConfigs(
+      supabase,
+      companyId,
+      accountConfigs,
+    )
+    if (!accountResult.ok) {
+      toast.error(accountResult.message)
+      return false
+    }
+    return true
+  }
+
+  const persistDraftForConfirm = async () => {
+    if (!draftSupplier) return false
+    return persistDraftData()
+  }
+
+  const handleSaveDraft = async () => {
+    if (!order || !companyId || !isDraftEditable) return
+    setSavingDraft(true)
+    try {
+      const ok = await persistDraftData()
+      if (ok) {
+        toast.success("Rascunho salvo.")
+        await fetchOrderData({ silent: true })
+      }
+    } catch (e) {
+      console.error("handleSaveDraft", e)
+      toast.error(formatPersistError(e, "Não foi possível salvar o rascunho."))
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
+  const validateDraftForConfirm = () => {
+    const headerErrors: PoHeaderFieldErrors = {}
+    const lineErrors: Record<string, PoLineFieldErrors> = {}
+    let firstMessage: string | null = null
+    const noteError = (message: string) => {
+      if (!firstMessage) firstMessage = message
+    }
+
+    if (!draftSupplier) {
+      headerErrors.supplier = true
+      noteError("Selecione um fornecedor.")
+    }
+    if (!editForm.payment_condition.trim()) {
+      headerErrors.payment_condition = true
+      noteError("Selecione a condição de pagamento.")
+    }
+    if (!editForm.delivery_address.trim()) {
+      headerErrors.delivery_address = true
+      noteError("Informe o endereço de entrega.")
+    }
+    if (editItems.length === 0) {
+      noteError("Adicione ao menos um item ao pedido.")
+    }
+
+    for (const item of editItems) {
+      const fieldErrors: PoLineFieldErrors = {}
+
+      const qtyCheck = validateQuantity(
+        item.quantity,
+        Math.min(maxQuantity, item.max_quantity ?? maxQuantity),
+      )
+      if (!qtyCheck.ok) {
+        fieldErrors.quantity = true
+        noteError(`${item.material_code}: ${qtyCheck.message}`)
+      } else if (item.max_quantity != null && item.quantity > item.max_quantity) {
+        fieldErrors.quantity = true
+        noteError(
+          `${item.material_code}: quantidade excede a requisição (máx: ${item.max_quantity})`,
+        )
+      }
+
+      const priceCheck = validatePrice(item.unit_price, priceDecimalPlaces)
+      if (!priceCheck.ok) {
+        fieldErrors.unit_price = true
+        noteError(`${item.material_code}: ${priceCheck.message}`)
+      }
+
+      if (porEnabled && !isPorValue(item.price_unit)) {
+        fieldErrors.price_unit = true
+        noteError(`${item.material_code}: selecione um POR válido.`)
+      }
+
+      if (Object.keys(fieldErrors).length > 0) {
+        lineErrors[item.id] = fieldErrors
+      }
+    }
+
     if (editForm.delivery_days.trim()) {
       const d = parseInt(editForm.delivery_days, 10)
       if (Number.isNaN(d) || d < 1) {
-        toast.error("Prazo de entrega deve ser um número inteiro a partir de 1.")
-        return false
+        noteError("Prazo de entrega deve ser um número inteiro a partir de 1.")
+      }
+    }
+
+    setHeaderFieldErrors(headerErrors)
+    setLineItemFieldErrors(lineErrors)
+
+    if (!validateAccountConfigsAndSetErrors()) return false
+
+    if (firstMessage) {
+      toast.error(firstMessage)
+      return false
+    }
+
+    setHeaderFieldErrors({})
+    setLineItemFieldErrors({})
+    return true
+  }
+
+  const updateLinkedRequisitionsOnConfirm = async () => {
+    if (!order || !companyId) return
+    const reqCodes = new Set<string>()
+    for (const line of editItems) {
+      if (line.source_requisition_code) reqCodes.add(line.source_requisition_code)
+    }
+    if (order.requisition_code) {
+      for (const code of order.requisition_code.split(",").map((c) => c.trim())) {
+        if (code) reqCodes.add(code)
+      }
+    }
+    if (reqCodes.size === 0) return
+
+    const supabase = createClient()
+    const { data: reqs } = await supabase
+      .from("requisitions")
+      .select("id")
+      .eq("company_id", companyId)
+      .in("code", [...reqCodes])
+
+    const ids = (reqs ?? []).map((r) => String(r.id))
+    if (ids.length === 0) return
+
+    await supabase
+      .from("requisitions")
+      .update({ status: "awaiting_buyer" })
+      .eq("company_id", companyId)
+      .in("id", ids)
+  }
+
+  const validateEditForm = () => {
+    const lineErrors: Record<string, PoLineFieldErrors> = {}
+    let firstMessage: string | null = null
+    const noteError = (message: string) => {
+      if (!firstMessage) firstMessage = message
+    }
+
+    if (editForm.delivery_days.trim()) {
+      const d = parseInt(editForm.delivery_days, 10)
+      if (Number.isNaN(d) || d < 1) {
+        noteError("Prazo de entrega deve ser um número inteiro a partir de 1.")
       }
     }
 
     for (const item of editItems) {
-      if (item.max_quantity != null && item.quantity > item.max_quantity) {
-        toast.error(
+      const fieldErrors: PoLineFieldErrors = {}
+
+      const qtyCheck = validateQuantity(
+        item.quantity,
+        Math.min(maxQuantity, item.max_quantity ?? maxQuantity),
+      )
+      if (!qtyCheck.ok) {
+        fieldErrors.quantity = true
+        noteError(`${item.material_code}: ${qtyCheck.message}`)
+      } else if (item.max_quantity != null && item.quantity > item.max_quantity) {
+        fieldErrors.quantity = true
+        noteError(
           `${item.material_code}: quantidade excede a requisição (máx: ${item.max_quantity})`,
         )
-        return false
       }
-      if (item.quantity <= 0 || !Number.isFinite(item.quantity)) {
-        toast.error(`${item.material_code}: quantidade deve ser maior que zero`)
-        return false
+      if (Object.keys(fieldErrors).length > 0) {
+        lineErrors[item.id] = fieldErrors
       }
     }
 
+    setLineItemFieldErrors(lineErrors)
+    if (!validateAccountConfigsAndSetErrors()) return false
+
+    if (firstMessage) {
+      toast.error(firstMessage)
+      return false
+    }
+
+    setLineItemFieldErrors({})
     return true
   }
 
@@ -1158,6 +2048,16 @@ export default function PurchaseOrderDetailPage({
       const firstItemErr = itemResults.find((r) => r.error)?.error
       if (firstItemErr) throw firstItemErr
 
+      const accountResult = await savePurchaseOrderAccountConfigs(
+        supabase,
+        companyId,
+        accountConfigs,
+      )
+      if (!accountResult.ok) {
+        toast.error(accountResult.message)
+        return
+      }
+
       setEditSnapshot(null)
       setIsEditing(false)
       toast.success("Alterações salvas. Reenvie ao fornecedor quando estiver pronto.")
@@ -1194,6 +2094,8 @@ export default function PurchaseOrderDetailPage({
       }
     }
 
+    if (!validateAccountConfigsAndSetErrors()) return
+
     setSavingEdit(true)
     try {
       const supabase = createClient()
@@ -1226,6 +2128,16 @@ export default function PurchaseOrderDetailPage({
       const firstItemErr = itemResults.find((r) => r.error)?.error
       if (firstItemErr) throw firstItemErr
 
+      const accountResult = await savePurchaseOrderAccountConfigs(
+        supabase,
+        companyId,
+        accountConfigs,
+      )
+      if (!accountResult.ok) {
+        toast.error(accountResult.message)
+        return
+      }
+
       void notifySupplierOrderSent({
         id: order.id,
         code: order.code,
@@ -1248,130 +2160,45 @@ export default function PurchaseOrderDetailPage({
     if (!order) return
     setExporting(true)
     try {
-      const ExcelJS = (await import("exceljs")).default
-      const workbook = new ExcelJS.Workbook()
-      const ws = workbook.addWorksheet("Pedido")
+      const orderTotal = items.reduce(
+        (sum, item) =>
+          sum + computePoLineTotal(item.quantity, item.unit_price, item.price_unit),
+        0,
+      )
 
-      const headerFill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FF4F46E5" },
-      } as any
-      const headerFont = { color: { argb: "FFFFFFFF" }, bold: true }
-      const border = {
-        top: { style: "thin", color: { argb: "FFDDDDDD" } },
-        bottom: { style: "thin", color: { argb: "FFDDDDDD" } },
-        left: { style: "thin", color: { argb: "FFDDDDDD" } },
-        right: { style: "thin", color: { argb: "FFDDDDDD" } },
-      } as any
-
-      ws.columns = [
-        { width: 18 },
-        { width: 45 },
-      ]
-
-      const infoRows: Array<[string, string]> = [
-        ["Nº Pedido:", order.code],
-        ["Código ERP:", erpCode ?? "—"],
-        ["Fornecedor:", order.supplier_name],
-        ["CNPJ:", order.supplier_cnpj ?? "—"],
-        ["Condição de Pagamento:", order.payment_condition ?? "—"],
-        ["Prazo de Entrega:", order.delivery_days != null ? `${order.delivery_days} dias` : "—"],
-        ["Entrega Prevista:", getOrderEstimatedDeliveryLabel(order)],
-        ["Código Cotação:", order.quotation_code ?? "—"],
-        ["Código Requisição:", order.requisition_code ?? "—"],
-        ["Endereço de Entrega:", order.delivery_address ?? "—"],
-        ["Observações:", order.observations ?? "—"],
-        [
-          "Data Criação:",
-          order.created_at
+      const workbook = await buildPurchaseOrderDetailWorkbook(
+        {
+          code: order.code,
+          erp_code: erpCode,
+          supplier_name: order.supplier_name,
+          supplier_cnpj: order.supplier_cnpj,
+          payment_condition: order.payment_condition,
+          delivery_days: order.delivery_days,
+          estimated_delivery_label: getOrderEstimatedDeliveryLabel(order),
+          quotation_code: order.quotation_code,
+          requisition_code: order.requisition_code,
+          delivery_address: order.delivery_address,
+          observations: order.observations,
+          created_at_label: order.created_at
             ? formatDateTimeBR(order.created_at, true)
             : "—",
-        ],
-      ]
-
-      ws.mergeCells("A1:B1")
-      const titleCell = ws.getCell("A1")
-      titleCell.value = `Pedido ${order.code}`
-      titleCell.font = { bold: true, size: 13 }
-      titleCell.alignment = { horizontal: "center", vertical: "middle" }
-
-      let rowIndex = 3
-      infoRows.forEach(([label, value]) => {
-        const row = ws.getRow(rowIndex)
-        row.getCell(1).value = label
-        row.getCell(2).value = value
-        row.getCell(1).font = { bold: true }
-        row.getCell(1).alignment = { vertical: "top" }
-        row.getCell(2).alignment = { vertical: "top", wrapText: true }
-        rowIndex += 1
-      })
-
-      rowIndex += 1
-
-      const headerRow = ws.getRow(rowIndex)
-      const headers = [
-        "Código",
-        "Descrição Curta",
-        "Qtd",
-        "Unidade",
-        "Preço Unit.",
-        "Impostos",
-        "Total Item",
-      ]
-      ws.columns = [
-        { header: "Código", key: "codigo", width: 15 },
-        { header: "Descrição Curta", key: "descricao", width: 40 },
-        { header: "Qtd", key: "qtd", width: 8 },
-        { header: "Unidade", key: "unidade", width: 10 },
-        { header: "Preço Unit.", key: "unit", width: 15 },
-        { header: "Impostos", key: "impostos", width: 12 },
-        { header: "Total Item", key: "total", width: 15 },
-      ]
-      headerRow.values = ["Código", "Descrição Curta", "Qtd", "Unidade", "Preço Unit.", "Impostos", "Total Item"]
-      headerRow.height = 18
-      headerRow.eachCell((cell: any) => {
-        cell.fill = headerFill
-        cell.font = { ...headerFont, size: 11 }
-        cell.alignment = { horizontal: "center", vertical: "middle" }
-        cell.border = border
-      })
-
-      let runningRow = rowIndex + 1
-      items.forEach((item) => {
-        const row = ws.getRow(runningRow)
-        row.getCell(1).value = item.material_code
-        row.getCell(2).value = item.material_description
-        row.getCell(3).value = item.quantity
-        row.getCell(4).value = item.unit_of_measure ?? "—"
-        row.getCell(5).value = item.unit_price
-        row.getCell(6).value = item.tax_percent == null ? "—" : `${item.tax_percent}%`
-        row.getCell(7).value =
-          item.total_price != null ? item.total_price : item.quantity * item.unit_price
-
-        row.eachCell({ includeEmpty: true }, (cell: any, colNumber: number) => {
-          cell.border = border
-          cell.alignment = { vertical: "middle" }
-          if (colNumber === 5 || colNumber === 7) {
-            cell.numFmt = '"R$" #,##0.00'
-          }
-        })
-
-        runningRow += 1
-      })
-
-      const totalRow = ws.getRow(runningRow)
-      totalRow.getCell(1).value = "Total do Pedido"
-      ws.mergeCells(`A${runningRow}:6${runningRow}`)
-      totalRow.getCell(7).value = order.total_price ?? null
-      totalRow.eachCell({ includeEmpty: true }, (cell: any, colNumber: number) => {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } }
-        cell.font = { bold: true }
-        cell.border = border
-        if (colNumber === 7) {
-          cell.numFmt = '"R$" #,##0.00'
-        }
-      })
+          items: items.map((item) => ({
+            material_code: item.material_code,
+            material_description: item.material_description,
+            quantity: item.quantity,
+            unit_of_measure: item.unit_of_measure,
+            price_unit: item.price_unit,
+            unit_price: item.unit_price,
+            total_price: item.total_price,
+          })),
+          order_total: order.total_price ?? orderTotal,
+        },
+        {
+          porEnabled,
+          lineTotal: (item) =>
+            computePoLineTotal(item.quantity, item.unit_price, item.price_unit),
+        },
+      )
 
       const filename = `pedido_${order.code}_${getTodayDDMMYYYY()}.xlsx`
       await downloadExcel(workbook, filename)
@@ -1384,6 +2211,9 @@ export default function PurchaseOrderDetailPage({
         entity: "purchase_order",
         entityId: order.id,
       })
+    } catch (err) {
+      console.error(err)
+      toast.error("Não foi possível exportar o pedido para Excel.")
     } finally {
       setExporting(false)
     }
@@ -1394,7 +2224,22 @@ export default function PurchaseOrderDetailPage({
     setGeneratingPdf(true)
     try {
       const response = await fetch(`/api/purchase-order-pdf?id=${order.id}`)
-      if (!response.ok) throw new Error("Erro ao gerar PDF")
+      if (!response.ok) {
+        let message = "Erro ao gerar PDF"
+        try {
+          const payload = (await response.json()) as { error?: string }
+          if (payload.error) message = payload.error
+        } catch {
+          // resposta não-JSON
+        }
+        throw new Error(message)
+      }
+
+      const contentType = response.headers.get("content-type") ?? ""
+      if (!contentType.includes("application/pdf")) {
+        throw new Error("Resposta inválida do servidor ao gerar PDF.")
+      }
+
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
@@ -1406,7 +2251,9 @@ export default function PurchaseOrderDetailPage({
       URL.revokeObjectURL(url)
     } catch (e) {
       console.error(e)
-      toast.error("Não foi possível gerar o PDF.")
+      toast.error(
+        e instanceof Error ? e.message : "Não foi possível gerar o PDF.",
+      )
     } finally {
       setGeneratingPdf(false)
     }
@@ -1424,7 +2271,7 @@ export default function PurchaseOrderDetailPage({
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/comprador/pedidos")}>
+          <Button variant="ghost" size="icon" onClick={() => router.push(backHref)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1">
@@ -1440,7 +2287,7 @@ export default function PurchaseOrderDetailPage({
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/comprador/pedidos")}>
+          <Button variant="ghost" size="icon" onClick={() => router.push(backHref)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1">
@@ -1469,6 +2316,29 @@ export default function PurchaseOrderDetailPage({
     hasPermission("order.edit") ||
     (hasPermission("order.edit_own") && order.created_by === userId)
 
+  const canEditAccountConfig =
+    accountAssignmentEnabled &&
+    canEditOrder &&
+    (isEditing || (order.status === "draft" && !integratedOrder))
+
+  const isDraftEditable =
+    order.status === "draft" && !integratedOrder && canEditOrder
+
+  const showHeaderEdit = isEditing || isDraftEditable
+
+  const handleAccountConfigChange = (
+    itemId: string,
+    config: ItemAccountConfigEdit,
+  ) => {
+    setAccountConfigs((prev) => ({ ...prev, [itemId]: config }))
+    setAccountConfigErrors((prev) => {
+      if (!prev[itemId]) return prev
+      const next = { ...prev }
+      delete next[itemId]
+      return next
+    })
+  }
+
   const canDelegate =
     order.status !== "cancelled" &&
     order.status !== "completed" &&
@@ -1476,14 +2346,22 @@ export default function PurchaseOrderDetailPage({
 
   const totalItemsCount = items.length
 
-  const displayedOrderTotal = isEditing
-    ? editItems.reduce((s, i) => s + i.quantity * i.unit_price, 0)
-    : (order.total_price ?? 0)
+  const showItemEdit = isEditing || isDraftEditable
+
+  const displayedOrderTotal = showItemEdit
+    ? editItems.reduce(
+        (s, i) => s + computePoLineTotal(i.quantity, i.unit_price, i.price_unit),
+        0,
+      )
+    : items.reduce(
+        (s, i) => s + computePoLineTotal(i.quantity, i.unit_price, i.price_unit),
+        0,
+      ) || (order.total_price ?? 0)
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => router.push("/comprador/pedidos")}>
+        <Button variant="ghost" size="icon" onClick={() => router.push(backHref)}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
@@ -1491,6 +2369,12 @@ export default function PurchaseOrderDetailPage({
           <p className="text-muted-foreground">Criado em {createdAtLabel}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <EntityApprovalActions
+            flow="order"
+            entityId={id}
+            companyId={companyId}
+            onDecided={() => fetchOrderData({ silent: true })}
+          />
           <span
             className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${poStatusBadgeClass(statusDisplay.color)}`}
           >
@@ -1502,10 +2386,19 @@ export default function PurchaseOrderDetailPage({
           {order.status === "draft" && !integratedOrder && canEditOrder && (
             <>
               <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleSaveDraft()}
+                disabled={savingDraft || confirmingPedido || cancellingPedido}
+              >
+                {savingDraft ? "Salvando..." : "Salvar"}
+              </Button>
+              <Button
                 variant="default"
                 size="sm"
                 onClick={handleConfirmOrder}
-                disabled={confirmingPedido || cancellingPedido}
+                disabled={confirmingPedido || cancellingPedido || savingDraft}
               >
                 <CheckCircle className="mr-2 h-4 w-4" />
                 {confirmingPedido ? "Confirmando..." : "Confirmar Pedido"}
@@ -1912,34 +2805,141 @@ export default function PurchaseOrderDetailPage({
           <CardHeader>
             <CardTitle>Dados do Fornecedor</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div>
-              <p className="text-xs text-muted-foreground">Fornecedor</p>
-              <p className="font-medium">{order.supplier_name}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">CNPJ</p>
-              <p className="text-sm text-muted-foreground">
-                {order.supplier_cnpj ?? "—"}
+          <CardContent className="space-y-4 text-sm">
+            <div className="space-y-1.5 min-w-0">
+              <p className="text-xs text-muted-foreground">
+                Fornecedor<span className="text-destructive">*</span>
               </p>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Condição de Pagamento</p>
-              {isEditing ? (
-                paymentOptions.length > 0 ? (
+              {isDraftEditable ? (
+                draftSupplier ? (
+                  <div
+                    className={cn(
+                      "flex items-center justify-between rounded-lg border px-3 py-2",
+                      headerFieldErrors.supplier
+                        ? "border-destructive"
+                        : "border-border",
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{draftSupplier.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {draftSupplier.code}
+                        {draftSupplier.cnpj ? ` · ${draftSupplier.cnpj}` : ""}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => setDraftSupplier(null)}
+                    >
+                      Alterar
+                    </Button>
+                  </div>
+                ) : (
                   <div className="space-y-2">
+                    <div
+                      className={cn(
+                        "relative rounded-lg",
+                        headerFieldErrors.supplier && "ring-1 ring-destructive",
+                      )}
+                    >
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        className={cn(
+                          "pl-9",
+                          invalidFieldClass(headerFieldErrors.supplier),
+                        )}
+                        placeholder="Nome, código ou CNPJ..."
+                        value={supplierSearch}
+                        onChange={(e) => setSupplierSearch(e.target.value)}
+                      />
+                    </div>
+                    {supplierSearch.trim().length >= 2 && (
+                      <div className="rounded-lg border border-border max-h-48 overflow-y-auto">
+                        {supplierSearchLoading ? (
+                          <p className="p-3 text-sm text-muted-foreground">Buscando...</p>
+                        ) : supplierResults.length === 0 ? (
+                          <p className="p-3 text-sm text-muted-foreground">
+                            Nenhum fornecedor encontrado.
+                          </p>
+                        ) : (
+                          supplierResults.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 hover:bg-muted/50 border-b border-border last:border-b-0"
+                              onClick={() => {
+                                setDraftSupplier(s)
+                                setSupplierSearch("")
+                                setSupplierResults([])
+                                setHeaderFieldErrors((prev) => {
+                                  if (!prev.supplier) return prev
+                                  const next = { ...prev }
+                                  delete next.supplier
+                                  return next
+                                })
+                              }}
+                            >
+                              <p className="text-sm font-medium">{s.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {s.code}
+                                {s.cnpj ? ` · ${s.cnpj}` : ""}
+                              </p>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              ) : (
+                <div>
+                  <p className="font-medium">{order.supplier_name}</p>
+                  {order.supplier_cnpj ? (
+                    <p className="text-xs text-muted-foreground mt-0.5">{order.supplier_cnpj}</p>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5 min-w-0">
+                <p className="text-xs text-muted-foreground">
+                  Condição de Pagamento<span className="text-destructive">*</span>
+                </p>
+                {showHeaderEdit ? (
+                  paymentOptions.length > 0 ? (
                     <Select
                       value={
-                        paymentOptions.some((o) => o.code === editForm.payment_condition)
-                          ? editForm.payment_condition
-                          : undefined
+                        paymentOptions.find(
+                          (o) =>
+                            editForm.payment_condition === o.code ||
+                            editForm.payment_condition === `${o.code} — ${o.description}`,
+                        )?.code ?? undefined
                       }
-                      onValueChange={(v) =>
-                        setEditForm((f) => ({ ...f, payment_condition: v }))
-                      }
+                      onValueChange={(v) => {
+                        const opt = paymentOptions.find((o) => o.code === v)
+                        setEditForm((f) => ({
+                          ...f,
+                          payment_condition: opt ? `${opt.code} — ${opt.description}` : v,
+                        }))
+                        setHeaderFieldErrors((prev) => {
+                          if (!prev.payment_condition) return prev
+                          const next = { ...prev }
+                          delete next.payment_condition
+                          return next
+                        })
+                      }}
                     >
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Selecione a condição de pagamento" />
+                      <SelectTrigger
+                        className={cn(
+                          "w-full",
+                          invalidFieldClass(headerFieldErrors.payment_condition),
+                        )}
+                      >
+                        <SelectValue placeholder="Selecione..." />
                       </SelectTrigger>
                       <SelectContent>
                         {paymentOptions.map((opt) => (
@@ -1949,57 +2949,61 @@ export default function PurchaseOrderDetailPage({
                         ))}
                       </SelectContent>
                     </Select>
-                    {!paymentOptions.some((o) => o.code === editForm.payment_condition) &&
-                    editForm.payment_condition.trim() ? (
-                      <p className="text-xs text-muted-foreground">
-                        Valor atual (fora da lista cadastrada): {editForm.payment_condition}
-                      </p>
-                    ) : null}
-                  </div>
+                  ) : (
+                    <Input
+                      value={editForm.payment_condition}
+                      onChange={(e) => {
+                        setEditForm((f) => ({ ...f, payment_condition: e.target.value }))
+                        setHeaderFieldErrors((prev) => {
+                          if (!prev.payment_condition) return prev
+                          const next = { ...prev }
+                          delete next.payment_condition
+                          return next
+                        })
+                      }}
+                      className={invalidFieldClass(headerFieldErrors.payment_condition)}
+                      placeholder="Condição de pagamento"
+                    />
+                  )
                 ) : (
-                  <Input
-                    value={editForm.payment_condition}
-                    onChange={(e) =>
-                      setEditForm((f) => ({ ...f, payment_condition: e.target.value }))
+                  <p className="text-sm text-muted-foreground">
+                    {order.payment_condition ?? "—"}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5 min-w-0">
+                <p className="text-xs text-muted-foreground">Prazo de Entrega</p>
+                {showHeaderEdit ? (
+                  <QuantityInput
+                    value={Number(editForm.delivery_days) || 0}
+                    maxQuantity={9999}
+                    onValueChange={(val) =>
+                      setEditForm((f) => ({ ...f, delivery_days: String(val) }))
                     }
-                    placeholder="Condição de pagamento"
+                    placeholder="Dias"
+                    className="w-full"
                   />
-                )
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {order.payment_condition ?? "—"}
-                </p>
-              )}
+                ) : (
+                  <p className="text-sm font-medium">
+                    {order.delivery_days != null ? `${order.delivery_days} dias` : "—"}
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Prazo de Entrega</p>
-              {isEditing ? (
-                <Input
-                  type="number"
-                  min={1}
-                  value={editForm.delivery_days}
-                  onChange={(e) =>
-                    setEditForm((f) => ({ ...f, delivery_days: e.target.value }))
-                  }
-                  placeholder="Dias"
-                  className="max-w-[120px]"
-                />
-              ) : (
-                <p className="text-sm font-medium">
-                  {order.delivery_days != null ? `${order.delivery_days} dias` : "—"}
-                </p>
-              )}
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Entrega Prevista</p>
-              <p className="text-sm font-medium">{getOrderEstimatedDeliveryLabel(order)}</p>
-              {order.delivery_date_change_reason ? (
-                <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
-                  <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
-                  Data atualizada pelo fornecedor
-                </p>
-              ) : null}
-            </div>
+
+            {!isDraftEditable ? (
+              <div>
+                <p className="text-xs text-muted-foreground">Entrega Prevista</p>
+                <p className="text-sm font-medium">{getOrderEstimatedDeliveryLabel(order)}</p>
+                {order.delivery_date_change_reason ? (
+                  <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+                    Data atualizada pelo fornecedor
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -2007,50 +3011,57 @@ export default function PurchaseOrderDetailPage({
           <CardHeader>
             <CardTitle>Dados do Pedido</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm">
-            <div>
-              <p className="text-xs text-muted-foreground">Responsável</p>
-              <p className="text-sm text-muted-foreground">{responsibleName}</p>
+          <CardContent className="space-y-4 text-sm">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Responsável</p>
+                <p className="text-sm text-foreground">{responsibleName}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Código da Cotação</p>
+                <p className="text-sm text-foreground">{order.quotation_code ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Código ERP</p>
+                <p className="text-sm text-foreground">
+                  {erpCode ?? "Aguardando integração"}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Código da Cotação</p>
-              <p className="text-sm text-muted-foreground">
-                {order.quotation_code ?? "—"}
+            {!isDraftEditable && order.requisition_code ? (
+              <div>
+                <p className="text-xs text-muted-foreground">Código da Requisição</p>
+                <p className="text-sm text-foreground">{order.requisition_code}</p>
+              </div>
+            ) : null}
+            <div className="space-y-1.5">
+              <p className="text-xs text-muted-foreground">
+                Endereço de Entrega<span className="text-destructive">*</span>
               </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Código da Requisição</p>
-              <p className="text-sm text-muted-foreground">
-                {order.requisition_code ?? "—"}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Código ERP</p>
-              <p className="text-sm text-muted-foreground">
-                {erpCode ?? "Aguardando integração"}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <p className="text-xs text-muted-foreground">Endereço de Entrega</p>
-              {isEditing ? (
+              {showHeaderEdit ? (
                 <Input
                   value={editForm.delivery_address}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setEditForm((f) => ({ ...f, delivery_address: e.target.value }))
-                  }
+                    setHeaderFieldErrors((prev) => {
+                      if (!prev.delivery_address) return prev
+                      const next = { ...prev }
+                      delete next.delivery_address
+                      return next
+                    })
+                  }}
+                  className={invalidFieldClass(headerFieldErrors.delivery_address)}
                   placeholder="Endereço de entrega"
                 />
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  {order.delivery_address ?? "—"}
-                </p>
+                <p className="text-sm text-foreground">{order.delivery_address ?? "—"}</p>
               )}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <p className="text-xs text-muted-foreground">Observações</p>
-              {isEditing ? (
+              {showHeaderEdit ? (
                 <Textarea
-                  rows={3}
+                  rows={2}
                   value={editForm.observations}
                   onChange={(e) =>
                     setEditForm((f) => ({ ...f, observations: e.target.value }))
@@ -2058,9 +3069,7 @@ export default function PurchaseOrderDetailPage({
                   placeholder="Observações"
                 />
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  {order.observations ?? "—"}
-                </p>
+                <p className="text-sm text-foreground">{order.observations ?? "—"}</p>
               )}
             </div>
           </CardContent>
@@ -2068,14 +3077,30 @@ export default function PurchaseOrderDetailPage({
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div>
             <CardTitle>Itens do Pedido</CardTitle>
           </div>
-          <Badge variant="outline" className="text-xs">
-            {(isEditing ? editItems.length : totalItemsCount)} item
-            {(isEditing ? editItems.length : totalItemsCount) === 1 ? "" : "s"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {isDraftEditable && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setReqDialogOpen(true)
+                  void loadAvailableRequisitions()
+                }}
+              >
+                <ClipboardList className="h-4 w-4 mr-2" />
+                Importar de Requisição
+              </Button>
+            )}
+            <Badge variant="outline" className="text-xs">
+              {(showItemEdit ? editItems.length : totalItemsCount)} item
+              {(showItemEdit ? editItems.length : totalItemsCount) === 1 ? "" : "s"}
+            </Badge>
+          </div>
         </CardHeader>
         <CardContent>
           {isEditing ? (
@@ -2093,122 +3118,278 @@ export default function PurchaseOrderDetailPage({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Código</TableHead>
-                  <TableHead>Descrição Curta</TableHead>
-                  <TableHead className="whitespace-nowrap">Contrato</TableHead>
-                  <TableHead className="whitespace-nowrap">Item Contr.</TableHead>
-                  <TableHead className="text-right">Qtd</TableHead>
+                  {isDraftEditable ? <TableHead className="w-10" /> : null}
+                  <TableHead className="text-center">Código</TableHead>
+                  <TableHead className="text-center min-w-[10rem]">Descrição Curta</TableHead>
+                  {isDraftEditable ? (
+                    <TableHead className="text-center whitespace-nowrap">Requisição</TableHead>
+                  ) : null}
+                  <TableHead className="text-center whitespace-nowrap">Contrato</TableHead>
+                  <TableHead className="text-center whitespace-nowrap">Item Contr.</TableHead>
+                  {accountAssignmentEnabled ? (
+                    <>
+                      <TableHead className="text-center whitespace-nowrap min-w-[9rem]">
+                        Classificação{canEditAccountConfig ? " *" : ""}
+                      </TableHead>
+                      <TableHead className="text-center whitespace-nowrap min-w-[8.5rem]">
+                        Coletor{canEditAccountConfig ? " *" : ""}
+                      </TableHead>
+                      <TableHead className="text-center whitespace-nowrap min-w-[6.5rem]">
+                        Rateio
+                      </TableHead>
+                    </>
+                  ) : null}
+                  <TableHead className="text-center">Qtd *</TableHead>
                   <TableHead className="text-center">Unidade</TableHead>
-                  <TableHead className="text-right">Preço Unit.</TableHead>
-                  <TableHead className="text-right">Impostos</TableHead>
-                  <TableHead className="text-right">Total Item</TableHead>
+                  {porEnabled ? (
+                    <TableHead className="text-center whitespace-nowrap">POR *</TableHead>
+                  ) : null}
+                  <TableHead className="text-center">Preço Unit. *</TableHead>
+                  <TableHead className="text-center">Total Item</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isEditing
+                {showItemEdit
                   ? editItems.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell className="font-mono text-sm">
+                        {isDraftEditable ? (
+                          <TableCell className="w-10 px-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              disabled={editItems.length <= 1}
+                              onClick={() => void removeDraftLine(item.id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        ) : null}
+                        <TableCell className="font-mono text-sm text-center">
                           {item.material_code}
                         </TableCell>
                         <TableCell>{item.material_description}</TableCell>
-                        <TableCell className="font-mono text-xs">
+                        {isDraftEditable ? (
+                          <TableCell className="text-center">
+                            {item.source_requisition_code &&
+                            requisitionIdByCode[item.source_requisition_code] ? (
+                              <Link
+                                href={`/comprador/requisicoes/${requisitionIdByCode[item.source_requisition_code]}`}
+                                className="text-xs font-mono text-primary hover:underline"
+                              >
+                                {item.source_requisition_code}
+                              </Link>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                {item.source_requisition_code ?? "—"}
+                              </span>
+                            )}
+                          </TableCell>
+                        ) : null}
+                        <TableCell className="font-mono text-xs text-center">
                           {items.find((i) => i.id === item.id)?.contract_code ?? "—"}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className="font-mono text-xs text-center">
                           {items.find((i) => i.id === item.id)?.contract_item_line ?? "—"}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="inline-flex flex-col items-end gap-1">
-                            <input
-                              type="number"
-                              min={1}
-                              max={item.max_quantity ?? undefined}
+                        {accountAssignmentEnabled ? (
+                          <PoItemAccountConfigTableCells
+                            companyId={companyId}
+                            materialCode={item.material_code}
+                            config={
+                              accountConfigs[item.id] ?? {
+                                category: null,
+                                assignments: [],
+                                usesApportionment: false,
+                              }
+                            }
+                            editable={canEditAccountConfig}
+                            fieldErrors={accountConfigErrors[item.id]}
+                            onChange={(config) => handleAccountConfigChange(item.id, config)}
+                          />
+                        ) : null}
+                        <TableCell className="text-center">
+                          <div className="inline-flex items-center justify-center gap-1.5">
+                            <QuantityInput
                               value={item.quantity}
-                              onChange={(e) => {
-                                const raw = e.target.value
-                                if (raw === "") return
-                                const val = Number(raw)
-                                if (!Number.isFinite(val)) return
-                                if (
-                                  item.max_quantity != null &&
-                                  val > item.max_quantity
-                                ) {
-                                  toast.error(
-                                    `Quantidade máxima para ${item.material_code}: ${item.max_quantity}`,
-                                  )
-                                  return
-                                }
+                              maxQuantity={Math.min(
+                                maxQuantity,
+                                item.max_quantity ?? maxQuantity,
+                              )}
+                              invalid={Boolean(lineItemFieldErrors[item.id]?.quantity)}
+                              onValueChange={(val) => {
+                                setLineItemFieldErrors((prev) => {
+                                  if (!prev[item.id]?.quantity) return prev
+                                  const next = { ...prev }
+                                  const row = { ...next[item.id] }
+                                  delete row.quantity
+                                  if (Object.keys(row).length === 0) delete next[item.id]
+                                  else next[item.id] = row
+                                  return next
+                                })
                                 setEditItems((prev) =>
                                   prev.map((i) =>
                                     i.id === item.id ? { ...i, quantity: val } : i,
                                   ),
                                 )
                               }}
-                              className="h-8 w-20 rounded border border-input bg-background px-2 text-center text-sm"
+                              className="h-8 w-20 text-center"
                             />
                             {item.max_quantity != null ? (
-                              <p className="text-xs text-muted-foreground">
+                              <span className="text-xs text-muted-foreground whitespace-nowrap">
                                 máx: {item.max_quantity}
-                              </p>
+                              </span>
                             ) : null}
                           </div>
                         </TableCell>
                         <TableCell className="text-center">
                           {item.unit_of_measure || "—"}
                         </TableCell>
+                        {porEnabled ? (
+                          <TableCell className="text-center">
+                            {isDraftEditable && !isEditing ? (
+                              <Select
+                                value={String(item.price_unit)}
+                                onValueChange={(value) => {
+                                  const parsed = Number(value) as PorValue
+                                  setLineItemFieldErrors((prev) => {
+                                    if (!prev[item.id]?.price_unit) return prev
+                                    const next = { ...prev }
+                                    const row = { ...next[item.id] }
+                                    delete row.price_unit
+                                    if (Object.keys(row).length === 0) delete next[item.id]
+                                    else next[item.id] = row
+                                    return next
+                                  })
+                                  setEditItems((prev) =>
+                                    prev.map((i) =>
+                                      i.id === item.id ? { ...i, price_unit: parsed } : i,
+                                    ),
+                                  )
+                                }}
+                              >
+                                <SelectTrigger
+                                  className={cn(
+                                    "h-8 w-24 mx-auto",
+                                    invalidFieldClass(
+                                      lineItemFieldErrors[item.id]?.price_unit,
+                                    ),
+                                  )}
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {POR_OPTIONS.map((por) => (
+                                    <SelectItem key={por} value={String(por)}>
+                                      {por.toLocaleString("pt-BR")}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              item.price_unit.toLocaleString("pt-BR")
+                            )}
+                          </TableCell>
+                        ) : null}
                         <TableCell className="text-right">
-                          {money.format(item.unit_price)}
+                          {isDraftEditable && !isEditing ? (
+                            <PriceInput
+                              value={item.unit_price}
+                              decimalPlaces={priceDecimalPlaces}
+                              invalid={Boolean(lineItemFieldErrors[item.id]?.unit_price)}
+                              onValueChange={(val) => {
+                                setLineItemFieldErrors((prev) => {
+                                  if (!prev[item.id]?.unit_price) return prev
+                                  const next = { ...prev }
+                                  const row = { ...next[item.id] }
+                                  delete row.unit_price
+                                  if (Object.keys(row).length === 0) delete next[item.id]
+                                  else next[item.id] = row
+                                  return next
+                                })
+                                setEditItems((prev) =>
+                                  prev.map((i) =>
+                                    i.id === item.id ? { ...i, unit_price: val } : i,
+                                  ),
+                                )
+                              }}
+                              className="w-28 text-right ml-auto"
+                            />
+                          ) : (
+                            money.format(item.unit_price)
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {item.tax_percent == null
-                            ? "—"
-                            : `${item.tax_percent}%`}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {money.format(item.quantity * item.unit_price)}
+                          {money.format(
+                            computePoLineTotal(
+                              item.quantity,
+                              item.unit_price,
+                              item.price_unit,
+                            ),
+                          )}
                         </TableCell>
                       </TableRow>
                     ))
                   : items.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell className="font-mono text-sm">
+                        <TableCell className="font-mono text-sm text-center">
                           {item.material_code}
                         </TableCell>
                         <TableCell>{item.material_description}</TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className="font-mono text-xs text-center">
                           {items.find((i) => i.id === item.id)?.contract_code ?? "—"}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">
+                        <TableCell className="font-mono text-xs text-center">
                           {items.find((i) => i.id === item.id)?.contract_item_line ?? "—"}
                         </TableCell>
-                        <TableCell className="text-right">{item.quantity}</TableCell>
+                        {accountAssignmentEnabled ? (
+                          <PoItemAccountConfigTableCells
+                            companyId={companyId}
+                            materialCode={item.material_code}
+                            config={
+                              accountConfigs[item.id] ?? {
+                                category: null,
+                                assignments: [],
+                                usesApportionment: false,
+                              }
+                            }
+                            editable={canEditAccountConfig}
+                            fieldErrors={accountConfigErrors[item.id]}
+                            onChange={(config) => handleAccountConfigChange(item.id, config)}
+                          />
+                        ) : null}
+                        <TableCell className="text-center">{item.quantity}</TableCell>
                         <TableCell className="text-center">
                           {item.unit_of_measure ?? "—"}
                         </TableCell>
+                        {porEnabled ? (
+                          <TableCell className="text-center">
+                            {item.price_unit.toLocaleString("pt-BR")}
+                          </TableCell>
+                        ) : null}
                         <TableCell className="text-right">
                           {money.format(item.unit_price)}
                         </TableCell>
                         <TableCell className="text-right">
-                          {item.tax_percent == null ? "—" : `${item.tax_percent}%`}
-                        </TableCell>
-                        <TableCell className="text-right">
                           {money.format(
-                            item.total_price ?? item.quantity * item.unit_price,
+                            computePoLineTotal(
+                              item.quantity,
+                              item.unit_price,
+                              item.price_unit,
+                            ),
                           )}
                         </TableCell>
                       </TableRow>
                     ))}
-                <TableRow>
-                  <TableCell colSpan={6} className="text-right font-bold">
-                    Total do Pedido
-                  </TableCell>
-                  <TableCell className="text-right font-bold">
-                    {money.format(displayedOrderTotal)}
-                  </TableCell>
-                </TableRow>
               </TableBody>
             </Table>
+          </div>
+          <div className="flex justify-end items-center gap-4 border-t border-border pt-3 mt-1 text-sm">
+            <span className="font-bold">Total do Pedido</span>
+            <span className="font-bold min-w-[6rem] text-right">
+              {money.format(displayedOrderTotal)}
+            </span>
           </div>
         </CardContent>
       </Card>
@@ -2309,6 +3490,111 @@ export default function PurchaseOrderDetailPage({
             >
               {delegating ? "Delegando..." : "Confirmar delegação"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reqDialogOpen} onOpenChange={setReqDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Importar Itens de Requisições</DialogTitle>
+          </DialogHeader>
+
+          {requisitionsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : requisitions.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              Nenhuma requisição aprovada disponível para importação.
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+              {requisitions.map((req) => (
+                <div
+                  key={req.id}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault()
+                      setSelectedReqIds((prev) =>
+                        prev.includes(req.id)
+                          ? prev.filter((x) => x !== req.id)
+                          : [...prev, req.id],
+                      )
+                    }
+                  }}
+                  className={`rounded-lg border p-4 cursor-pointer transition-colors ${
+                    selectedReqIds.includes(req.id)
+                      ? "border-primary bg-primary/5"
+                      : "border-border hover:bg-muted/30"
+                  }`}
+                  onClick={() =>
+                    setSelectedReqIds((prev) =>
+                      prev.includes(req.id)
+                        ? prev.filter((x) => x !== req.id)
+                        : [...prev, req.id],
+                    )
+                  }
+                >
+                  <div className="flex items-start gap-3">
+                    <Checkbox
+                      checked={selectedReqIds.includes(req.id)}
+                      onCheckedChange={(checked) => {
+                        setSelectedReqIds((prev) =>
+                          checked === true
+                            ? prev.includes(req.id)
+                              ? prev
+                              : [...prev, req.id]
+                            : prev.filter((x) => x !== req.id),
+                        )
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium font-mono text-primary">
+                          {req.code}
+                        </span>
+                        <span className="text-sm text-foreground truncate">{req.title}</span>
+                        <span className="text-xs text-muted-foreground ml-auto flex-shrink-0">
+                          {formatDateBR(req.created_at)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {req.items.length} item(s):{" "}
+                        {req.items
+                          .slice(0, 3)
+                          .map((i) => i.material_description)
+                          .join(", ")}
+                        {req.items.length > 3 && ` +${req.items.length - 3} mais`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <div className="flex items-center gap-3 w-full flex-wrap">
+              <span className="text-sm text-muted-foreground flex-1 min-w-[12rem]">
+                {selectedReqIds.length > 0
+                  ? `${selectedReqIds.length} requisição(ões) selecionada(s)`
+                  : "Selecione as requisições para importar"}
+              </span>
+              <Button type="button" variant="outline" onClick={() => setReqDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleImportRequisitions()}
+                disabled={selectedReqIds.length === 0}
+              >
+                Importar {selectedReqIds.length > 0 ? `(${selectedReqIds.length})` : ""}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

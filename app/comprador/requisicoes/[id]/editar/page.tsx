@@ -22,21 +22,24 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  Tooltip,
-  TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-import { Trash2, Plus, ChevronLeft, Paperclip, PackageSearch, X, Send, AlertTriangle } from "lucide-react"
+import { ChevronLeft, Paperclip, Send, AlertTriangle, X } from "lucide-react"
+import { RequisitionLineItemsSection } from "@/components/requisitions/requisition-line-items-section"
+import {
+  buildAccountConfigsFromRequisitionItems,
+  REQUISITION_ITEM_ACCOUNT_SELECT,
+  type RequisitionEditorLineItem,
+  type LoadedRequisitionItemRow,
+} from "@/lib/requisitions/line-items-helpers"
+import {
+  validateAllAccountConfigsForSubmit,
+  type ItemAccountConfigEdit,
+  type ItemAccountConfigFieldErrors,
+} from "@/lib/po-account-assignment"
+import { saveRequisitionAccountConfigs } from "@/lib/requisition-account-assignment-persist"
+import { useImplantationConfig } from "@/lib/hooks/use-implantation-config"
 
 type Priority = "normal" | "urgent" | "critical"
 
@@ -47,17 +50,6 @@ type CatalogItem = {
   long_description: string | null
   unit_of_measure: string | null
   commodity_group: string | null
-}
-
-type RequisitionLineItem = {
-  id: string
-  itemId: string
-  materialCode: string
-  materialDescription: string
-  unitOfMeasure: string
-  commodityGroup: string
-  quantity: number
-  observations: string
 }
 
 type RequisitionDraftForm = {
@@ -84,21 +76,11 @@ type RequisitionItemRow = {
 }
 
 const ACCEPTED_FILE_TYPES = ".pdf,.xlsx,.xls,.png,.jpg,.jpeg"
-const DEBOUNCE_MS = 400
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = React.useState<T>(value)
-  React.useEffect(() => {
-    const t = setTimeout(() => setDebouncedValue(value), delay)
-    return () => clearTimeout(t)
-  }, [value, delay])
-  return debouncedValue
 }
 
 function formatDateForInput(iso: string | null | undefined): string {
@@ -117,6 +99,7 @@ export default function EditarRequisicaoPage({
   const { id } = React.use(params)
   const { companyId, userId, loading: userLoading } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
+  const { accountAssignmentEnabled } = useImplantationConfig()
 
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -134,11 +117,13 @@ export default function EditarRequisicaoPage({
     priority: "normal",
   })
 
-  const [items, setItems] = React.useState<RequisitionLineItem[]>([])
-  const [searchTerm, setSearchTerm] = React.useState("")
-  const [searchResults, setSearchResults] = React.useState<CatalogItem[]>([])
-  const [searchLoading, setSearchLoading] = React.useState(false)
-  const debouncedSearch = useDebounce(searchTerm, DEBOUNCE_MS)
+  const [items, setItems] = React.useState<RequisitionEditorLineItem[]>([])
+  const [accountConfigs, setAccountConfigs] = React.useState<
+    Record<string, ItemAccountConfigEdit>
+  >({})
+  const [accountConfigErrors, setAccountConfigErrors] = React.useState<
+    Record<string, ItemAccountConfigFieldErrors>
+  >({})
 
   const [attachments, setAttachments] = React.useState<AttachedFile[]>([])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -156,7 +141,7 @@ export default function EditarRequisicaoPage({
         supabase.from("requisitions").select("*").eq("id", id).single(),
         supabase
           .from("requisition_items")
-          .select("*")
+          .select(REQUISITION_ITEM_ACCOUNT_SELECT)
           .eq("requisition_id", id)
           .order("created_at"),
       ])
@@ -197,7 +182,9 @@ export default function EditarRequisicaoPage({
         priority: (reqData.priority as Priority) ?? "normal",
       })
 
-      const reqItems = (iRes.data ?? []) as RequisitionItemRow[]
+      const reqItems = (iRes.data ?? []) as Array<
+        RequisitionItemRow & LoadedRequisitionItemRow
+      >
       let itemsData: CatalogItem[] = []
       if (reqItems.length > 0 && companyId) {
         const materialCodes = [...new Set(reqItems.map((r) => r.material_code).filter((c): c is string => Boolean(c)))]
@@ -215,7 +202,7 @@ export default function EditarRequisicaoPage({
           itemMap.set(item.code, item)
         })
 
-        const lineItems: RequisitionLineItem[] = reqItems.map((ri) => {
+        const lineItems: RequisitionEditorLineItem[] = reqItems.map((ri) => {
           const catalogItem = ri.material_code ? itemMap.get(ri.material_code) : null
           return {
             id: ri.id,
@@ -229,8 +216,10 @@ export default function EditarRequisicaoPage({
           }
         })
         setItems(lineItems)
+        setAccountConfigs(buildAccountConfigsFromRequisitionItems(reqItems))
       } else {
         setItems([])
+        setAccountConfigs({})
       }
 
       setLoading(false)
@@ -242,56 +231,13 @@ export default function EditarRequisicaoPage({
     }
   }, [companyId, id, router, userLoading])
 
-  React.useEffect(() => {
-    if (userLoading || !companyId || debouncedSearch.length < 2) {
-      setSearchResults([])
-      return
-    }
-    const run = async () => {
-      setSearchLoading(true)
-      const supabase = createClient()
-      const term = `%${debouncedSearch.replace(/"/g, '\\"')}%`
-      const quoted = `"${term}"`
-      const { data, error: searchErr } = await supabase
-        .from("items")
-        .select("id, code, short_description, long_description, unit_of_measure, commodity_group")
-        .eq("company_id", companyId)
-        .or(`code.ilike.${quoted},short_description.ilike.${quoted}`)
-        .limit(20)
-
-      setSearchLoading(false)
-      if (searchErr) {
-        setSearchResults([])
-        return
-      }
-      setSearchResults((data as CatalogItem[]) ?? [])
-    }
-    run()
-  }, [companyId, debouncedSearch, userLoading])
-
-  const addItem = (item: CatalogItem) => {
-    if (items.some((i) => i.itemId === item.id)) return
-    setItems((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        itemId: item.id,
-        materialCode: item.code,
-        materialDescription: item.short_description,
-        unitOfMeasure: item.unit_of_measure ?? "",
-        commodityGroup: item.commodity_group ?? "",
-        quantity: 1,
-        observations: "",
-      },
-    ])
-  }
-
-  const updateItem = (itemId: string, patch: Partial<RequisitionLineItem>) => {
-    setItems((prev) => prev.map((i) => (i.id === itemId ? { ...i, ...patch } : i)))
-  }
-
-  const removeItem = (itemId: string) => {
-    setItems((prev) => prev.filter((i) => i.id !== itemId))
+  const handleAccountConfigChange = (_itemId: string, _config: ItemAccountConfigEdit) => {
+    setAccountConfigErrors((prev) => {
+      if (!prev[_itemId]) return prev
+      const next = { ...prev }
+      delete next[_itemId]
+      return next
+    })
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -337,15 +283,13 @@ export default function EditarRequisicaoPage({
           description: form.description.trim() || null,
           cost_center: costCenterTrimmed || null,
           priority: form.priority,
-          needed_by: form.neededBy
-            ? new Date(`${form.neededBy}T00:00:00`).toISOString()
-            : null,
+          needed_by: form.neededBy || null,
           status: "draft",
         })
         .eq("id", id)
 
       if (updateErr) {
-        toast.error("Erro ao salvar rascunho.")
+        toast.error(updateErr.message?.trim() || "Erro ao salvar rascunho.")
         return
       }
 
@@ -355,12 +299,13 @@ export default function EditarRequisicaoPage({
         .eq("requisition_id", id)
 
       if (deleteItemsErr) {
-        toast.error("Erro ao atualizar itens.")
+        toast.error(deleteItemsErr.message?.trim() || "Erro ao atualizar itens.")
         return
       }
 
       if (items.length > 0) {
         const payloadItems = items.map((it) => ({
+          id: it.id,
           requisition_id: id,
           company_id: companyId,
           material_code: (it.materialCode ?? "").trim() || null,
@@ -374,7 +319,17 @@ export default function EditarRequisicaoPage({
           .from("requisition_items")
           .insert(payloadItems)
         if (insertItemsErr) {
-          toast.error("Erro ao salvar os itens da requisição.")
+          toast.error(insertItemsErr.message?.trim() || "Erro ao salvar os itens da requisição.")
+          return
+        }
+
+        const accountResult = await saveRequisitionAccountConfigs(
+          supabase,
+          companyId,
+          accountConfigs,
+        )
+        if (!accountResult.ok) {
+          toast.error(accountResult.message)
           return
         }
       }
@@ -415,6 +370,19 @@ export default function EditarRequisicaoPage({
       return
     }
 
+    if (accountAssignmentEnabled) {
+      const accountValidation = validateAllAccountConfigsForSubmit(
+        items.map((item) => ({ id: item.id, material_code: item.materialCode })),
+        accountConfigs,
+      )
+      if (!accountValidation.ok) {
+        setAccountConfigErrors(accountValidation.errorsByItemId)
+        toast.error(accountValidation.firstMessage)
+        return
+      }
+    }
+    setAccountConfigErrors({})
+
     setSaving(true)
 
     try {
@@ -428,6 +396,7 @@ export default function EditarRequisicaoPage({
           priority: form.priority,
           needed_by: form.neededBy || null,
           items: items.map((it) => ({
+            id: it.id,
             material_code: (it.materialCode ?? "").trim() || null,
             material_description: it.materialDescription.trim(),
             quantity: Math.max(1, Number(it.quantity) || 1),
@@ -435,6 +404,7 @@ export default function EditarRequisicaoPage({
             commodity_group: (it.commodityGroup ?? "").trim() || null,
             observations: (it.observations ?? "").trim() || null,
           })),
+          account_configs: accountConfigs,
         }),
       })
 
@@ -660,163 +630,15 @@ export default function EditarRequisicaoPage({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Itens Solicitados</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="relative">
-              <Input
-                placeholder="Buscar por código ou descrição..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className={searchTerm ? "pr-20" : "pr-10"}
-              />
-              {searchTerm && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-8"
-                  onClick={() => setSearchTerm("")}
-                  aria-label="Limpar busca"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-              {searchTerm.length >= 2 && (
-                <div
-                  className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl border border-border bg-card shadow-lg z-10"
-                  role="listbox"
-                >
-                  {searchLoading ? (
-                    <div className="p-4 text-center text-sm text-muted-foreground">
-                      Buscando...
-                    </div>
-                  ) : searchResults.length === 0 ? (
-                    <div className="p-4 text-center text-sm text-muted-foreground">
-                      Nenhum item encontrado
-                    </div>
-                  ) : (
-                    <ul className="py-2">
-                      {searchResults.map((item) => {
-                        const isAdded = items.some((i) => i.itemId === item.id)
-                        return (
-                          <li
-                            key={item.id}
-                            className="flex items-center gap-3 px-4 py-2 hover:bg-muted/50"
-                          >
-                            {isAdded ? (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button type="button" variant="ghost" size="icon" disabled className="shrink-0">
-                                    <Plus className="h-4 w-4" />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Já adicionado</TooltipContent>
-                              </Tooltip>
-                            ) : (
-                              <Button
-                                type="button"
-                                variant="default"
-                                size="icon"
-                                onClick={() => addItem(item)}
-                                className="shrink-0"
-                              >
-                                <Plus className="h-4 w-4" />
-                              </Button>
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <span className="font-mono text-xs text-muted-foreground">{item.code}</span>
-                              <span className="ml-2 text-sm text-foreground">{item.short_description}</span>
-                              {item.unit_of_measure && (
-                                <span className="ml-2 text-xs text-muted-foreground">({item.unit_of_measure})</span>
-                              )}
-                            </div>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <p className="text-sm text-muted-foreground">
-              {items.length} item(ns) adicionado(s)
-            </p>
-
-            {items.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
-                <PackageSearch className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-sm text-muted-foreground">
-                  Nenhum item adicionado. Use a busca acima para adicionar materiais.
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Código</TableHead>
-                      <TableHead>Descrição Curta</TableHead>
-                      <TableHead className="text-center">Unidade</TableHead>
-                      <TableHead>Grupo de Mercadoria</TableHead>
-                      <TableHead className="w-28">Quantidade</TableHead>
-                      <TableHead>Observações</TableHead>
-                      <TableHead className="w-12"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((it) => (
-                      <TableRow key={it.id}>
-                        <TableCell className="font-mono text-xs">{it.materialCode}</TableCell>
-                        <TableCell className="text-sm">{it.materialDescription}</TableCell>
-                        <TableCell className="text-center text-sm">{it.unitOfMeasure || "—"}</TableCell>
-                        <TableCell className="text-sm">{it.commodityGroup || "—"}</TableCell>
-                        <TableCell className="align-top">
-                          <Input
-                            type="number"
-                            min={1}
-                            value={it.quantity}
-                            onChange={(e) => updateItem(it.id, { quantity: Math.max(1, Number(e.target.value) || 0) })}
-                            className="h-8"
-                          />
-                        </TableCell>
-                        <TableCell className="align-top relative pb-5">
-                          <Input
-                            value={it.observations}
-                            maxLength={300}
-                            onChange={(e) =>
-                              updateItem(it.id, {
-                                observations: e.target.value.slice(0, 300),
-                              })
-                            }
-                            placeholder="Opcional"
-                            className="h-8"
-                          />
-                          <p className="absolute bottom-0 right-2 text-[10px] text-muted-foreground">
-                            {(it.observations ?? "").length}/300
-                          </p>
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeItem(it.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <RequisitionLineItemsSection
+          companyId={companyId}
+          items={items}
+          onItemsChange={setItems}
+          accountConfigs={accountConfigs}
+          onAccountConfigsChange={setAccountConfigs}
+          accountConfigErrors={accountConfigErrors}
+          onAccountConfigChange={handleAccountConfigChange}
+        />
 
         <Card>
           <CardHeader>

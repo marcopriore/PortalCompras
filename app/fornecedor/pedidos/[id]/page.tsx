@@ -141,7 +141,22 @@ export default function FornecedorPedidoDetalhePage({
     setGeneratingPdf(true)
     try {
       const response = await fetch(`/api/purchase-order-pdf?id=${order.id}`)
-      if (!response.ok) throw new Error("Erro ao gerar PDF")
+      if (!response.ok) {
+        let message = "Erro ao gerar PDF"
+        try {
+          const payload = (await response.json()) as { error?: string }
+          if (payload.error) message = payload.error
+        } catch {
+          // resposta não-JSON
+        }
+        throw new Error(message)
+      }
+
+      const contentType = response.headers.get("content-type") ?? ""
+      if (!contentType.includes("application/pdf")) {
+        throw new Error("Resposta inválida do servidor ao gerar PDF.")
+      }
+
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
@@ -153,7 +168,9 @@ export default function FornecedorPedidoDetalhePage({
       URL.revokeObjectURL(url)
     } catch (e) {
       console.error(e)
-      toast.error("Não foi possível gerar o PDF.")
+      toast.error(
+        e instanceof Error ? e.message : "Não foi possível gerar o PDF.",
+      )
     } finally {
       setGeneratingPdf(false)
     }

@@ -16,7 +16,10 @@
     "api-key:create": "node scripts/create-api-key.mjs",
     "seed:poc": "node scripts/seed-poc-tenant.mjs",
     "seed:cross-supplier": "node scripts/seed-cross-tenant-supplier.mjs",
-    "seed:supplier-axis": "node scripts/seed-supplier-axis.mjs"
+    "seed:supplier-axis": "node scripts/seed-supplier-axis.mjs",
+    "capture:commercial": "node scripts/capture-commercial-screenshots.mjs",
+    "capture:commercial:supplier": "node scripts/capture-supplier-screenshots.mjs",
+    "ppt:commercial": "node scripts/generate-commercial-ppt.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -89,6 +92,7 @@
     "dotenv": "^17.4.0",
     "happy-dom": "^20.8.9",
     "postcss": "^8.5",
+    "pptxgenjs": "^4.0.1",
     "tailwindcss": "^4.2.0",
     "tw-animate-css": "1.3.3",
     "typescript": "5.7.3",

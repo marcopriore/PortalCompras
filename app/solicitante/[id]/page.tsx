@@ -15,14 +15,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -52,9 +44,15 @@ import {
   buildCatalogRequisitionTimeline,
   buildStandardRequisitionTimeline,
 } from "@/lib/requisitions/timeline"
+import { REQUISITION_ITEM_ACCOUNT_SELECT } from "@/lib/requisitions/line-items-helpers"
+import {
+  RequisitionLineItemsDetailSection,
+  type RequisitionDetailLineItem,
+} from "@/components/requisitions/requisition-line-items-detail-section"
 
 type Requisition = {
   id: string
+  company_id: string
   code: string
   title: string
   status: RequisitionStatus
@@ -106,15 +104,7 @@ type AuditLog = {
   metadata: Record<string, unknown> | null
 }
 
-type RequisitionItem = {
-  id: string
-  material_code: string | null
-  material_description: string
-  quantity: number
-  unit_of_measure: string | null
-  commodity_group: string | null
-  observations: string | null
-}
+type RequisitionItem = RequisitionDetailLineItem
 
 function getStatusMeta(status: string) {
   return getRequisitionStatusMeta(status)
@@ -385,9 +375,7 @@ export default function SolicitanteDetailPage({
           .order("created_at", { ascending: true }),
         supabase
           .from("requisition_items")
-          .select(
-            "id, material_code, material_description, quantity, unit_of_measure, commodity_group, observations",
-          )
+          .select(REQUISITION_ITEM_ACCOUNT_SELECT)
           .eq("requisition_id", id)
           .order("created_at"),
         supabase
@@ -629,52 +617,10 @@ export default function SolicitanteDetailPage({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-3">
-            <CardTitle>Itens da Requisição</CardTitle>
-            <Badge variant="outline" className="text-xs">
-              {items.length} {items.length === 1 ? "item" : "itens"}
-            </Badge>
-          </CardHeader>
-          <CardContent>
-            {items.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">
-                Nenhum item cadastrado.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Código</TableHead>
-                      <TableHead>Descrição</TableHead>
-                      <TableHead className="text-right">Qtd</TableHead>
-                      <TableHead>Unidade</TableHead>
-                      <TableHead>Grupo</TableHead>
-                      <TableHead>Observações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((it) => (
-                      <TableRow key={it.id}>
-                        <TableCell className="font-mono text-sm">
-                          {it.material_code ?? "—"}
-                        </TableCell>
-                        <TableCell className="font-medium text-sm">
-                          {it.material_description}
-                        </TableCell>
-                        <TableCell className="text-right text-sm">{it.quantity}</TableCell>
-                        <TableCell className="text-sm">{it.unit_of_measure ?? "—"}</TableCell>
-                        <TableCell className="text-sm">{it.commodity_group ?? "—"}</TableCell>
-                        <TableCell className="text-sm">{it.observations ?? "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <RequisitionLineItemsDetailSection
+          companyId={requisition.company_id}
+          items={items}
+        />
 
         <HistorySection history={history} req={requisition} auditLogs={auditLogs} />
       </div>

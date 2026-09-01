@@ -94,6 +94,18 @@ alwaysApply: true
 - `delivery_days` no cabeçalho do pedido: ao criar, usar o **maior** `delivery_days` entre `proposal_items` aceitos (e fallback ao nível proposta quando aplicável — ver `novo-pedido` e `equalizacao`).
 - `estimated_delivery_date`: definida pelo fornecedor no aceite (string `YYYY-MM-DD`); a UI pode sugerir hoje + maior prazo antes do aceite.
 - Condições de pagamento no fluxo de proposta/pedido: preferir registros de `payment_conditions` do tenant, não texto livre onde a UI impõe picklist.
+- **POR:** `total_linha = quantidade × preço_unitário × POR` quando `por_enabled` no tenant; valores POR: 1, 10, 100, 1000, 10000; exibir total com `computePurchaseOrderLineTotal` — não priorizar `total_price` gravado na linha se estiver sem POR.
+- **Classificação/rateio:** condicional a `account_assignment_enabled`; omitir no outbound ERP se desligado — ver `docs/CONFIGURACOES-TENANT-NEGOCIO.md`.
+
+## Configurações de tenant (implantação)
+- Flags ON/OFF em `company_settings`: `account_assignment_enabled`, `por_enabled`, `erp_integration_enabled`, `erp_vendor`.
+- Limites numéricos (sem ON/OFF): `numeric_quantity_max_digits`, `numeric_price_decimal_places` — hook `useNumericLimits()`.
+- Hook frontend: `useTenantFeatureConfig()` (alias `useImplantationConfig()`).
+- UI: `/admin/tenants/[id]` → Configurações (sem aba separada “Cutover”).
+
+## Aprovações
+- Botões no detalhe: `components/comprador/entity-approval-actions.tsx` em REQ e PO.
+- API: `POST /api/approvals/[id]/decide` — permissões `approval.requisition` / `approval.order`.
 
 ## Auditoria
 - `logAudit()` em `lib/audit.ts` falha silenciosamente por design (não bloquear UX)

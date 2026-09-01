@@ -3,10 +3,17 @@ import { cookies } from "next/headers"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { logAudit } from "@/lib/audit"
+import {
+  validateAllAccountConfigsForSubmit,
+  type ItemAccountConfigEdit,
+} from "@/lib/po-account-assignment"
+import { saveRequisitionAccountConfigs } from "@/lib/requisition-account-assignment-persist"
+import { loadImplantationConfig } from "@/lib/settings/tenant-implantation-settings"
 
 export const runtime = "nodejs"
 
 type ItemPayload = {
+  id?: string
   material_code?: string | null
   material_description: string
   quantity: number
@@ -22,6 +29,7 @@ type Body = {
   priority: "normal" | "urgent" | "critical"
   needed_by?: string | null
   items: ItemPayload[]
+  account_configs?: Record<string, ItemAccountConfigEdit>
 }
 
 async function resolveCompanyId(
@@ -93,7 +101,22 @@ export async function POST(
       )
     }
 
+    const accountConfigs = body.account_configs ?? {}
     const service = createServiceRoleClient()
+    const implantation = await loadImplantationConfig(service, companyId)
+
+    if (implantation.accountAssignmentEnabled) {
+      const accountValidation = validateAllAccountConfigsForSubmit(
+        body.items.map((item, index) => ({
+          id: item.id ?? `item-${index}`,
+          material_code: (item.material_code ?? "").trim() || `item-${index}`,
+        })),
+        accountConfigs,
+      )
+      if (!accountValidation.ok) {
+        return NextResponse.json({ error: accountValidation.firstMessage }, { status: 400 })
+      }
+    }
 
     const { data: req, error: reqErr } = await service
       .from("requisitions")
@@ -117,7 +140,7 @@ export async function POST(
 
     const neededBy =
       body.needed_by && /^\d{4}-\d{2}-\d{2}$/.test(body.needed_by)
-        ? new Date(`${body.needed_by}T00:00:00`).toISOString()
+        ? body.needed_by
         : null
 
     const { error: updateErr } = await service
@@ -151,6 +174,7 @@ export async function POST(
     }
 
     const payloadItems = body.items.map((it) => ({
+      id: it.id,
       requisition_id: id,
       company_id: companyId,
       material_code: (it.material_code ?? "").trim() || null,
@@ -161,12 +185,26 @@ export async function POST(
       observations: (it.observations ?? "").trim() || null,
     }))
 
+    const missingIds = payloadItems.filter((row) => !row.id)
+    if (missingIds.length > 0) {
+      return NextResponse.json({ error: "Itens inválidos: id ausente." }, { status: 400 })
+    }
+
     const { error: insertItemsErr } = await service
       .from("requisition_items")
       .insert(payloadItems)
 
     if (insertItemsErr) {
       return NextResponse.json({ error: insertItemsErr.message }, { status: 500 })
+    }
+
+    const accountResult = await saveRequisitionAccountConfigs(
+      service,
+      companyId,
+      accountConfigs,
+    )
+    if (!accountResult.ok) {
+      return NextResponse.json({ error: accountResult.message }, { status: 500 })
     }
 
     await service

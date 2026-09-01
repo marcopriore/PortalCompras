@@ -5,6 +5,7 @@ import {
   TENANT_SETTINGS_REGISTRY,
   type TenantSettingKey,
 } from "@/lib/settings/tenant-settings-registry"
+import { digitsFromMaxQuantity } from "@/lib/validation/numeric-input"
 
 export function parseTenantSettingValue(
   key: TenantSettingKey,
@@ -94,21 +95,37 @@ export async function loadTenantSettings(
 
   if (targetKeys.length === 0) return merged
 
+  const queryKeys = [...new Set([...targetKeys, "numeric_max_quantity"])]
+
   const { data, error } = await supabase
     .from("company_settings")
     .select("key, value")
     .eq("company_id", companyId)
-    .in("key", targetKeys)
+    .in("key", queryKeys)
 
   if (error) {
     console.error("loadTenantSettings:", error)
     return merged
   }
 
+  let legacyMaxQuantity: number | null = null
+
   for (const row of data ?? []) {
     const key = String(row.key)
+    if (key === "numeric_max_quantity") {
+      const n = Number(String(row.value ?? "").trim())
+      if (!Number.isNaN(n) && n > 0) legacyMaxQuantity = Math.trunc(n)
+      continue
+    }
     if (!isTenantSettingKey(key)) continue
     merged[key] = parseTenantSettingValue(key, row.value as string | null)
+  }
+
+  if (
+    legacyMaxQuantity != null &&
+    !data?.some((row) => String(row.key) === "numeric_quantity_max_digits")
+  ) {
+    merged.numeric_quantity_max_digits = digitsFromMaxQuantity(legacyMaxQuantity)
   }
 
   return merged

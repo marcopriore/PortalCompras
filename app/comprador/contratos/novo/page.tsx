@@ -17,6 +17,8 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { PriceInput, QuantityInput } from "@/components/ui/numeric-field-inputs"
+import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -235,6 +237,7 @@ export default function NovoContratoPage() {
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { companyId } = useTenant()
   const { hasFeature, hasPermission, canWrite, loading: permissionsLoading } = usePermissions()
+  const { maxQuantity, priceDecimalPlaces } = useNumericLimits()
 
   const [form, setForm] = React.useState<FormState>(emptyForm)
   const [suppliers, setSuppliers] = React.useState<
@@ -1041,17 +1044,12 @@ export default function NovoContratoPage() {
                                 {item.quantity_contracted}
                               </span>
                             ) : (
-                              <Input
+                              <QuantityInput
                                 className="h-7 text-xs text-center w-24 mx-auto"
-                                type="number"
-                                min={0}
-                                value={item.quantity_contracted}
-                                onChange={(e) =>
-                                  updateItem(
-                                    index,
-                                    "quantity_contracted",
-                                    e.target.value,
-                                  )
+                                value={parseQty(item.quantity_contracted) || 1}
+                                maxQuantity={maxQuantity}
+                                onValueChange={(val) =>
+                                  updateItem(index, "quantity_contracted", String(val))
                                 }
                               />
                             )}
@@ -1062,23 +1060,27 @@ export default function NovoContratoPage() {
                                 {item.unit_price}
                               </span>
                             ) : (
-                              <Input
+                              <PriceInput
                                 className="h-7 text-xs text-center w-28 mx-auto"
-                                value={item.unit_price}
-                                onChange={(e) =>
-                                  updateItem(index, "unit_price", e.target.value)
+                                value={parsePrice(item.unit_price)}
+                                decimalPlaces={priceDecimalPlaces}
+                                onValueChange={(val) =>
+                                  updateItem(index, "unit_price", String(val))
                                 }
                               />
                             )}
                           </td>
                           <td className="px-3 py-1 text-center">
-                            <Input
+                            <QuantityInput
                               className="h-7 text-xs text-center w-20 mx-auto"
-                              type="number"
-                              min={0}
-                              value={item.delivery_days}
-                              onChange={(e) =>
-                                updateItem(index, "delivery_days", e.target.value)
+                              value={
+                                item.delivery_days.trim()
+                                  ? parseQty(item.delivery_days)
+                                  : 0
+                              }
+                              maxQuantity={9999}
+                              onValueChange={(val) =>
+                                updateItem(index, "delivery_days", val > 0 ? String(val) : "")
                               }
                             />
                           </td>

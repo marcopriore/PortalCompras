@@ -2,6 +2,7 @@ import type { FeatureKey } from "@/lib/hooks/usePermissions"
 
 export type TenantSettingGroup =
   | "sistema"
+  | "negocios"
   | "contratos"
   | "ia"
   | "fornecedores"
@@ -9,6 +10,8 @@ export type TenantSettingGroup =
 export type TenantSettingKey =
   | "polling_interval_seconds"
   | "background_tasks_cooldown_minutes"
+  | "numeric_quantity_max_digits"
+  | "numeric_price_decimal_places"
   | "contract_low_balance_threshold_pct"
   | "contract_expiring_alert_days"
   | "ai_spend_cache_minutes"
@@ -37,6 +40,11 @@ export const TENANT_SETTING_GROUPS: Record<
     label: "Sistema",
     description:
       "Performance e atualização automática das telas com polling.",
+  },
+  negocios: {
+    label: "Negócios",
+    description:
+      "Limites numéricos, classificação contábil, POR e integração ERP do tenant.",
   },
   contratos: {
     label: "Contratos",
@@ -75,6 +83,30 @@ export const TENANT_SETTINGS_REGISTRY: TenantSettingDefinition[] = [
     min: 5,
     max: 120,
     unit: "min",
+    superadminOnly: true,
+  },
+  {
+    key: "numeric_quantity_max_digits",
+    label: "Dígitos máximos — quantidade",
+    description:
+      "Quantidade máxima de dígitos permitidos em campos de quantidade (ex.: 6 = até 999.999).",
+    group: "negocios",
+    defaultValue: 7,
+    min: 1,
+    max: 9,
+    unit: "dígitos",
+    superadminOnly: true,
+  },
+  {
+    key: "numeric_price_decimal_places",
+    label: "Casas decimais — preço/valor",
+    description:
+      "Quantidade máxima de casas decimais em campos de valor e preço unitário.",
+    group: "negocios",
+    defaultValue: 5,
+    min: 0,
+    max: 8,
+    unit: "casas",
     superadminOnly: true,
   },
   {

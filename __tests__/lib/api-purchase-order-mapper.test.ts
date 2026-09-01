@@ -42,16 +42,22 @@ describe("mapPurchaseOrderToApi", () => {
           contract_id: "c1",
           contract_item_id: "ci1",
           contracts: { code: "CTR-1" },
+          account_assignment_category: "K",
+          account_assignment_distribution: "",
+          partial_invoice_distribution: "",
           account_assignments: [
             {
               sequence: 1,
-              cost_center: "CC-100",
-              ledger_account: "4010301001",
-              internal_order: null,
+              cost_center_code: "CC-100",
+              ledger_account_code: "4010301001",
+              internal_order_id: null,
               business_area: null,
               controlling_area: "1000",
               apportionment_percent: 100,
               currency: "BRL",
+              wbs_element: null,
+              asset_number: null,
+              profit_center: null,
             },
           ],
         },
@@ -71,7 +77,8 @@ describe("mapPurchaseOrderToApi", () => {
     expect(mapped.items[0].line_number).toBe(1)
     expect(mapped.items[0].contract.code).toBe("CTR-1")
     expect(mapped.items[0].account_assignments).toHaveLength(1)
-    expect(mapped.items[0].account_assignments[0].cost_center).toBe("CC-100")
+    expect(mapped.items[0].account_configuration.category).toBe("K")
+    expect(mapped.items[0].account_assignments[0].cost_center_code).toBe("CC-100")
   })
 
   it("emite account_assignments vazio quando não há rateio", () => {
