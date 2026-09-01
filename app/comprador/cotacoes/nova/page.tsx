@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
 import { usePermissions } from '@/lib/hooks/usePermissions'
 import { logAudit } from '@/lib/audit'
+import { ensureInitialQuotationRound } from '@/lib/quotations/round-lifecycle'
 import { SuggestSuppliersButton } from '@/components/comprador/suggest-suppliers-button'
 import { Button } from '@/components/ui/button'
 import { QuantityInput } from '@/components/ui/numeric-field-inputs'
@@ -502,6 +503,18 @@ function NovaCotacaoContent() {
             quotation_id: quotationId,
           })
           .eq('id', requisitionId)
+      }
+
+      if (status === 'waiting') {
+        const boot = await ensureInitialQuotationRound(supabase, {
+          companyId: companyId!,
+          quotationId,
+          responseDeadlineYmd: deadline ? deadline.toISOString().split('T')[0] : null,
+        })
+        if (!boot.ok) {
+          toast.error(`Cotação salva, mas não foi possível abrir a rodada 1: ${boot.message}`)
+          return
+        }
       }
 
       await logAudit({

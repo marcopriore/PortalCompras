@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useEffect, useState } from 'react'
+import { use, useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
@@ -14,6 +14,9 @@ import {
   formatResponsibleName,
   isBuyerOrHigherProfile,
 } from '@/lib/quotations/ownership'
+import { ensureInitialQuotationRound } from '@/lib/quotations/round-lifecycle'
+import { QuotationNegotiationPlanPanel } from '@/components/comprador/quotation-negotiation-plan'
+import { useAiNegotiationUiAccess } from '@/lib/hooks/use-tenant-feature-flags'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -202,6 +205,10 @@ export default function QuotationDetailsPage({
   const requisicaoId = searchParams.get('requisicaoId')
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
   const { hasFeature, hasPermission, loading: permLoading } = usePermissions()
+  const {
+    loading: aiAccessLoading,
+    showAutonomousAi,
+  } = useAiNegotiationUiAccess()
   void hasFeature
   const viewAllQuotations = canViewAllQuotations({
     isSuperAdmin,
@@ -231,6 +238,20 @@ export default function QuotationDetailsPage({
   const toggleSection = (key: SectionKey) => {
     setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   }
+
+  const reloadQuotation = useCallback(async () => {
+    if (!companyId) return
+    const supabase = createClient()
+    const { data } = await supabase
+      .from('quotations')
+      .select(
+        'id, code, description, status, category, payment_condition, response_deadline, created_at, created_by',
+      )
+      .eq('id', id)
+      .eq('company_id', companyId)
+      .maybeSingle()
+    if (data) setQuotation(data as Quotation)
+  }, [companyId, id])
 
   useEffect(() => {
     if (userLoading || permLoading || !companyId) return
@@ -356,6 +377,16 @@ export default function QuotationDetailsPage({
       setQuotation({ ...quotation, status: newStatus })
 
       if (newStatus === 'waiting') {
+        const boot = await ensureInitialQuotationRound(supabase, {
+          companyId: companyId!,
+          quotationId: quotation.id,
+          responseDeadlineYmd: quotation.response_deadline,
+        })
+        if (!boot.ok) {
+          toast.error(`Cotação enviada, mas não foi possível abrir a rodada 1: ${boot.message}`)
+          return
+        }
+
         const supabase2 = createClient()
 
         const { data: quotationItems } = await supabase2
@@ -767,6 +798,17 @@ export default function QuotationDetailsPage({
               </div>
             </div>
           </Section>
+
+          {!aiAccessLoading && showAutonomousAi && companyId && quotation ? (
+            <QuotationNegotiationPlanPanel
+              quotationId={quotation.id}
+              companyId={companyId}
+              enabled={showAutonomousAi}
+              quotationStatus={quotation.status}
+              defaultOpen={quotation.status === 'draft' || quotation.status === 'rejected'}
+              onChanged={() => void reloadQuotation()}
+            />
+          ) : null}
 
           {/* Itens */}
           <Section

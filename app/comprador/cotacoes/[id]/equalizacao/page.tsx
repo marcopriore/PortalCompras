@@ -72,16 +72,19 @@ import { sendTransactionalEmailClient } from "@/lib/email/send-transactional-ema
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { useAiNegotiationUiAccess } from "@/lib/hooks/use-tenant-feature-flags"
 import {
   canAccessQuotation,
   canViewAllQuotations,
 } from "@/lib/quotations/ownership"
+import { ensureInitialQuotationRound } from "@/lib/quotations/round-lifecycle"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { SupplierScoreBadge } from "@/components/ui/supplier-score-badge"
 import { QuotationAIAnalysis } from "@/components/comprador/quotation-ai-analysis"
+import { QuotationNegotiationPlanPanel } from "@/components/comprador/quotation-negotiation-plan"
 import {
   LinkContractEqualizacaoDialog,
   type EqualizacaoSelectionRow,
@@ -447,6 +450,11 @@ export default function EqualizacaoPage({
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading, profileType } = useUser()
   const { value: scorePriceWeight } = useTenantSetting("score_weight_price")
   const { hasFeature, hasPermission } = usePermissions()
+  const {
+    loading: aiAccessLoading,
+    showConsultiveAi,
+    showAutonomousAi,
+  } = useAiNegotiationUiAccess()
   const viewAllQuotations = canViewAllQuotations({
     isSuperAdmin,
     hasRole,
@@ -662,10 +670,45 @@ export default function EqualizacaoPage({
 
         if (roundsError) throw roundsError
 
-        const roundsList = ((roundsData ?? []) as Round[]).map((r) => ({
+        let roundsList = ((roundsData ?? []) as Round[]).map((r) => ({
           ...r,
           response_deadline: r.response_deadline ?? null,
         }))
+
+        if (roundsList.length === 0 && companyId) {
+          const { data: qBoot } = await supabase
+            .from("quotations")
+            .select("status, response_deadline")
+            .eq("id", id)
+            .eq("company_id", companyId)
+            .maybeSingle()
+
+          if (
+            qBoot &&
+            (qBoot.status === "waiting" || qBoot.status === "analysis")
+          ) {
+            const boot = await ensureInitialQuotationRound(supabase, {
+              companyId,
+              quotationId: id,
+              responseDeadlineYmd: qBoot.response_deadline ?? null,
+            })
+            if (boot.ok && boot.created) {
+              const { data: roundsData2, error: roundsError2 } = await supabase
+                .from("quotation_rounds")
+                .select(
+                  "id, quotation_id, company_id, round_number, status, created_at, closed_at, response_deadline",
+                )
+                .eq("quotation_id", id)
+                .order("round_number", { ascending: true })
+              if (roundsError2) throw roundsError2
+              roundsList = ((roundsData2 ?? []) as Round[]).map((r) => ({
+                ...r,
+                response_deadline: r.response_deadline ?? null,
+              }))
+            }
+          }
+        }
+
         setRounds(roundsList)
 
         const resolvedRoundId =
@@ -847,7 +890,7 @@ export default function EqualizacaoPage({
         if (showLoadingUI) setLoading(false)
       }
     },
-    [id, selectedRoundId, userId, viewAllQuotations, router],
+    [id, selectedRoundId, userId, viewAllQuotations, router, companyId],
   )
 
   const refreshProposalsLight = React.useCallback(async () => {
@@ -2555,24 +2598,6 @@ export default function EqualizacaoPage({
           </p>
         </div>
       )}
-      {quotation?.status !== "completed" && selectedRound?.status === "closed" && (
-        <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-3 flex items-center gap-3">
-          <LockKeyhole className="h-5 w-5 text-zinc-600 shrink-0" />
-          <p className="text-sm text-zinc-800">
-            {isLastRound ? (
-              <>
-                Rodada {selectedRound.round_number} encerrada. Você ainda pode criar pedidos para os itens
-                desta rodada.
-              </>
-            ) : (
-              <>
-                Rodada {selectedRound.round_number} encerrada em {formatDateBR(selectedRound.closed_at)}
-                . Visualização somente leitura.
-              </>
-            )}
-          </p>
-        </div>
-      )}
 
       <div className="flex flex-wrap items-center gap-4">
         <Button
@@ -2780,6 +2805,30 @@ export default function EqualizacaoPage({
         </Card>
       </div>
 
+      {!aiAccessLoading && showConsultiveAi && companyId ? (
+        <div className="mb-4">
+          <QuotationAIAnalysis
+            quotationId={id}
+            roundId={selectedRoundId}
+            companyId={companyId}
+            hasNewProposal={hasNewProposal}
+            onAnalyzed={() => setHasNewProposal(false)}
+          />
+        </div>
+      ) : null}
+
+      {!aiAccessLoading && showAutonomousAi && companyId ? (
+        <div className="mb-4">
+          <QuotationNegotiationPlanPanel
+            quotationId={id}
+            companyId={companyId}
+            enabled={showAutonomousAi}
+            quotationStatus={quotation?.status}
+            onChanged={() => void fetchEqualizationData({ showLoading: false })}
+          />
+        </div>
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Mapa de Cotação</CardTitle>
@@ -2828,17 +2877,6 @@ export default function EqualizacaoPage({
 
             return (
               <>
-                {hasFeature("ai_negotiation") && companyId && (
-                  <div className="mb-2">
-                    <QuotationAIAnalysis
-                      quotationId={id}
-                      roundId={selectedRoundId}
-                      companyId={companyId}
-                      hasNewProposal={hasNewProposal}
-                      onAnalyzed={() => setHasNewProposal(false)}
-                    />
-                  </div>
-                )}
                 {/* Área de ações: fora das tabelas */}
                 <div className="flex flex-row gap-4 items-start p-3 mb-2 border border-border rounded-lg bg-muted/30">
                   <div className="flex flex-col gap-2 flex-1 min-w-0">

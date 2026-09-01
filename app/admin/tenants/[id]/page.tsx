@@ -110,6 +110,7 @@ type FeatureKey =
   | 'approval_order'
   | 'ai_analytics'
   | 'ai_negotiation'
+  | 'ai_negotiation_autonomous'
   | 'contracts'
   | 'contract_balance'
   | 'api_integrations'
@@ -222,6 +223,13 @@ const PREMIUM_FEATURES: Array<{
     key: 'ai_negotiation',
     label: 'IA Negociação',
     description: 'Análise de propostas e sugestões de negociação por IA na equalização',
+    icon: <BrainCircuit className="h-5 w-5 text-violet-500" />,
+  },
+  {
+    key: 'ai_negotiation_autonomous',
+    label: 'Negociação IA Autônoma',
+    description:
+      'Motor que orquestra rodadas e contrapropostas automaticamente (requer IA Negociação)',
     icon: <BrainCircuit className="h-5 w-5 text-violet-500" />,
   },
   {

@@ -16,6 +16,7 @@ export type TenantSettingKey =
   | "contract_expiring_alert_days"
   | "ai_spend_cache_minutes"
   | "ai_negotiation_cache_minutes"
+  | "ai_negotiation_autonomous_poll_minutes"
   | "score_weight_price"
 
 export type TenantSettingDefinition = {
@@ -159,6 +160,19 @@ export const TENANT_SETTINGS_REGISTRY: TenantSettingDefinition[] = [
     unit: "min",
     superadminOnly: true,
     requiresFeature: "ai_negotiation",
+  },
+  {
+    key: "ai_negotiation_autonomous_poll_minutes",
+    label: "Polling negociação IA autônoma",
+    description:
+      "Intervalo em minutos para o motor verificar prazos e respostas automaticamente (modo sem aprovação por rodada).",
+    group: "ia",
+    defaultValue: 30,
+    min: 1,
+    max: 120,
+    unit: "min",
+    superadminOnly: true,
+    requiresFeature: "ai_negotiation_autonomous",
   },
   {
     key: "score_weight_price",

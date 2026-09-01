@@ -137,7 +137,7 @@ export function QuotationAIAnalysis({
   const [error, setError] = useState<string | null>(null)
   const [generatedAt, setGeneratedAt] = useState<string | null>(null)
   const [quotationCode, setQuotationCode] = useState<string | null>(null)
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const [cooldown, setCooldown] = useState(0)
   const [exporting, setExporting] = useState(false)
   const autoAnalyzeRef = useRef(false)

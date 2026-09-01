@@ -17,6 +17,7 @@ export const TENANT_FEATURE_KEYS: FeatureKey[] = [
   "approval_order",
   "ai_analytics",
   "ai_negotiation",
+  "ai_negotiation_autonomous",
   "contracts",
   "contract_balance",
   "api_integrations",
