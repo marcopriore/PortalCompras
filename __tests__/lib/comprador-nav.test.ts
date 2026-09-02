@@ -31,11 +31,25 @@ describe("canAccessCompradorNavHref", () => {
     }))).toBe(true)
   })
 
-  it("requires contracts feature for /comprador/contratos", () => {
+  it("requires contracts feature and nav permission for /comprador/contratos", () => {
     expect(canAccessCompradorNavHref("/comprador/contratos", makeCtx())).toBe(false)
-    expect(canAccessCompradorNavHref("/comprador/contratos", makeCtx({
-      hasFeature: (f) => f === "contracts",
-    }))).toBe(true)
+    expect(
+      canAccessCompradorNavHref(
+        "/comprador/contratos",
+        makeCtx({
+          hasFeature: (f) => f === "contracts",
+        }),
+      ),
+    ).toBe(false)
+    expect(
+      canAccessCompradorNavHref(
+        "/comprador/contratos",
+        makeCtx({
+          hasFeature: (f) => f === "contracts",
+          hasPermission: (p) => p === "nav.contracts",
+        }),
+      ),
+    ).toBe(true)
   })
 
   it("aprovacoes needs any of approval permissions", () => {
@@ -103,8 +117,11 @@ describe("canAccessCompradorPath", () => {
 })
 
 describe("getAccessibleCompradorNavHrefs", () => {
-  it("returns empty array when no permissions", () => {
-    expect(getAccessibleCompradorNavHrefs(makeCtx())).toEqual([])
+  it("returns always-accessible hrefs when no module permissions", () => {
+    expect(getAccessibleCompradorNavHrefs(makeCtx())).toEqual([
+      "/comprador/suporte",
+      "/comprador/configuracoes",
+    ])
   })
 
   it("superadmin gets all hrefs", () => {
@@ -115,8 +132,8 @@ describe("getAccessibleCompradorNavHrefs", () => {
 })
 
 describe("getDefaultCompradorHref", () => {
-  it("returns null when no accessible hrefs", () => {
-    expect(getDefaultCompradorHref(makeCtx())).toBeNull()
+  it("returns first always-accessible href when no module permissions", () => {
+    expect(getDefaultCompradorHref(makeCtx())).toBe("/comprador/suporte")
   })
 
   it("returns first accessible href", () => {

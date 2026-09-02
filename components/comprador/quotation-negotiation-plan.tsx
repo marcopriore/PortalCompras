@@ -260,8 +260,10 @@ export function QuotationNegotiationPlanPanel({
       const json = (await res.json()) as { error?: string; message?: string }
       if (!res.ok) return
       const changed = json.message !== "Nenhuma ação necessária."
-      await load({ silent: true })
-      if (changed) onChangedRef.current?.()
+      if (changed) {
+        await load({ silent: true })
+        onChangedRef.current?.()
+      }
     } catch {
       // refresh silencioso
     }

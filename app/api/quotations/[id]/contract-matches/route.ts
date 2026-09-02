@@ -7,6 +7,12 @@ import {
   type Contract,
 } from "@/types/contracts"
 import {
+  buildContractMatchesCacheKey,
+  getContractMatchesCached,
+  hashContractMatchSelections,
+  setContractMatchesCache,
+} from "@/lib/contracts/contract-matches-cache"
+import {
   findContractMatchesForQuotationItem,
   pickBestContractMatch,
   contractLinkFromMatch,
@@ -75,6 +81,15 @@ type SelectionInput = {
   quantity: number
 }
 
+const MAX_SELECTIONS = 500
+
+type ContractMatchResponseItem = {
+  quotationItemId: string
+  supplierId: string
+  candidates: ReturnType<typeof findContractMatchesForQuotationItem>
+  suggested: ReturnType<typeof contractLinkFromMatch> | null
+}
+
 export async function POST(request: Request, context: RouteCtx) {
   try {
     const ctx = await getBuyerContext()
@@ -113,6 +128,12 @@ export async function POST(request: Request, context: RouteCtx) {
     if (!Array.isArray(selections) || selections.length === 0) {
       return NextResponse.json({ error: "Seleções inválidas" }, { status: 400 })
     }
+    if (selections.length > MAX_SELECTIONS) {
+      return NextResponse.json(
+        { error: `Máximo de ${MAX_SELECTIONS} seleções por requisição` },
+        { status: 400 },
+      )
+    }
 
     const inputs: QuotationItemMatchInput[] = []
     for (const row of selections) {
@@ -130,6 +151,18 @@ export async function POST(request: Request, context: RouteCtx) {
         materialCode: row.materialCode,
         quantity: row.quantity,
       })
+    }
+
+    const cacheKey = buildContractMatchesCacheKey(
+      ctx.companyId,
+      quotationId,
+      hashContractMatchSelections(inputs),
+    )
+    const cached = getContractMatchesCached<{ items: ContractMatchResponseItem[] }>(
+      cacheKey,
+    )
+    if (cached) {
+      return NextResponse.json(cached)
     }
 
     const supplierIds = [...new Set(inputs.map((i) => i.supplierId))]
@@ -159,7 +192,7 @@ export async function POST(request: Request, context: RouteCtx) {
       return c
     })
 
-    const items = inputs.map((input) => {
+    const items: ContractMatchResponseItem[] = inputs.map((input) => {
       const candidates = findContractMatchesForQuotationItem(
         quotationId,
         input,
@@ -174,7 +207,9 @@ export async function POST(request: Request, context: RouteCtx) {
       }
     })
 
-    return NextResponse.json({ items })
+    const responseBody = { items }
+    setContractMatchesCache(cacheKey, responseBody)
+    return NextResponse.json(responseBody)
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error"
     return NextResponse.json({ error: message }, { status: 500 })

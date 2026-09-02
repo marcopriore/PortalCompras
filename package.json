@@ -13,6 +13,7 @@
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:unit:ui": "vitest --ui",
+    "test:pre-release": "vitest run && tsc --noEmit",
     "api-key:create": "node scripts/create-api-key.mjs",
     "seed:poc": "node scripts/seed-poc-tenant.mjs",
     "seed:cross-supplier": "node scripts/seed-cross-tenant-supplier.mjs",

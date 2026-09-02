@@ -16,6 +16,11 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  loadStoredQuotationAnalysis,
+  quotationAnalysisCooldownSeconds,
+  saveQuotationAnalysisCache,
+} from "@/lib/ai/quotation-analysis-storage"
 
 interface QuotationAIAnalysisProps {
   quotationId: string
@@ -57,16 +62,6 @@ interface AIAnalysis {
   resumo_executivo: string
 }
 
-type CachePayload = {
-  analysis: AIAnalysis
-  generatedAt: string
-  quotationCode: string | null
-  cachedAt: string
-}
-
-const CACHE_KEY = (qId: string, rId: string | null) =>
-  `valore:ai-quotation-analysis:${qId}:${rId ?? "latest"}`
-
 function formatBRL(value: number): string {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -81,39 +76,6 @@ function formatCountdown(seconds: number): string {
     return `${minutes}min ${remaining}s`
   }
   return `${seconds}s`
-}
-
-function loadStoredAnalysis(
-  quotationId: string,
-  roundId: string | null,
-): CachePayload | null {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY(quotationId, roundId))
-    if (!raw) return null
-
-    const parsed = JSON.parse(raw) as CachePayload
-    if (!parsed.analysis || !parsed.generatedAt || !parsed.cachedAt) return null
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-function cooldownRemainingSeconds(cachedAt: string, cooldownSeconds: number): number {
-  const cachedAtMs = new Date(cachedAt).getTime()
-  if (!cachedAtMs || Number.isNaN(cachedAtMs)) return 0
-  return Math.max(
-    0,
-    cooldownSeconds - Math.floor((Date.now() - cachedAtMs) / 1000),
-  )
-}
-
-function saveCache(quotationId: string, roundId: string | null, payload: Omit<CachePayload, "cachedAt">) {
-  const data: CachePayload = {
-    ...payload,
-    cachedAt: new Date().toISOString(),
-  }
-  localStorage.setItem(CACHE_KEY(quotationId, roundId), JSON.stringify(data))
 }
 
 export function QuotationAIAnalysis({
@@ -135,7 +97,7 @@ export function QuotationAIAnalysis({
 
   useEffect(() => {
     if (!companyId) return
-    const stored = loadStoredAnalysis(quotationId, roundId)
+    const stored = loadStoredQuotationAnalysis(localStorage, quotationId, roundId)
     if (!stored) {
       setAnalysis(null)
       setGeneratedAt(null)
@@ -144,10 +106,10 @@ export function QuotationAIAnalysis({
       return
     }
 
-    setAnalysis(stored.analysis)
+    setAnalysis(stored.analysis as AIAnalysis)
     setGeneratedAt(stored.generatedAt)
     setQuotationCode(stored.quotationCode ?? null)
-    setCooldown(cooldownRemainingSeconds(stored.cachedAt, cooldownSeconds))
+    setCooldown(quotationAnalysisCooldownSeconds(stored.cachedAt, cooldownSeconds))
   }, [quotationId, roundId, companyId, cooldownSeconds])
 
   useEffect(() => {
@@ -186,7 +148,7 @@ export function QuotationAIAnalysis({
       setAnalysis(data.analysis)
       setGeneratedAt(data.generatedAt)
       setQuotationCode(data.quotationCode ?? null)
-      saveCache(quotationId, roundId, {
+      saveQuotationAnalysisCache(localStorage, quotationId, roundId, {
         analysis: data.analysis,
         generatedAt: data.generatedAt,
         quotationCode: data.quotationCode ?? null,

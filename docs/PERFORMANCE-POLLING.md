@@ -36,9 +36,13 @@
 3. APIs que leem contratos/catálogo completo: cache por request ou carregar sob demanda.
 4. `pauseWhenHidden: true` no `useAutoRefresh` (padrão) — já reduz carga com aba em background.
 
+## Otimizações aplicadas (v2.19.117+)
+
+- Painel negociação: `tick` sem ação **não** recarrega `negotiation-plans`
+- `contract-matches`: cache em memória 60s por tenant+cotação+hash; máx. 500 seleções/req
+- Análise IA: persistência separada do cooldown (`lib/ai/quotation-analysis-storage.ts`)
+
 ## Próximas otimizações (backlog)
 
 - ⚠️ **Background negociação IA em PRD** — `docs/BACKLOG-PRODUCAO.md` (GitHub Actions ou Vercel Pro)
-- Cache server-side em `contract-matches` por `(companyId, supplierIds hash)` com TTL curto
-- Revisar `negotiation-plans` GET no painel — evitar reload completo quando tick retorna "nenhuma ação"
 - Auditoria de selects `*, proposal_items(*)` — projetar colunas necessárias
