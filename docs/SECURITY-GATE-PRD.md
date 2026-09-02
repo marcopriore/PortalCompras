@@ -82,6 +82,6 @@ npm run test:pre-release
 
 | Data | Tag | test:pre-release | Smoke PRD | Segurança manual | Aprovado por |
 |------|-----|------------------|-----------|------------------|--------------|
-| | v2.19.117 | ☐ | ☐ | ☐ | |
+| 02/09/2026 | v2.19.117 | ✅ | ✅ | ✅ (amostra APIs 401 + tenant) | Smoke PRD |
 
-Ver também: `docs/SMOKE-TEST-PRD.md`, `docs/BACKLOG-PRODUCAO.md`.
+Ver também: `docs/SMOKE-TEST-PRD.md`, `docs/PRD-TEST-ACCESS.md`, `docs/BACKLOG-PRODUCAO.md`.

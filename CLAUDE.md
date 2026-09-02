@@ -283,6 +283,14 @@
 
 ---
 
+## SMOKE TEST PRD
+
+> Credenciais e cenários: **`docs/PRD-TEST-ACCESS.md`** · Checklist: **`docs/SMOKE-TEST-PRD.md`** · Gate: **`docs/SECURITY-GATE-PRD.md`**
+>
+> URL: https://valore.axisstrategy.com.br/ · Tenant IA/negociação: **Apresentação POC** · Última validação: **v2.19.117** (02/09/2026).
+
+---
+
 ## SEEDS DE TESTE
 
 > **Somente referência local/staging.** Nunca embutir estes IDs em migrations nem scripts de deploy para PRD.
