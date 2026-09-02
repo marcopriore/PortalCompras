@@ -33,6 +33,8 @@ import { logAudit } from "@/lib/audit"
 import { cn } from "@/lib/utils"
 import { NotificationBell } from "@/components/ui/notification-bell"
 import { NavigationProgress } from "@/components/layout/navigation-progress"
+import { SupplierClientSelector } from "@/components/layout/supplier-client-selector"
+import type { SupplierClientOption } from "@/lib/supplier-portal/memberships"
 
 const SIDEBAR_BG = "#1a1a2e"
 const ACTIVE_BORDER = "#4F3EF5"
@@ -51,7 +53,9 @@ export interface FornecedorPortalShellProps {
   userName: string
   userEmail: string
   userInitials: string
-  clientCompanyName?: string | null
+  supplierClients: SupplierClientOption[]
+  activeCompanyId: string | null
+  activeSupplierId: string | null
   children: React.ReactNode
 }
 
@@ -59,7 +63,9 @@ export default function FornecedorPortalShell({
   userName,
   userEmail,
   userInitials,
-  clientCompanyName,
+  supplierClients,
+  activeCompanyId,
+  activeSupplierId,
   children,
 }: FornecedorPortalShellProps) {
   const pathname = usePathname()
@@ -208,14 +214,11 @@ export default function FornecedorPortalShell({
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <header className="flex h-16 flex-shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-6">
-            {clientCompanyName ? (
-              <p className="min-w-0 truncate text-sm text-muted-foreground">
-                <span className="font-medium text-foreground">Cliente:</span>{" "}
-                {clientCompanyName}
-              </p>
-            ) : (
-              <span className="flex-1" aria-hidden="true" />
-            )}
+            <SupplierClientSelector
+              clients={supplierClients}
+              activeCompanyId={activeCompanyId}
+              activeSupplierId={activeSupplierId}
+            />
             {mounted ? (
               <div className="flex shrink-0 items-center gap-2">
                 <NotificationBell />

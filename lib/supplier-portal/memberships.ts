@@ -36,6 +36,72 @@ export async function findAuthUserByEmail(email: string): Promise<User | null> {
   return null
 }
 
+export type SupplierClientOption = {
+  companyId: string
+  supplierId: string
+  companyName: string
+}
+
+/** Clientes (compradores) ativos vinculados ao usuário fornecedor. */
+export async function listActiveSupplierClients(
+  userId: string,
+): Promise<SupplierClientOption[]> {
+  const supabase = createServiceRoleClient()
+
+  const { data: memberships, error } = await supabase
+    .from("supplier_portal_memberships")
+    .select("company_id, supplier_id, created_at")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("created_at", { ascending: true })
+
+  if (error) {
+    console.error("[listActiveSupplierClients]", error.message)
+    return []
+  }
+
+  if (!memberships?.length) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("company_id, supplier_id")
+      .eq("id", userId)
+      .eq("profile_type", "supplier")
+      .maybeSingle()
+
+    if (!profile?.company_id || !profile.supplier_id) return []
+
+    const { data: company } = await supabase
+      .from("companies")
+      .select("name")
+      .eq("id", profile.company_id)
+      .maybeSingle()
+
+    return [
+      {
+        companyId: profile.company_id,
+        supplierId: profile.supplier_id,
+        companyName: company?.name?.trim() || "Comprador",
+      },
+    ]
+  }
+
+  const companyIds = [...new Set(memberships.map((m) => m.company_id))]
+  const { data: companies } = await supabase
+    .from("companies")
+    .select("id, name")
+    .in("id", companyIds)
+
+  const nameById = new Map(
+    (companies ?? []).map((c) => [c.id, c.name?.trim() || "Comprador"]),
+  )
+
+  return memberships.map((m) => ({
+    companyId: m.company_id,
+    supplierId: m.supplier_id,
+    companyName: nameById.get(m.company_id) ?? "Comprador",
+  }))
+}
+
 export type SupplierMembershipRow = {
   user_id: string
   company_id: string

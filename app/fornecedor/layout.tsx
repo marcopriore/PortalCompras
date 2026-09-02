@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import FornecedorPortalShell from "@/components/layout/fornecedor-portal-shell"
 import { PasswordExpiryGuard } from "@/components/auth/password-expiry-guard"
+import { listActiveSupplierClients } from "@/lib/supplier-portal/memberships"
 
 export default async function FornecedorLayout({
   children,
@@ -34,22 +35,22 @@ export default async function FornecedorLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, company_id, supplier_id, companies(name)")
+    .select("full_name, company_id, supplier_id")
     .eq("id", user.id)
     .single()
 
   const profileRow = profile as {
     full_name?: string | null
-    companies?: { name: string } | { name: string }[] | null
+    company_id?: string | null
+    supplier_id?: string | null
   } | null
 
   const fullName =
     profileRow?.full_name?.trim() ||
     user.email ||
     "Fornecedor"
-  const co = profileRow?.companies
-  const clientCompanyName =
-    (Array.isArray(co) ? co[0]?.name : co && "name" in co ? co.name : null)?.trim() || null
+
+  const supplierClients = await listActiveSupplierClients(user.id)
   const userEmail = user.email ?? ""
   const initials =
     fullName
@@ -71,7 +72,9 @@ export default async function FornecedorLayout({
         userName={fullName}
         userEmail={userEmail}
         userInitials={initials}
-        clientCompanyName={clientCompanyName}
+        supplierClients={supplierClients}
+        activeCompanyId={profileRow?.company_id ?? null}
+        activeSupplierId={profileRow?.supplier_id ?? null}
       >
         <PasswordExpiryGuard portal="fornecedor">{children}</PasswordExpiryGuard>
       </FornecedorPortalShell>
