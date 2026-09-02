@@ -33,23 +33,25 @@ function cacheKey(companyId: string) {
   return `valore:ai-spend-insights:${companyId}`
 }
 
-function loadCache(
-  companyId: string,
-  cacheTtlMs: number,
-): AIInsightCache | null {
+function loadStoredInsights(companyId: string): (AIInsightCache & { cachedAt: string }) | null {
   try {
     const raw = localStorage.getItem(cacheKey(companyId))
     if (!raw) return null
-    const parsed: AIInsightCache & { cachedAt: string } = JSON.parse(raw)
-    const age = Date.now() - new Date(parsed.cachedAt).getTime()
-    if (age > cacheTtlMs) {
-      localStorage.removeItem(cacheKey(companyId))
-      return null
-    }
+    const parsed = JSON.parse(raw) as AIInsightCache & { cachedAt: string }
+    if (!parsed.insights || !parsed.generatedAt || !parsed.cachedAt) return null
     return parsed
   } catch {
     return null
   }
+}
+
+function spendCooldownRemainingSeconds(cachedAt: string, cacheTtlMs: number): number {
+  const cachedAtMs = new Date(cachedAt).getTime()
+  if (!cachedAtMs || Number.isNaN(cachedAtMs)) return 0
+  return Math.max(
+    0,
+    Math.ceil((cacheTtlMs - (Date.now() - cachedAtMs)) / 1000),
+  )
 }
 
 function saveCache(companyId: string, data: AIInsightCache) {
@@ -106,30 +108,15 @@ export function SpendAIInsights() {
   React.useEffect(() => {
     if (!companyId) return
 
-    const cached = loadCache(companyId, cacheTtlMs)
-    if (!cached) {
+    const stored = loadStoredInsights(companyId)
+    if (!stored) {
       setCache(null)
       setCooldownRemaining(0)
       return
     }
 
-    setCache(cached)
-
-    try {
-      const raw = localStorage.getItem(cacheKey(companyId))
-      if (!raw) {
-        setCooldownRemaining(0)
-        return
-      }
-      const parsed: AIInsightCache & { cachedAt: string } = JSON.parse(raw)
-      const remainingSeconds = Math.max(
-        0,
-        Math.ceil((cacheTtlMs - (Date.now() - new Date(parsed.cachedAt).getTime())) / 1000),
-      )
-      setCooldownRemaining(remainingSeconds)
-    } catch {
-      setCooldownRemaining(0)
-    }
+    setCache(stored)
+    setCooldownRemaining(spendCooldownRemainingSeconds(stored.cachedAt, cacheTtlMs))
   }, [companyId, cacheTtlMs])
 
   React.useEffect(() => {

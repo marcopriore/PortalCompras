@@ -83,28 +83,29 @@ function formatCountdown(seconds: number): string {
   return `${seconds}s`
 }
 
-function loadCache(
+function loadStoredAnalysis(
   quotationId: string,
   roundId: string | null,
-  cacheTtlMs: number,
 ): CachePayload | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY(quotationId, roundId))
     if (!raw) return null
 
     const parsed = JSON.parse(raw) as CachePayload
-    const cachedAtMs = new Date(parsed.cachedAt).getTime()
-    if (!cachedAtMs || Number.isNaN(cachedAtMs)) return null
-
-    const isExpired = Date.now() - cachedAtMs > cacheTtlMs
-    if (isExpired) {
-      localStorage.removeItem(CACHE_KEY(quotationId, roundId))
-      return null
-    }
+    if (!parsed.analysis || !parsed.generatedAt || !parsed.cachedAt) return null
     return parsed
   } catch {
     return null
   }
+}
+
+function cooldownRemainingSeconds(cachedAt: string, cooldownSeconds: number): number {
+  const cachedAtMs = new Date(cachedAt).getTime()
+  if (!cachedAtMs || Number.isNaN(cachedAtMs)) return 0
+  return Math.max(
+    0,
+    cooldownSeconds - Math.floor((Date.now() - cachedAtMs) / 1000),
+  )
 }
 
 function saveCache(quotationId: string, roundId: string | null, payload: Omit<CachePayload, "cachedAt">) {
@@ -134,8 +135,8 @@ export function QuotationAIAnalysis({
 
   useEffect(() => {
     if (!companyId) return
-    const cached = loadCache(quotationId, roundId, cacheTtlMs)
-    if (!cached) {
+    const stored = loadStoredAnalysis(quotationId, roundId)
+    if (!stored) {
       setAnalysis(null)
       setGeneratedAt(null)
       setQuotationCode(null)
@@ -143,17 +144,11 @@ export function QuotationAIAnalysis({
       return
     }
 
-    setAnalysis(cached.analysis)
-    setGeneratedAt(cached.generatedAt)
-    setQuotationCode(cached.quotationCode ?? null)
-
-    const cachedAtMs = new Date(cached.cachedAt).getTime()
-    const remaining = Math.max(
-      0,
-      cooldownSeconds - Math.floor((Date.now() - cachedAtMs) / 1000),
-    )
-    setCooldown(remaining)
-  }, [quotationId, roundId, companyId, cacheTtlMs, cooldownSeconds])
+    setAnalysis(stored.analysis)
+    setGeneratedAt(stored.generatedAt)
+    setQuotationCode(stored.quotationCode ?? null)
+    setCooldown(cooldownRemainingSeconds(stored.cachedAt, cooldownSeconds))
+  }, [quotationId, roundId, companyId, cooldownSeconds])
 
   useEffect(() => {
     if (cooldown <= 0) return
