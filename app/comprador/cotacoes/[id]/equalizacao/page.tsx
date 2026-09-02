@@ -652,7 +652,11 @@ export default function EqualizacaoPage({
   }, [syncTheadSpacer, quotationItems, proposals, columnVisibility])
 
   const fetchEqualizationData = React.useCallback(
-    async (options?: { showLoading?: boolean; forceRoundId?: string | null }) => {
+    async (options?: {
+      showLoading?: boolean
+      forceRoundId?: string | null
+      preferActiveRound?: boolean
+    }) => {
       const showLoadingUI = options?.showLoading === true
       const forceRoundId = options?.forceRoundId
       if (!id) return
@@ -711,14 +715,19 @@ export default function EqualizacaoPage({
 
         setRounds(roundsList)
 
+        const preferActiveRound = options?.preferActiveRound === true
+        const activeRound = roundsList.find((r) => r.status === "active") ?? null
+
         const resolvedRoundId =
           forceRoundId != null && roundsList.some((r) => r.id === forceRoundId)
             ? forceRoundId
-            : selectedRoundId && roundsList.some((r) => r.id === selectedRoundId)
-              ? selectedRoundId
-              : roundsList.length > 0
-                ? roundsList[roundsList.length - 1].id
-                : null
+            : preferActiveRound && activeRound
+              ? activeRound.id
+              : selectedRoundId && roundsList.some((r) => r.id === selectedRoundId)
+                ? selectedRoundId
+                : roundsList.length > 0
+                  ? roundsList[roundsList.length - 1].id
+                  : null
 
         if (resolvedRoundId !== selectedRoundId) {
           setSelectedRoundId(resolvedRoundId)
@@ -2824,7 +2833,9 @@ export default function EqualizacaoPage({
             companyId={companyId}
             enabled={showAutonomousAi}
             quotationStatus={quotation?.status}
-            onChanged={() => void fetchEqualizationData({ showLoading: false })}
+            onChanged={() =>
+              void fetchEqualizationData({ showLoading: false, preferActiveRound: true })
+            }
           />
         </div>
       ) : null}

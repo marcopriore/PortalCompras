@@ -644,6 +644,30 @@ export async function startNegotiationRun(
     return { ok: false, message: "Já existe uma execução ativa para este plano." }
   }
 
+  const { data: quotationRuns } = await db
+    .from("quotation_negotiation_runs")
+    .select("id")
+    .eq("quotation_id", planRow.quotation_id)
+    .eq("company_id", companyId)
+    .in("status", [
+      "pending",
+      "running",
+      "waiting_deadline",
+      "analyzing",
+      "opening_round",
+      "paused",
+      "awaiting_approval",
+    ])
+    .limit(1)
+
+  if (quotationRuns && quotationRuns.length > 0) {
+    return {
+      ok: false,
+      message:
+        "Já existe um evento de negociação em andamento nesta cotação. Encerre o evento atual antes de iniciar outro.",
+    }
+  }
+
   const resolved = await resolveRoundForNegotiationStart(db, companyId, planRow)
   if (!resolved.ok) {
     return { ok: false, message: resolved.message }
@@ -709,4 +733,72 @@ export async function startNegotiationRun(
   }
 
   return { ok: true, run: finalRun, message }
+}
+
+export async function cancelNegotiationRun(
+  db: SupabaseClient,
+  companyId: string,
+  runId: string,
+  actorUserId: string,
+  reason?: string,
+): Promise<
+  | { ok: true; run: NegotiationRun }
+  | { ok: false; message: string }
+> {
+  const { data: runRow, error: runErr } = await db
+    .from("quotation_negotiation_runs")
+    .select("*")
+    .eq("id", runId)
+    .eq("company_id", companyId)
+    .maybeSingle()
+
+  if (runErr || !runRow) {
+    return { ok: false, message: "Execução não encontrada." }
+  }
+
+  const run = runRow as NegotiationRun
+  if (run.status === "completed" || run.status === "cancelled" || run.status === "failed") {
+    return { ok: false, message: `Execução já encerrada (${run.status}).` }
+  }
+
+  const now = new Date().toISOString()
+  const cancelReason =
+    reason?.trim() || "Comprador encerrou o evento de negociação assistida."
+
+  const { data: updated, error: updateErr } = await db
+    .from("quotation_negotiation_runs")
+    .update({
+      status: "cancelled",
+      completed_at: now,
+      last_tick_at: now,
+      updated_at: now,
+    })
+    .eq("id", runId)
+    .eq("company_id", companyId)
+    .select("*")
+    .single()
+
+  if (updateErr || !updated) {
+    return { ok: false, message: updateErr?.message ?? "Não foi possível encerrar a execução." }
+  }
+
+  await db
+    .from("quotation_negotiation_plans")
+    .update({ status: "cancelled", completed_at: now, updated_at: now })
+    .eq("id", run.plan_id)
+    .eq("company_id", companyId)
+    .in("status", ["draft", "active", "paused"])
+
+  await logNegotiationDecision(db, {
+    companyId,
+    planId: run.plan_id,
+    runId,
+    roundId: run.current_round_id,
+    decisionType: "buyer",
+    action: "cancel",
+    reason: cancelReason,
+    createdBy: actorUserId,
+  })
+
+  return { ok: true, run: updated as NegotiationRun }
 }

@@ -181,6 +181,19 @@ export async function proxy(request: NextRequest) {
         // notificações agendadas não devem bloquear o usuário
       })
 
+      const negotiationTickUrl = new URL(
+        "/api/negotiation-runs/background-tick",
+        request.nextUrl.origin,
+      )
+      void fetch(negotiationTickUrl.toString(), {
+        method: "POST",
+        headers: maintenanceSecret
+          ? { "x-maintenance-key": maintenanceSecret }
+          : undefined,
+      }).catch(() => {
+        // tick de negociação não deve bloquear o usuário
+      })
+
       markBackgroundTasksRun(response, cooldownMs)
     }
 

@@ -10,6 +10,7 @@ import {
   Pause,
   Play,
   Sparkles,
+  XCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -123,6 +124,13 @@ export function QuotationNegotiationPlanPanel({
     [runs],
   )
 
+  const lastCancelledRun = React.useMemo(
+    () => runs.find((r) => r.status === "cancelled") ?? null,
+    [runs],
+  )
+
+  const lastTerminalRun = lastCompletedRun ?? lastCancelledRun
+
   const lastCompletedPlan = React.useMemo(
     () =>
       lastCompletedRun
@@ -144,6 +152,14 @@ export function QuotationNegotiationPlanPanel({
           )
         : null,
     [decisionLogs, lastCompletedRun],
+  )
+
+  const cancelLog = React.useMemo(
+    () =>
+      lastCancelledRun
+        ? decisionLogs.find((l) => l.run_id === lastCancelledRun.id && l.action === "cancel")
+        : null,
+    [decisionLogs, lastCancelledRun],
   )
 
   const requireApproval = activePlan?.require_buyer_approval ?? false
@@ -231,6 +247,12 @@ export function QuotationNegotiationPlanPanel({
     initialAdvanceRunIdRef.current = activeRun.id
     void silentAdvanceRef.current()
   }, [enabled, activeRun?.id, requireApproval])
+
+  React.useEffect(() => {
+    if (!activeRun) {
+      initialAdvanceRunIdRef.current = null
+    }
+  }, [activeRun])
 
   const pollIntervalMs = React.useMemo(
     () => Math.max(1, Number(pollMinutes) || 30) * 60 * 1000,
@@ -333,8 +355,26 @@ export function QuotationNegotiationPlanPanel({
         toast.error(json.error ?? "Não foi possível pausar.")
         return
       }
-      toast.success("Negociação pausada. Retome criando um novo plano ou retomando manualmente na equalização.")
+      toast.success("Negociação pausada.")
       await load()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCancel = async (runId: string) => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/negotiation-runs/${runId}/cancel`, { method: "POST" })
+      const json = (await res.json()) as { error?: string; message?: string }
+      if (!res.ok) {
+        toast.error(json.error ?? "Não foi possível encerrar o evento.")
+        return
+      }
+      toast.success(json.message ?? "Evento encerrado.")
+      setShowNewPlanForm(false)
+      await load()
+      onChangedRef.current?.()
     } finally {
       setSaving(false)
     }
@@ -364,10 +404,10 @@ export function QuotationNegotiationPlanPanel({
     !activeRun &&
     canConfigure &&
     (showNewPlanForm || !latestDraftPlan) &&
-    !(lastCompletedRun && !showNewPlanForm)
+    !(lastTerminalRun && !showNewPlanForm)
 
   if (!enabled) return null
-  if (!canConfigure && !activeRun && !lastCompletedRun) return null
+  if (!canConfigure && !activeRun && !lastTerminalRun) return null
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -396,6 +436,10 @@ export function QuotationNegotiationPlanPanel({
               ) : lastCompletedRun ? (
                 <Badge variant="secondary" className="bg-green-100 text-green-800">
                   Concluída
+                </Badge>
+              ) : lastCancelledRun ? (
+                <Badge variant="secondary" className="bg-zinc-100 text-zinc-800">
+                  Encerrada
                 </Badge>
               ) : null}
               <ChevronDown
@@ -505,6 +549,16 @@ export function QuotationNegotiationPlanPanel({
                         Pausar evento
                       </Button>
                     ) : null}
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={saving}
+                      onClick={() => void handleCancel(activeRun.id)}
+                    >
+                      <XCircle className="mr-2 h-4 w-4" />
+                      Encerrar evento
+                    </Button>
                   </div>
                 </div>
               ) : null}
@@ -530,6 +584,27 @@ export function QuotationNegotiationPlanPanel({
                         </p>
                       ) : null}
                     </div>
+                  </div>
+                  {canConfigure ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowNewPlanForm(true)}
+                    >
+                      Configurar novo evento
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {!activeRun && lastCancelledRun ? (
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 space-y-3 dark:border-zinc-800 dark:bg-zinc-950/20">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">Evento encerrado</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {cancelLog?.reason ??
+                        "O evento de negociação assistida foi encerrado manualmente. Você pode configurar um novo evento quando quiser."}
+                    </p>
                   </div>
                   {canConfigure ? (
                     <Button
