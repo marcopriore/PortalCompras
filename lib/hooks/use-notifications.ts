@@ -12,21 +12,27 @@ export type Notification = {
   created_at: string
 }
 
-export function useNotifications() {
+export function useNotifications(activeCompanyId?: string | null) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchNotifications = useCallback(async () => {
     const supabase = createClient()
-    const { data, error } = await supabase
+    let query = supabase
       .from("notifications")
       .select("id, type, title, body, entity, entity_id, read, created_at")
       .order("created_at", { ascending: false })
       .limit(20)
 
+    if (activeCompanyId) {
+      query = query.eq("company_id", activeCompanyId)
+    }
+
+    const { data } = await query
+
     setNotifications(data ?? [])
     setLoading(false)
-  }, [])
+  }, [activeCompanyId])
 
   const markAsRead = useCallback(async (id: string) => {
     const supabase = createClient()
@@ -42,13 +48,14 @@ export function useNotifications() {
 
   const markAllAsRead = useCallback(async () => {
     const supabase = createClient()
-    const { error } = await supabase
-      .from("notifications")
-      .update({ read: true })
-      .eq("read", false)
+    let query = supabase.from("notifications").update({ read: true }).eq("read", false)
+    if (activeCompanyId) {
+      query = query.eq("company_id", activeCompanyId)
+    }
+    const { error } = await query
     if (error) console.error("markAllAsRead:", error)
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-  }, [])
+  }, [activeCompanyId])
 
   useEffect(() => {
     void fetchNotifications()

@@ -177,7 +177,14 @@ export default function LoginPage() {
           toast.error("CNPJ não encontrado.")
           return
         }
-        await signInWithResolvedEmail(data.email as string, true)
+        const tenant =
+          data.companyId && data.supplierId
+            ? {
+                companyId: data.companyId as string,
+                supplierId: data.supplierId as string,
+              }
+            : undefined
+        await signInWithResolvedEmail(data.email as string, true, tenant)
         return
       }
 

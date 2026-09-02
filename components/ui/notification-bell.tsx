@@ -129,10 +129,10 @@ function getNotificationIcon(type: string) {
 
 export function NotificationBell() {
   const router = useRouter()
-  const { profileType } = useUser()
+  const { profileType, companyId } = useUser()
   const [open, setOpen] = React.useState(false)
   const { notifications, unreadCount, markAsRead, markAllAsRead, fetchNotifications } =
-    useNotifications()
+    useNotifications(companyId)
 
   const handleNotificationClick = React.useCallback(
     async (n: Notification) => {

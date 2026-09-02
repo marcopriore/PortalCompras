@@ -21,6 +21,7 @@ export function useUser() {
   const { isImpersonating, session: impersonationSession } = useImpersonation()
   const [userId, setUserId] = useState<string | null>(null)
   const [supplierId, setSupplierId] = useState<string | null>(null)
+  const [profileCompanyId, setProfileCompanyId] = useState<string | null>(null)
   const [companyName, setCompanyName] = useState<string | null>(null)
   const [profileType, setProfileType] = useState<'buyer' | 'supplier' | 'requester' | null>(null)
   const [fullName, setFullName] = useState<string | null>(null)
@@ -35,6 +36,7 @@ export function useUser() {
     const clearUser = () => {
       setUserId(null)
       setSupplierId(null)
+      setProfileCompanyId(null)
       setCompanyName(null)
       setProfileType(null)
       setFullName(null)
@@ -63,6 +65,7 @@ export function useUser() {
             : 'buyer'
       setProfileType(pt)
       setSupplierId(p?.supplier_id ?? null)
+      setProfileCompanyId(p?.company_id ?? null)
       setFullName(p?.full_name ?? null)
       const co = p?.companies
       let embeddedName: string | null = null
@@ -169,7 +172,7 @@ export function useUser() {
     actorUserId: userId,
     impersonatedUserId: isImpersonating ? impersonationSession?.impersonatedUserId ?? null : null,
     supplierId,
-    companyId: tenantCompanyId,
+    companyId: tenantCompanyId ?? profileCompanyId,
     companyName,
     profileType: effectiveProfileType,
     fullName: effectiveFullName,

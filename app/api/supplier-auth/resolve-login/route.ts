@@ -18,7 +18,11 @@ export async function POST(request: Request) {
       )
     }
 
-    return NextResponse.json({ email: resolved.email })
+    return NextResponse.json({
+      email: resolved.email,
+      companyId: resolved.companyId,
+      supplierId: resolved.supplierId,
+    })
   } catch (error) {
     console.error("[supplier-auth/resolve-login]", error)
     return NextResponse.json({ error: "Erro interno do servidor." }, { status: 500 })

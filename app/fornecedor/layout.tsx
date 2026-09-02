@@ -34,14 +34,22 @@ export default async function FornecedorLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, company_id, supplier_id")
+    .select("full_name, company_id, supplier_id, companies(name)")
     .eq("id", user.id)
     .single()
 
+  const profileRow = profile as {
+    full_name?: string | null
+    companies?: { name: string } | { name: string }[] | null
+  } | null
+
   const fullName =
-    (profile as { full_name?: string | null } | null)?.full_name?.trim() ||
+    profileRow?.full_name?.trim() ||
     user.email ||
     "Fornecedor"
+  const co = profileRow?.companies
+  const clientCompanyName =
+    (Array.isArray(co) ? co[0]?.name : co && "name" in co ? co.name : null)?.trim() || null
   const userEmail = user.email ?? ""
   const initials =
     fullName
@@ -63,6 +71,7 @@ export default async function FornecedorLayout({
         userName={fullName}
         userEmail={userEmail}
         userInitials={initials}
+        clientCompanyName={clientCompanyName}
       >
         <PasswordExpiryGuard portal="fornecedor">{children}</PasswordExpiryGuard>
       </FornecedorPortalShell>

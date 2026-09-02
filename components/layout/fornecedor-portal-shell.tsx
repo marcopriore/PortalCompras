@@ -51,6 +51,7 @@ export interface FornecedorPortalShellProps {
   userName: string
   userEmail: string
   userInitials: string
+  clientCompanyName?: string | null
   children: React.ReactNode
 }
 
@@ -58,6 +59,7 @@ export default function FornecedorPortalShell({
   userName,
   userEmail,
   userInitials,
+  clientCompanyName,
   children,
 }: FornecedorPortalShellProps) {
   const pathname = usePathname()
@@ -205,9 +207,17 @@ export default function FornecedorPortalShell({
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="flex h-16 flex-shrink-0 items-center justify-end gap-2 border-b border-border bg-card px-6">
+          <header className="flex h-16 flex-shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-6">
+            {clientCompanyName ? (
+              <p className="min-w-0 truncate text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">Cliente:</span>{" "}
+                {clientCompanyName}
+              </p>
+            ) : (
+              <span className="flex-1" aria-hidden="true" />
+            )}
             {mounted ? (
-              <>
+              <div className="flex shrink-0 items-center gap-2">
                 <NotificationBell />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -244,9 +254,9 @@ export default function FornecedorPortalShell({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </>
+              </div>
             ) : (
-              <div className="flex items-center gap-2" aria-hidden="true">
+              <div className="flex shrink-0 items-center gap-2" aria-hidden="true">
                 <div className="h-9 w-9 rounded-md bg-muted/40 animate-pulse" />
                 <div className="hidden h-9 w-32 rounded-md bg-muted/40 animate-pulse md:block" />
               </div>
