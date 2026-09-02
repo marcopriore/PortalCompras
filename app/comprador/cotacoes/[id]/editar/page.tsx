@@ -59,6 +59,7 @@ type SelectedItem = QuotationItem & {
   /** Preservado do banco na edição; não exibido na UI */
   complementary_spec: string | null
   requisition_code?: string | null
+  site_code?: string | null
 }
 type Supplier = {
   id: string
@@ -77,6 +78,7 @@ type RequisitionOption = {
     material_description: string
     unit_of_measure: string | null
     quantity: number
+    site_code?: string | null
   }[]
 }
 
@@ -342,7 +344,7 @@ export default function EditarCotacaoPage({
           supabase
             .from("quotation_items")
             .select(
-              "material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec, source_requisition_code",
+              "material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec, source_requisition_code, site_code",
             )
             .eq("quotation_id", id),
           supabase
@@ -362,6 +364,7 @@ export default function EditarCotacaoPage({
               quantity: number
               complementary_spec: string | null
               source_requisition_code: string | null
+              site_code: string | null
             }>).map((ri) => ({
               code: ri.material_code ?? "",
               description: ri.material_description ?? "",
@@ -370,6 +373,7 @@ export default function EditarCotacaoPage({
               quantity: ri.quantity ?? 1,
               complementary_spec: ri.complementary_spec ?? null,
               requisition_code: ri.source_requisition_code ?? null,
+              site_code: ri.site_code ?? null,
             })),
           )
         }
@@ -447,7 +451,7 @@ export default function EditarCotacaoPage({
 
       const { data: allItems } = await supabase
         .from("requisition_items")
-        .select("requisition_id, material_code, material_description, unit_of_measure, quantity")
+        .select("requisition_id, material_code, material_description, unit_of_measure, quantity, site_code")
         .in(
           "requisition_id",
           reqs.map((r) => r.id),
@@ -459,6 +463,7 @@ export default function EditarCotacaoPage({
         material_description: string
         unit_of_measure: string | null
         quantity: number
+        site_code: string | null
       }
 
       const itemsByReq: Record<string, ReqItemRow[]> = {}
@@ -478,6 +483,7 @@ export default function EditarCotacaoPage({
             material_description: i.material_description,
             unit_of_measure: i.unit_of_measure,
             quantity: i.quantity,
+            site_code: i.site_code,
           })),
         })),
       )
@@ -513,6 +519,7 @@ export default function EditarCotacaoPage({
             quantity: item.quantity ?? 1,
             complementary_spec: null,
             requisition_code: req.code,
+            site_code: item.site_code ?? null,
           })
         }
       }
@@ -590,6 +597,7 @@ export default function EditarCotacaoPage({
               quantity: item.quantity,
               complementary_spec: item.complementary_spec,
               source_requisition_code: item.requisition_code ?? null,
+              site_code: item.site_code ?? null,
             })),
           )
 

@@ -33,6 +33,7 @@ import { RequisitionLineItemsSection } from "@/components/requisitions/requisiti
 import {
   buildAccountConfigsFromRequisitionItems,
   REQUISITION_ITEM_ACCOUNT_SELECT,
+  validateRequisitionLineSiteCodes,
   type RequisitionEditorLineItem,
   type LoadedRequisitionItemRow,
 } from "@/lib/requisitions/line-items-helpers"
@@ -129,6 +130,7 @@ export default function SolicitanteEditarRequisicaoPage({
   const [accountConfigErrors, setAccountConfigErrors] = React.useState<
     Record<string, ItemAccountConfigFieldErrors>
   >({})
+  const [siteCodeFieldErrors, setSiteCodeFieldErrors] = React.useState<Record<string, boolean>>({})
 
   const [attachments, setAttachments] = React.useState<AttachedFile[]>([])
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -250,6 +252,7 @@ export default function SolicitanteEditarRequisicaoPage({
               commodityGroup: catalogItem?.commodity_group ?? ri.commodity_group ?? "",
               quantity: ri.quantity ?? 1,
               observations: ri.observations ?? "",
+              siteCode: ri.site_code ?? "",
             }
           })
           setItems(lineItems)
@@ -357,6 +360,7 @@ export default function SolicitanteEditarRequisicaoPage({
           unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
           commodity_group: (it.commodityGroup ?? "").trim() || null,
           observations: (it.observations ?? "").trim() || null,
+          site_code: it.siteCode,
         }))
         const { error: insertItemsErr } = await supabase
           .from("requisition_items")
@@ -413,6 +417,14 @@ export default function SolicitanteEditarRequisicaoPage({
       toast.error("Adicione ao menos um item antes de enviar.")
       return
     }
+
+    const branchValidation = validateRequisitionLineSiteCodes(items)
+    if (!branchValidation.ok) {
+      setSiteCodeFieldErrors(branchValidation.errors)
+      toast.error(branchValidation.message)
+      return
+    }
+    setSiteCodeFieldErrors({})
 
     if (accountAssignmentEnabled) {
       const accountValidation = validateAllAccountConfigsForSubmit(
@@ -476,6 +488,7 @@ export default function SolicitanteEditarRequisicaoPage({
         unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
         commodity_group: (it.commodityGroup ?? "").trim() || null,
         observations: (it.observations ?? "").trim() || null,
+        site_code: it.siteCode,
       }))
 
       const { error: insertItemsErr } = await supabase
@@ -811,6 +824,7 @@ export default function SolicitanteEditarRequisicaoPage({
             accountConfigs={accountConfigs}
             onAccountConfigsChange={setAccountConfigs}
             accountConfigErrors={accountConfigErrors}
+            siteCodeFieldErrors={siteCodeFieldErrors}
             onAccountConfigChange={handleAccountConfigChange}
           />
 

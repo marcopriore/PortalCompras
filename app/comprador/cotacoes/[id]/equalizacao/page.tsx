@@ -105,6 +105,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useSupplierScores } from "@/lib/hooks/use-supplier-score"
 import { toast } from "sonner"
 import { formatDateBR } from "@/lib/formato-data"
+import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
+import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
+import type { CompanyBranch } from "@/lib/branches/types"
 
 type QuotationItem = {
   id: string
@@ -117,6 +120,7 @@ type QuotationItem = {
   last_purchase_price?: number | null
   average_price?: number | null
   source_requisition_code?: string | null
+  site_code?: string | null
 }
 
 type OrderedItemInfo = {
@@ -720,7 +724,7 @@ export default function EqualizacaoPage({
           supabase
             .from("quotation_items")
             .select(
-              "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, target_price, last_purchase_price, average_price, source_requisition_code, created_at",
+              "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, target_price, last_purchase_price, average_price, source_requisition_code, site_code, created_at",
             )
             .eq("quotation_id", id)
             .order("material_description", { ascending: true }),
@@ -1964,6 +1968,15 @@ export default function EqualizacaoPage({
 
       const createdOrdersList: { id: string; code: string; supplierName: string }[] = []
 
+      const { data: branchesData, error: branchesError } = await supabase
+        .from("company_branches")
+        .select("id, code, name, address, city, state, zip_code")
+        .eq("company_id", companyId)
+      if (branchesError) throw branchesError
+      const branchByCode = new Map(
+        ((branchesData ?? []) as CompanyBranch[]).map((b) => [b.code, b]),
+      )
+
       async function reserveContractBalanceForOrder(orderId: string) {
         const res = await fetch(
           `/api/purchase-orders/${orderId}/reserve-contract-balance`,
@@ -1992,19 +2005,23 @@ export default function EqualizacaoPage({
           deliveryDays: number | null
           contractId: string | null
           contractItemId: string | null
+          siteCode: string
         }[] = []
 
-        let totalPrice = 0
         let maxDeliveryDaysFromItems = 0
         const linkedContractCodes = new Set<string>()
 
         for (const qi of linesForPo) {
           const pi = proposalItemsByProposal.get(p.id)?.get(qi.id)
           if (!pi || pi.unit_price <= 0) continue
+          if (!qi.site_code) {
+            throw new Error(
+              `Item ${qi.material_code} sem centro/filial. Atualize a cotação a partir da requisição.`,
+            )
+          }
           const link = contractLinksForOrder[qi.id]
           const unitPrice = link ? link.unitPrice : pi.unit_price
           if (link) linkedContractCodes.add(link.contractCode)
-          totalPrice += unitPrice * qi.quantity
           const lineDd = pi.delivery_days
           if (lineDd != null && lineDd > maxDeliveryDaysFromItems) {
             maxDeliveryDaysFromItems = lineDd
@@ -2020,21 +2037,15 @@ export default function EqualizacaoPage({
             deliveryDays: pi.delivery_days ?? null,
             contractId: link?.contractId ?? null,
             contractItemId: link?.contractItemId ?? null,
+            siteCode: qi.site_code,
           })
         }
 
         if (itemsPayload.length === 0) continue
 
-        const hasContractLink = itemsPayload.some((i) => i.contractItemId != null)
-
         const headerDeliveryDays = p.delivery_days ?? 0
         const poDeliveryDays =
           maxDeliveryDaysFromItems > 0 ? maxDeliveryDaysFromItems : headerDeliveryDays
-
-        const observations =
-          linkedContractCodes.size > 0
-            ? `Pedido com linha(s) vinculada(s) ao(s) contrato(s) ${[...linkedContractCodes].join(", ")} (equalização ${quotation.code})`
-            : null
 
         const reqCodesFromLines = [
           ...new Set(
@@ -2046,74 +2057,106 @@ export default function EqualizacaoPage({
         const requisitionCodeForPo =
           reqCodesFromLines.length === 1 ? reqCodesFromLines[0] : reqCodesFromLines[0] ?? null
 
-        const { data: poData, error: purchaseOrderInsertError } = await supabase
-          .from("purchase_orders")
-          .insert({
-            company_id: companyId,
-            quotation_id: quotation.id,
-            proposal_id: p.id,
-            supplier_id: p.supplier_id ?? null,
-            supplier_name: p.supplier_name,
-            supplier_cnpj: p.supplier_cnpj,
-            payment_condition: p.payment_condition,
-            delivery_days: poDeliveryDays > 0 ? poDeliveryDays : null,
-            delivery_address: "A definir",
-            quotation_code: quotation.code,
-            requisition_code: requisitionCodeForPo,
-            total_price: totalPrice,
-            observations,
-            created_by: userId,
-            status: "draft",
-          })
-          .select("id, code")
-          .single()
+        const branchGroups = groupLinesBySiteCode(itemsPayload)
 
-        if (purchaseOrderInsertError) throw purchaseOrderInsertError
-        if (!poData) {
-          throw new Error("purchase_orders.insert: resposta sem dados")
-        }
-
-        const purchaseOrderId = poData.id as string
-        const orderCode = (poData.code as string) ?? "—"
-
-        const poItemsPayload = itemsPayload.map((i) => ({
-          purchase_order_id: purchaseOrderId,
-          company_id: companyId,
-          quotation_item_id: i.quotationItemId,
-          round_id: selectedRoundId,
-          material_code: i.materialCode,
-          material_description: i.materialDescription,
-          quantity: i.quantity,
-          unit_of_measure: i.unitOfMeasure,
-          unit_price: i.unitPrice,
-          tax_percent: i.taxPercent,
-          delivery_days: i.deliveryDays,
-          contract_id: i.contractId,
-          contract_item_id: i.contractItemId,
-        }))
-
-        const { error: purchaseOrderItemsInsertError } = await supabase
-          .from("purchase_order_items")
-          .insert(poItemsPayload)
-        if (purchaseOrderItemsInsertError) {
-          await supabase.from("purchase_orders").delete().eq("id", purchaseOrderId)
-          throw purchaseOrderItemsInsertError
-        }
-
-        if (hasContractLink) {
-          try {
-            await reserveContractBalanceForOrder(purchaseOrderId)
-          } catch (reserveErr) {
-            await supabase.from("purchase_orders").delete().eq("id", purchaseOrderId)
-            throw reserveErr
+        for (const [siteCode, branchItems] of branchGroups) {
+          const branch = branchByCode.get(siteCode)
+          const deliveryAddress = formatBranchDeliveryAddress(branch)
+          if (!deliveryAddress) {
+            throw new Error(
+              `Centro/filial sem endereço cadastrado (${branch?.code ?? siteCode}). Atualize em Configurações.`,
+            )
           }
-        }
 
-        createdOrdersList.push({
-          id: purchaseOrderId,
-          code: orderCode,
-          supplierName: p.supplier_name,
-        })
+          let totalPrice = 0
+          let branchMaxDelivery = 0
+          for (const item of branchItems) {
+            totalPrice += item.unitPrice * item.quantity
+            if (item.deliveryDays != null && item.deliveryDays > branchMaxDelivery) {
+              branchMaxDelivery = item.deliveryDays
+            }
+          }
+
+          const branchPoDeliveryDays =
+            branchMaxDelivery > 0 ? branchMaxDelivery : poDeliveryDays
+
+          const hasContractLink = branchItems.some((i) => i.contractItemId != null)
+
+          const observations =
+            linkedContractCodes.size > 0
+              ? `Pedido com linha(s) vinculada(s) ao(s) contrato(s) ${[...linkedContractCodes].join(", ")} (equalização ${quotation.code})`
+              : null
+
+          const { data: poData, error: purchaseOrderInsertError } = await supabase
+            .from("purchase_orders")
+            .insert({
+              company_id: companyId,
+              quotation_id: quotation.id,
+              proposal_id: p.id,
+              supplier_id: p.supplier_id ?? null,
+              supplier_name: p.supplier_name,
+              supplier_cnpj: p.supplier_cnpj,
+              payment_condition: p.payment_condition,
+              delivery_days: branchPoDeliveryDays > 0 ? branchPoDeliveryDays : null,
+              delivery_address: deliveryAddress,
+              quotation_code: quotation.code,
+              requisition_code: requisitionCodeForPo,
+              total_price: totalPrice,
+              observations,
+              created_by: userId,
+              status: "draft",
+            })
+            .select("id, code")
+            .single()
+
+          if (purchaseOrderInsertError) throw purchaseOrderInsertError
+          if (!poData) {
+            throw new Error("purchase_orders.insert: resposta sem dados")
+          }
+
+          const purchaseOrderId = poData.id as string
+          const orderCode = (poData.code as string) ?? "—"
+
+          const poItemsPayload = branchItems.map((i) => ({
+            purchase_order_id: purchaseOrderId,
+            company_id: companyId,
+            quotation_item_id: i.quotationItemId,
+            round_id: selectedRoundId,
+            material_code: i.materialCode,
+            material_description: i.materialDescription,
+            quantity: i.quantity,
+            unit_of_measure: i.unitOfMeasure,
+            unit_price: i.unitPrice,
+            tax_percent: i.taxPercent,
+            delivery_days: i.deliveryDays,
+            contract_id: i.contractId,
+            contract_item_id: i.contractItemId,
+            site_code: i.siteCode,
+          }))
+
+          const { error: purchaseOrderItemsInsertError } = await supabase
+            .from("purchase_order_items")
+            .insert(poItemsPayload)
+          if (purchaseOrderItemsInsertError) {
+            await supabase.from("purchase_orders").delete().eq("id", purchaseOrderId)
+            throw purchaseOrderItemsInsertError
+          }
+
+          if (hasContractLink) {
+            try {
+              await reserveContractBalanceForOrder(purchaseOrderId)
+            } catch (reserveErr) {
+              await supabase.from("purchase_orders").delete().eq("id", purchaseOrderId)
+              throw reserveErr
+            }
+          }
+
+          createdOrdersList.push({
+            id: purchaseOrderId,
+            code: orderCode,
+            supplierName: p.supplier_name,
+          })
+        }
       }
 
       if (createdOrdersList.length === 0) {

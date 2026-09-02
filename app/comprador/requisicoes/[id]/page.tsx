@@ -473,6 +473,11 @@ export default function RequisicaoDetailPage({
         toast.error(result.error)
         return
       }
+      if (result.codes && result.codes.length > 1) {
+        toast.success(`${result.codes.length} pedidos criados: ${result.codes.join(", ")}`)
+        router.push("/comprador/pedidos")
+        return
+      }
       router.push(`/comprador/pedidos/${result.purchaseOrderId}`)
     } catch {
       toast.error("Não foi possível criar o pedido.")

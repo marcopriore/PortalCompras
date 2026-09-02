@@ -1,5 +1,38 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type PurchaseOrderRow = Record<string, any>
+export type PurchaseOrderItemRow = Record<string, any>
+
+export type PurchaseOrderRow = {
+  id: string
+  code: string
+  external_code?: string | null
+  erp_code?: string | null
+  status?: string | null
+  company_code?: string | null
+  purchasing_organization?: string | null
+  purchasing_group?: string | null
+  purchase_order_type?: string | null
+  currency?: string | null
+  supplier_id?: string | null
+  supplier_code?: string | null
+  supplier_name?: string | null
+  supplier_cnpj?: string | null
+  suppliers?: { code?: string; name?: string; cnpj?: string } | { code?: string; name?: string; cnpj?: string }[] | null
+  payment_terms_code?: string | null
+  payment_condition?: string | null
+  quotation_id?: string | null
+  quotation_code?: string | null
+  proposal_id?: string | null
+  requisition_code?: string | null
+  delivery_days?: number | null
+  estimated_delivery_date?: string | null
+  delivery_address?: string | null
+  total_price?: number | null
+  observations?: string | null
+  accepted_at?: string | null
+  accepted_by_supplier?: boolean | null
+  created_at: string
+  updated_at?: string | null
+}
 
 /** Rateio contábil por linha — alinhado a SAP account assignment / WSO2 purOrdAccountAssignment. */
 export type PurchaseOrderAccountAssignment = {
@@ -31,7 +64,7 @@ export type PurchaseOrderItemAccountAssignmentRow = {
   profit_center: string | null
 }
 
-export type PurchaseOrderItemRow = {
+export type PurchaseOrderItemRowTyped = {
   id?: string | null
   material_code: string | null
   material_description: string | null
@@ -107,7 +140,7 @@ function mapAccountAssignmentRow(
 }
 
 function resolveItemAccountAssignments(
-  item: PurchaseOrderItemRow,
+  item: PurchaseOrderItemRowTyped,
 ): PurchaseOrderAccountAssignment[] {
   if (item.account_assignments?.length) {
     return item.account_assignments
@@ -199,7 +232,8 @@ export function mapPurchaseOrderToApi(
     created_at: row.created_at,
     updated_at: row.updated_at ?? null,
 
-    items: items.map((item, index) => {
+    items: items.map((rawItem, index) => {
+      const item = rawItem as PurchaseOrderItemRowTyped
       const contractEmbed = embedOne(item.contracts)
       return {
         line_number: index + 1,
@@ -216,7 +250,6 @@ export function mapPurchaseOrderToApi(
         total_price: asNullableNumber(item.total_price),
         currency,
         delivery_days: asNullableNumber(item.delivery_days),
-        plant_code: null as string | null,
         site_code: asNullableString(item.site_code),
         tax_code: asNullableString(item.tax_code),
         quotation_item_id: item.quotation_item_id ?? null,

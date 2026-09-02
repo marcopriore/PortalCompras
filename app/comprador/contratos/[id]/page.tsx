@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PriceInput, QuantityInput } from "@/components/ui/numeric-field-inputs"
+import { BranchSelect } from "@/components/ui/branch-select"
+import { formatBranchLabel } from "@/lib/branches/format-branch-label"
 import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -231,6 +233,7 @@ function buildNewEditItem(
     eliminated: false,
     eliminated_at: null,
     eliminated_reason: null,
+    site_code: null,
     _isNew: true,
   }
 }
@@ -801,6 +804,7 @@ export default function ContratoPage({
               ? Number(i.delivery_days)
               : null,
           notes: i.notes?.trim() || undefined,
+          site_code: i.site_code?.trim() ? i.site_code.trim() : null,
         }))
         const postRes = await fetch("/api/contract-items", {
           method: "POST",
@@ -855,7 +859,16 @@ export default function ContratoPage({
             !Number.isNaN(Number(orig.delivery_days))
               ? Number(orig.delivery_days)
               : null
-          if (newQty === oldQty && newPrice === oldPrice && newDd === oldDd) continue
+          const newBranch = item.site_code?.trim() || null
+          const oldBranch = orig.site_code?.trim() || null
+          if (
+            newQty === oldQty &&
+            newPrice === oldPrice &&
+            newDd === oldDd &&
+            newBranch === oldBranch
+          ) {
+            continue
+          }
           if (newQty == null || newQty <= 0) {
             toast.error("Quantidade inválida em um dos itens.")
             return
@@ -874,6 +887,7 @@ export default function ContratoPage({
               quantity_contracted: newQty,
               unit_price: newPrice,
               delivery_days: newDd,
+              site_code: newBranch,
             })
             .eq("id", item.id)
             .eq("company_id", companyId)
@@ -1388,6 +1402,7 @@ export default function ContratoPage({
                       <TableHead>Código</TableHead>
                       <TableHead>Descrição</TableHead>
                       <TableHead className="whitespace-nowrap">UN</TableHead>
+                      <TableHead className="whitespace-nowrap">Centro / Filial</TableHead>
                       <TableHead className="text-right whitespace-nowrap">
                         Qtd Cont.
                       </TableHead>
@@ -1429,6 +1444,9 @@ export default function ContratoPage({
                             {item.material_description}
                           </TableCell>
                           <TableCell>{item.unit_of_measure ?? "—"}</TableCell>
+                          <TableCell className="text-sm whitespace-nowrap">
+                            {formatBranchLabel({ code: item.site_code })}
+                          </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {item.quantity_contracted}
                           </TableCell>
@@ -1822,6 +1840,9 @@ export default function ContratoPage({
                       <TableHead>Código</TableHead>
                       <TableHead>Descrição</TableHead>
                       <TableHead className="whitespace-nowrap">UN</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[10rem]">
+                        Centro / Filial
+                      </TableHead>
                       <TableHead className="text-right whitespace-nowrap">
                         Qtd contratada
                       </TableHead>
@@ -1841,7 +1862,7 @@ export default function ContratoPage({
                     {editItems.length === 0 ? (
                       <TableRow>
                         <TableCell
-                          colSpan={8}
+                          colSpan={9}
                           className="text-center text-sm text-muted-foreground py-8"
                         >
                           {isRestricted
@@ -1921,6 +1942,33 @@ export default function ContratoPage({
                               <span className="text-xs px-2">
                                 {item.unit_of_measure || "—"}
                               </span>
+                            </TableCell>
+                            <TableCell className="min-w-[10rem]">
+                              {canEditLine ? (
+                                <BranchSelect
+                                  companyId={companyId}
+                                  value={item.site_code ?? ""}
+                                  onChange={(siteCode) =>
+                                    setEditItems((prev) =>
+                                      prev.map((x) =>
+                                        x.id === item.id
+                                          ? { ...x, site_code: siteCode || null }
+                                          : x,
+                                      ),
+                                    )
+                                  }
+                                  hideLabel
+                                  clearable
+                                  triggerClassName="h-7 text-xs"
+                                  includeInactiveCodes={
+                                    item.site_code ? [item.site_code] : []
+                                  }
+                                />
+                              ) : (
+                                <span className="text-xs">
+                                  {formatBranchLabel({ code: item.site_code })}
+                                </span>
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
                               {canEditLine ? (
@@ -2205,6 +2253,7 @@ export default function ContratoPage({
               eliminated: false,
               eliminated_at: null,
               eliminated_reason: null,
+              site_code: item.site_code?.trim() ? item.site_code.trim() : null,
               _isNew: true,
             })),
           ])

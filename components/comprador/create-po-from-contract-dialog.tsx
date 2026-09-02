@@ -145,13 +145,21 @@ export function CreatePoFromContractDialog({ contract, open, onOpenChange }: Pro
       })
       const data = (await res.json()) as {
         purchase_order?: { id: string; code: string }
+        purchase_orders?: { id: string; code: string }[]
         error?: string
       }
       if (!res.ok || !data.purchase_order) {
         toast.error(data.error ?? "Não foi possível criar o pedido")
         return
       }
-      toast.success(`Pedido ${data.purchase_order.code} criado com sucesso`)
+      const orders = data.purchase_orders ?? [data.purchase_order]
+      if (orders.length === 1) {
+        toast.success(`Pedido ${data.purchase_order.code} criado com sucesso`)
+      } else {
+        toast.success(
+          `${orders.length} pedidos criados: ${orders.map((o) => o.code).join(", ")}`,
+        )
+      }
       onOpenChange(false)
       router.push(`/comprador/pedidos/${data.purchase_order.id}`)
     } catch {
@@ -170,9 +178,9 @@ export function CreatePoFromContractDialog({ contract, open, onOpenChange }: Pro
             Criar Pedido do Contrato
           </DialogTitle>
           <DialogDescription>
-            Selecione os itens e quantidades. O pedido será criado em rascunho com saldo
-            reservado no contrato {contract.code}. O endereço de entrega pode ser informado
-            depois na tela do pedido.
+            Selecione os itens e quantidades. Será criado um pedido em rascunho por centro /
+            filial, com endereço de entrega do cadastro. O saldo será reservado no contrato{" "}
+            {contract.code}.
           </DialogDescription>
         </DialogHeader>
 

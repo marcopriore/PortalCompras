@@ -29,6 +29,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { ChevronLeft, Paperclip, X } from "lucide-react"
 import { RequisitionLineItemsSection } from "@/components/requisitions/requisition-line-items-section"
 import type { RequisitionEditorLineItem } from "@/lib/requisitions/line-items-helpers"
+import { validateRequisitionLineSiteCodes } from "@/lib/requisitions/line-items-helpers"
 import {
   validateAllAccountConfigsForSubmit,
   type ItemAccountConfigEdit,
@@ -87,6 +88,7 @@ export default function NovaRequisicaoPage() {
   const [accountConfigErrors, setAccountConfigErrors] = React.useState<
     Record<string, ItemAccountConfigFieldErrors>
   >({})
+  const [siteCodeFieldErrors, setSiteCodeFieldErrors] = React.useState<Record<string, boolean>>({})
   const [formFieldErrors, setFormFieldErrors] = React.useState<{
     title?: boolean
     costCenter?: boolean
@@ -207,6 +209,7 @@ export default function NovaRequisicaoPage() {
         unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
         commodity_group: (it.commodityGroup ?? "").trim() || null,
         observations: (it.observations ?? "").trim() || null,
+        site_code: it.siteCode,
       }))
 
       const { error: itemsErr } = await supabase.from("requisition_items").insert(payloadItems)
@@ -294,6 +297,14 @@ export default function NovaRequisicaoPage() {
       toast.error("Adicione ao menos um item antes de criar a requisição.")
       return
     }
+
+    const branchValidation = validateRequisitionLineSiteCodes(items)
+    if (!branchValidation.ok) {
+      setSiteCodeFieldErrors(branchValidation.errors)
+      toast.error(branchValidation.message)
+      return
+    }
+    setSiteCodeFieldErrors({})
 
     if (accountAssignmentEnabled) {
       const accountValidation = validateAllAccountConfigsForSubmit(
@@ -637,6 +648,7 @@ export default function NovaRequisicaoPage() {
           accountConfigs={accountConfigs}
           onAccountConfigsChange={setAccountConfigs}
           accountConfigErrors={accountConfigErrors}
+          siteCodeFieldErrors={siteCodeFieldErrors}
           onAccountConfigChange={handleAccountConfigChange}
         />
 

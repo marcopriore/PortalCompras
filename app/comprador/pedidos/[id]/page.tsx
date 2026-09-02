@@ -9,6 +9,7 @@ import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
+import { formatBranchLabel } from "@/lib/branches/format-branch-label"
 import { createNotification } from "@/lib/notify"
 import {
   formatResponsibleName,
@@ -164,6 +165,7 @@ type PurchaseOrderItem = {
   contract_item_line: number | null
   requisition_item_id: string | null
   source_requisition_code: string | null
+  site_code: string | null
   account_assignment_category: string | null
   account_assignment_distribution: string | null
   account_assignments: PurchaseOrderItemAccountAssignmentInput[]
@@ -679,6 +681,8 @@ export default function PurchaseOrderDetailPage({
               ),
               requisition_item_id,
               source_requisition_code,
+              site_code,
+              company_branches (code, name),
               account_assignment_category,
               account_assignment_distribution,
               purchase_order_item_account_assignments (
@@ -746,6 +750,10 @@ export default function PurchaseOrderDetailPage({
             purchase_order_item_account_assignments?:
               | PurchaseOrderItemAccountAssignmentInput[]
               | null
+            company_branches?:
+              | { code?: string; name?: string }
+              | { code?: string; name?: string }[]
+              | null
           }
         >
         let lineNumberMap = new Map<string, number>()
@@ -795,6 +803,9 @@ export default function PurchaseOrderDetailPage({
               : itemEmbed?.contract_id
                 ? String(itemEmbed.contract_id)
                 : null
+          const branchEmbed = Array.isArray(row.company_branches)
+            ? row.company_branches[0]
+            : row.company_branches
           const assignmentRows = (
             row.purchase_order_item_account_assignments ?? []
           ).map((assignment) => ({
@@ -856,6 +867,12 @@ export default function PurchaseOrderDetailPage({
               row.source_requisition_code != null
                 ? String(row.source_requisition_code)
                 : null,
+            site_code:
+              row.site_code != null
+                ? String(row.site_code)
+                : branchEmbed?.code != null
+                  ? String(branchEmbed.code)
+                  : null,
             account_assignment_category:
               row.account_assignment_category != null
                 ? String(row.account_assignment_category)
@@ -1678,6 +1695,7 @@ export default function PurchaseOrderDetailPage({
         contract_item_line: null,
         requisition_item_id: line.requisition_item_id,
         source_requisition_code: line.source_requisition_code,
+        site_code: null,
         account_assignment_category: null,
         account_assignment_distribution: "",
         account_assignments: [],
@@ -3121,6 +3139,7 @@ export default function PurchaseOrderDetailPage({
                   {isDraftEditable ? <TableHead className="w-10" /> : null}
                   <TableHead className="text-center">Código</TableHead>
                   <TableHead className="text-center min-w-[10rem]">Descrição Curta</TableHead>
+                  <TableHead className="text-center whitespace-nowrap">Centro / Filial</TableHead>
                   {isDraftEditable ? (
                     <TableHead className="text-center whitespace-nowrap">Requisição</TableHead>
                   ) : null}
@@ -3170,6 +3189,12 @@ export default function PurchaseOrderDetailPage({
                           {item.material_code}
                         </TableCell>
                         <TableCell>{item.material_description}</TableCell>
+                        <TableCell className="text-sm text-center whitespace-nowrap">
+                          {formatBranchLabel({
+                            code: items.find((i) => i.id === item.id)?.site_code,
+                            name: undefined,
+                          })}
+                        </TableCell>
                         {isDraftEditable ? (
                           <TableCell className="text-center">
                             {item.source_requisition_code &&
@@ -3337,6 +3362,9 @@ export default function PurchaseOrderDetailPage({
                           {item.material_code}
                         </TableCell>
                         <TableCell>{item.material_description}</TableCell>
+                        <TableCell className="text-sm text-center whitespace-nowrap">
+                          {formatBranchLabel({ code: item.site_code })}
+                        </TableCell>
                         <TableCell className="font-mono text-xs text-center">
                           {items.find((i) => i.id === item.id)?.contract_code ?? "—"}
                         </TableCell>

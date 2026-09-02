@@ -36,6 +36,11 @@ function NovoPedidoRedirect() {
         router.replace(`/comprador/requisicoes/${requisitionId}`)
         return
       }
+      if (result.codes && result.codes.length > 1) {
+        toast.success(`${result.codes.length} pedidos criados: ${result.codes.join(", ")}`)
+        router.replace("/comprador/pedidos")
+        return
+      }
       router.replace(`/comprador/pedidos/${result.purchaseOrderId}`)
     }
 

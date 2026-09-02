@@ -49,6 +49,7 @@ export interface ContractItem {
   eliminated: boolean
   eliminated_at: string | null
   eliminated_reason: string | null
+  site_code: string | null
 }
 
 export interface ContractItemForm {
@@ -59,6 +60,7 @@ export interface ContractItemForm {
   unit_price: string
   delivery_days: string
   notes: string
+  site_code?: string
   item_id?: string
   quotation_item_id?: string
   _fromQuotation?: boolean
@@ -147,6 +149,7 @@ export function contractItemFromRow(row: unknown): ContractItem {
     eliminated_reason: r.eliminated_reason
       ? String(r.eliminated_reason)
       : null,
+    site_code: r.site_code != null ? String(r.site_code) : null,
   }
 }
 

@@ -15,14 +15,47 @@ export type RequisitionEditorLineItem = {
   commodityGroup: string
   quantity: number
   observations: string
+  siteCode: string
 }
 
 export function emptyRequisitionAccountConfig(): ItemAccountConfigEdit {
   return { category: null, assignments: [], usesApportionment: false }
 }
 
+export function validateRequisitionLineSiteCodes(items: RequisitionEditorLineItem[]): {
+  ok: boolean
+  errors: Record<string, boolean>
+  message: string
+} {
+  if (items.length === 0) {
+    return { ok: true, errors: {}, message: "" }
+  }
+  const errors: Record<string, boolean> = {}
+  for (const item of items) {
+    if (!item.siteCode?.trim()) {
+      errors[item.id] = true
+    }
+  }
+  if (Object.keys(errors).length > 0) {
+    return {
+      ok: false,
+      errors,
+      message: "Selecione o centro / filial em todos os itens.",
+    }
+  }
+  return { ok: true, errors: {}, message: "" }
+}
+
+/** @deprecated Use validateRequisitionLineSiteCodes */
+export const validateRequisitionLineBranches = validateRequisitionLineSiteCodes
+
 export type LoadedRequisitionItemRow = {
   id: string
+  site_code?: string | null
+  company_branches?:
+    | { code?: string; name?: string }
+    | { code?: string; name?: string }[]
+    | null
   account_assignment_category?: string | null
   account_assignment_distribution?: string | null
   requisition_item_account_assignments?:
@@ -82,6 +115,8 @@ export function buildAccountConfigsFromRequisitionItems(
 
 export const REQUISITION_ITEM_ACCOUNT_SELECT = `
   id,
+  site_code,
+  company_branches (code, name),
   material_code,
   material_description,
   quantity,

@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PriceInput, QuantityInput } from "@/components/ui/numeric-field-inputs"
+import { BranchSelect } from "@/components/ui/branch-select"
 import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -132,6 +133,7 @@ function normalizePrefillItems(
     unit_price: i.unit_price ?? "",
     delivery_days: i.delivery_days ?? "",
     notes: i.notes ?? "",
+    site_code: i.site_code ?? "",
     item_id: i.item_id,
     quotation_item_id: i.quotation_item_id,
     _fromQuotation: true,
@@ -148,6 +150,7 @@ function buildContractItemsPayload(rows: ContractItemForm[]): {
     delivery_days: number | null
     notes: string | null
     quotation_item_id: string | null
+    site_code: string | null
   }>
   error?: string
 } {
@@ -160,6 +163,7 @@ function buildContractItemsPayload(rows: ContractItemForm[]): {
     delivery_days: number | null
     notes: string | null
     quotation_item_id: string | null
+    site_code: string | null
   }> = []
 
   for (let i = 0; i < rows.length; i++) {
@@ -223,6 +227,7 @@ function buildContractItemsPayload(rows: ContractItemForm[]): {
       delivery_days,
       notes: r.notes.trim() || null,
       quotation_item_id: r.quotation_item_id?.trim() || null,
+      site_code: r.site_code?.trim() ? r.site_code.trim() : null,
     })
   }
 
@@ -471,6 +476,7 @@ export default function NovoContratoPage() {
         unit_price: item.target_price != null ? String(item.target_price) : "",
         delivery_days: "",
         notes: "",
+        site_code: "",
         item_id: item.id,
         _fromQuotation: false,
       },
@@ -1006,6 +1012,7 @@ export default function NovoContratoPage() {
                     <th className="text-left px-3 py-2">Código</th>
                     <th className="text-left px-3 py-2">Descrição</th>
                     <th className="text-center px-3 py-2 w-16">UN</th>
+                    <th className="text-left px-3 py-2 min-w-[10rem]">Centro / Filial</th>
                     <th className="text-center px-3 py-2 w-28">Qtd</th>
                     <th className="text-center px-3 py-2 w-32">Preço Unit.</th>
                     <th className="text-center px-3 py-2 w-24">Prazo (dias)</th>
@@ -1016,7 +1023,7 @@ export default function NovoContratoPage() {
                 <tbody>
                   {contractItems.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-sm text-muted-foreground text-center py-4">
+                      <td colSpan={9} className="text-sm text-muted-foreground text-center py-4">
                         Busque itens no catálogo ou importe via Excel.
                       </td>
                     </tr>
@@ -1037,6 +1044,21 @@ export default function NovoContratoPage() {
                             <span className="text-xs px-2 inline-block">
                               {item.unit_of_measure || "—"}
                             </span>
+                          </td>
+                          <td className="px-3 py-1">
+                            <BranchSelect
+                              companyId={companyId}
+                              value={item.site_code ?? ""}
+                              onChange={(siteCode) =>
+                                updateItem(index, "site_code", siteCode)
+                              }
+                              hideLabel
+                              clearable
+                              triggerClassName="h-7 text-xs"
+                              includeInactiveCodes={
+                                item.site_code ? [item.site_code] : []
+                              }
+                            />
                           </td>
                           <td className="px-3 py-1 text-center">
                             {item._fromQuotation ? (

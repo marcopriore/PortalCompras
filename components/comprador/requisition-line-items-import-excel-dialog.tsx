@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { AlertTriangle, Download, Upload } from "lucide-react"
+import { loadCompanyBranchesByCode } from "@/lib/branches/branch-queries"
 
 export type RequisitionLineImportPayload = {
   lineId: string
@@ -30,6 +31,7 @@ export type RequisitionLineImportPayload = {
   commodityGroup: string
   quantity: number
   observations: string
+  siteCode?: string
 }
 
 type CatalogItemRow = {
@@ -105,18 +107,24 @@ export function RequisitionLineItemsImportExcelDialog({
     ws.columns = [
       { header: "codigo_item", key: "codigo_item", width: 18 },
       { header: "quantidade", key: "quantidade", width: 12 },
+      { header: "codigo_filial", key: "codigo_filial", width: 16 },
       { header: "observacoes", key: "observacoes", width: 32 },
     ]
 
     const headerRow = ws.getRow(1)
-    for (let col = 1; col <= 3; col++) {
+    for (let col = 1; col <= 4; col++) {
       const cell = headerRow.getCell(col)
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F3EF5" } }
       cell.font = { bold: true, color: { argb: "FFFFFFFF" } }
       cell.alignment = { horizontal: "center" }
     }
 
-    ws.addRow({ codigo_item: "A01", quantidade: 10, observacoes: "Opcional" })
+    ws.addRow({
+      codigo_item: "A01",
+      quantidade: 10,
+      codigo_filial: "MATRIZ",
+      observacoes: "Opcional",
+    })
 
     const buf = await wb.xlsx.writeBuffer()
     const blob = new Blob([buf], {
@@ -157,13 +165,15 @@ export function RequisitionLineItemsImportExcelDialog({
 
       const codeCol = colIndex.codigo_item ?? 1
       const qtyCol = colIndex.quantidade ?? 2
-      const obsCol = colIndex.observacoes ?? 3
+      const branchCol = colIndex.codigo_filial ?? 3
+      const obsCol = colIndex.observacoes ?? 4
 
       const errors: string[] = []
       const parsed: Array<{
         rowNumber: number
         materialCode: string
         quantity: number
+        branchCode: string
         observations: string
       }> = []
 
@@ -171,9 +181,10 @@ export function RequisitionLineItemsImportExcelDialog({
         if (rowNumber === 1) return
         const materialCode = String(row.getCell(codeCol).value ?? "").trim()
         const qtyRaw = row.getCell(qtyCol).value
+        const branchCode = String(row.getCell(branchCol).value ?? "").trim()
         const observations = String(row.getCell(obsCol).value ?? "").trim()
 
-        if (!materialCode && !qtyRaw && !observations) return
+        if (!materialCode && !qtyRaw && !branchCode && !observations) return
 
         if (!materialCode) {
           errors.push(`Linha ${rowNumber}: codigo_item é obrigatório.`)
@@ -190,6 +201,7 @@ export function RequisitionLineItemsImportExcelDialog({
           rowNumber,
           materialCode,
           quantity: Math.floor(quantity),
+          branchCode,
           observations: observations.slice(0, 300),
         })
       })
@@ -205,6 +217,7 @@ export function RequisitionLineItemsImportExcelDialog({
         companyId,
         [...new Set(parsed.map((row) => row.materialCode))],
       )
+      const branchMap = await loadCompanyBranchesByCode(createClient(), companyId)
 
       const preview: RequisitionLineImportPayload[] = []
       const existingSet = new Set(existingItemIds)
@@ -226,6 +239,21 @@ export function RequisitionLineItemsImportExcelDialog({
           continue
         }
 
+        let siteCode: string | undefined
+        if (row.branchCode) {
+          const normalized = row.branchCode.trim().toUpperCase()
+          const branch = [...branchMap.values()].find(
+            (b) => b.code.trim().toUpperCase() === normalized,
+          )
+          if (!branch) {
+            errors.push(
+              `Linha ${row.rowNumber}: codigo_filial "${row.branchCode}" não encontrado.`,
+            )
+            continue
+          }
+          siteCode = branch.code
+        }
+
         existingSet.add(catalogItem.id)
         preview.push({
           lineId: crypto.randomUUID(),
@@ -236,6 +264,7 @@ export function RequisitionLineItemsImportExcelDialog({
           commodityGroup: catalogItem.commodity_group ?? "",
           quantity: row.quantity,
           observations: row.observations,
+          siteCode,
         })
       }
 
@@ -265,6 +294,7 @@ export function RequisitionLineItemsImportExcelDialog({
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Colunas: <strong>codigo_item</strong>, <strong>quantidade</strong>,{" "}
+              <strong>codigo_filial</strong> (opcional — usa MATRIZ se vazio),{" "}
               <strong>observacoes</strong> (opcional). Itens devem existir no catálogo ativo.
             </p>
             <div className="flex flex-wrap gap-2">
@@ -321,6 +351,7 @@ export function RequisitionLineItemsImportExcelDialog({
                     <TableRow>
                       <TableHead>Código</TableHead>
                       <TableHead>Descrição</TableHead>
+                      <TableHead>Centro / Filial</TableHead>
                       <TableHead className="text-center">Qtd</TableHead>
                       <TableHead>Observações</TableHead>
                     </TableRow>
@@ -330,6 +361,9 @@ export function RequisitionLineItemsImportExcelDialog({
                       <TableRow key={row.lineId}>
                         <TableCell className="font-mono text-xs">{row.materialCode}</TableCell>
                         <TableCell className="text-sm">{row.materialDescription}</TableCell>
+                        <TableCell className="text-sm font-mono">
+                          {row.siteCode || "MATRIZ (padrão)"}
+                        </TableCell>
                         <TableCell className="text-center">{row.quantity}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {row.observations || "—"}

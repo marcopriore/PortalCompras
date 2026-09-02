@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/cost-center-select"
 import { RequisitionLineItemsSection } from "@/components/requisitions/requisition-line-items-section"
 import type { RequisitionEditorLineItem } from "@/lib/requisitions/line-items-helpers"
+import { validateRequisitionLineSiteCodes } from "@/lib/requisitions/line-items-helpers"
 import {
   validateAllAccountConfigsForSubmit,
   type ItemAccountConfigEdit,
@@ -76,6 +77,7 @@ export default function SolicitanteNovaPage() {
   const [accountConfigErrors, setAccountConfigErrors] = React.useState<
     Record<string, ItemAccountConfigFieldErrors>
   >({})
+  const [siteCodeFieldErrors, setSiteCodeFieldErrors] = React.useState<Record<string, boolean>>({})
 
   // Anexos
   const [attachments, setAttachments] = React.useState<AttachedFile[]>([])
@@ -171,6 +173,7 @@ export default function SolicitanteNovaPage() {
           unit_of_measure: item.unitOfMeasure || null,
           commodity_group: item.commodityGroup || null,
           observations: item.observations || null,
+          site_code: item.siteCode,
         })),
       )
       if (itemsErr) {
@@ -242,6 +245,14 @@ export default function SolicitanteNovaPage() {
     if (!title.trim()) { setError("Título é obrigatório."); return }
     if (!costCenter.trim()) { setError("Centro de custo é obrigatório."); return }
     if (items.length === 0) { setError("Adicione ao menos um item."); return }
+
+    const branchValidation = validateRequisitionLineSiteCodes(items)
+    if (!branchValidation.ok) {
+      setSiteCodeFieldErrors(branchValidation.errors)
+      setError(branchValidation.message)
+      return
+    }
+    setSiteCodeFieldErrors({})
 
     if (accountAssignmentEnabled) {
       const accountValidation = validateAllAccountConfigsForSubmit(
@@ -506,6 +517,7 @@ export default function SolicitanteNovaPage() {
           accountConfigs={accountConfigs}
           onAccountConfigsChange={setAccountConfigs}
           accountConfigErrors={accountConfigErrors}
+          siteCodeFieldErrors={siteCodeFieldErrors}
           onAccountConfigChange={handleAccountConfigChange}
         />
 

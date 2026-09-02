@@ -64,6 +64,7 @@ type ItemInput = {
   delivery_days?: number | null
   notes?: string
   quotation_item_id?: string
+  site_code?: string | null
 }
 
 export async function POST(request: Request) {
@@ -125,6 +126,7 @@ export async function POST(request: Request) {
         delivery_days: item.delivery_days ?? null,
         notes: item.notes ?? null,
         quotation_item_id: item.quotation_item_id ?? null,
+        site_code: item.site_code?.trim() ? item.site_code.trim() : null,
       })
     }
 

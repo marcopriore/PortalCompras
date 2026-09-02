@@ -2,6 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { validateCatalogLineQuantity } from "@/lib/catalog/validate-cart-line"
 import type { CatalogCheckoutInput } from "@/lib/catalog/types"
 import type { ContractKind } from "@/types/contracts"
+import {
+  loadCompanyBranchesByCode,
+  loadDefaultSiteCode,
+} from "@/lib/branches/branch-queries"
+import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
+import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
 
 export type CatalogCartLineRow = {
   id: string
@@ -52,20 +58,24 @@ async function loadContractItemDetails(
   if (contractItemIds.length === 0) {
     return new Map<
       string,
-      Parameters<typeof validateCatalogLineQuantity>[1] & { delivery_days: number | null }
+      Parameters<typeof validateCatalogLineQuantity>[1] & {
+        delivery_days: number | null
+        site_code: string | null
+      }
     >()
   }
 
   const { data } = await db
     .from("contract_items")
     .select(
-      "id, delivery_days, quantity_contracted, quantity_consumed, reserved_quantity, eliminated, total_price, consumed_value, reserved_value, unit_price",
+      "id, delivery_days, quantity_contracted, quantity_consumed, reserved_quantity, eliminated, total_price, consumed_value, reserved_value, unit_price, site_code",
     )
     .in("id", contractItemIds)
 
   type Row = Parameters<typeof validateCatalogLineQuantity>[1] & {
     id: string
     delivery_days: number | null
+    site_code: string | null
   }
 
   return new Map(((data ?? []) as Row[]).map((row) => [row.id, row]))
@@ -107,6 +117,17 @@ export async function createCatalogPurchaseOrders(
 
   const contractItemIds = cartItems.map((i) => i.contract_item_id)
   const contractItemMap = await loadContractItemDetails(db, contractItemIds)
+  const [defaultSiteCode, branchMap] = await Promise.all([
+    loadDefaultSiteCode(db, companyId),
+    loadCompanyBranchesByCode(db, companyId),
+  ])
+
+  if (!defaultSiteCode) {
+    return {
+      ok: false,
+      error: "Cadastre ao menos um centro / filial (MATRIZ) em Configurações.",
+    }
+  }
 
   for (const line of cartItems) {
     const ci = contractItemMap.get(line.contract_item_id)
@@ -159,21 +180,18 @@ export async function createCatalogPurchaseOrders(
       ? [payment.code, payment.description].filter(Boolean).join(" — ")
       : null
 
-    let totalPrice = 0
     let maxDeliveryDays = 0
     const contractCodes = new Set<string>()
 
     const poLines = lines.map((line) => {
       const ci = contractItemMap.get(line.contract_item_id)
       const deliveryDays = ci?.delivery_days ?? null
+      const siteCode = ci?.site_code ?? defaultSiteCode
       if (deliveryDays != null && deliveryDays > maxDeliveryDays) {
         maxDeliveryDays = deliveryDays
       }
       const contractCode = contractMap.get(line.contract_id)?.code
       if (contractCode) contractCodes.add(contractCode)
-
-      const lineTotal = Number(line.quantity) * Number(line.unit_price)
-      totalPrice += lineTotal
 
       return {
         contract_id: line.contract_id,
@@ -184,6 +202,7 @@ export async function createCatalogPurchaseOrders(
         quantity: line.quantity,
         unit_price: line.unit_price,
         delivery_days: deliveryDays,
+        siteCode,
       }
     })
 
@@ -217,7 +236,7 @@ export async function createCatalogPurchaseOrders(
     const requisitionCode = reqRow.code as string
 
     const { error: reqItemsErr } = await db.from("requisition_items").insert(
-      lines.map((line) => ({
+      poLines.map((line) => ({
         requisition_id: requisitionId,
         company_id: companyId,
         material_code: line.material_code,
@@ -228,6 +247,7 @@ export async function createCatalogPurchaseOrders(
         contract_id: line.contract_id,
         contract_item_id: line.contract_item_id,
         estimated_price: line.unit_price,
+        site_code: line.siteCode,
       })),
     )
 
@@ -251,102 +271,135 @@ export async function createCatalogPurchaseOrders(
       input.neededBy?.trim() ? `Necessidade: ${input.neededBy.trim()}` : null,
     ].filter(Boolean)
 
-    const { data: poData, error: poErr } = await db
-      .from("purchase_orders")
-      .insert({
-        company_id: companyId,
-        supplier_id: supplierId,
-        supplier_name: supplier?.name ?? "—",
-        supplier_cnpj: supplier?.cnpj ?? null,
-        payment_condition: paymentLabel,
-        delivery_days: maxDeliveryDays > 0 ? maxDeliveryDays : null,
-        delivery_address: "A definir",
-        quotation_code: null,
-        requisition_code: requisitionCode,
-        total_price: Math.round(totalPrice * 100) / 100,
-        observations: observationParts.join("\n"),
-        created_by: userId,
-        status: "draft",
+    const branchGroups = groupLinesBySiteCode(poLines)
+
+    for (const [siteCode, branchLines] of branchGroups) {
+      const branch = branchMap.get(siteCode)
+      const deliveryAddress = formatBranchDeliveryAddress(branch)
+      if (!deliveryAddress) {
+        await rollbackRequisition(db, requisitionId)
+        for (const po of created) {
+          await rollbackPurchaseOrder(db, po.id)
+          await rollbackRequisition(db, po.requisitionId)
+        }
+        return {
+          ok: false,
+          error: `Centro/filial sem endereço cadastrado (${branch?.code ?? siteCode}). Atualize em Configurações.`,
+        }
+      }
+
+      let branchTotal = 0
+      let branchMaxDelivery = 0
+      for (const line of branchLines) {
+        branchTotal += Number(line.quantity) * Number(line.unit_price)
+        if (line.delivery_days != null && line.delivery_days > branchMaxDelivery) {
+          branchMaxDelivery = line.delivery_days
+        }
+      }
+
+      const { data: poData, error: poErr } = await db
+        .from("purchase_orders")
+        .insert({
+          company_id: companyId,
+          supplier_id: supplierId,
+          supplier_name: supplier?.name ?? "—",
+          supplier_cnpj: supplier?.cnpj ?? null,
+          payment_condition: paymentLabel,
+          delivery_days:
+            branchMaxDelivery > 0
+              ? branchMaxDelivery
+              : maxDeliveryDays > 0
+                ? maxDeliveryDays
+                : null,
+          delivery_address: deliveryAddress,
+          quotation_code: null,
+          requisition_code: requisitionCode,
+          total_price: Math.round(branchTotal * 100) / 100,
+          observations: observationParts.join("\n"),
+          created_by: userId,
+          status: "draft",
+        })
+        .select("id, code")
+        .single()
+
+      if (poErr || !poData) {
+        await rollbackRequisition(db, requisitionId)
+        for (const po of created) {
+          await rollbackPurchaseOrder(db, po.id)
+          await rollbackRequisition(db, po.requisitionId)
+        }
+        return { ok: false, error: poErr?.message ?? "Falha ao criar pedido" }
+      }
+
+      const poId = poData.id as string
+
+      const { error: itemsErr } = await db.from("purchase_order_items").insert(
+        branchLines.map((line) => ({
+          purchase_order_id: poId,
+          company_id: companyId,
+          contract_id: line.contract_id,
+          contract_item_id: line.contract_item_id,
+          material_code: line.material_code,
+          material_description: line.material_description,
+          quantity: line.quantity,
+          unit_of_measure: line.unit_of_measure,
+          unit_price: line.unit_price,
+          tax_percent: null,
+          delivery_days: line.delivery_days,
+          site_code: line.siteCode,
+        })),
+      )
+
+      if (itemsErr) {
+        await rollbackPurchaseOrder(db, poId)
+        await rollbackRequisition(db, requisitionId)
+        for (const po of created) {
+          await rollbackPurchaseOrder(db, po.id)
+          await rollbackRequisition(db, po.requisitionId)
+        }
+        return { ok: false, error: itemsErr.message }
+      }
+
+      const { error: reserveErr } = await db.rpc("reserve_contract_balance", {
+        p_order_id: poId,
       })
-      .select("id, code")
-      .single()
 
-    if (poErr || !poData) {
-      await rollbackRequisition(db, requisitionId)
-      for (const po of created) {
-        await rollbackPurchaseOrder(db, po.id)
-        await rollbackRequisition(db, po.requisitionId)
+      if (reserveErr) {
+        await rollbackPurchaseOrder(db, poId)
+        await rollbackRequisition(db, requisitionId)
+        for (const po of created) {
+          await rollbackPurchaseOrder(db, po.id)
+          await rollbackRequisition(db, po.requisitionId)
+        }
+        return {
+          ok: false,
+          error: reserveErr.message ?? "Saldo do contrato insuficiente",
+        }
       }
-      return { ok: false, error: poErr?.message ?? "Falha ao criar pedido" }
+
+      const { error: flagErr } = await db
+        .from("purchase_orders")
+        .update({ contract_balance_applied: "reserved" })
+        .eq("id", poId)
+
+      if (flagErr) {
+        await rollbackPurchaseOrder(db, poId)
+        await rollbackRequisition(db, requisitionId)
+        for (const po of created) {
+          await rollbackPurchaseOrder(db, po.id)
+          await rollbackRequisition(db, po.requisitionId)
+        }
+        return { ok: false, error: flagErr.message }
+      }
+
+      created.push({
+        id: poId,
+        code: poData.code as string,
+        supplierId,
+        requisitionId,
+        requisitionCode,
+      })
     }
-
-    const poId = poData.id as string
-
-    const { error: itemsErr } = await db.from("purchase_order_items").insert(
-      poLines.map((line) => ({
-        purchase_order_id: poId,
-        company_id: companyId,
-        contract_id: line.contract_id,
-        contract_item_id: line.contract_item_id,
-        material_code: line.material_code,
-        material_description: line.material_description,
-        quantity: line.quantity,
-        unit_of_measure: line.unit_of_measure,
-        unit_price: line.unit_price,
-        tax_percent: null,
-        delivery_days: line.delivery_days,
-      })),
-    )
-
-    if (itemsErr) {
-      await rollbackPurchaseOrder(db, poId)
-      await rollbackRequisition(db, requisitionId)
-      for (const po of created) {
-        await rollbackPurchaseOrder(db, po.id)
-        await rollbackRequisition(db, po.requisitionId)
-      }
-      return { ok: false, error: itemsErr.message }
-    }
-
-    const { error: reserveErr } = await db.rpc("reserve_contract_balance", {
-      p_order_id: poId,
-    })
-
-    if (reserveErr) {
-      await rollbackPurchaseOrder(db, poId)
-      await rollbackRequisition(db, requisitionId)
-      for (const po of created) {
-        await rollbackPurchaseOrder(db, po.id)
-        await rollbackRequisition(db, po.requisitionId)
-      }
-      return {
-        ok: false,
-        error: reserveErr.message ?? "Saldo do contrato insuficiente",
-      }
-    }
-
-    const { error: flagErr } = await db
-      .from("purchase_orders")
-      .update({ contract_balance_applied: "reserved" })
-      .eq("id", poId)
-
-    if (flagErr) {
-      await rollbackPurchaseOrder(db, poId)
-      await rollbackRequisition(db, requisitionId)
-      for (const po of created) {
-        await rollbackPurchaseOrder(db, po.id)
-        await rollbackRequisition(db, po.requisitionId)
-      }
-      return { ok: false, error: flagErr.message }
-    }
-
-    created.push({
-      id: poId,
-      code: poData.code as string,
-      supplierId,
-      requisitionId,
-      requisitionCode,
-    })
   }
 
   return { ok: true, result: { purchaseOrders: created } }

@@ -13,7 +13,7 @@ const CONTRACT_SELECT = `
   *,
   suppliers(name, code),
   payment_conditions(code, description),
-  contract_items(*)
+  contract_items(*, company_branches(code, name))
 `
 
 async function getAuthedContext() {

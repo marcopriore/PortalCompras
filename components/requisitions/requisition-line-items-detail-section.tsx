@@ -79,6 +79,7 @@ export function RequisitionLineItemsDetailSection({
                       </TableHead>
                     </>
                   ) : null}
+                  <TableHead>Centro / Filial</TableHead>
                   <TableHead className="text-right">Qtd</TableHead>
                   <TableHead>Unidade</TableHead>
                   <TableHead>Grupo</TableHead>
@@ -86,7 +87,15 @@ export function RequisitionLineItemsDetailSection({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((it) => (
+                {items.map((it) => {
+                  const branchEmbed = Array.isArray(it.company_branches)
+                    ? it.company_branches[0]
+                    : it.company_branches
+                  const branchLabel = branchEmbed
+                    ? [branchEmbed.code, branchEmbed.name].filter(Boolean).join(" — ")
+                    : it.site_code?.trim() || "—"
+
+                  return (
                   <TableRow key={it.id}>
                     <TableCell className="font-mono text-sm">
                       {it.material_code ?? "—"}
@@ -103,12 +112,14 @@ export function RequisitionLineItemsDetailSection({
                         onChange={() => {}}
                       />
                     ) : null}
+                    <TableCell className="text-sm">{branchLabel}</TableCell>
                     <TableCell className="text-right text-sm">{it.quantity}</TableCell>
                     <TableCell className="text-sm">{it.unit_of_measure ?? "—"}</TableCell>
                     <TableCell className="text-sm">{it.commodity_group ?? "—"}</TableCell>
                     <TableCell className="text-sm">{it.observations ?? "—"}</TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           </div>

@@ -64,6 +64,7 @@ const baseItem: ContractItem = {
   eliminated: false,
   eliminated_at: null,
   eliminated_reason: null,
+  site_code: null,
 }
 
 describe("contract-balance-helpers", () => {

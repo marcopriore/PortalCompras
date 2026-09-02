@@ -60,6 +60,7 @@ type QuotationItem = {
 type SelectedItem = QuotationItem & {
   quantity: number
   requisition_code?: string | null
+  site_code?: string | null
 }
 type Supplier = {
   id: string
@@ -78,6 +79,7 @@ type RequisitionOption = {
     material_description: string
     unit_of_measure: string | null
     quantity: number
+    site_code?: string | null
   }[]
 }
 
@@ -223,13 +225,14 @@ function NovaCotacaoContent() {
       if (itemsRes.data && itemsRes.data.length > 0) {
         const reqCode = (reqRes.data as { code?: string } | null)?.code ?? null
         setSelectedItems(
-          itemsRes.data.map((ri: any) => ({
+          itemsRes.data.map((ri: { material_code?: string; material_description?: string; long_description?: string | null; quantity?: number; unit_of_measure?: string; site_code?: string | null }) => ({
             code: ri.material_code ?? '',
             description: ri.material_description ?? '',
             long_description: ri.long_description ?? null,
             quantity: ri.quantity ?? 1,
             unit_of_measure: ri.unit_of_measure ?? '',
             requisition_code: reqCode,
+            site_code: ri.site_code ?? null,
           })),
         )
       }
@@ -354,7 +357,7 @@ function NovaCotacaoContent() {
 
       const { data: allItems } = await supabase
         .from('requisition_items')
-        .select('requisition_id, material_code, material_description, unit_of_measure, quantity')
+        .select('requisition_id, material_code, material_description, unit_of_measure, quantity, site_code')
         .in(
           'requisition_id',
           reqs.map((r) => r.id),
@@ -366,6 +369,7 @@ function NovaCotacaoContent() {
         material_description: string
         unit_of_measure: string | null
         quantity: number
+        site_code: string | null
       }
 
       const itemsByReq: Record<string, ReqItemRow[]> = {}
@@ -385,6 +389,7 @@ function NovaCotacaoContent() {
             material_description: i.material_description,
             unit_of_measure: i.unit_of_measure,
             quantity: i.quantity,
+            site_code: i.site_code,
           })),
         })),
       )
@@ -419,6 +424,7 @@ function NovaCotacaoContent() {
             long_description: null,
             quantity: item.quantity ?? 1,
             requisition_code: req.code,
+            site_code: item.site_code ?? null,
           })
         }
       }
@@ -491,6 +497,7 @@ function NovaCotacaoContent() {
             quantity: item.quantity,
             complementary_spec: null,
             source_requisition_code: item.requisition_code ?? null,
+            site_code: item.site_code ?? null,
           })),
         )
 

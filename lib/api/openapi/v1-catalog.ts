@@ -372,7 +372,6 @@ export const API_DOC_ENDPOINTS: ApiDocEndpoint[] = [
         "total_price": 1250.0,
         "currency": "BRL",
         "delivery_days": 15,
-        "plant_code": null,
         "site_code": null,
         "contract": { "id": null, "item_id": null, "code": null },
         "account_assignments": []

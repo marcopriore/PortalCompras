@@ -34,6 +34,7 @@ import type {
   ItemAccountConfigFieldErrors,
 } from "@/lib/po-account-assignment"
 import { QuantityInput } from "@/components/ui/numeric-field-inputs"
+import { BranchSelect } from "@/components/ui/branch-select"
 import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
 import { useImplantationConfig } from "@/lib/hooks/use-implantation-config"
 import { Trash2, Plus, PackageSearch, X, FileSpreadsheet } from "lucide-react"
@@ -67,6 +68,7 @@ type RequisitionLineItemsSectionProps = {
     React.SetStateAction<Record<string, ItemAccountConfigEdit>>
   >
   accountConfigErrors?: Record<string, ItemAccountConfigFieldErrors>
+  siteCodeFieldErrors?: Record<string, boolean>
   onAccountConfigChange?: (itemId: string, config: ItemAccountConfigEdit) => void
   title?: string
 }
@@ -78,6 +80,7 @@ export function RequisitionLineItemsSection({
   accountConfigs,
   onAccountConfigsChange,
   accountConfigErrors = {},
+  siteCodeFieldErrors = {},
   onAccountConfigChange,
   title = "Itens Solicitados",
 }: RequisitionLineItemsSectionProps) {
@@ -89,6 +92,30 @@ export function RequisitionLineItemsSection({
   const [searchLoading, setSearchLoading] = React.useState(false)
   const [searchOpen, setSearchOpen] = React.useState(false)
   const [importExcelOpen, setImportExcelOpen] = React.useState(false)
+  const [defaultSiteCode, setDefaultSiteCode] = React.useState("")
+
+  React.useEffect(() => {
+    if (!companyId) {
+      setDefaultSiteCode("")
+      return
+    }
+    let alive = true
+    void (async () => {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from("company_branches")
+        .select("code")
+        .eq("company_id", companyId)
+        .eq("code", "MATRIZ")
+        .eq("active", true)
+        .maybeSingle()
+      if (!alive) return
+      setDefaultSiteCode((data as { code?: string } | null)?.code ?? "")
+    })()
+    return () => {
+      alive = false
+    }
+  }, [companyId])
   const searchContainerRef = React.useRef<HTMLDivElement>(null)
   const debouncedSearch = useDebounce(searchTerm, DEBOUNCE_MS)
 
@@ -159,6 +186,7 @@ export function RequisitionLineItemsSection({
         commodityGroup: item.commodity_group ?? "",
         quantity: 1,
         observations: "",
+        siteCode: defaultSiteCode,
       },
     ])
     onAccountConfigsChange((prev) => ({ ...prev, [lineId]: emptyRequisitionAccountConfig() }))
@@ -178,6 +206,7 @@ export function RequisitionLineItemsSection({
         commodityGroup: line.commodityGroup,
         quantity: line.quantity,
         observations: line.observations,
+        siteCode: line.siteCode || defaultSiteCode,
       })),
     ])
     onAccountConfigsChange((prev) => ({
@@ -336,6 +365,9 @@ export function RequisitionLineItemsSection({
                       <TableHead className="min-w-[10rem]">Descrição Curta</TableHead>
                       <TableHead className="text-center">Unidade</TableHead>
                       <TableHead>Grupo de Mercadoria</TableHead>
+                      <TableHead className="min-w-[11rem] whitespace-nowrap">
+                        Centro / Filial *
+                      </TableHead>
                       {accountAssignmentEnabled ? (
                         <>
                           <TableHead className="text-center whitespace-nowrap min-w-[9rem]">
@@ -372,6 +404,18 @@ export function RequisitionLineItemsSection({
                           {it.unitOfMeasure || "—"}
                         </TableCell>
                         <TableCell className="text-sm">{it.commodityGroup || "—"}</TableCell>
+                        <TableCell className="align-top min-w-[11rem]">
+                          <BranchSelect
+                            companyId={companyId}
+                            value={it.siteCode}
+                            onChange={(siteCode) => updateItem(it.id, { siteCode })}
+                            hideLabel
+                            required
+                            invalid={Boolean(siteCodeFieldErrors[it.id])}
+                            includeInactiveCodes={it.siteCode ? [it.siteCode] : []}
+                            triggerClassName="h-8"
+                          />
+                        </TableCell>
                         {accountAssignmentEnabled ? (
                           <PoItemAccountConfigTableCells
                             companyId={companyId}

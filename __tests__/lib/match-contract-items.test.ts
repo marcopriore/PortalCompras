@@ -32,6 +32,7 @@ function makeItem(
     eliminated: overrides.eliminated ?? false,
     eliminated_at: null,
     eliminated_reason: null,
+    site_code: overrides.site_code ?? null,
   }
 }
 

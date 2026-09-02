@@ -42,6 +42,7 @@ describe("mapPurchaseOrderToApi", () => {
           contract_id: "c1",
           contract_item_id: "ci1",
           contracts: { code: "CTR-1" },
+          site_code: "FIL-01",
           account_assignment_category: "K",
           account_assignment_distribution: "",
           partial_invoice_distribution: "",
@@ -76,6 +77,7 @@ describe("mapPurchaseOrderToApi", () => {
     expect(mapped.items).toHaveLength(1)
     expect(mapped.items[0].line_number).toBe(1)
     expect(mapped.items[0].contract.code).toBe("CTR-1")
+    expect(mapped.items[0].site_code).toBe("FIL-01")
     expect(mapped.items[0].account_assignments).toHaveLength(1)
     expect(mapped.items[0].account_configuration.category).toBe("K")
     expect(mapped.items[0].account_assignments[0].cost_center_code).toBe("CC-100")

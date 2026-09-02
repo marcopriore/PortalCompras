@@ -154,6 +154,22 @@ export async function POST(request: Request) {
       )
     }
 
+    const { error: branchError } = await supabaseAdmin.from('company_branches').insert({
+      company_id: companyId,
+      code: 'MATRIZ',
+      name: trimmedName || 'Matriz',
+      active: true,
+    })
+
+    if (branchError) {
+      console.error('create-tenant: seed branch', branchError)
+      await rollbackTenant()
+      return NextResponse.json(
+        { error: 'Erro ao criar centro / filial padrão do tenant' },
+        { status: 500 },
+      )
+    }
+
     // 2. Criar usuário admin do tenant no Auth
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { ConfiguracoesUsuariosTab } from "@/components/comprador/configuracoes-usuarios-tab"
 import { ConfiguracoesPermissoesTab } from "@/components/comprador/configuracoes-permissoes-tab"
 import { CostCentersSettings } from "@/components/comprador/cost-centers-settings"
+import { BranchSettings } from "@/components/comprador/branch-settings"
 import { CategoriesSettings } from "@/components/comprador/categories-settings"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
@@ -3061,6 +3062,8 @@ export default function ConfiguracoesPage() {
               </CardContent>
             </Card>
           )}
+
+          {canManageCompany ? <BranchSettings /> : null}
 
           {canManageCompany ? <CostCentersSettings /> : null}
 

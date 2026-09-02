@@ -20,6 +20,7 @@ type ItemPayload = {
   unit_of_measure?: string | null
   commodity_group?: string | null
   observations?: string | null
+  site_code?: string | null
 }
 
 type Body = {
@@ -99,6 +100,15 @@ export async function POST(
         { error: "Adicione ao menos um item antes de enviar." },
         { status: 400 },
       )
+    }
+
+    for (const item of body.items) {
+      if (!item.site_code?.trim()) {
+        return NextResponse.json(
+          { error: "Selecione o centro / filial em todos os itens." },
+          { status: 400 },
+        )
+      }
     }
 
     const accountConfigs = body.account_configs ?? {}
@@ -183,6 +193,7 @@ export async function POST(
       unit_of_measure: (it.unit_of_measure ?? "").trim() || null,
       commodity_group: (it.commodity_group ?? "").trim() || null,
       observations: (it.observations ?? "").trim() || null,
+      site_code: it.site_code!.trim(),
     }))
 
     const missingIds = payloadItems.filter((row) => !row.id)

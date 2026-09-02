@@ -4,6 +4,12 @@ import { cookies } from "next/headers"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isContractEligibleForPurchaseOrder } from "@/lib/contracts/contract-balance-helpers"
 import { tenantHasContractBalance } from "@/lib/contracts/contract-balance-settings"
+import {
+  loadCompanyBranchesByCode,
+  loadDefaultSiteCode,
+} from "@/lib/branches/branch-queries"
+import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
+import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
 
 async function getBuyerContext() {
   const cookieStore = await cookies()
@@ -125,7 +131,8 @@ export async function POST(request: Request, context: RouteCtx) {
           quantity_contracted,
           quantity_consumed,
           reserved_quantity,
-          eliminated
+          eliminated,
+          site_code
         )
       `,
       )
@@ -158,7 +165,20 @@ export async function POST(request: Request, context: RouteCtx) {
       quantity_consumed: number
       reserved_quantity: number
       eliminated: boolean
+      site_code: string | null
     }>
+
+    const [defaultSiteCode, branchMap] = await Promise.all([
+      loadDefaultSiteCode(ctx.supabase, ctx.companyId),
+      loadCompanyBranchesByCode(ctx.supabase, ctx.companyId),
+    ])
+
+    if (!defaultSiteCode) {
+      return NextResponse.json(
+        { error: "Cadastre ao menos um centro / filial (MATRIZ) em Configurações." },
+        { status: 400 },
+      )
+    }
 
     const itemMap = new Map(contractItems.map((i) => [i.id, i]))
     const poLines: {
@@ -170,10 +190,8 @@ export async function POST(request: Request, context: RouteCtx) {
       quantity: number
       unit_price: number
       delivery_days: number | null
+      siteCode: string
     }[] = []
-
-    let totalPrice = 0
-    let maxDeliveryDays = 0
 
     for (const input of items) {
       const ci = itemMap.get(input.contract_item_id)
@@ -190,12 +208,8 @@ export async function POST(request: Request, context: RouteCtx) {
         quantity: input.quantity,
         unit_price: Number(ci.unit_price),
         delivery_days: ci.delivery_days,
+        siteCode: ci.site_code ?? defaultSiteCode,
       })
-
-      totalPrice += input.quantity * Number(ci.unit_price)
-      if (ci.delivery_days != null && ci.delivery_days > maxDeliveryDays) {
-        maxDeliveryDays = ci.delivery_days
-      }
     }
 
     const supplier = Array.isArray(contract.suppliers)
@@ -215,85 +229,133 @@ export async function POST(request: Request, context: RouteCtx) {
         : `Pedido vinculado ao contrato ${contract.code}`
 
     const admin = createServiceRoleClient()
+    const branchGroups = groupLinesBySiteCode(poLines)
+    const createdOrders: { id: string; code: string }[] = []
 
-    const { data: poData, error: poErr } = await admin
-      .from("purchase_orders")
-      .insert({
+    for (const [siteCode, branchLines] of branchGroups) {
+      const branch = branchMap.get(siteCode)
+      const deliveryAddress = formatBranchDeliveryAddress(branch)
+      if (!deliveryAddress) {
+        for (const po of createdOrders) {
+          await admin.rpc("release_contract_balance", { p_order_id: po.id })
+          await admin.from("purchase_orders").delete().eq("id", po.id)
+        }
+        return NextResponse.json(
+          {
+            error: `Centro/filial sem endereço cadastrado (${branch?.code ?? siteCode}). Atualize em Configurações.`,
+          },
+          { status: 400 },
+        )
+      }
+
+      let branchTotal = 0
+      let branchMaxDelivery = 0
+      for (const line of branchLines) {
+        branchTotal += line.quantity * line.unit_price
+        if (line.delivery_days != null && line.delivery_days > branchMaxDelivery) {
+          branchMaxDelivery = line.delivery_days
+        }
+      }
+
+      const { data: poData, error: poErr } = await admin
+        .from("purchase_orders")
+        .insert({
+          company_id: ctx.companyId,
+          supplier_id: contract.supplier_id,
+          supplier_name: supplier?.name ?? "—",
+          supplier_cnpj: supplier?.cnpj ?? null,
+          payment_condition: paymentLabel,
+          delivery_days: branchMaxDelivery > 0 ? branchMaxDelivery : null,
+          delivery_address: deliveryAddress,
+          quotation_code: null,
+          requisition_code: null,
+          total_price: Math.round(branchTotal * 100) / 100,
+          observations,
+          created_by: ctx.userId,
+          status: "draft",
+        })
+        .select("id, code")
+        .single()
+
+      if (poErr || !poData) {
+        for (const po of createdOrders) {
+          await admin.rpc("release_contract_balance", { p_order_id: po.id })
+          await admin.from("purchase_orders").delete().eq("id", po.id)
+        }
+        return NextResponse.json(
+          { error: poErr?.message ?? "Falha ao criar pedido" },
+          { status: 500 },
+        )
+      }
+
+      const poItemsPayload = branchLines.map((line) => ({
+        purchase_order_id: poData.id,
         company_id: ctx.companyId,
-        supplier_id: contract.supplier_id,
-        supplier_name: supplier?.name ?? "—",
-        supplier_cnpj: supplier?.cnpj ?? null,
-        payment_condition: paymentLabel,
-        delivery_days: maxDeliveryDays > 0 ? maxDeliveryDays : null,
-        delivery_address: "A definir",
-        quotation_code: null,
-        requisition_code: null,
-        total_price: Math.round(totalPrice * 100) / 100,
-        observations,
-        created_by: ctx.userId,
-        status: "draft",
+        contract_id: line.contract_id,
+        contract_item_id: line.contract_item_id,
+        material_code: line.material_code,
+        material_description: line.material_description,
+        quantity: line.quantity,
+        unit_of_measure: line.unit_of_measure,
+        unit_price: line.unit_price,
+        tax_percent: null,
+        delivery_days: line.delivery_days,
+        site_code: line.siteCode,
+      }))
+
+      const { error: itemsErr } = await admin
+        .from("purchase_order_items")
+        .insert(poItemsPayload)
+
+      if (itemsErr) {
+        await admin.from("purchase_orders").delete().eq("id", poData.id)
+        for (const po of createdOrders) {
+          await admin.rpc("release_contract_balance", { p_order_id: po.id })
+          await admin.from("purchase_orders").delete().eq("id", po.id)
+        }
+        return NextResponse.json({ error: itemsErr.message }, { status: 500 })
+      }
+
+      const { error: reserveErr } = await admin.rpc("reserve_contract_balance", {
+        p_order_id: poData.id,
       })
-      .select("id, code")
-      .single()
 
-    if (poErr || !poData) {
-      return NextResponse.json(
-        { error: poErr?.message ?? "Falha ao criar pedido" },
-        { status: 500 },
-      )
-    }
+      if (reserveErr) {
+        await admin.from("purchase_orders").delete().eq("id", poData.id)
+        for (const po of createdOrders) {
+          await admin.rpc("release_contract_balance", { p_order_id: po.id })
+          await admin.from("purchase_orders").delete().eq("id", po.id)
+        }
+        return NextResponse.json(
+          { error: reserveErr.message ?? "Saldo do contrato insuficiente" },
+          { status: 400 },
+        )
+      }
 
-    const poItemsPayload = poLines.map((line) => ({
-      purchase_order_id: poData.id,
-      company_id: ctx.companyId,
-      contract_id: line.contract_id,
-      contract_item_id: line.contract_item_id,
-      material_code: line.material_code,
-      material_description: line.material_description,
-      quantity: line.quantity,
-      unit_of_measure: line.unit_of_measure,
-      unit_price: line.unit_price,
-      tax_percent: null,
-      delivery_days: line.delivery_days,
-    }))
+      const { error: flagErr } = await admin
+        .from("purchase_orders")
+        .update({ contract_balance_applied: "reserved" })
+        .eq("id", poData.id)
 
-    const { error: itemsErr } = await admin
-      .from("purchase_order_items")
-      .insert(poItemsPayload)
+      if (flagErr) {
+        await admin.rpc("release_contract_balance", { p_order_id: poData.id })
+        await admin.from("purchase_orders").delete().eq("id", poData.id)
+        for (const po of createdOrders) {
+          await admin.rpc("release_contract_balance", { p_order_id: po.id })
+          await admin.from("purchase_orders").delete().eq("id", po.id)
+        }
+        return NextResponse.json({ error: flagErr.message }, { status: 500 })
+      }
 
-    if (itemsErr) {
-      await admin.from("purchase_orders").delete().eq("id", poData.id)
-      return NextResponse.json({ error: itemsErr.message }, { status: 500 })
-    }
-
-    const { error: reserveErr } = await admin.rpc("reserve_contract_balance", {
-      p_order_id: poData.id,
-    })
-
-    if (reserveErr) {
-      await admin.from("purchase_orders").delete().eq("id", poData.id)
-      return NextResponse.json(
-        { error: reserveErr.message ?? "Saldo do contrato insuficiente" },
-        { status: 400 },
-      )
-    }
-
-    const { error: flagErr } = await admin
-      .from("purchase_orders")
-      .update({ contract_balance_applied: "reserved" })
-      .eq("id", poData.id)
-
-    if (flagErr) {
-      await admin.rpc("release_contract_balance", { p_order_id: poData.id })
-      await admin.from("purchase_orders").delete().eq("id", poData.id)
-      return NextResponse.json({ error: flagErr.message }, { status: 500 })
+      createdOrders.push({
+        id: poData.id as string,
+        code: poData.code as string,
+      })
     }
 
     return NextResponse.json({
-      purchase_order: {
-        id: poData.id,
-        code: poData.code,
-      },
+      purchase_order: createdOrders[0],
+      purchase_orders: createdOrders,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error"

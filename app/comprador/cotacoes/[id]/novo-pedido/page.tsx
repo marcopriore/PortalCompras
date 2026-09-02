@@ -12,6 +12,9 @@ import {
   canViewAllQuotations,
 } from "@/lib/quotations/ownership"
 import { logAudit } from "@/lib/audit"
+import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
+import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
+import type { CompanyBranchRow } from "@/lib/branches/branch-queries"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -66,6 +69,7 @@ type QuotationItem = {
   material_description: string
   quantity: number
   unit_of_measure: string | null
+  site_code?: string | null
 }
 
 type PurchaseOrderItemForm = {
@@ -76,6 +80,8 @@ type PurchaseOrderItemForm = {
   unitOfMeasure: string | null
   unitPrice: number
   taxPercent: number | null
+  siteCode: string
+  deliveryDays: number | null
 }
 
 type PurchaseOrderForm = {
@@ -84,7 +90,6 @@ type PurchaseOrderForm = {
   supplierCnpj: string | null
   paymentCondition: string | null
   deliveryDays: number | null
-  deliveryAddress: string
   quotationCode: string
   requisitionCode: string
   observations: string
@@ -118,15 +123,16 @@ export default function NovoPedidoPage({
   const [submitting, setSubmitting] = React.useState(false)
   const [erpError, setErpError] = React.useState<string | null>(null)
   const [form, setForm] = React.useState<{
-    deliveryAddress: string
     requisitionCode: string
     observations: string
   }>({
-    deliveryAddress: "",
     requisitionCode: "",
     observations: "",
   })
   const [items, setItems] = React.useState<PurchaseOrderItemForm[]>([])
+  const [branchByCode, setBranchByCode] = React.useState<Map<string, CompanyBranchRow>>(
+    new Map(),
+  )
 
   React.useEffect(() => {
     if (!companyId || !id) return
@@ -137,7 +143,7 @@ export default function NovoPedidoPage({
     const run = async () => {
       setLoading(true)
 
-      const [qRes, pRes, qiRes] = await Promise.all([
+      const [qRes, pRes, qiRes, branchesRes] = await Promise.all([
         supabase
           .from("quotations")
           .select("id, code, description, status, created_by")
@@ -150,6 +156,10 @@ export default function NovoPedidoPage({
           .eq("status", "selected")
           .maybeSingle(),
         supabase.from("quotation_items").select("*").eq("quotation_id", id),
+        supabase
+          .from("company_branches")
+          .select("id, code, name, address, city, state, zip_code")
+          .eq("company_id", companyId),
       ])
 
       if (!alive) return
@@ -173,6 +183,12 @@ export default function NovoPedidoPage({
       setProposal(selectedProposal)
       setQuotationItems(((qiRes.data as unknown) as QuotationItem[]) ?? [])
 
+      const branchMap = new Map<string, CompanyBranchRow>()
+      for (const row of (branchesRes.data ?? []) as CompanyBranchRow[]) {
+        branchMap.set(row.code, row)
+      }
+      setBranchByCode(branchMap)
+
       if (qRes.data && selectedProposal) {
         const q = qRes.data as Quotation
         const allItems = (qiRes.data as QuotationItem[]) ?? []
@@ -183,6 +199,7 @@ export default function NovoPedidoPage({
           .map((pi) => {
             const qi = allItems.find((i) => i.id === pi.quotation_item_id)
             if (!qi) return null
+            if (!qi.site_code) return null
             return {
               quotationItemId: qi.id,
               materialCode: qi.material_code,
@@ -191,6 +208,8 @@ export default function NovoPedidoPage({
               unitOfMeasure: qi.unit_of_measure,
               unitPrice: pi.unit_price,
               taxPercent: pi.tax_percent,
+              siteCode: qi.site_code,
+              deliveryDays: pi.delivery_days ?? null,
             }
           })
           .filter(Boolean) as PurchaseOrderItemForm[]
@@ -198,7 +217,6 @@ export default function NovoPedidoPage({
         setItems(mappedItems)
         setForm((prev) => ({
           ...prev,
-          deliveryAddress: prev.deliveryAddress,
           requisitionCode: prev.requisitionCode,
           observations: prev.observations,
         }))
@@ -239,9 +257,8 @@ export default function NovoPedidoPage({
   const handleSubmit = async () => {
     if (!quotation || !proposal || !companyId || !userId) return
 
-    if (!form.deliveryAddress.trim()) {
-      // simples validação local, pode ser trocada por toast
-      window.alert("Endereço de entrega é obrigatório.")
+    if (items.length === 0) {
+      toast.error("Nenhum item aceito com centro / filial definido.")
       return
     }
 
@@ -250,77 +267,102 @@ export default function NovoPedidoPage({
 
     try {
       const supabase = createClient()
+      const branchGroups = groupLinesBySiteCode(items)
+      const createdCodes: string[] = []
 
-      const acceptedProposalItems = proposal.proposal_items.filter(
-        (pi) => pi.item_status === "accepted",
-      )
-      const maxDeliveryDays = acceptedProposalItems.reduce((max, pi) => {
-        const dd = pi.delivery_days
-        return dd != null && dd > max ? dd : max
-      }, 0)
-
-      const { data: poData, error: poError } = await supabase
-        .from("purchase_orders")
-        .insert({
-          company_id: companyId,
-          quotation_id: quotation.id,
-          proposal_id: proposal.id,
-          supplier_id: proposal.supplier_id ?? null,
-          supplier_name: proposal.supplier_name,
-          supplier_cnpj: proposal.supplier_cnpj,
-          payment_condition: proposal.payment_condition,
-          delivery_days: maxDeliveryDays > 0 ? maxDeliveryDays : null,
-          delivery_address: form.deliveryAddress,
-          quotation_code: quotation.code,
-          requisition_code: form.requisitionCode || null,
-          total_price: totalPrice,
-          observations: form.observations || null,
-          created_by: userId,
-          status: "draft",
-        })
-        .select("id, code")
-        .single()
-
-      if (poError || !poData) {
-        setErpError("Erro ao criar pedido de compra.")
-        setSubmitting(false)
-        return
-      }
-
-      const purchaseOrderId = poData.id as string
-
-      if (items.length > 0) {
-        const itemsPayload = items.map((i) => {
-          const pi = proposal.proposal_items.find(
-            (p) =>
-              p.quotation_item_id === i.quotationItemId &&
-              p.item_status === "accepted",
+      for (const [siteCode, branchItems] of branchGroups) {
+        const branch = branchByCode.get(siteCode)
+        const deliveryAddress = formatBranchDeliveryAddress(branch)
+        if (!deliveryAddress) {
+          toast.error(
+            `Centro/filial sem endereço cadastrado (${branch?.code ?? siteCode}). Atualize em Configurações.`,
           )
-          return {
-            purchase_order_id: purchaseOrderId,
-            company_id: companyId,
-            quotation_item_id: i.quotationItemId,
-            material_code: i.materialCode,
-            material_description: i.materialDescription,
-            quantity: i.quantity,
-            unit_of_measure: i.unitOfMeasure,
-            unit_price: i.unitPrice,
-            tax_percent: i.taxPercent,
-            delivery_days: pi?.delivery_days ?? null,
-          }
-        })
+          return
+        }
 
-        await supabase.from("purchase_order_items").insert(itemsPayload)
+        let branchTotal = 0
+        let branchMaxDelivery = 0
+        for (const item of branchItems) {
+          branchTotal += item.quantity * item.unitPrice
+          if (item.deliveryDays != null && item.deliveryDays > branchMaxDelivery) {
+            branchMaxDelivery = item.deliveryDays
+          }
+        }
+
+        const headerDeliveryDays = proposal.delivery_days ?? 0
+        const poDeliveryDays =
+          branchMaxDelivery > 0 ? branchMaxDelivery : headerDeliveryDays
+
+        const { data: poData, error: poError } = await supabase
+          .from("purchase_orders")
+          .insert({
+            company_id: companyId,
+            quotation_id: quotation.id,
+            proposal_id: proposal.id,
+            supplier_id: proposal.supplier_id ?? null,
+            supplier_name: proposal.supplier_name,
+            supplier_cnpj: proposal.supplier_cnpj,
+            payment_condition: proposal.payment_condition,
+            delivery_days: poDeliveryDays > 0 ? poDeliveryDays : null,
+            delivery_address: deliveryAddress,
+            quotation_code: quotation.code,
+            requisition_code: form.requisitionCode || null,
+            total_price: branchTotal,
+            observations: form.observations || null,
+            created_by: userId,
+            status: "draft",
+          })
+          .select("id, code")
+          .single()
+
+        if (poError || !poData) {
+          setErpError("Erro ao criar pedido de compra.")
+          return
+        }
+
+        const purchaseOrderId = poData.id as string
+
+        const itemsPayload = branchItems.map((i) => ({
+          purchase_order_id: purchaseOrderId,
+          company_id: companyId,
+          quotation_item_id: i.quotationItemId,
+          material_code: i.materialCode,
+          material_description: i.materialDescription,
+          quantity: i.quantity,
+          unit_of_measure: i.unitOfMeasure,
+          unit_price: i.unitPrice,
+          tax_percent: i.taxPercent,
+          delivery_days: i.deliveryDays,
+          site_code: i.siteCode,
+        }))
+
+        const { error: itemsInsertError } = await supabase
+          .from("purchase_order_items")
+          .insert(itemsPayload)
+
+        if (itemsInsertError) {
+          await supabase.from("purchase_orders").delete().eq("id", purchaseOrderId)
+          setErpError("Erro ao salvar itens do pedido.")
+          return
+        }
+
+        createdCodes.push((poData.code as string) ?? "—")
+
+        await logAudit({
+          eventType: "quotation.updated",
+          description: `Pedido ${poData.code ?? ""} criado para cotação ${quotation.code}`,
+          companyId,
+          userId,
+          entity: "quotation",
+          entityId: quotation.id,
+        })
       }
 
-      await logAudit({
-        eventType: "quotation.updated",
-        description: `Pedido ${poData.code ?? ""} criado para cotação ${quotation.code}`,
-        companyId,
-        userId,
-        entity: "quotation",
-        entityId: quotation.id,
-      })
+      if (createdCodes.length === 1) {
+        toast.success(`Pedido ${createdCodes[0]} criado.`)
+      } else {
+        toast.success(`${createdCodes.length} pedidos criados: ${createdCodes.join(", ")}`)
+      }
 
       setErpError(null)
       router.push("/comprador/pedidos")
@@ -396,11 +438,12 @@ export default function NovoPedidoPage({
     paymentCondition: proposal.payment_condition,
     deliveryDays: displayMaxDeliveryDays,
     quotationCode: quotation.code,
-    deliveryAddress: form.deliveryAddress,
     requisitionCode: form.requisitionCode,
     observations: form.observations,
     items,
   }
+
+  const poCountByBranch = groupLinesBySiteCode(items).size
 
   return (
     <div className="space-y-6">
@@ -490,18 +533,10 @@ export default function NovoPedidoPage({
               />
             </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="deliveryAddress">Endereço de Entrega</Label>
-            <Textarea
-              id="deliveryAddress"
-              rows={3}
-              value={form.deliveryAddress}
-              onChange={handleChangeForm("deliveryAddress")}
-            />
-            <p className="text-xs text-muted-foreground">
-              Campo obrigatório para criação do pedido.
-            </p>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Será criado {poCountByBranch} pedido{poCountByBranch === 1 ? "" : "s"} — um por
+            centro / filial. O endereço de entrega vem do cadastro em Configurações.
+          </p>
           <div className="space-y-2">
             <Label htmlFor="observations">Observações</Label>
             <Textarea
@@ -525,6 +560,7 @@ export default function NovoPedidoPage({
                 <TableRow>
                   <TableHead>Código</TableHead>
                   <TableHead>Descrição Curta</TableHead>
+                  <TableHead>Centro / Filial</TableHead>
                   <TableHead className="text-right">Qtd</TableHead>
                   <TableHead className="text-center">Unidade</TableHead>
                   <TableHead className="text-right">Preço Unit.</TableHead>
@@ -535,12 +571,23 @@ export default function NovoPedidoPage({
               <TableBody>
                 {items.map((item) => {
                   const totalItem = item.quantity * item.unitPrice
+                  const branch = branchByCode.get(item.siteCode)
                   return (
                     <TableRow key={item.quotationItemId}>
                       <TableCell className="font-mono text-sm">
                         {item.materialCode}
                       </TableCell>
                       <TableCell>{item.materialDescription}</TableCell>
+                      <TableCell className="text-sm">
+                        {branch ? (
+                          <span>
+                            <span className="font-mono text-xs">{branch.code}</span>{" "}
+                            {branch.name}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">{item.quantity}</TableCell>
                       <TableCell className="text-center">
                         {item.unitOfMeasure ?? "—"}
