@@ -12,7 +12,12 @@ import { createClient } from "@/lib/supabase/client"
 import { logAudit } from "@/lib/audit"
 import { looksLikeCnpjInput } from "@/lib/utils/cnpj"
 
-type TenantOption = { email: string; companyName: string }
+type TenantOption = {
+  email: string
+  companyName: string
+  companyId: string
+  supplierId: string
+}
 
 export default function LoginPage() {
   const [login, setLogin] = useState("")
@@ -29,6 +34,16 @@ export default function LoginPage() {
         const supabase = createClient()
         await supabase.auth.signOut()
         toast.success("Cadastro concluído! Entre com seu CNPJ e senha.")
+        window.history.replaceState({}, "", "/fornecedor/login")
+      })()
+      return
+    }
+
+    if (params.get("vinculo") === "ok") {
+      void (async () => {
+        const supabase = createClient()
+        await supabase.auth.signOut()
+        toast.success("Vínculo concluído! Entre com seu CNPJ e senha.")
         window.history.replaceState({}, "", "/fornecedor/login")
       })()
       return
@@ -61,7 +76,11 @@ export default function LoginPage() {
     window.location.href = "/fornecedor"
   }
 
-  async function signInWithResolvedEmail(email: string, fromCnpj = false) {
+  async function signInWithResolvedEmail(
+    email: string,
+    fromCnpj = false,
+    tenant?: Pick<TenantOption, "companyId" | "supplierId">,
+  ) {
     const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
@@ -82,6 +101,23 @@ export default function LoginPage() {
     if (!user) {
       toast.error("Não foi possível validar o usuário autenticado.")
       return
+    }
+
+    if (tenant?.companyId && tenant.supplierId) {
+      const activateRes = await fetch("/api/supplier-auth/activate-tenant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId: tenant.companyId,
+          supplierId: tenant.supplierId,
+        }),
+      })
+      const activateData = await activateRes.json()
+      if (!activateRes.ok) {
+        await supabase.auth.signOut()
+        toast.error(activateData.error ?? "Não foi possível acessar este comprador.")
+        return
+      }
     }
 
     const { data: profile } = await supabase
@@ -153,10 +189,13 @@ export default function LoginPage() {
     }
   }
 
-  async function handleTenantPick(email: string) {
+  async function handleTenantPick(option: TenantOption) {
     setIsLoading(true)
     try {
-      await signInWithResolvedEmail(email)
+      await signInWithResolvedEmail(option.email, true, {
+        companyId: option.companyId,
+        supplierId: option.supplierId,
+      })
     } finally {
       setIsLoading(false)
     }
@@ -184,11 +223,11 @@ export default function LoginPage() {
               </p>
               {tenantOptions.map((opt) => (
                 <Button
-                  key={opt.email}
+                  key={`${opt.companyId}-${opt.supplierId}`}
                   variant="outline"
                   className="w-full justify-start h-auto py-3"
                   disabled={isLoading}
-                  onClick={() => void handleTenantPick(opt.email)}
+                  onClick={() => void handleTenantPick(opt)}
                 >
                   <div className="text-left">
                     <p className="font-medium">{opt.companyName}</p>

@@ -2,13 +2,25 @@ import { createClient } from "@supabase/supabase-js"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { normalizeCnpj } from "@/lib/utils/cnpj"
 
+export type SupplierTenantLoginOption = {
+  email: string
+  companyName: string
+  companyId: string
+  supplierId: string
+}
+
 export type ResolveSupplierAdminByCnpjResult =
-  | { email: string; userId: string; companyId: string; supplierId: string | null }
+  | {
+      email: string
+      userId: string
+      companyId: string
+      supplierId: string | null
+    }
   | {
       error: string
       status: number
       multiple?: boolean
-      options?: Array<{ email: string; companyName: string }>
+      options?: SupplierTenantLoginOption[]
     }
 
 type AdminRow = {
@@ -144,31 +156,40 @@ export async function resolveSupplierAdminByCnpj(
     }
   }
 
-  // dedupe
+  // dedupe por tenant + fornecedor (mesmo usuário pode ter vários vínculos)
   admins = admins.filter(
-    (a, i, arr) => arr.findIndex((b) => b.id === a.id) === i,
+    (a, i, arr) =>
+      arr.findIndex(
+        (b) => b.company_id === a.company_id && b.supplier_id === a.supplier_id,
+      ) === i,
   )
 
   if (admins.length > 1) {
-    const options = await Promise.all(
-      admins.map(async (p) => {
-        const email = (await emailForUserId(p.id)) ?? ""
-        const { data: company } = await service
-          .from("companies")
-          .select("name")
-          .eq("id", p.company_id)
-          .maybeSingle()
-        return {
-          email,
-          companyName: company?.name ?? "Comprador",
-        }
-      }),
-    )
+    const options = (
+      await Promise.all(
+        admins.map(async (p) => {
+          if (!p.supplier_id) return null
+          const email = (await emailForUserId(p.id)) ?? ""
+          const { data: company } = await service
+            .from("companies")
+            .select("name")
+            .eq("id", p.company_id)
+            .maybeSingle()
+          return {
+            email,
+            companyName: company?.name ?? "Comprador",
+            companyId: p.company_id,
+            supplierId: p.supplier_id,
+          } satisfies SupplierTenantLoginOption
+        }),
+      )
+    ).filter((o): o is SupplierTenantLoginOption => Boolean(o?.email))
+
     return {
       error: "CNPJ vinculado a vários compradores. Selecione a conta ou use o e-mail.",
       status: 409,
       multiple: true,
-      options: options.filter((o) => o.email),
+      options,
     }
   }
 

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { Package, ArrowLeft, Check, Eye, EyeOff } from "lucide-react"
+import { Package, ArrowLeft, Check, Eye, EyeOff, Link2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,11 +13,14 @@ import { createClient } from "@/lib/supabase/client"
 import { maskCnpjInput } from "@/lib/utils/cnpj"
 
 type InvitePreview = {
+  mode: "register" | "link"
   email: string
   supplierName: string
   supplierCode: string
   cnpjMasked: string
-  buyerCompanyName: string
+  companyName: string
+  invitedByName: string
+  existingUser: { fullName: string; email: string } | null
 }
 
 function CadastroContent() {
@@ -35,6 +38,8 @@ function CadastroContent() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+
+  const isLinkMode = invite?.mode === "link"
 
   useEffect(() => {
     void (async () => {
@@ -64,11 +69,14 @@ function CadastroContent() {
           return
         }
         setInvite({
+          mode: data.mode === "link" ? "link" : "register",
           email: data.email,
           supplierName: data.supplierName,
           supplierCode: data.supplierCode,
           cnpjMasked: data.cnpjMasked,
-          buyerCompanyName: data.buyerCompanyName,
+          companyName: data.companyName ?? data.buyerCompanyName ?? "",
+          invitedByName: data.invitedByName ?? "Comprador",
+          existingUser: data.existingUser ?? null,
         })
       } catch {
         setInviteError("Erro ao validar convite.")
@@ -82,7 +90,7 @@ function CadastroContent() {
     e.preventDefault()
     if (!token || !invite) return
 
-    if (password !== confirmPassword) {
+    if (!isLinkMode && password !== confirmPassword) {
       toast.error("As senhas não coincidem.")
       return
     }
@@ -94,19 +102,27 @@ function CadastroContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           token,
-          fullName: fullName.trim(),
+          mode: invite.mode,
+          fullName: isLinkMode ? undefined : fullName.trim(),
           cnpj,
           password,
         }),
       })
       const data = await res.json()
       if (!res.ok) {
-        toast.error(data.error ?? "Erro ao concluir cadastro.")
+        toast.error(data.error ?? "Erro ao concluir.")
         return
       }
 
       const supabase = createClient()
       await supabase.auth.signOut()
+
+      if (isLinkMode) {
+        toast.success(`Vínculo com ${invite.companyName} concluído!`)
+        window.location.href = "/fornecedor/login?vinculo=ok"
+        return
+      }
+
       window.location.href = "/fornecedor/login?cadastro=ok"
     } finally {
       setSubmitting(false)
@@ -134,16 +150,22 @@ function CadastroContent() {
             <Package className="h-5 w-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-xl font-bold">Cadastro no Portal</h1>
+            <h1 className="text-xl font-bold">
+              {isLinkMode ? "Vincular ao comprador" : "Cadastro no Portal"}
+            </h1>
             <p className="text-sm text-muted-foreground">Valore — convite do comprador</p>
           </div>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Concluir cadastro</CardTitle>
+            <CardTitle>
+              {isLinkMode ? "Vincular-se à empresa" : "Concluir cadastro"}
+            </CardTitle>
             <CardDescription>
-              Confirme os dados do fornecedor já cadastrado no portal do comprador.
+              {isLinkMode
+                ? "Sua conta já existe no Valore. Confirme o CNPJ e sua senha para aceitar o convite."
+                : "Confirme os dados do fornecedor já cadastrado no portal do comprador."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -161,7 +183,11 @@ function CadastroContent() {
                 <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-sm">
                   <div className="flex justify-between gap-4">
                     <span className="text-muted-foreground">Comprador</span>
-                    <span className="font-medium text-right">{invite.buyerCompanyName}</span>
+                    <span className="font-medium text-right">{invite.invitedByName}</span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Empresa</span>
+                    <span className="font-medium text-right">{invite.companyName}</span>
                   </div>
                   <div className="flex justify-between gap-4">
                     <span className="text-muted-foreground">Fornecedor</span>
@@ -181,17 +207,36 @@ function CadastroContent() {
                   </div>
                 </div>
 
+                {isLinkMode && invite.existingUser ? (
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-2 text-sm">
+                    <p className="font-medium flex items-center gap-2">
+                      <Link2 className="h-4 w-4 text-primary" />
+                      Conta existente no Valore
+                    </p>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-muted-foreground">Nome</span>
+                      <span className="font-medium text-right">{invite.existingUser.fullName}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-muted-foreground">E-mail</span>
+                      <span className="text-right break-all">{invite.existingUser.email}</span>
+                    </div>
+                  </div>
+                ) : null}
+
                 <FieldGroup>
-                  <Field>
-                    <FieldLabel>Nome completo</FieldLabel>
-                    <Input
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="Responsável pelo acesso"
-                      autoComplete="name"
-                      required
-                    />
-                  </Field>
+                  {!isLinkMode ? (
+                    <Field>
+                      <FieldLabel>Nome completo</FieldLabel>
+                      <Input
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="Responsável pelo acesso"
+                        autoComplete="name"
+                        required
+                      />
+                    </Field>
+                  ) : null}
 
                   <Field>
                     <FieldLabel>Confirme o CNPJ completo</FieldLabel>
@@ -204,19 +249,19 @@ function CadastroContent() {
                       required
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      Deve ser idêntico ao CNPJ cadastrado por {invite.buyerCompanyName}{" "}
+                      Deve ser idêntico ao CNPJ cadastrado por {invite.companyName}{" "}
                       (parcialmente oculto acima). A formatação é aplicada automaticamente.
                     </p>
                   </Field>
 
                   <Field>
-                    <FieldLabel>Senha</FieldLabel>
+                    <FieldLabel>{isLinkMode ? "Senha da sua conta" : "Senha"}</FieldLabel>
                     <div className="relative">
                       <Input
                         type={showPassword ? "text" : "password"}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        autoComplete="new-password"
+                        autoComplete={isLinkMode ? "current-password" : "new-password"}
                         required
                       />
                       <Button
@@ -235,25 +280,33 @@ function CadastroContent() {
                     </div>
                   </Field>
 
-                  <Field>
-                    <FieldLabel>Confirmar senha</FieldLabel>
-                    <Input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      autoComplete="new-password"
-                      required
-                    />
-                  </Field>
+                  {!isLinkMode ? (
+                    <Field>
+                      <FieldLabel>Confirmar senha</FieldLabel>
+                      <Input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
+                        required
+                      />
+                    </Field>
+                  ) : null}
                 </FieldGroup>
 
                 <Button type="submit" className="w-full" disabled={submitting}>
-                  {submitting ? "Concluindo..." : "Concluir cadastro"}
+                  {submitting
+                    ? "Processando..."
+                    : isLinkMode
+                      ? `Vincular-se à ${invite.companyName}`
+                      : "Concluir cadastro"}
                 </Button>
 
                 <p className="text-xs text-center text-muted-foreground flex items-center justify-center gap-1">
                   <Check className="h-3 w-3" />
-                  Após o cadastro, faça login com CNPJ + senha.
+                  {isLinkMode
+                    ? "Após o vínculo, faça login com CNPJ + senha e selecione o comprador."
+                    : "Após o cadastro, faça login com CNPJ + senha."}
                 </p>
               </form>
             ) : null}

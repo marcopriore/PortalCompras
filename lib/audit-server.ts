@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase/service-role"
 type ServerAuditEventType =
   | "supplier.invite_sent"
   | "supplier.invite_accepted"
+  | "supplier.invite_linked"
   | "supplier.user_created"
   | "supplier.user_deactivated"
   | "supplier.user_reactivated"

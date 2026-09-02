@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { findAuthUserByEmail } from "@/lib/supplier-portal/memberships"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { formatCnpj } from "@/lib/utils/cnpj"
 
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
 
     const { data: invite } = await supabaseAdmin
       .from("supplier_invites")
-      .select("id, email, status, expires_at, company_id, supplier_id")
+      .select("id, email, status, expires_at, company_id, supplier_id, invited_by")
       .eq("token", token)
       .maybeSingle()
 
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Convite expirado." }, { status: 410 })
     }
 
-    const [{ data: supplier }, { data: company }] = await Promise.all([
+    const [{ data: supplier }, { data: company }, { data: inviter }] = await Promise.all([
       supabaseAdmin
         .from("suppliers")
         .select("name, cnpj, code")
@@ -50,17 +51,52 @@ export async function GET(request: Request) {
         .select("name")
         .eq("id", invite.company_id)
         .maybeSingle(),
+      invite.invited_by
+        ? supabaseAdmin
+            .from("profiles")
+            .select("full_name")
+            .eq("id", invite.invited_by)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
     ])
+
+    const authUser = await findAuthUserByEmail(invite.email)
+    let mode: "register" | "link" = "register"
+    let existingUser: { fullName: string; email: string } | null = null
+
+    if (authUser) {
+      const { data: profile } = await supabaseAdmin
+        .from("profiles")
+        .select("full_name, profile_type, status")
+        .eq("id", authUser.id)
+        .maybeSingle()
+
+      if (
+        profile?.profile_type === "supplier" &&
+        profile.status === "active"
+      ) {
+        mode = "link"
+        existingUser = {
+          fullName: profile.full_name?.trim() || authUser.user_metadata?.full_name || "—",
+          email: invite.email,
+        }
+      }
+    }
 
     return NextResponse.json({
       valid: true,
+      mode,
       email: invite.email,
       supplierName: supplier?.name ?? "",
       supplierCode: supplier?.code ?? "",
       cnpjMasked: supplier?.cnpj ? maskCnpj(supplier.cnpj) : "",
       cnpjFormatted: supplier?.cnpj ? formatCnpj(supplier.cnpj) : "",
-      buyerCompanyName: company?.name ?? "",
+      companyName: company?.name ?? "",
+      invitedByName: inviter?.full_name?.trim() || "Comprador",
+      existingUser,
       expiresAt: invite.expires_at,
+      // legado — manter para compatibilidade temporária
+      buyerCompanyName: company?.name ?? "",
     })
   } catch {
     return NextResponse.json({ error: "Erro interno do servidor." }, { status: 500 })
