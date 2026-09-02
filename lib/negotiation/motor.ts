@@ -6,6 +6,14 @@ import {
 } from "@/lib/negotiation/counter-offers"
 import { logNegotiationDecision } from "@/lib/negotiation/decision-log"
 import {
+  computeRoundBestSnapshot,
+  evaluateCeilingConvergence,
+  evaluateNoImprovementStop,
+  mergeRoundMetrics,
+  readRoundMetricsState,
+  type RoundBestSnapshot,
+} from "@/lib/negotiation/round-analysis"
+import {
   closeQuotationRound,
   countSubmittedProposals,
   deadlineFromDays,
@@ -18,17 +26,10 @@ type TickResult =
   | { ok: true; run: NegotiationRun; message: string }
   | { ok: false; message: string }
 
-type RunMetrics = {
-  start_round_number: number
-  rounds_closed_in_run: number
-}
+type RunMetrics = ReturnType<typeof readRoundMetricsState>
 
 function readRunMetrics(run: NegotiationRun): RunMetrics {
-  const raw = run.metrics ?? {}
-  return {
-    start_round_number: Number(raw.start_round_number) || 0,
-    rounds_closed_in_run: Number(raw.rounds_closed_in_run) || 0,
-  }
+  return readRoundMetricsState(run.metrics as Record<string, unknown>)
 }
 
 export async function advanceNegotiationRun(
@@ -226,6 +227,36 @@ async function executeNegotiationTick(
         createdBy: options?.actorUserId ?? null,
       })
 
+      const roundSnapshot = currentRoundId
+        ? await computeRoundBestSnapshot(
+            db,
+            companyId,
+            run.quotation_id,
+            currentRoundId,
+            plan.max_price_pct_above_best,
+          )
+        : null
+
+      if (roundSnapshot) {
+        runMetrics = mergeRoundMetrics(runMetrics, roundSnapshot)
+        if (roundSnapshot.ceiling_violations > 0) {
+          await logNegotiationDecision(db, {
+            companyId,
+            planId: plan.id,
+            runId: run.id,
+            roundId: currentRoundId,
+            decisionType: "ai",
+            action: "ceiling_violation",
+            reason: `${roundSnapshot.ceiling_violations} item(ns) com preço acima do teto de ${plan.max_price_pct_above_best}% sobre o melhor.`,
+            payload: {
+              ceiling_violations: roundSnapshot.ceiling_violations,
+              max_price_pct_above_best: plan.max_price_pct_above_best,
+            },
+            createdBy: options?.actorUserId ?? null,
+          })
+        }
+      }
+
       runMetrics = {
         ...runMetrics,
         rounds_closed_in_run: runMetrics.rounds_closed_in_run + 1,
@@ -240,7 +271,18 @@ async function executeNegotiationTick(
 
   if (nextStatus === "analyzing") {
     const closedInRun = runMetrics.rounds_closed_in_run
-    const shouldStop = await evaluateStopCriteria(db, companyId, plan, closedInRun)
+    const lastSnapshot =
+      runMetrics.round_snapshots.length > 0
+        ? runMetrics.round_snapshots[runMetrics.round_snapshots.length - 1]
+        : null
+    const shouldStop = await evaluateStopCriteria(
+      db,
+      companyId,
+      plan,
+      closedInRun,
+      runMetrics,
+      lastSnapshot,
+    )
     if (shouldStop.stop) {
       const completed = await completeRun(
         db,
@@ -282,7 +324,14 @@ async function executeNegotiationTick(
     }
 
     if (plan.require_buyer_approval && !options?.forceApprove) {
-      const continueReason = await describeContinueReason(db, companyId, plan, closedInRun)
+      const continueReason = await describeContinueReason(
+        db,
+        companyId,
+        plan,
+        closedInRun,
+        runMetrics,
+        lastSnapshot,
+      )
       const awaiting = await updateRun(db, run.id, companyId, {
         status: "awaiting_approval",
         last_tick_at: now,
@@ -307,7 +356,14 @@ async function executeNegotiationTick(
     }
 
     nextStatus = "opening_round"
-    message = await describeContinueReason(db, companyId, plan, closedInRun)
+    message = await describeContinueReason(
+      db,
+      companyId,
+      plan,
+      closedInRun,
+      runMetrics,
+      lastSnapshot,
+    )
   }
 
   if (nextStatus === "opening_round") {
@@ -360,6 +416,9 @@ async function executeNegotiationTick(
     metrics: runMetrics,
     last_tick_at: now,
     started_at: run.started_at ?? now,
+    ...(runMetrics.last_improvement_pct != null && runMetrics.last_improvement_pct > 0
+      ? { last_improvement_at: now }
+      : {}),
   })
 
   return { ok: true, run: updated, message }
@@ -370,6 +429,8 @@ async function evaluateStopCriteria(
   companyId: string,
   plan: NegotiationPlan,
   roundsClosedInRun: number,
+  metrics: RunMetrics,
+  lastSnapshot: { round_id: string; round_number: number; best_total: number; items_with_offer: number; ceiling_violations: number } | null,
 ): Promise<{ stop: boolean; reason: string }> {
   if (roundsClosedInRun >= plan.max_rounds) {
     return {
@@ -393,6 +454,14 @@ async function evaluateStopCriteria(
     }
   }
 
+  const noImprovement = evaluateNoImprovementStop(plan, metrics, roundsClosedInRun)
+  if (noImprovement.stop) return noImprovement
+
+  const ceiling = evaluateCeilingConvergence(lastSnapshot)
+  if (ceiling.converged && roundsClosedInRun >= plan.min_rounds) {
+    return { stop: true, reason: ceiling.reason }
+  }
+
   return { stop: false, reason: "" }
 }
 
@@ -401,6 +470,8 @@ async function describeContinueReason(
   companyId: string,
   plan: NegotiationPlan,
   roundsClosedInRun: number,
+  metrics: RunMetrics,
+  lastSnapshot: RoundBestSnapshot | null,
 ): Promise<string> {
   const parts: string[] = []
 
@@ -415,6 +486,20 @@ async function describeContinueReason(
     if (!targetMet) {
       parts.push("preço alvo e/ou saving projetado ainda não atingido")
     }
+  }
+
+  if (
+    plan.stop_on_no_improvement &&
+    metrics.last_improvement_pct != null &&
+    metrics.last_improvement_pct <= 0
+  ) {
+    parts.push("última rodada sem melhoria de preço")
+  }
+
+  if (lastSnapshot && lastSnapshot.ceiling_violations > 0) {
+    parts.push(
+      `${lastSnapshot.ceiling_violations} item(ns) acima do teto de ${plan.max_price_pct_above_best}%`,
+    )
   }
 
   if (roundsClosedInRun >= plan.max_rounds) {
@@ -766,6 +851,10 @@ export async function startNegotiationRun(
   const initialMetrics: RunMetrics = {
     start_round_number: activeRound.round_number,
     rounds_closed_in_run: initialStatus === "analyzing" ? 1 : 0,
+    last_round_best_total: null,
+    previous_round_best_total: null,
+    last_improvement_pct: null,
+    round_snapshots: [],
   }
 
   const now = new Date().toISOString()

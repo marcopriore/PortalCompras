@@ -6,6 +6,8 @@ import {
   BrainCircuit,
   CheckCircle2,
   ChevronDown,
+  FileSpreadsheet,
+  FileText,
   Loader2,
   Pause,
   Play,
@@ -196,6 +198,54 @@ export function QuotationNegotiationPlanPanel({
       }
     },
     [enabled, quotationId],
+  )
+
+  const handleDownloadReport = React.useCallback(
+    async (runId: string, format: "xlsx" | "pdf") => {
+      try {
+        const res = await fetch(`/api/negotiation-runs/${runId}/report?format=${format}`)
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string }
+          toast.error(json.error ?? "Erro ao gerar relatório.")
+          return
+        }
+        const blob = await res.blob()
+        const disposition = res.headers.get("Content-Disposition")
+        const match = disposition?.match(/filename="([^"]+)"/)
+        const fallback = format === "pdf" ? "negociacao.pdf" : "negociacao.xlsx"
+        const filename = match?.[1] ?? fallback
+        const url = URL.createObjectURL(blob)
+        const anchor = document.createElement("a")
+        anchor.href = url
+        anchor.download = filename
+        anchor.click()
+        URL.revokeObjectURL(url)
+      } catch {
+        toast.error("Erro ao gerar relatório.")
+      }
+    },
+    [],
+  )
+
+  const renderReportButtons = (runId: string) => (
+    <div className="flex flex-wrap gap-2">
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => void handleDownloadReport(runId, "xlsx")}
+      >
+        <FileSpreadsheet className="mr-2 h-4 w-4" />
+        Excel
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => void handleDownloadReport(runId, "pdf")}
+      >
+        <FileText className="mr-2 h-4 w-4" />
+        PDF
+      </Button>
+    </div>
   )
 
   const silentAdvance = React.useCallback(async () => {
@@ -610,15 +660,18 @@ export function QuotationNegotiationPlanPanel({
                       ) : null}
                     </div>
                   </div>
-                  {canConfigure ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setShowNewPlanForm(true)}
-                    >
-                      Configurar novo evento
-                    </Button>
-                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderReportButtons(lastCompletedRun.id)}
+                    {canConfigure ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowNewPlanForm(true)}
+                      >
+                        Configurar novo evento
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
 
@@ -631,15 +684,18 @@ export function QuotationNegotiationPlanPanel({
                         "O evento de negociação assistida foi encerrado manualmente. Você pode configurar um novo evento quando quiser."}
                     </p>
                   </div>
-                  {canConfigure ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setShowNewPlanForm(true)}
-                    >
-                      Configurar novo evento
-                    </Button>
-                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderReportButtons(lastCancelledRun.id)}
+                    {canConfigure ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowNewPlanForm(true)}
+                      >
+                        Configurar novo evento
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
 

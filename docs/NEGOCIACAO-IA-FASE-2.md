@@ -56,8 +56,24 @@ Após fechar rodada, `lib/negotiation/counter-offers.ts` calcula alvos (`per_ite
 
 ## Próximas fases
 
-- **2.3:** Políticas completas (±5%/−15%, parada sem melhoria) + relatório PDF/Excel
 - **2.4:** Agrupamento (categoria/CC) + score no prompt
+
+## Fase 2.3 — Políticas e relatório
+
+| Política | Comportamento |
+|----------|----------------|
+| Teto `max_price_pct_above_best` (ex.: 5%) | Detecta itens com preço acima do teto vs. melhor; log `ceiling_violation`; pode encerrar quando todos dentro do teto |
+| Saving `target_saving_pct_below_target` (ex.: 15%) | Critério de parada `stop_on_target` (já existente) |
+| `stop_on_no_improvement` | Após `min_rounds`, encerra se total melhor da rodada não melhorou vs. anterior |
+| Métricas por rodada | `round_snapshots` em `run.metrics` (total melhor, violações, itens) |
+
+### Relatório do evento
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/api/negotiation-runs/[id]/report?format=xlsx\|pdf` | Relatório Excel (4 abas) ou PDF — só run `completed` / `cancelled` / `failed` |
+
+UI: botões **Excel** e **PDF** no painel da equalização quando o evento termina.
 
 ## Admin
 

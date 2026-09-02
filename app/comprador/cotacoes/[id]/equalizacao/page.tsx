@@ -895,6 +895,7 @@ export default function EqualizacaoPage({
           setItemSelections(initial)
         }
         setLastUpdated(new Date())
+        setContractMatchLoadGeneration((g) => g + 1)
       } finally {
         if (showLoadingUI) setLoading(false)
       }
@@ -1441,9 +1442,35 @@ export default function EqualizacaoPage({
     Map<string, ContractMatchCandidate>
   >(new Map())
   const contractMatchFetchRef = React.useRef(0)
+  const [contractMatchLoadGeneration, setContractMatchLoadGeneration] = React.useState(0)
+  const contractMatchSelectionsRef = React.useRef(contractMatchSelections)
+  contractMatchSelectionsRef.current = contractMatchSelections
+  const prevContractMatchRoundRef = React.useRef<string | null>(null)
 
   React.useEffect(() => {
-    if (!contractBalanceEnabled || contractMatchSelections.length === 0) {
+    if (!selectedRoundId) return
+    const roundProposals = allProposalsCatalog.filter((p) => p.round_id === selectedRoundId)
+    const probs = orderProposalsByQuotationSupplierColumnOrder(
+      roundProposals,
+      quotationSuppliersSnapshotRef.current,
+    )
+    setProposals(probs)
+    updateSubmittedTracking(probs)
+
+    if (prevContractMatchRoundRef.current !== selectedRoundId) {
+      prevContractMatchRoundRef.current = selectedRoundId
+      setContractMatchLoadGeneration((g) => g + 1)
+    }
+  }, [selectedRoundId, allProposalsCatalog, updateSubmittedTracking])
+
+  React.useEffect(() => {
+    if (!contractBalanceEnabled) {
+      setContractMatchMap(new Map())
+      return
+    }
+
+    const selections = contractMatchSelectionsRef.current
+    if (selections.length === 0) {
       setContractMatchMap(new Map())
       return
     }
@@ -1456,7 +1483,7 @@ export default function EqualizacaoPage({
         const res = await fetch(`/api/quotations/${id}/contract-matches`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ selections: contractMatchSelections }),
+          body: JSON.stringify({ selections }),
         })
         const data = (await res.json()) as {
           items?: Array<{
@@ -1482,7 +1509,7 @@ export default function EqualizacaoPage({
     return () => {
       cancelled = true
     }
-  }, [contractBalanceEnabled, id, contractMatchSelections])
+  }, [contractMatchLoadGeneration, contractBalanceEnabled, id])
 
   const splitSuggestion = React.useMemo(() => {
     const suggestion: Record<

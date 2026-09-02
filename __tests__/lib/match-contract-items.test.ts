@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   contractLinkFromMatch,
+  contractMatchSelectionsSignature,
   findContractMatchesForQuotationItem,
   pickBestContractMatch,
   validateSingleContractPerOrder,
@@ -194,5 +195,28 @@ describe("validateSingleContractPerOrder", () => {
   it("aceita um contrato ou nenhum", () => {
     expect(validateSingleContractPerOrder(["c1", "c1", null])).toBeNull()
     expect(validateSingleContractPerOrder([null, null])).toBeNull()
+  })
+})
+
+describe("contractMatchSelectionsSignature", () => {
+  it("é estável para mesma seleção em ordem diferente", () => {
+    const a = [
+      {
+        quotationItemId: "q1",
+        supplierId: "s1",
+        materialCode: "A",
+        quantity: 2,
+      },
+      {
+        quotationItemId: "q2",
+        supplierId: "s2",
+        materialCode: "B",
+        quantity: 1,
+      },
+    ]
+    const b = [...a].reverse()
+    expect(contractMatchSelectionsSignature(a)).toBe(
+      contractMatchSelectionsSignature(b),
+    )
   })
 })

@@ -79,115 +79,161 @@ export function QuotationNegotiationPlanFormFields({
   introText,
 }: FormFieldsProps) {
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="space-y-4">
       {introText ? (
-        <p className="md:col-span-2 text-xs text-muted-foreground">{introText}</p>
+        <p className="text-xs text-muted-foreground leading-relaxed">{introText}</p>
       ) : null}
-      <div className="space-y-2">
-        <Label>Rodadas mínimas</Label>
-        <Input
-          type="number"
-          min={1}
-          max={20}
-          value={form.min_rounds}
-          onChange={(e) => onFormChange((f) => ({ ...f, min_rounds: e.target.value }))}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Rodadas máximas</Label>
-        <Input
-          type="number"
-          min={1}
-          max={30}
-          value={form.max_rounds}
-          onChange={(e) => onFormChange((f) => ({ ...f, max_rounds: e.target.value }))}
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Teto de preço (% acima do melhor)</Label>
-        <Input
-          type="number"
-          min={0}
-          max={100}
-          step="0.1"
-          value={form.max_price_pct_above_best}
-          onChange={(e) =>
-            onFormChange((f) => ({ ...f, max_price_pct_above_best: e.target.value }))
-          }
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Saving alvo (% abaixo do preço alvo)</Label>
-        <Input
-          type="number"
-          min={0}
-          max={100}
-          step="0.1"
-          value={form.target_saving_pct_below_target}
-          onChange={(e) =>
-            onFormChange((f) => ({
-              ...f,
-              target_saving_pct_below_target: e.target.value,
-            }))
-          }
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Prazo por rodada (dias)</Label>
-        <Input
-          type="number"
-          min={1}
-          max={60}
-          value={form.response_deadline_days}
-          onChange={(e) =>
-            onFormChange((f) => ({ ...f, response_deadline_days: e.target.value }))
-          }
-        />
-      </div>
-      <div className="space-y-2">
-        <Label>Estratégia</Label>
-        <Select
-          value={form.strategy}
-          onValueChange={(v) =>
-            onFormChange((f) => ({ ...f, strategy: v as NegotiationStrategy }))
-          }
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="per_item">Por item</SelectItem>
-            <SelectItem value="per_supplier">Por fornecedor</SelectItem>
-            <SelectItem value="by_category">Por categoria</SelectItem>
-            <SelectItem value="by_cost_center">Por centro de custo</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex items-center justify-between rounded-lg border p-3 md:col-span-2">
-        <div>
-          <p className="text-sm font-medium">Parar ao atingir preço alvo</p>
-          <p className="text-xs text-muted-foreground">
-            Encerra o evento quando o saving configurado for atingido.
-          </p>
+
+      <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="min-w-0 space-y-1">
+          <Label className="text-xs leading-tight" title="Rodadas mínimas">
+            Rodadas mín.
+          </Label>
+          <Input
+            type="number"
+            min={1}
+            max={20}
+            className="h-9 w-full tabular-nums"
+            value={form.min_rounds}
+            onChange={(e) => onFormChange((f) => ({ ...f, min_rounds: e.target.value }))}
+          />
         </div>
-        <Switch
-          checked={form.stop_on_target}
-          onCheckedChange={(v) => onFormChange((f) => ({ ...f, stop_on_target: v }))}
-        />
-      </div>
-      <div className="flex items-center justify-between rounded-lg border p-3 md:col-span-2">
-        <div>
-          <p className="text-sm font-medium">Exigir aprovação antes de cada rodada</p>
-          <p className="text-xs text-muted-foreground">
-            Ligado: você aprova cada nova rodada. Desligado: motor automático.
-          </p>
+        <div className="min-w-0 space-y-1">
+          <Label className="text-xs leading-tight" title="Rodadas máximas">
+            Rodadas máx.
+          </Label>
+          <Input
+            type="number"
+            min={1}
+            max={30}
+            className="h-9 w-full tabular-nums"
+            value={form.max_rounds}
+            onChange={(e) => onFormChange((f) => ({ ...f, max_rounds: e.target.value }))}
+          />
         </div>
-        <Switch
-          checked={form.require_buyer_approval}
-          onCheckedChange={(v) =>
-            onFormChange((f) => ({ ...f, require_buyer_approval: v }))
-          }
-        />
+        <div className="min-w-0 space-y-1">
+          <Label className="text-xs leading-tight" title="Prazo por rodada (dias)">
+            Prazo (dias)
+          </Label>
+          <Input
+            type="number"
+            min={1}
+            max={60}
+            className="h-9 w-full tabular-nums"
+            value={form.response_deadline_days}
+            onChange={(e) =>
+              onFormChange((f) => ({ ...f, response_deadline_days: e.target.value }))
+            }
+          />
+        </div>
+        <div className="min-w-0 space-y-1">
+          <Label
+            className="text-xs leading-tight"
+            title="Teto de preço (% acima do melhor)"
+          >
+            Teto (%)
+          </Label>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            step="0.1"
+            className="h-9 w-full tabular-nums"
+            value={form.max_price_pct_above_best}
+            onChange={(e) =>
+              onFormChange((f) => ({ ...f, max_price_pct_above_best: e.target.value }))
+            }
+          />
+        </div>
+        <div className="min-w-0 space-y-1">
+          <Label
+            className="text-xs leading-tight"
+            title="Saving alvo (% abaixo do preço alvo)"
+          >
+            Saving (%)
+          </Label>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            step="0.1"
+            className="h-9 w-full tabular-nums"
+            value={form.target_saving_pct_below_target}
+            onChange={(e) =>
+              onFormChange((f) => ({
+                ...f,
+                target_saving_pct_below_target: e.target.value,
+              }))
+            }
+          />
+        </div>
+        <div className="min-w-0 space-y-1">
+          <Label className="text-xs leading-tight">Estratégia</Label>
+          <Select
+            value={form.strategy}
+            onValueChange={(v) =>
+              onFormChange((f) => ({ ...f, strategy: v as NegotiationStrategy }))
+            }
+          >
+            <SelectTrigger className="h-9 w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="per_item">Por item</SelectItem>
+              <SelectItem value="per_supplier">Por fornecedor</SelectItem>
+              <SelectItem value="by_category">Por categoria</SelectItem>
+              <SelectItem value="by_cost_center">Por centro de custo</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="flex items-center justify-between gap-3 rounded-lg border p-2.5">
+          <div className="min-w-0">
+            <p className="text-sm font-medium leading-tight">Parar ao atingir preço alvo</p>
+            <p className="text-xs text-muted-foreground leading-snug">
+              Encerra quando o saving configurado for atingido.
+            </p>
+          </div>
+          <Switch
+            className="shrink-0"
+            checked={form.stop_on_target}
+            onCheckedChange={(v) => onFormChange((f) => ({ ...f, stop_on_target: v }))}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-lg border p-2.5">
+          <div className="min-w-0">
+            <p className="text-sm font-medium leading-tight">Parar sem melhoria</p>
+            <p className="text-xs text-muted-foreground leading-snug">
+              Encerra se a rodada não reduzir o total melhor vs. a anterior.
+            </p>
+          </div>
+          <Switch
+            className="shrink-0"
+            checked={form.stop_on_no_improvement}
+            onCheckedChange={(v) =>
+              onFormChange((f) => ({ ...f, stop_on_no_improvement: v }))
+            }
+          />
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-lg border p-2.5 sm:col-span-2 lg:col-span-1">
+          <div className="min-w-0">
+            <p className="text-sm font-medium leading-tight">
+              Aprovação antes de cada rodada
+            </p>
+            <p className="text-xs text-muted-foreground leading-snug">
+              Ligado: você aprova. Desligado: motor automático.
+            </p>
+          </div>
+          <Switch
+            className="shrink-0"
+            checked={form.require_buyer_approval}
+            onCheckedChange={(v) =>
+              onFormChange((f) => ({ ...f, require_buyer_approval: v }))
+            }
+          />
+        </div>
       </div>
     </div>
   )

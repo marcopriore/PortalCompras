@@ -178,3 +178,17 @@ export function validateSingleContractPerOrder(
   }
   return null
 }
+
+/** Assinatura estável para evitar refetch quando só a referência do array muda. */
+export function contractMatchSelectionsSignature(
+  selections: QuotationItemMatchInput[],
+): string {
+  if (selections.length === 0) return ""
+  return selections
+    .map(
+      (s) =>
+        `${s.quotationItemId}\0${s.supplierId}\0${s.materialCode}\0${s.quantity}`,
+    )
+    .sort()
+    .join("\n")
+}
