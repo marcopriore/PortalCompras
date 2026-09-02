@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { NegotiationPlan, NegotiationRun, NegotiationRunStatus } from "@/types/negotiation"
+import {
+  assignPendingCounterOffersToRound,
+  generateAndPersistCounterOffers,
+} from "@/lib/negotiation/counter-offers"
 import { logNegotiationDecision } from "@/lib/negotiation/decision-log"
 import {
   closeQuotationRound,
@@ -250,6 +254,33 @@ async function executeNegotiationTick(
       return { ok: true, run: completed, message: shouldStop.reason }
     }
 
+    const sourceRoundId = currentRoundId ?? run.current_round_id
+    if (sourceRoundId) {
+      const counterResult = await generateAndPersistCounterOffers(db, {
+        companyId,
+        plan,
+        runId: run.id,
+        sourceRoundId,
+        targetRoundId: null,
+      })
+      if (!counterResult.ok) {
+        return { ok: false, message: counterResult.message }
+      }
+      if (counterResult.count > 0) {
+        await logNegotiationDecision(db, {
+          companyId,
+          planId: plan.id,
+          runId: run.id,
+          roundId: sourceRoundId,
+          decisionType: "ai",
+          action: "counter_offers_generated",
+          reason: `${counterResult.count} alvo(s) de preço calculado(s) para a próxima rodada.`,
+          payload: { count: counterResult.count, strategy: plan.strategy },
+          createdBy: options?.actorUserId ?? null,
+        })
+      }
+    }
+
     if (plan.require_buyer_approval && !options?.forceApprove) {
       const continueReason = await describeContinueReason(db, companyId, plan, closedInRun)
       const awaiting = await updateRun(db, run.id, companyId, {
@@ -294,6 +325,12 @@ async function executeNegotiationTick(
     })
 
     if (!opened.ok) return { ok: false, message: opened.message }
+
+    await assignPendingCounterOffersToRound(db, {
+      companyId,
+      runId: run.id,
+      roundId: opened.roundId,
+    })
 
     roundsOpened += 1
     currentRoundId = opened.roundId

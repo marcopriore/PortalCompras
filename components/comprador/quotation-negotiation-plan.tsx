@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/collapsible"
 import { Badge } from "@/components/ui/badge"
 import type {
+  NegotiationCounterOffer,
   NegotiationDecisionLog,
   NegotiationPlan,
   NegotiationRun,
@@ -80,6 +81,7 @@ export function QuotationNegotiationPlanPanel({
   const [plans, setPlans] = React.useState<NegotiationPlan[]>([])
   const [runs, setRuns] = React.useState<NegotiationRun[]>([])
   const [decisionLogs, setDecisionLogs] = React.useState<NegotiationDecisionLog[]>([])
+  const [counterOffers, setCounterOffers] = React.useState<NegotiationCounterOffer[]>([])
   const [showNewPlanForm, setShowNewPlanForm] = React.useState(false)
 
   const { value: pollMinutes } = useTenantSetting("ai_negotiation_autonomous_poll_minutes")
@@ -173,6 +175,7 @@ export function QuotationNegotiationPlanPanel({
           plans?: NegotiationPlan[]
           runs?: NegotiationRun[]
           decisionLogs?: NegotiationDecisionLog[]
+          counterOffers?: NegotiationCounterOffer[]
         }
         if (!res.ok) {
           if (!options?.silent) {
@@ -183,6 +186,7 @@ export function QuotationNegotiationPlanPanel({
         setPlans(json.plans ?? [])
         setRuns(json.runs ?? [])
         setDecisionLogs(json.decisionLogs ?? [])
+        setCounterOffers(json.counterOffers ?? [])
       } catch {
         if (!options?.silent) {
           toast.error("Erro ao carregar negociação assistida.")
@@ -458,6 +462,63 @@ export function QuotationNegotiationPlanPanel({
                     </div>
                   ) : null}
 
+                  {counterOffers.length > 0 ? (
+                    <div className="rounded-md border bg-violet-50/50 p-3 space-y-2 dark:bg-violet-950/20">
+                      <p className="text-xs font-medium text-foreground">
+                        {activeRun?.status === "awaiting_approval"
+                          ? "Alvos sugeridos para a próxima rodada"
+                          : "Preços solicitados na rodada atual"}
+                      </p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[520px] text-xs">
+                          <thead>
+                            <tr className="border-b text-left text-muted-foreground">
+                              <th className="py-1.5 pr-2 font-medium">Item</th>
+                              {activePlan?.strategy === "per_supplier" ? (
+                                <th className="py-1.5 pr-2 font-medium">Fornecedor</th>
+                              ) : null}
+                              <th className="py-1.5 pr-2 font-medium text-right">Melhor</th>
+                              <th className="py-1.5 pr-2 font-medium text-right">Alvo</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {counterOffers.map((co) => (
+                              <tr key={co.id} className="border-b border-border/50">
+                                <td className="py-1.5 pr-2">
+                                  <span className="font-medium text-foreground">
+                                    {co.material_code ?? "—"}
+                                  </span>
+                                  <span className="block text-muted-foreground truncate max-w-[200px]">
+                                    {co.material_description ?? ""}
+                                  </span>
+                                </td>
+                                {activePlan?.strategy === "per_supplier" ? (
+                                  <td className="py-1.5 pr-2 text-muted-foreground">
+                                    {co.supplier_name ?? "—"}
+                                  </td>
+                                ) : null}
+                                <td className="py-1.5 pr-2 text-right tabular-nums">
+                                  {co.current_best_unit_price != null
+                                    ? formatBrl(co.current_best_unit_price)
+                                    : "—"}
+                                </td>
+                                <td className="py-1.5 pr-2 text-right tabular-nums font-medium text-primary">
+                                  {formatBrl(co.target_unit_price)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {activeRun?.status === "awaiting_approval" ? (
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">
+                          Revise os alvos antes de aprovar. Os fornecedores verão esses valores como
+                          orientação na próxima rodada — não bloqueiam o envio de proposta.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   <div className="flex flex-wrap gap-2">
                     {activeRun.status === "awaiting_approval" ? (
                       <Button
@@ -631,4 +692,13 @@ function readRunMetrics(run: NegotiationRun): {
   return {
     rounds_closed_in_run: Number(raw.rounds_closed_in_run) || 0,
   }
+}
+
+function formatBrl(value: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  }).format(value)
 }

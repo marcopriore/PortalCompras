@@ -25,6 +25,24 @@ export type NegotiationStrategy =
 
 export type NegotiationDecisionType = "system" | "ai" | "buyer"
 
+export type NegotiationCounterOffer = {
+  id: string
+  company_id: string
+  plan_id: string
+  run_id: string
+  round_id: string | null
+  quotation_item_id: string
+  supplier_id: string | null
+  target_unit_price: number
+  current_best_unit_price: number | null
+  rationale: string | null
+  source: string
+  created_at: string
+  material_code?: string | null
+  material_description?: string | null
+  supplier_name?: string | null
+}
+
 export type NegotiationDecisionLog = {
   id: string
   company_id: string

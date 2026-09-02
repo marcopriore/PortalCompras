@@ -316,6 +316,9 @@ export default function FornecedorCotacaoPropostaPage({
   )
   const [globalDiscount, setGlobalDiscount] = React.useState(0)
   const [importWizardOpen, setImportWizardOpen] = React.useState(false)
+  const [counterOffersByItemId, setCounterOffersByItemId] = React.useState<
+    Record<string, { target_unit_price: number; rationale: string | null }>
+  >({})
 
   const refreshProposalForRound = React.useCallback(
     (roundId: string, row: QuotationProposalRow) => {
@@ -531,6 +534,46 @@ export default function FornecedorCotacaoPropostaPage({
     setSubmitWarningCount(0)
   }, [selectedRoundId])
 
+  React.useEffect(() => {
+    if (!supplierId || !selectedRoundId) {
+      setCounterOffersByItemId({})
+      return
+    }
+
+    let cancelled = false
+    const supabase = createClient()
+
+    void (async () => {
+      const { data, error } = await supabase
+        .from("negotiation_counter_offers")
+        .select("quotation_item_id, target_unit_price, rationale, supplier_id")
+        .eq("round_id", selectedRoundId)
+
+      if (cancelled) return
+
+      if (error) {
+        console.error("Erro ao carregar preços solicitados:", error)
+        setCounterOffersByItemId({})
+        return
+      }
+
+      const map: Record<string, { target_unit_price: number; rationale: string | null }> = {}
+      for (const row of data ?? []) {
+        const rowSupplierId = row.supplier_id as string | null
+        if (rowSupplierId != null && rowSupplierId !== supplierId) continue
+        map[String(row.quotation_item_id)] = {
+          target_unit_price: Number(row.target_unit_price),
+          rationale: (row.rationale as string | null) ?? null,
+        }
+      }
+      setCounterOffersByItemId(map)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [supplierId, selectedRoundId])
+
   const buyerCompanyId = quotation?.company_id ?? null
 
   const selectedRound = React.useMemo(
@@ -604,6 +647,8 @@ export default function FornecedorCotacaoPropostaPage({
     if (!v) return undefined
     return paymentOptions.some((o) => o.code === v) ? v : undefined
   }, [generalDisplay.paymentCondition, paymentOptions])
+
+  const hasCounterOffers = Object.keys(counterOffersByItemId).length > 0
 
   const itemRowsForDisplay = React.useMemo(() => {
     if (canEditActiveForm) {
@@ -1064,6 +1109,17 @@ export default function FornecedorCotacaoPropostaPage({
         </div>
       ) : null}
 
+      {hasCounterOffers && viewingActiveRound ? (
+        <Alert className="border-violet-200 bg-violet-50/80">
+          <Info className="h-4 w-4 text-primary" />
+          <AlertTitle>Preços solicitados pelo comprador</AlertTitle>
+          <AlertDescription>
+            A negociação assistida definiu alvos unitários por item na coluna abaixo. São
+            orientações — você pode enviar proposta com valores diferentes.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
       <section className="space-y-4 rounded-xl border border-border bg-white p-6">
         <h2 className="text-lg font-semibold text-foreground">Informações gerais</h2>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -1226,6 +1282,9 @@ export default function FornecedorCotacaoPropostaPage({
               <th className="px-2 py-2 whitespace-nowrap text-right">Qtd</th>
               <th className="px-2 py-2 whitespace-nowrap w-24">PRAZO (dias)</th>
               <th className="px-2 py-2 whitespace-nowrap">PREÇO ANT.</th>
+              {hasCounterOffers ? (
+                <th className="px-2 py-2 whitespace-nowrap text-primary">Preço solicitado</th>
+              ) : null}
               <th className="px-2 py-2 whitespace-nowrap">Preço unit.</th>
               <th className="px-2 py-2 whitespace-nowrap">Imposto %</th>
               <th className="px-2 py-2 whitespace-nowrap text-right">Total item</th>
@@ -1308,6 +1367,20 @@ export default function FornecedorCotacaoPropostaPage({
                       <span className="block text-center text-muted-foreground">—</span>
                     )}
                   </td>
+                  {hasCounterOffers ? (
+                    <td className="px-2 py-3">
+                      {counterOffersByItemId[qi.id] ? (
+                        <span
+                          className="text-sm font-medium text-primary tabular-nums"
+                          title={counterOffersByItemId[qi.id].rationale ?? undefined}
+                        >
+                          {formatCurrency(counterOffersByItemId[qi.id].target_unit_price)}
+                        </span>
+                      ) : (
+                        <span className="block text-center text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  ) : null}
                   <td className="px-2 py-3">
                     <PriceInput
                       className={cn("w-28", priceDisabled && readOnlyFieldClass)}

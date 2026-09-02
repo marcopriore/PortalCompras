@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
+import { fetchCounterOffersForRun } from "@/lib/negotiation/counter-offers"
 import { requireNegotiationApiContext } from "@/lib/negotiation/require-api-context"
 import { normalizeNegotiationPlanInput } from "@/types/negotiation"
 
@@ -30,6 +31,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
   const planIds = (plans ?? []).map((p) => p.id as string)
   let runs: unknown[] = []
   let decisionLogs: unknown[] = []
+  let counterOffers: unknown[] = []
   if (planIds.length > 0) {
     const { data: runRows } = await service
       .from("quotation_negotiation_runs")
@@ -49,10 +51,35 @@ export async function GET(_request: Request, { params }: RouteParams) {
         .order("created_at", { ascending: false })
         .limit(40)
       decisionLogs = logRows ?? []
+
+      const activeRun =
+        (runRows ?? []).find((r) => {
+          const status = String(r.status)
+          return (
+            status !== "completed" &&
+            status !== "cancelled" &&
+            status !== "failed"
+          )
+        }) ?? null
+
+      if (activeRun) {
+        const runId = String(activeRun.id)
+        const pendingOnly = activeRun.status === "awaiting_approval"
+        const rows = await fetchCounterOffersForRun(service, ctx.companyId, runId, {
+          pendingOnly,
+          roundId: pendingOnly ? undefined : (activeRun.current_round_id as string | null),
+        })
+        counterOffers = rows.map((row) => ({
+          ...row,
+          material_code: row.quotation_items?.material_code ?? null,
+          material_description: row.quotation_items?.material_description ?? null,
+          supplier_name: row.suppliers?.name ?? null,
+        }))
+      }
     }
   }
 
-  return NextResponse.json({ plans: plans ?? [], runs, decisionLogs })
+  return NextResponse.json({ plans: plans ?? [], runs, decisionLogs, counterOffers })
 }
 
 export async function POST(request: Request, { params }: RouteParams) {
