@@ -78,3 +78,7 @@ UI: botões **Excel** e **PDF** no painel da equalização quando o evento termi
 ## Admin
 
 Em **Admin → Tenant → Funcionalidades**, habilitar **Negociação IA Autônoma** (premium).
+
+## Execução em produção (Hobby Vercel)
+
+Sem cron no Vercel, o motor autônomo avança **enquanto a equalização estiver aberta** (polling do painel). Para eventos 24/7 com comprador offline, configurar job externo — ver **`docs/BACKLOG-PRODUCAO.md`**.

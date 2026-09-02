@@ -48,10 +48,11 @@ Nas listagens, o padrão é:
 
 | Mecanismo | Quando roda |
 |-----------|-------------|
-| **Vercel Cron** | `vercel.json` → `GET /api/cron/background-jobs` a cada **2 min** (produção, sem usuário logado) |
-| **Proxy** | Ao navegar no portal, no cooldown `background_tasks_cooldown_minutes` (padrão 15 min) — complementar |
+| **Proxy** | Ao navegar no portal, no cooldown `background_tasks_cooldown_minutes` (padrão 15 min) — rodadas vencidas, contratos, retry ERP |
+| **Equalização (negociação IA)** | Com painel autônomo aberto — `useAutoRefresh` → `negotiation-runs/[id]/tick` |
+| **Cron externo** | ⚠️ **Desativado** — ver `docs/BACKLOG-PRODUCAO.md` |
 
-O job de cron executa, em ordem: `close_expired_rounds`, `expire_overdue_contracts`, **tick negociação IA** (respeita `ai_negotiation_autonomous_poll_minutes` por tenant), retry outbound ERP e manutenção de contratos.
+O endpoint `POST /api/cron/background-jobs` continua disponível para **GitHub Actions** ou **Vercel Pro**, mas **não** é chamado pelo proxy nem pelo Vercel Cron no Hobby.
 
 ### Variáveis de ambiente (produção)
 
@@ -66,7 +67,9 @@ O job de cron executa, em ordem: `close_expired_rounds`, `expire_overdue_contrac
 |-------|---------|-----------|
 | **[cron-job.org](https://cron-job.org)** (ou similar) | ~5 min: cadastrar URL `POST …/api/cron/background-jobs` + header | 1–5 min (grátis) |
 | **GitHub Actions** | Workflow `.github/workflows/background-jobs-cron.yml` + secrets `APP_URL` + `CRON_SECRET` | ~5 min (grátis) |
-| **Vercel Cron** (`vercel.json`) | Já no repo | 2 min — requer **Vercel Pro** |
+| **Vercel Cron** | Requer **Vercel Pro** + recriar `vercel.json` | Ver backlog |
+
+⚠️ **Negociação IA 24/7:** obrigatório um dos cron externos ou Vercel Pro — ver `docs/BACKLOG-PRODUCAO.md`.
 
 Em **dev local**, sem secrets: `Invoke-WebRequest -Method POST http://localhost:3000/api/cron/background-jobs`
 

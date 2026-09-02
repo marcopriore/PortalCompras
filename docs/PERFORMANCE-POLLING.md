@@ -22,6 +22,13 @@
   3. Ao criar pedido (fluxo existente no botão)
 - Preview de ícone de contrato na grade usa o mapa em cache entre polls.
 
+## Equalização — Análise por IA (consultiva)
+
+- **Antes:** nova proposta no poll (`hasNewProposal`) disparava `POST /api/quotation-ai-analysis` automaticamente.
+- **Agora:** só roda quando o comprador clica em **Analisar** (ou cache local ainda válido ao reabrir a tela).
+- `ai_negotiation_cache_minutes` = cooldown entre cliques manuais, não intervalo de refresh.
+- Motor autônomo (`negotiation-runs/tick`) usa lógica própria; não chama a análise consultiva.
+
 ## Boas práticas ao adicionar efeitos
 
 1. Não colocar arrays/objetos derivados de poll como dependência direta de `useEffect` que chama API — usar **geração de refresh** ou **assinatura estável** (`contractMatchSelectionsSignature`).
@@ -31,6 +38,7 @@
 
 ## Próximas otimizações (backlog)
 
+- ⚠️ **Background negociação IA em PRD** — `docs/BACKLOG-PRODUCAO.md` (GitHub Actions ou Vercel Pro)
 - Cache server-side em `contract-matches` por `(companyId, supplierIds hash)` com TTL curto
 - Revisar `negotiation-plans` GET no painel — evitar reload completo quando tick retorna "nenhuma ação"
 - Auditoria de selects `*, proposal_items(*)` — projetar colunas necessárias

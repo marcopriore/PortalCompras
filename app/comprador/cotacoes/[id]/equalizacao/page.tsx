@@ -469,8 +469,6 @@ export default function EqualizacaoPage({
   const [quotation, setQuotation] = React.useState<Quotation | null>(null)
   const [quotationItems, setQuotationItems] = React.useState<QuotationItem[]>([])
   const [proposals, setProposals] = React.useState<Proposal[]>([])
-  const [submittedCount, setSubmittedCount] = React.useState(0)
-  const [hasNewProposal, setHasNewProposal] = React.useState(false)
   const [allProposalsCatalog, setAllProposalsCatalog] = React.useState<Proposal[]>([])
   const [loading, setLoading] = React.useState(true)
   const [itemSelections, setItemSelections] = React.useState<Record<string, string | null>>({})
@@ -571,7 +569,6 @@ export default function EqualizacaoPage({
   const structureSnapshotRef = React.useRef({ items: 0, suppliers: 0 })
   const quotationSuppliersSnapshotRef = React.useRef<QuotationSupplier[]>([])
   const selectedRoundIdRef = React.useRef<string | null>(null)
-  const isFirstFetch = React.useRef(true)
 
   const countdownIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
   const deadlineExpireFetchedRef = React.useRef(false)
@@ -582,36 +579,11 @@ export default function EqualizacaoPage({
 
   React.useEffect(() => {
     isFirstLoadRef.current = true
-    isFirstFetch.current = true
-    setSubmittedCount(0)
-    setHasNewProposal(false)
   }, [id])
 
   React.useEffect(() => {
     selectedRoundIdRef.current = selectedRoundId
   }, [selectedRoundId])
-
-  const updateSubmittedTracking = React.useCallback((nextProposals: Proposal[]) => {
-    const currentCount = nextProposals.filter((p) => p.status === "submitted").length
-
-    if (isFirstFetch.current) {
-      isFirstFetch.current = false
-      setSubmittedCount(currentCount)
-      setHasNewProposal(false)
-      return
-    }
-
-    setSubmittedCount((prev) => {
-      if (currentCount > prev) {
-        setHasNewProposal(true)
-      } else if (currentCount === prev) {
-        setHasNewProposal(false)
-      } else {
-        setHasNewProposal(false)
-      }
-      return currentCount
-    })
-  }, [])
 
   const maxRoundNumber =
     rounds.length > 0 ? Math.max(...rounds.map((r) => r.round_number)) : null
@@ -871,7 +843,6 @@ export default function EqualizacaoPage({
           ),
         )
         setProposals(probs)
-        updateSubmittedTracking(probs)
         setOrderedItems(orderedMap)
 
         if (q?.status === "completed") {
@@ -952,9 +923,8 @@ export default function EqualizacaoPage({
         quotationSuppliersSnapshotRef.current,
       )
       setProposals(probs)
-      updateSubmittedTracking(probs)
     }
-  }, [id, updateSubmittedTracking])
+  }, [id])
 
   const refreshEqualizacao = React.useCallback(async () => {
     setIsRefreshing(true)
@@ -1455,13 +1425,12 @@ export default function EqualizacaoPage({
       quotationSuppliersSnapshotRef.current,
     )
     setProposals(probs)
-    updateSubmittedTracking(probs)
 
     if (prevContractMatchRoundRef.current !== selectedRoundId) {
       prevContractMatchRoundRef.current = selectedRoundId
       setContractMatchLoadGeneration((g) => g + 1)
     }
-  }, [selectedRoundId, allProposalsCatalog, updateSubmittedTracking])
+  }, [selectedRoundId, allProposalsCatalog])
 
   React.useEffect(() => {
     if (!contractBalanceEnabled) {
@@ -2847,8 +2816,6 @@ export default function EqualizacaoPage({
             quotationId={id}
             roundId={selectedRoundId}
             companyId={companyId}
-            hasNewProposal={hasNewProposal}
-            onAnalyzed={() => setHasNewProposal(false)}
           />
         </div>
       ) : null}

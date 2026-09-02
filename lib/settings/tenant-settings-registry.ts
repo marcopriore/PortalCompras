@@ -150,9 +150,9 @@ export const TENANT_SETTINGS_REGISTRY: TenantSettingDefinition[] = [
   },
   {
     key: "ai_negotiation_cache_minutes",
-    label: "Cache da negociação (IA)",
+    label: "Cooldown da análise de negociação (IA)",
     description:
-      "Tempo em minutos para reutilizar a análise de negociação na equalização.",
+      "Tempo em minutos entre análises manuais na equalização (evita cliques repetidos). Não dispara análise automaticamente.",
     group: "ia",
     defaultValue: 30,
     min: 5,

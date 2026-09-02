@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { formatDateTimeBR } from "@/lib/formato-data"
 import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
 import {
@@ -16,14 +16,11 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { toast } from "sonner"
 
 interface QuotationAIAnalysisProps {
   quotationId: string
   roundId: string | null
   companyId: string
-  hasNewProposal?: boolean
-  onAnalyzed?: () => void
 }
 
 interface AIRecomendacao {
@@ -118,16 +115,10 @@ function saveCache(quotationId: string, roundId: string | null, payload: Omit<Ca
   localStorage.setItem(CACHE_KEY(quotationId, roundId), JSON.stringify(data))
 }
 
-function removeCache(quotationId: string, roundId: string | null) {
-  localStorage.removeItem(CACHE_KEY(quotationId, roundId))
-}
-
 export function QuotationAIAnalysis({
   quotationId,
   roundId,
   companyId,
-  hasNewProposal = false,
-  onAnalyzed,
 }: QuotationAIAnalysisProps) {
   const { value: cacheMinutes } = useTenantSetting("ai_negotiation_cache_minutes")
   const cacheTtlMs = cacheMinutes * 60 * 1000
@@ -140,7 +131,6 @@ export function QuotationAIAnalysis({
   const [collapsed, setCollapsed] = useState(true)
   const [cooldown, setCooldown] = useState(0)
   const [exporting, setExporting] = useState(false)
-  const autoAnalyzeRef = useRef(false)
 
   useEffect(() => {
     if (!companyId) return
@@ -173,13 +163,9 @@ export function QuotationAIAnalysis({
     return () => window.clearInterval(interval)
   }, [cooldown])
 
-  async function handleAnalyze(auto = false) {
+  async function handleAnalyze() {
     if (!companyId || loading || cooldown > 0) return
 
-    if (auto) {
-      toast.info("Nova proposta detectada - atualizando análise por IA...")
-    }
-    autoAnalyzeRef.current = auto
     setLoading(true)
     setError(null)
 
@@ -344,15 +330,6 @@ export function QuotationAIAnalysis({
     URL.revokeObjectURL(url)
   }
 
-  useEffect(() => {
-    if (!hasNewProposal) return
-
-    removeCache(quotationId, roundId)
-    setCooldown(0)
-    void handleAnalyze(true)
-    onAnalyzed?.()
-  }, [hasNewProposal, quotationId, roundId, onAnalyzed])
-
   const highAlerts = analysis?.alertas.filter((a) => a.severidade === "alta").length ?? 0
 
   return (
@@ -377,7 +354,7 @@ export function QuotationAIAnalysis({
               {highAlerts} alerta(s)
             </Badge>
           )}
-          {loading && collapsed && autoAnalyzeRef.current && (
+          {loading && collapsed && (
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-violet-400 opacity-75" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-violet-500" />
@@ -412,7 +389,7 @@ export function QuotationAIAnalysis({
             className="h-7 text-xs gap-1 border-violet-300"
             onClick={(e) => {
               e.stopPropagation()
-              void handleAnalyze(false)
+              void handleAnalyze()
             }}
             disabled={loading || cooldown > 0}
           >
