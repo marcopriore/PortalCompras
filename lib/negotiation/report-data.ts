@@ -6,6 +6,7 @@ import type {
   NegotiationRun,
 } from "@/types/negotiation"
 import { fetchCounterOffersForRun } from "@/lib/negotiation/counter-offers"
+import { parseGroupKeyFromRationale } from "@/lib/negotiation/counter-offer-groups"
 import { readRoundMetricsState } from "@/lib/negotiation/round-analysis"
 
 export type NegotiationReportItemEvolution = {
@@ -14,6 +15,14 @@ export type NegotiationReportItemEvolution = {
   material_description: string
   target_price: number | null
   rounds: Array<{ round_number: number; best_unit_price: number | null }>
+}
+
+export type NegotiationReportGroupSummary = {
+  group_key: string
+  item_count: number
+  best_total: number
+  target_total: number
+  saving_pct: number
 }
 
 export type NegotiationReportData = {
@@ -28,6 +37,7 @@ export type NegotiationReportData = {
   metrics: ReturnType<typeof readRoundMetricsState>
   decision_logs: NegotiationDecisionLog[]
   counter_offers: NegotiationCounterOffer[]
+  group_summaries: NegotiationReportGroupSummary[]
   item_evolution: NegotiationReportItemEvolution[]
 }
 
@@ -95,7 +105,16 @@ export async function loadNegotiationReportData(
     material_code: row.quotation_items?.material_code ?? null,
     material_description: row.quotation_items?.material_description ?? null,
     supplier_name: row.suppliers?.name ?? null,
+    group_key: parseGroupKeyFromRationale(row.rationale),
   }))
+
+  const planTyped = plan as NegotiationPlan
+  const groupSummaries = await buildGroupSummariesFromOffers(
+    db,
+    companyId,
+    planTyped,
+    counterOffers,
+  )
 
   return {
     quotation: {
@@ -104,13 +123,78 @@ export async function loadNegotiationReportData(
       description: String(quotation.description ?? ""),
       company_name: companyName,
     },
-    plan: plan as NegotiationPlan,
+    plan: planTyped,
     run: run as NegotiationRun,
     metrics: readRoundMetricsState(run.metrics as Record<string, unknown>),
     decision_logs: (logs ?? []) as NegotiationDecisionLog[],
     counter_offers: counterOffers,
+    group_summaries: groupSummaries,
     item_evolution: itemEvolution,
   }
+}
+
+async function buildGroupSummariesFromOffers(
+  db: SupabaseClient,
+  companyId: string,
+  plan: NegotiationPlan,
+  offers: NegotiationCounterOffer[],
+): Promise<NegotiationReportGroupSummary[]> {
+  if (plan.strategy !== "by_category" && plan.strategy !== "by_cost_center") {
+    return []
+  }
+  if (offers.length === 0) return []
+
+  const itemIds = [...new Set(offers.map((o) => o.quotation_item_id))]
+  const { data: qtyRows } = await db
+    .from("quotation_items")
+    .select("id, quantity")
+    .eq("company_id", companyId)
+    .in("id", itemIds)
+
+  const qtyByItem = new Map<string, number>()
+  for (const row of qtyRows ?? []) {
+    const q = Number(row.quantity)
+    qtyByItem.set(String(row.id), q > 0 ? q : 1)
+  }
+
+  const byGroup = new Map<
+    string,
+    { itemCount: number; bestTotal: number; targetTotal: number }
+  >()
+
+  for (const offer of offers) {
+    const groupKey = offer.group_key ?? parseGroupKeyFromRationale(offer.rationale)
+    if (!groupKey) continue
+    const qty = qtyByItem.get(offer.quotation_item_id) ?? 1
+    const best = offer.current_best_unit_price ?? 0
+    const target = offer.target_unit_price
+    if (best <= 0) continue
+
+    const bucket = byGroup.get(groupKey) ?? {
+      itemCount: 0,
+      bestTotal: 0,
+      targetTotal: 0,
+    }
+    bucket.itemCount += 1
+    bucket.bestTotal += best * qty
+    bucket.targetTotal += target * qty
+    byGroup.set(groupKey, bucket)
+  }
+
+  return [...byGroup.entries()]
+    .map(([group_key, bucket]) => ({
+      group_key,
+      item_count: bucket.itemCount,
+      best_total: Math.round(bucket.bestTotal * 100) / 100,
+      target_total: Math.round(bucket.targetTotal * 100) / 100,
+      saving_pct:
+        bucket.bestTotal > 0
+          ? Math.round(
+              ((bucket.bestTotal - bucket.targetTotal) / bucket.bestTotal) * 1000,
+            ) / 10
+          : 0,
+    }))
+    .sort((a, b) => a.group_key.localeCompare(b.group_key, "pt-BR"))
 }
 
 async function buildItemEvolution(

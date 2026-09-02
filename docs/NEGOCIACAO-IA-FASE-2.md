@@ -40,8 +40,9 @@ Após fechar rodada, `lib/negotiation/counter-offers.ts` calcula alvos (`per_ite
 | Estratégia | Comportamento |
 |------------|----------------|
 | `per_item` | Mesmo alvo unitário para todos os fornecedores do item (`supplier_id` nulo) |
-| `per_supplier` | Alvo por fornecedor com base em % de saving relativo à proposta dele e ao melhor preço |
-| `by_category` / `by_cost_center` | Tratados como `per_item` nesta fase |
+| `per_supplier` | Alvo por fornecedor com base em % de saving + **ajuste por score** |
+| `by_category` | Saving proporcional por **grupo de categoria** (catálogo) |
+| `by_cost_center` | Saving proporcional por **centro de custo** (requisição de origem) |
 
 - Alvos são **orientação** — não bloqueiam envio de proposta acima do alvo.
 - Se o fornecedor não melhorar: apenas log no motor; sem alerta ao comprador.
@@ -56,7 +57,27 @@ Após fechar rodada, `lib/negotiation/counter-offers.ts` calcula alvos (`per_ite
 
 ## Próximas fases
 
-- **2.4:** Agrupamento (categoria/CC) + score no prompt
+- Concluído na **2.4** (ver abaixo).
+
+## Fase 2.4 — Agrupamento e score
+
+| Entregável | Comportamento |
+|------------|----------------|
+| `by_category` | Agrupa itens por `commodity_group` do catálogo; alvos proporcionais ao saving do **grupo** |
+| `by_cost_center` | Agrupa por `cost_center` da requisição (`source_requisition_code` → `requisitions`) |
+| Score no motor | Estratégia `per_supplier`: saving mais brando para score alto, mais agressivo para score baixo |
+| Score na análise consultiva | `GET /api/quotation-ai-analysis` inclui `supplier_score` no prompt (Claude) |
+| UI / relatório | Coluna grupo no painel; aba **Grupos** no Excel do evento |
+
+### Consumo de IA (Claude)
+
+| Fluxo | Usa Claude? |
+|-------|-------------|
+| **Negociação autônoma** (motor, contrapropostas, rodadas) | **Não** — regras + matemática + score histórico |
+| **Análise consultiva** (botão Analisar na equalização) | **Sim** — `quotation-ai-analysis` |
+| **Spend no dashboard** | **Sim** — `ai-spend-analysis` |
+
+O campo `source: ai` em `negotiation_counter_offers` indica algoritmo do produto, não chamada LLM.
 
 ## Fase 2.3 — Políticas e relatório
 

@@ -1,25 +1,39 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { NegotiationPlan, NegotiationStrategy } from "@/types/negotiation"
+import {
+  buildGroupedItemDrafts,
+  groupSnapshotsByStrategy,
+  isGroupedStrategy,
+  type CounterOfferDraft,
+  type ItemSnapshotForGrouping,
+} from "@/lib/negotiation/counter-offer-groups"
+import {
+  effectiveSavingPctForSupplier,
+  formatSupplierScoreNote,
+} from "@/lib/negotiation/score-adjustment"
+import { computeSupplierScoresForCompany } from "@/lib/supplier-score/compute-supplier-scores"
+import { loadTenantSetting } from "@/lib/settings/tenant-settings"
 
-export type CounterOfferDraft = {
-  quotation_item_id: string
-  supplier_id: string | null
-  target_unit_price: number
-  current_best_unit_price: number | null
-  rationale: string
-}
+export type { CounterOfferDraft } from "@/lib/negotiation/counter-offer-groups"
 
 type ItemProposalSnapshot = {
   quotationItemId: string
   materialCode: string
   materialDescription: string
+  quantity: number
   targetPrice: number | null
   bestUnitPrice: number
+  category: string | null
+  costCenter: string | null
   bySupplier: Map<string, { unitPrice: number; supplierName: string }>
 }
 
 function roundPrice(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000
+}
+
+function formatPct(value: number): string {
+  return `${value.toFixed(1).replace(".", ",")}%`
 }
 
 function isPerSupplierStrategy(strategy: NegotiationStrategy): boolean {
@@ -39,8 +53,16 @@ function computeReferenceTarget(
   return roundPrice(bestUnitPrice * savingFactor)
 }
 
-function formatPct(value: number): string {
-  return `${value.toFixed(1).replace(".", ",")}%`
+function toGroupingSnapshot(snap: ItemProposalSnapshot): ItemSnapshotForGrouping {
+  return {
+    quotationItemId: snap.quotationItemId,
+    materialCode: snap.materialCode,
+    quantity: snap.quantity,
+    targetPrice: snap.targetPrice,
+    bestUnitPrice: snap.bestUnitPrice,
+    category: snap.category,
+    costCenter: snap.costCenter,
+  }
 }
 
 function buildPerItemDraft(
@@ -80,20 +102,25 @@ function buildPerItemDraft(
 function buildPerSupplierDrafts(
   snap: ItemProposalSnapshot,
   plan: NegotiationPlan,
+  supplierScores: Map<string, number>,
 ): CounterOfferDraft[] {
   if (snap.bestUnitPrice <= 0) return []
 
+  const baseSavingPct = plan.target_saving_pct_below_target
   const refTarget = computeReferenceTarget(
     snap.targetPrice,
     snap.bestUnitPrice,
-    plan.target_saving_pct_below_target,
+    baseSavingPct,
   )
-  const savingFactor = 1 - plan.target_saving_pct_below_target / 100
 
   const drafts: CounterOfferDraft[] = []
 
   for (const [supplierId, { unitPrice, supplierName }] of snap.bySupplier) {
     if (unitPrice <= 0) continue
+
+    const supplierScore = supplierScores.get(supplierId) ?? null
+    const effectiveSaving = effectiveSavingPctForSupplier(baseSavingPct, supplierScore)
+    const savingFactor = 1 - effectiveSaving / 100
 
     let target = roundPrice(unitPrice * savingFactor)
     if (target > refTarget) {
@@ -120,17 +147,16 @@ function buildPerSupplierDrafts(
         unitPrice > 0
           ? ((unitPrice - snap.targetPrice) / unitPrice) * 100
           : 0
-      parts.push(
-        `Saving vs alvo catálogo: ${formatPct(savingVsCatalog)}.`,
-      )
+      parts.push(`Saving vs alvo catálogo: ${formatPct(savingVsCatalog)}.`)
     }
+    parts.push(formatSupplierScoreNote(supplierScore).trim())
 
     drafts.push({
       quotation_item_id: snap.quotationItemId,
       supplier_id: supplierId,
       target_unit_price: target,
       current_best_unit_price: snap.bestUnitPrice,
-      rationale: parts.join(" "),
+      rationale: parts.filter(Boolean).join(" "),
     })
   }
 
@@ -140,13 +166,30 @@ function buildPerSupplierDrafts(
 export function buildCounterOfferDrafts(
   plan: NegotiationPlan,
   snapshots: ItemProposalSnapshot[],
+  supplierScores: Map<string, number> = new Map(),
 ): CounterOfferDraft[] {
-  const perSupplier = isPerSupplierStrategy(plan.strategy)
+  if (isGroupedStrategy(plan.strategy)) {
+    const groupTypeLabel =
+      plan.strategy === "by_category" ? "Categoria" : "Centro de custo"
+    const groups = groupSnapshotsByStrategy(
+      snapshots.map(toGroupingSnapshot),
+      plan.strategy,
+    )
+    const drafts: CounterOfferDraft[] = []
+    for (const [groupLabel, groupSnaps] of groups) {
+      drafts.push(
+        ...buildGroupedItemDrafts(groupLabel, groupTypeLabel, groupSnaps, plan),
+      )
+    }
+    return drafts
+  }
+
   const drafts: CounterOfferDraft[] = []
+  const perSupplier = isPerSupplierStrategy(plan.strategy)
 
   for (const snap of snapshots) {
     if (perSupplier) {
-      drafts.push(...buildPerSupplierDrafts(snap, plan))
+      drafts.push(...buildPerSupplierDrafts(snap, plan, supplierScores))
     } else {
       const draft = buildPerItemDraft(snap, plan)
       if (draft) drafts.push(draft)
@@ -164,11 +207,51 @@ async function loadRoundProposalSnapshots(
 ): Promise<ItemProposalSnapshot[]> {
   const { data: items } = await db
     .from("quotation_items")
-    .select("id, material_code, material_description, target_price")
+    .select(
+      "id, material_code, material_description, target_price, quantity, source_requisition_code",
+    )
     .eq("quotation_id", quotationId)
     .eq("company_id", companyId)
 
   if (!items?.length) return []
+
+  const materialCodes = [
+    ...new Set(items.map((i) => String(i.material_code ?? "").trim()).filter(Boolean)),
+  ]
+  const reqCodes = [
+    ...new Set(
+      items
+        .map((i) => (i.source_requisition_code as string | null)?.trim())
+        .filter((c): c is string => Boolean(c)),
+    ),
+  ]
+
+  const categoryByCode = new Map<string, string | null>()
+  if (materialCodes.length > 0) {
+    const { data: catalogRows } = await db
+      .from("items")
+      .select("code, commodity_group")
+      .eq("company_id", companyId)
+      .in("code", materialCodes)
+    for (const row of catalogRows ?? []) {
+      categoryByCode.set(String(row.code), (row.commodity_group as string | null) ?? null)
+    }
+  }
+
+  const costCenterByReqCode = new Map<string, string | null>()
+  if (reqCodes.length > 0) {
+    const { data: reqRows } = await db
+      .from("requisitions")
+      .select("code, cost_center")
+      .eq("company_id", companyId)
+      .in("code", reqCodes)
+    for (const row of reqRows ?? []) {
+      costCenterByReqCode.set(
+        String(row.code),
+        (row.cost_center as string | null) ?? null,
+      )
+    }
+  }
 
   const { data: proposals } = await db
     .from("quotation_proposals")
@@ -198,14 +281,19 @@ async function loadRoundProposalSnapshots(
   const byItem = new Map<string, ItemProposalSnapshot>()
 
   for (const item of items) {
+    const materialCode = String(item.material_code ?? "")
+    const reqCode = (item.source_requisition_code as string | null)?.trim() ?? null
     byItem.set(String(item.id), {
       quotationItemId: String(item.id),
-      materialCode: String(item.material_code ?? ""),
+      materialCode,
       materialDescription: String(item.material_description ?? ""),
+      quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
       targetPrice:
         item.target_price != null && Number(item.target_price) > 0
           ? Number(item.target_price)
           : null,
+      category: categoryByCode.get(materialCode) ?? null,
+      costCenter: reqCode ? costCenterByReqCode.get(reqCode) ?? null : null,
       bestUnitPrice: Infinity,
       bySupplier: new Map(),
     })
@@ -256,7 +344,24 @@ export async function generateAndPersistCounterOffers(
     return { ok: true, count: 0 }
   }
 
-  const drafts = buildCounterOfferDrafts(params.plan, snapshots)
+  const supplierIds = [
+    ...new Set(
+      snapshots.flatMap((s) => [...s.bySupplier.keys()]),
+    ),
+  ]
+  const priceWeight = await loadTenantSetting(db, params.companyId, "score_weight_price")
+  const scoreSnapshots = await computeSupplierScoresForCompany(
+    db,
+    params.companyId,
+    supplierIds,
+    priceWeight,
+  )
+  const supplierScores = new Map<string, number>()
+  for (const [id, snap] of scoreSnapshots) {
+    supplierScores.set(id, snap.score)
+  }
+
+  const drafts = buildCounterOfferDrafts(params.plan, snapshots, supplierScores)
   if (drafts.length === 0) {
     return { ok: true, count: 0 }
   }
@@ -394,3 +499,5 @@ export async function fetchCounterOffersForRun(
     } satisfies NegotiationCounterOfferRow
   })
 }
+
+export { loadRoundProposalSnapshots }

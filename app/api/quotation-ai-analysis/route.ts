@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
+import { computeSupplierScoresForCompany } from "@/lib/supplier-score/compute-supplier-scores"
+import { loadTenantSetting } from "@/lib/settings/tenant-settings"
 
 export const runtime = "nodejs"
 
@@ -42,6 +44,7 @@ type ProposalAnalysis = {
   tax_percent: number | null
   desvio_vs_alvo: number | null
   desvio_vs_media: number | null
+  supplier_score: number | null
 }
 
 type ItemAnalysis = {
@@ -230,6 +233,20 @@ export async function GET(request: Request) {
       proposalsByItem.set(proposal.quotation_item_id, list)
     }
 
+    const supplierIds = [...new Set(proposalRows.map((p) => p.supplier_id).filter(Boolean))]
+    const serviceClient = createServiceRoleClient()
+    const priceWeight = await loadTenantSetting(
+      serviceClient,
+      ctx.companyId,
+      "score_weight_price",
+    )
+    const supplierScoreMap = await computeSupplierScoresForCompany(
+      serviceClient,
+      ctx.companyId,
+      supplierIds,
+      priceWeight,
+    )
+
     const itemsAnalysis: ItemAnalysis[] = quotationItems.map((item) => {
       const proposals = proposalsByItem.get(item.id) ?? []
       return {
@@ -261,6 +278,7 @@ export async function GET(request: Request) {
             tax_percent: proposal.tax_percent,
             desvio_vs_alvo: desvioVsAlvo,
             desvio_vs_media: desvioVsMedia,
+            supplier_score: supplierScoreMap.get(proposal.supplier_id)?.score ?? null,
           }
         }),
       }
@@ -278,6 +296,7 @@ export async function GET(request: Request) {
         supplier_id: p.supplier_id,
         unit_price: p.unit_price,
         delivery_days: p.delivery_days,
+        supplier_score: p.supplier_score,
         desvio_vs_alvo:
           p.desvio_vs_alvo !== null ? Math.round(p.desvio_vs_alvo * 10) / 10 : null,
         desvio_vs_media:
@@ -298,7 +317,10 @@ Analise os dados de propostas de fornecedores e retorne uma análise estruturada
 em JSON válido. Seja direto, objetivo e baseie-se apenas nos dados fornecidos.
 Responda APENAS com JSON válido, sem texto adicional, sem markdown.
 Seja extremamente conciso nas justificativas (máximo 80 caracteres).
-Priorize JSON compacto sem espaços desnecessários.`
+Priorize JSON compacto sem espaços desnecessários.
+Cada proposta inclui supplier_score (0-100). Peso do preço no score do tenant: ${priceWeight}%.
+Em empate de preço ou diferença pequena (<3%), prefira fornecedor com score maior.
+Não recomende fornecedor só pelo score se o preço estiver muito acima do melhor.`
 
     const userPrompt = `Analise as propostas da cotação ${quotation.code} 
 (categoria: ${quotation.category ?? "não informada"}) e retorne JSON com esta estrutura exata:
@@ -419,7 +441,6 @@ Regras:
 
     let logId: string | null = null
     try {
-      const serviceClient = createServiceRoleClient()
       const { data: insertedLog, error: logError } = await serviceClient
         .from("ai_analysis_logs")
         .insert({

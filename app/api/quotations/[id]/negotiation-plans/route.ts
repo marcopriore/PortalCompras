@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { fetchCounterOffersForRun } from "@/lib/negotiation/counter-offers"
+import { parseGroupKeyFromRationale } from "@/lib/negotiation/counter-offer-groups"
 import { requireNegotiationApiContext } from "@/lib/negotiation/require-api-context"
 import { normalizeNegotiationPlanInput } from "@/types/negotiation"
 
@@ -74,6 +75,7 @@ export async function GET(_request: Request, { params }: RouteParams) {
           material_code: row.quotation_items?.material_code ?? null,
           material_description: row.quotation_items?.material_description ?? null,
           supplier_name: row.suppliers?.name ?? null,
+          group_key: parseGroupKeyFromRationale(row.rationale),
         }))
       }
     }

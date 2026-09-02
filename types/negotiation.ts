@@ -41,6 +41,7 @@ export type NegotiationCounterOffer = {
   material_code?: string | null
   material_description?: string | null
   supplier_name?: string | null
+  group_key?: string | null
 }
 
 export type NegotiationDecisionLog = {

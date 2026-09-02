@@ -524,6 +524,14 @@ export function QuotationNegotiationPlanPanel({
                           <thead>
                             <tr className="border-b text-left text-muted-foreground">
                               <th className="py-1.5 pr-2 font-medium">Item</th>
+                              {activePlan?.strategy === "by_category" ||
+                              activePlan?.strategy === "by_cost_center" ? (
+                                <th className="py-1.5 pr-2 font-medium">
+                                  {activePlan.strategy === "by_category"
+                                    ? "Categoria"
+                                    : "Centro de custo"}
+                                </th>
+                              ) : null}
                               {activePlan?.strategy === "per_supplier" ? (
                                 <th className="py-1.5 pr-2 font-medium">Fornecedor</th>
                               ) : null}
@@ -542,6 +550,12 @@ export function QuotationNegotiationPlanPanel({
                                     {co.material_description ?? ""}
                                   </span>
                                 </td>
+                                {activePlan?.strategy === "by_category" ||
+                                activePlan?.strategy === "by_cost_center" ? (
+                                  <td className="py-1.5 pr-2 text-muted-foreground max-w-[140px] truncate">
+                                    {co.group_key ?? "—"}
+                                  </td>
+                                ) : null}
                                 {activePlan?.strategy === "per_supplier" ? (
                                   <td className="py-1.5 pr-2 text-muted-foreground">
                                     {co.supplier_name ?? "—"}

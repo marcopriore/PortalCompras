@@ -115,6 +115,27 @@ export async function buildNegotiationReportExcelBuffer(
     })
   }
 
+  if (data.group_summaries.length > 0) {
+    const groups = wb.addWorksheet("Grupos")
+    groups.columns = [
+      { header: "Grupo", key: "group", width: 28 },
+      { header: "Itens", key: "items", width: 10 },
+      { header: "Total melhor", key: "best", width: 16 },
+      { header: "Total alvo", key: "target", width: 16 },
+      { header: "Saving (%)", key: "saving", width: 12 },
+    ]
+    Object.assign(groups.getRow(1), headerStyle)
+    for (const g of data.group_summaries) {
+      groups.addRow({
+        group: g.group_key,
+        items: g.item_count,
+        best: g.best_total,
+        target: g.target_total,
+        saving: g.saving_pct,
+      })
+    }
+  }
+
   if (data.item_evolution.length > 0) {
     const maxRound = Math.max(
       ...data.item_evolution.flatMap((i) => i.rounds.map((r) => r.round_number)),
