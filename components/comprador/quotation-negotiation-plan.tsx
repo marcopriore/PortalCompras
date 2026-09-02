@@ -13,29 +13,23 @@ import {
   XCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
 import type {
   NegotiationDecisionLog,
   NegotiationPlan,
   NegotiationRun,
-  NegotiationStrategy,
 } from "@/types/negotiation"
-import { DEFAULT_NEGOTIATION_PLAN } from "@/types/negotiation"
+import {
+  createDefaultNegotiationFormState,
+  negotiationFormToInput,
+  QuotationNegotiationPlanFormFields,
+  type NegotiationPlanFormState,
+} from "@/components/comprador/quotation-negotiation-plan-form"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
 import { formatDateTimeBR } from "@/lib/formato-data"
@@ -90,19 +84,9 @@ export function QuotationNegotiationPlanPanel({
 
   const { value: pollMinutes } = useTenantSetting("ai_negotiation_autonomous_poll_minutes")
 
-  const [form, setForm] = React.useState({
-    min_rounds: String(DEFAULT_NEGOTIATION_PLAN.min_rounds),
-    max_rounds: String(DEFAULT_NEGOTIATION_PLAN.max_rounds),
-    max_price_pct_above_best: String(DEFAULT_NEGOTIATION_PLAN.max_price_pct_above_best),
-    target_saving_pct_below_target: String(
-      DEFAULT_NEGOTIATION_PLAN.target_saving_pct_below_target,
-    ),
-    stop_on_target: DEFAULT_NEGOTIATION_PLAN.stop_on_target,
-    stop_on_no_improvement: DEFAULT_NEGOTIATION_PLAN.stop_on_no_improvement,
-    require_buyer_approval: DEFAULT_NEGOTIATION_PLAN.require_buyer_approval,
-    response_deadline_days: String(DEFAULT_NEGOTIATION_PLAN.response_deadline_days),
-    strategy: DEFAULT_NEGOTIATION_PLAN.strategy as NegotiationStrategy,
-  })
+  const [form, setForm] = React.useState<NegotiationPlanFormState>(() =>
+    createDefaultNegotiationFormState(),
+  )
 
   const activeRun = React.useMemo(
     () => runs.find((r) => ACTIVE_STATUSES.has(r.status)) ?? null,
@@ -166,13 +150,8 @@ export function QuotationNegotiationPlanPanel({
   const isAutonomous = activeRun != null && !requireApproval
 
   const canConfigure =
-    quotationStatus == null ||
-    quotationStatus === "draft" ||
-    quotationStatus === "rejected" ||
     quotationStatus === "waiting" ||
     quotationStatus === "analysis"
-
-  const isDraftLike = quotationStatus === "draft" || quotationStatus === "rejected"
 
   const onChangedRef = React.useRef(onChanged)
   React.useEffect(() => {
@@ -277,17 +256,7 @@ export function QuotationNegotiationPlanPanel({
       const res = await fetch(`/api/quotations/${quotationId}/negotiation-plans`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          min_rounds: Number(form.min_rounds),
-          max_rounds: Number(form.max_rounds),
-          max_price_pct_above_best: Number(form.max_price_pct_above_best),
-          target_saving_pct_below_target: Number(form.target_saving_pct_below_target),
-          stop_on_target: form.stop_on_target,
-          stop_on_no_improvement: form.stop_on_no_improvement,
-          require_buyer_approval: form.require_buyer_approval,
-          response_deadline_days: Number(form.response_deadline_days),
-          strategy: form.strategy,
-        }),
+        body: JSON.stringify(negotiationFormToInput(form)),
       })
       const json = (await res.json()) as { error?: string; plan?: NegotiationPlan }
       if (!res.ok) {
@@ -421,11 +390,6 @@ export function QuotationNegotiationPlanPanel({
               <BrainCircuit className="h-5 w-5 text-violet-600" />
               <div>
                 <p className="font-semibold text-foreground">Negociação assistida por IA</p>
-                {isDraftLike ? (
-                  <p className="text-xs text-muted-foreground">
-                    Ao iniciar, a cotação é publicada e a rodada 1 abre automaticamente.
-                  </p>
-                ) : null}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -632,120 +596,13 @@ export function QuotationNegotiationPlanPanel({
               ) : null}
 
               {showConfigForm ? (
-                <div className="grid gap-4 md:grid-cols-2">
-                  <p className="md:col-span-2 text-xs text-muted-foreground">
-                    Defina o plano antes de publicar (rascunho) ou para um novo evento na mesma
-                    cotação. Com &quot;aprovação por rodada&quot; desligada, o motor avança sozinho
-                    conforme o intervalo configurado no Admin.
-                  </p>
-                  <div className="space-y-2">
-                    <Label>Rodadas mínimas</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={form.min_rounds}
-                      onChange={(e) => setForm((f) => ({ ...f, min_rounds: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Rodadas máximas</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={form.max_rounds}
-                      onChange={(e) => setForm((f) => ({ ...f, max_rounds: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Teto de preço (% acima do melhor)</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step="0.1"
-                      value={form.max_price_pct_above_best}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, max_price_pct_above_best: e.target.value }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Saving alvo (% abaixo do preço alvo)</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={100}
-                      step="0.1"
-                      value={form.target_saving_pct_below_target}
-                      onChange={(e) =>
-                        setForm((f) => ({
-                          ...f,
-                          target_saving_pct_below_target: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Prazo por rodada (dias)</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={60}
-                      value={form.response_deadline_days}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, response_deadline_days: e.target.value }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Estratégia</Label>
-                    <Select
-                      value={form.strategy}
-                      onValueChange={(v) =>
-                        setForm((f) => ({ ...f, strategy: v as NegotiationStrategy }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="per_item">Por item</SelectItem>
-                        <SelectItem value="per_supplier">Por fornecedor</SelectItem>
-                        <SelectItem value="by_category">Por categoria</SelectItem>
-                        <SelectItem value="by_cost_center">Por centro de custo</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border p-3 md:col-span-2">
-                    <div>
-                      <p className="text-sm font-medium">Parar ao atingir preço alvo</p>
-                      <p className="text-xs text-muted-foreground">
-                        Encerra o evento quando o saving configurado for atingido.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={form.stop_on_target}
-                      onCheckedChange={(v) => setForm((f) => ({ ...f, stop_on_target: v }))}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border p-3 md:col-span-2">
-                    <div>
-                      <p className="text-sm font-medium">Exigir aprovação antes de cada rodada</p>
-                      <p className="text-xs text-muted-foreground">
-                        Ligado: você aprova cada nova rodada. Desligado: motor automático com
-                        polling.
-                      </p>
-                    </div>
-                    <Switch
-                      checked={form.require_buyer_approval}
-                      onCheckedChange={(v) =>
-                        setForm((f) => ({ ...f, require_buyer_approval: v }))
-                      }
-                    />
-                  </div>
-                  <div className="md:col-span-2 flex flex-wrap gap-2">
+                <div className="space-y-4">
+                  <QuotationNegotiationPlanFormFields
+                    form={form}
+                    onFormChange={setForm}
+                    introText='Defina o plano para um novo evento na mesma cotação. Com "aprovação por rodada" desligada, o motor avança sozinho conforme o intervalo configurado no Admin.'
+                  />
+                  <div className="flex flex-wrap gap-2">
                     <Button disabled={saving} onClick={() => void handleCreatePlan(false)}>
                       {saving ? "Salvando..." : "Salvar plano"}
                     </Button>

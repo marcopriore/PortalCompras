@@ -44,9 +44,31 @@ Nas listagens, o padrão é:
 - **Sem refresh imediato** ao retornar à aba (padrão `refreshOnVisible: false`).
 - Timer **removido no unmount** do componente (`clearInterval` no cleanup do `useEffect`), sem vazamento óbvio de intervalo.
 
-## Tarefas em background no proxy (`proxy.ts`)
+## Tarefas em background
 
-Rodadas vencidas, expiração de contratos e `POST /api/contracts/scheduled-maintenance` **não** rodam em toda requisição. O proxy aplica cooldown configurável em **Admin → Tenant → Configurações** (`background_tasks_cooldown_minutes`, padrão 15 min, grupo Sistema). Um cron externo (ex.: Vercel Cron) é opcional para ambientes sem tráfego frequente.
+| Mecanismo | Quando roda |
+|-----------|-------------|
+| **Vercel Cron** | `vercel.json` → `GET /api/cron/background-jobs` a cada **2 min** (produção, sem usuário logado) |
+| **Proxy** | Ao navegar no portal, no cooldown `background_tasks_cooldown_minutes` (padrão 15 min) — complementar |
+
+O job de cron executa, em ordem: `close_expired_rounds`, `expire_overdue_contracts`, **tick negociação IA** (respeita `ai_negotiation_autonomous_poll_minutes` por tenant), retry outbound ERP e manutenção de contratos.
+
+### Variáveis de ambiente (produção)
+
+| Variável | Uso |
+|----------|-----|
+| `CRON_SECRET` | `Authorization: Bearer …` nas invocações de cron |
+| `CONTRACT_MAINTENANCE_SECRET` | Alternativa (`x-maintenance-key`) — GitHub Actions, cron-job.org, proxy |
+
+### Sem Vercel Cron Pro
+
+| Opção | Esforço | Intervalo |
+|-------|---------|-----------|
+| **[cron-job.org](https://cron-job.org)** (ou similar) | ~5 min: cadastrar URL `POST …/api/cron/background-jobs` + header | 1–5 min (grátis) |
+| **GitHub Actions** | Workflow `.github/workflows/background-jobs-cron.yml` + secrets `APP_URL` + `CRON_SECRET` | ~5 min (grátis) |
+| **Vercel Cron** (`vercel.json`) | Já no repo | 2 min — requer **Vercel Pro** |
+
+Em **dev local**, sem secrets: `Invoke-WebRequest -Method POST http://localhost:3000/api/cron/background-jobs`
 
 ## Como adicionar em novas telas
 

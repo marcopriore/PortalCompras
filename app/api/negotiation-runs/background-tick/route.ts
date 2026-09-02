@@ -9,7 +9,7 @@ function isAuthorized(request: Request): boolean {
   return request.headers.get("x-maintenance-key") === secret
 }
 
-/** Job de tick da negociação IA autônoma. Disparado pelo proxy em background. */
+/** Job de tick da negociação IA autônoma. Preferir `/api/cron/background-jobs`. */
 export async function POST(request: Request) {
   try {
     if (!isAuthorized(request)) {

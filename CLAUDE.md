@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.111
+- Versão atual: v2.19.112
 
 ---
 
@@ -414,6 +414,7 @@ node scripts/seed-supplier-axis.mjs --force
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
 | v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
 | v2.19.109 | Categorias unificadas + permissão erp.sync |
+| v2.19.112 | Negociação IA: toggle na nova cotação, cron/background jobs, lock tick (075), fix rodadas duplicadas |
 | v2.19.111 | Negociação IA autônoma fase 2.1: plano + motor rodadas + APIs + painel equalização (premium) |
 | v2.19.110 | Config tenant negócio (POR, classificação/rateio, limites numéricos), REQ/PO contábil, aprovações no detalhe, fix totais POR, PDF/Excel pedido, RLS superadmin 068–073 |
 | v2.19.108 | Aprovações: fila 1:1 com status real da REQ + RLS superadmin |

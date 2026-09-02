@@ -34,8 +34,9 @@ Fase 2.1: análise com regras (rodadas mín/máx, preço vs alvo). Integração 
 
 ## UI
 
-- **Detalhe da cotação** (`/comprador/cotacoes/[id]`): configurar plano antes da 1ª publicação (rascunho).
-- **Equalização**: painéis de IA acima do mapa (somente se o tenant tiver as features habilitadas em `tenant_features`).
+- **Nova cotação** (`/comprador/cotacoes/nova`): chaveamento + parâmetros antes do envio; com IA ligada, **Enviar Cotação** cria o plano e inicia o motor (redireciona para equalização).
+- **Equalização**: painel para acompanhar execução ou ativar negociação em cotação enviada manualmente.
+- **Detalhe da cotação**: sem painel de negociação (após envio, usar equalização).
 - Gate de exibição: `useAiNegotiationUiAccess()` — **não** usa bypass de superadmin; respeita o tenant selecionado.
 
 ## Início automático da rodada 1
@@ -50,9 +51,11 @@ Ao clicar **Iniciar negociação**, o motor:
 | Item | Implementação |
 |------|----------------|
 | Sync rodada na equalização | `fetchEqualizationData({ preferActiveRound: true })` após ações do motor |
-| Worker em background | `POST /api/negotiation-runs/background-tick` via `proxy.ts` (mesmo cooldown de tarefas em background) |
+| Worker em background | `GET/POST /api/cron/background-jobs` — Vercel Cron a cada 2 min (`vercel.json`); também disparado pelo proxy com cooldown |
 | Encerrar evento | `POST /api/negotiation-runs/[id]/cancel` + botão no painel |
 | Bloqueio de 2º evento | `startNegotiationRun` recusa se já houver execução ativa/pausada na mesma cotação |
+| Lock de tick (migration `075`) | `tick_in_progress_at` evita ticks concorrentes abrindo várias rodadas |
+| Uma rodada ativa | `openQuotationRound` fecha rodadas `active` antes de abrir a próxima |
 
 ## Próximas fases
 

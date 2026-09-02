@@ -1,0 +1,49 @@
+# Dispara jobs em background (negociação IA, rodadas vencidas, contratos).
+# Alternativa ao Vercel Cron Pro — GitHub Actions gratuito (mín. ~5 min entre runs).
+#
+# Secrets em: Repo → Settings → Secrets and variables → Actions
+#   APP_URL              ex. https://portal.seudominio.com.br
+#   CRON_SECRET          ou CONTRACT_MAINTENANCE_SECRET (mesmo valor do .env de PRD)
+
+name: Background jobs (cron)
+
+on:
+  schedule:
+    # GitHub: intervalo mínimo prático ~5 min
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: background-jobs-cron
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: POST /api/cron/background-jobs
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          MAINTENANCE_KEY: ${{ secrets.CONTRACT_MAINTENANCE_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ]; then
+            echo "Configure o secret APP_URL (URL pública do portal, sem barra final)."
+            exit 1
+          fi
+          URL="${APP_URL%/}/api/cron/background-jobs"
+          ARGS=(-fsS -X POST "$URL")
+          if [ -n "${CRON_SECRET:-}" ]; then
+            ARGS+=(-H "Authorization: Bearer ${CRON_SECRET}")
+          elif [ -n "${MAINTENANCE_KEY:-}" ]; then
+            ARGS+=(-H "x-maintenance-key: ${MAINTENANCE_KEY}")
+          else
+            echo "Configure CRON_SECRET ou CONTRACT_MAINTENANCE_SECRET nos secrets do GitHub."
+            exit 1
+          fi
+          echo "Calling $URL"
+          curl "${ARGS[@]}"
+          echo ""
+          echo "OK"

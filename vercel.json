@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/background-jobs",
+      "schedule": "*/2 * * * *"
+    }
+  ]
+}

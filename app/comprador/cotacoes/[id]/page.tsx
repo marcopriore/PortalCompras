@@ -15,8 +15,6 @@ import {
   isBuyerOrHigherProfile,
 } from '@/lib/quotations/ownership'
 import { ensureInitialQuotationRound } from '@/lib/quotations/round-lifecycle'
-import { QuotationNegotiationPlanPanel } from '@/components/comprador/quotation-negotiation-plan'
-import { useAiNegotiationUiAccess } from '@/lib/hooks/use-tenant-feature-flags'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -205,10 +203,6 @@ export default function QuotationDetailsPage({
   const requisicaoId = searchParams.get('requisicaoId')
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
   const { hasFeature, hasPermission, loading: permLoading } = usePermissions()
-  const {
-    loading: aiAccessLoading,
-    showAutonomousAi,
-  } = useAiNegotiationUiAccess()
   void hasFeature
   const viewAllQuotations = canViewAllQuotations({
     isSuperAdmin,
@@ -798,17 +792,6 @@ export default function QuotationDetailsPage({
               </div>
             </div>
           </Section>
-
-          {!aiAccessLoading && showAutonomousAi && companyId && quotation ? (
-            <QuotationNegotiationPlanPanel
-              quotationId={quotation.id}
-              companyId={companyId}
-              enabled={showAutonomousAi}
-              quotationStatus={quotation.status}
-              defaultOpen={quotation.status === 'draft' || quotation.status === 'rejected'}
-              onChanged={() => void reloadQuotation()}
-            />
-          ) : null}
 
           {/* Itens */}
           <Section

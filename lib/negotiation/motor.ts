@@ -33,22 +33,54 @@ export async function advanceNegotiationRun(
   runId: string,
   options?: { actorUserId?: string; forceApprove?: boolean },
 ): Promise<TickResult> {
-  let last: TickResult | null = null
-  for (let step = 0; step < 6; step++) {
-    const result = await tickNegotiationRun(db, companyId, runId, options)
-    if (!result.ok) return result
-    last = result
-    const status = result.run.status
-    if (
-      ["completed", "cancelled", "failed", "paused", "waiting_deadline", "awaiting_approval"].includes(
-        status,
-      )
-    ) {
-      break
-    }
-    if (result.message === "Nenhuma ação necessária.") break
-  }
-  return last ?? { ok: false, message: "Não foi possível avançar a negociação." }
+  return tickNegotiationRun(db, companyId, runId, options)
+}
+
+const TICK_LOCK_STALE_MS = 60_000
+
+async function releaseTickLock(
+  db: SupabaseClient,
+  runId: string,
+  companyId: string,
+): Promise<void> {
+  await db
+    .from("quotation_negotiation_runs")
+    .update({ tick_in_progress_at: null, updated_at: new Date().toISOString() })
+    .eq("id", runId)
+    .eq("company_id", companyId)
+}
+
+async function claimTickLock(
+  db: SupabaseClient,
+  companyId: string,
+  runId: string,
+): Promise<NegotiationRun | null> {
+  const now = new Date().toISOString()
+  const staleBefore = new Date(Date.now() - TICK_LOCK_STALE_MS).toISOString()
+  const patch = { tick_in_progress_at: now, updated_at: now }
+
+  const { data: claimedNull, error: nullErr } = await db
+    .from("quotation_negotiation_runs")
+    .update(patch)
+    .eq("id", runId)
+    .eq("company_id", companyId)
+    .is("tick_in_progress_at", null)
+    .select("*")
+    .maybeSingle()
+
+  if (!nullErr && claimedNull) return claimedNull as NegotiationRun
+
+  const { data: claimedStale, error: staleErr } = await db
+    .from("quotation_negotiation_runs")
+    .update(patch)
+    .eq("id", runId)
+    .eq("company_id", companyId)
+    .lt("tick_in_progress_at", staleBefore)
+    .select("*")
+    .maybeSingle()
+
+  if (!staleErr && claimedStale) return claimedStale as NegotiationRun
+  return null
 }
 
 export async function tickNegotiationRun(
@@ -57,18 +89,37 @@ export async function tickNegotiationRun(
   runId: string,
   options?: { actorUserId?: string; forceApprove?: boolean },
 ): Promise<TickResult> {
-  const { data: runRow, error: runErr } = await db
-    .from("quotation_negotiation_runs")
-    .select("*")
-    .eq("id", runId)
-    .eq("company_id", companyId)
-    .maybeSingle()
-
-  if (runErr || !runRow) {
-    return { ok: false, message: "Execução não encontrada." }
+  const run = await claimTickLock(db, companyId, runId)
+  if (!run) {
+    const { data: runRow } = await db
+      .from("quotation_negotiation_runs")
+      .select("*")
+      .eq("id", runId)
+      .eq("company_id", companyId)
+      .maybeSingle()
+    if (!runRow) {
+      return { ok: false, message: "Execução não encontrada." }
+    }
+    return {
+      ok: true,
+      run: runRow as NegotiationRun,
+      message: "Nenhuma ação necessária.",
+    }
   }
 
-  const run = runRow as NegotiationRun
+  try {
+    return await executeNegotiationTick(db, companyId, run, options)
+  } finally {
+    await releaseTickLock(db, runId, companyId)
+  }
+}
+
+async function executeNegotiationTick(
+  db: SupabaseClient,
+  companyId: string,
+  run: NegotiationRun,
+  options?: { actorUserId?: string; forceApprove?: boolean },
+): Promise<TickResult> {
   if (run.status === "completed" || run.status === "cancelled" || run.status === "failed") {
     return { ok: false, message: `Execução já encerrada (${run.status}).` }
   }

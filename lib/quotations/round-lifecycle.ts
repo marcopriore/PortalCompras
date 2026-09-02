@@ -95,6 +95,16 @@ export async function openQuotationRound(
   const roundNumbers = (rounds ?? []).map((r) => Number(r.round_number) || 0)
   const newRoundNumber = roundNumbers.length > 0 ? Math.max(...roundNumbers) + 1 : 1
 
+  const now = new Date().toISOString()
+  const { error: closeActiveErr } = await db
+    .from("quotation_rounds")
+    .update({ status: "closed", closed_at: now })
+    .eq("quotation_id", params.quotationId)
+    .eq("company_id", params.companyId)
+    .eq("status", "active")
+
+  if (closeActiveErr) return { ok: false, message: closeActiveErr.message }
+
   const { data: newRoundRow, error: insRoundErr } = await db
     .from("quotation_rounds")
     .insert({

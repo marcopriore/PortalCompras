@@ -10,6 +10,14 @@ import { useUser } from '@/lib/hooks/useUser'
 import { usePermissions } from '@/lib/hooks/usePermissions'
 import { logAudit } from '@/lib/audit'
 import { ensureInitialQuotationRound } from '@/lib/quotations/round-lifecycle'
+import { createAndStartNegotiationPlan } from '@/lib/negotiation/client-start'
+import { useAiNegotiationUiAccess } from '@/lib/hooks/use-tenant-feature-flags'
+import {
+  createNovaCotacaoNegotiationFormState,
+  negotiationFormToInput,
+  QuotationNegotiationPlanFormFields,
+  type NegotiationPlanFormState,
+} from '@/components/comprador/quotation-negotiation-plan-form'
 import { SuggestSuppliersButton } from '@/components/comprador/suggest-suppliers-button'
 import { Button } from '@/components/ui/button'
 import { QuantityInput } from '@/components/ui/numeric-field-inputs'
@@ -28,7 +36,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Switch } from '@/components/ui/switch'
 import {
+  BrainCircuit,
   Building2,
   CalendarIcon,
   ChevronDown,
@@ -148,15 +158,25 @@ function NovaCotacaoContent() {
   const [supplierSearchLoading, setSupplierSearchLoading] = useState(false)
   const [selectedSuppliers, setSelectedSuppliers] = useState<Supplier[]>([])
   const [errors, setErrors] = useState<Record<string, boolean>>({})
-  const [open, setOpen] = useState({ general: true, items: true, suppliers: true })
+  const [open, setOpen] = useState({
+    general: true,
+    items: true,
+    suppliers: true,
+    negotiation: true,
+  })
   const [loading, setLoading] = useState(false)
   const [loadingAction, setLoadingAction] = useState<'draft' | 'submit' | null>(null)
+  const [aiNegotiationEnabled, setAiNegotiationEnabled] = useState(false)
+  const [negotiationForm, setNegotiationForm] = useState<NegotiationPlanFormState>(() =>
+    createNovaCotacaoNegotiationFormState(),
+  )
   const [reqDialogOpen, setReqDialogOpen] = useState(false)
   const [requisitions, setRequisitions] = useState<RequisitionOption[]>([])
   const [requisitionsLoading, setRequisitionsLoading] = useState(false)
   const [selectedReqIds, setSelectedReqIds] = useState<string[]>([])
 
   const { userId, companyId, fullName, loading: userLoading } = useUser()
+  const { showAutonomousAi, loading: aiAccessLoading } = useAiNegotiationUiAccess()
 
   const debouncedItemSearch = useDebounce(itemSearch, ITEM_SEARCH_DEBOUNCE_MS)
   const debouncedSupplierSearch = useDebounce(supplierSearch, SUPPLIER_SEARCH_DEBOUNCE_MS)
@@ -424,7 +444,10 @@ function NovaCotacaoContent() {
     setSelectedReqIds([])
   }
 
-  const saveQuotation = async (status: 'draft' | 'waiting') => {
+  const saveQuotation = async (
+    status: 'draft' | 'waiting',
+    options?: { startAiNegotiation?: boolean },
+  ) => {
     const supabase = createClient()
 
     try {
@@ -515,6 +538,18 @@ function NovaCotacaoContent() {
           toast.error(`Cotação salva, mas não foi possível abrir a rodada 1: ${boot.message}`)
           return
         }
+
+        if (options?.startAiNegotiation) {
+          const neg = await createAndStartNegotiationPlan(
+            quotationId,
+            negotiationFormToInput(negotiationForm),
+          )
+          if (!neg.ok) {
+            toast.error(neg.error)
+            router.push(`/comprador/cotacoes/${quotationId}/equalizacao`)
+            return
+          }
+        }
       }
 
       await logAudit({
@@ -531,8 +566,14 @@ function NovaCotacaoContent() {
       toast.success(
         status === 'draft'
           ? 'Rascunho salvo com sucesso!'
-          : 'Cotação enviada com sucesso!',
+          : options?.startAiNegotiation
+            ? 'Cotação enviada e negociação assistida iniciada.'
+            : 'Cotação enviada com sucesso!',
       )
+      if (status === 'waiting' && options?.startAiNegotiation) {
+        router.push(`/comprador/cotacoes/${quotationId}/equalizacao`)
+        return
+      }
       router.push('/comprador/cotacoes')
     } catch {
       toast.error('Erro ao salvar cotação. Tente novamente.')
@@ -554,7 +595,9 @@ function NovaCotacaoContent() {
     setLoading(true)
     setLoadingAction('submit')
     try {
-      await saveQuotation('waiting')
+      await saveQuotation('waiting', {
+        startAiNegotiation: aiNegotiationEnabled && showAutonomousAi,
+      })
     } finally {
       setLoading(false)
       setLoadingAction(null)
@@ -948,6 +991,41 @@ function NovaCotacaoContent() {
           )}
         </div>
       </Section>
+
+      {!aiAccessLoading && showAutonomousAi ? (
+        <Section
+          title="Negociação assistida por IA"
+          icon={<BrainCircuit className="h-4 w-4 text-violet-600" />}
+          sectionKey="negotiation"
+          open={open.negotiation}
+          onToggle={toggle}
+        >
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-violet-200 bg-violet-50/40 p-4 dark:border-violet-900 dark:bg-violet-950/20">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  Gestão automática desta cotação
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Ligado: ao enviar a cotação, o robô de negociação inicia os ciclos de rodadas.
+                  Desligado: fluxo manual; você pode ativar depois na equalização.
+                </p>
+              </div>
+              <Switch
+                checked={aiNegotiationEnabled}
+                onCheckedChange={setAiNegotiationEnabled}
+              />
+            </div>
+            {aiNegotiationEnabled ? (
+              <QuotationNegotiationPlanFormFields
+                form={negotiationForm}
+                onFormChange={setNegotiationForm}
+                introText="O plano entra em execução automaticamente ao clicar em Enviar Cotação."
+              />
+            ) : null}
+          </div>
+        </Section>
+      ) : null}
 
       <Dialog open={reqDialogOpen} onOpenChange={setReqDialogOpen}>
         <DialogContent className="sm:max-w-2xl">

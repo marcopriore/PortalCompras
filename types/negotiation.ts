@@ -76,6 +76,7 @@ export type NegotiationRun = {
   paused_at: string | null
   completed_at: string | null
   last_tick_at: string | null
+  tick_in_progress_at: string | null
   created_at: string
   updated_at: string
 }
