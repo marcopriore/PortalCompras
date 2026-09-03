@@ -138,13 +138,14 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: BLACK,
   },
-  colCod: { width: 70 },
+  colCod: { width: 58 },
   colDesc: { flex: 1 },
-  colQtd: { width: 40, textAlign: "right" },
-  colUN: { width: 35, textAlign: "center" },
-  colPreco: { width: 70, textAlign: "right" },
-  colImp: { width: 45, textAlign: "center" },
-  colTotal: { width: 75, textAlign: "right" },
+  colSite: { width: 52, textAlign: "center" },
+  colQtd: { width: 36, textAlign: "right" },
+  colUN: { width: 30, textAlign: "center" },
+  colPreco: { width: 64, textAlign: "right" },
+  colImp: { width: 40, textAlign: "center" },
+  colTotal: { width: 68, textAlign: "right" },
   totalRow: {
     flexDirection: "row",
     justifyContent: "flex-end",
@@ -235,6 +236,7 @@ export type PurchaseOrderPDFItem = {
   id: string
   material_code: string
   material_description: string
+  site_code: string | null
   quantity: number
   unit_of_measure: string | null
   unit_price: number
@@ -391,6 +393,7 @@ export function PurchaseOrderPDF({ order, items, company, porEnabled = false }: 
           <View style={styles.tableHeader}>
             <Text style={[styles.tableHeaderCell, styles.colCod]}>Código</Text>
             <Text style={[styles.tableHeaderCell, styles.colDesc]}>Descrição</Text>
+            <Text style={[styles.tableHeaderCell, styles.colSite]}>Centro</Text>
             <Text style={[styles.tableHeaderCell, styles.colQtd]}>Qtd</Text>
             <Text style={[styles.tableHeaderCell, styles.colUN]}>UN</Text>
             <Text style={[styles.tableHeaderCell, styles.colPreco]}>Preço Unit.</Text>
@@ -405,6 +408,7 @@ export function PurchaseOrderPDF({ order, items, company, porEnabled = false }: 
             >
               <Text style={[styles.tableCell, styles.colCod]}>{item.material_code}</Text>
               <Text style={[styles.tableCell, styles.colDesc]}>{item.material_description}</Text>
+              <Text style={[styles.tableCell, styles.colSite]}>{item.site_code ?? "—"}</Text>
               <Text style={[styles.tableCell, styles.colQtd]}>{item.quantity}</Text>
               <Text style={[styles.tableCell, styles.colUN]}>{item.unit_of_measure ?? "—"}</Text>
               <Text style={[styles.tableCell, styles.colPreco]}>{money.format(item.unit_price)}</Text>

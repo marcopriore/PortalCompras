@@ -106,6 +106,7 @@ export function mapPurchaseOrderItemsToPdf(
     id: String(raw.id),
     material_code: String(raw.material_code ?? ""),
     material_description: String(raw.material_description ?? ""),
+    site_code: raw.site_code != null ? String(raw.site_code) : null,
     quantity: Number(raw.quantity ?? 0),
     unit_of_measure:
       raw.unit_of_measure != null ? String(raw.unit_of_measure) : null,

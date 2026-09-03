@@ -10,9 +10,9 @@ import { runWithApiKey } from "@/lib/api/external/with-api-key"
 import {
   PurchaseOrderPDF,
   type PurchaseOrderPDFCompany,
-  type PurchaseOrderPDFItem,
   type PurchaseOrderPDFOrder,
 } from "@/lib/pdf/purchase-order-pdf"
+import { mapPurchaseOrderItemsToPdf } from "@/lib/pdf/purchase-order-pdf-data"
 import { loadTenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
 
 export const runtime = "nodejs"
@@ -73,18 +73,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           loadTenantFeatureConfig(service, ctx.companyId),
         ])
 
-        const pdfItems: PurchaseOrderPDFItem[] = (itemsRes.data ?? []).map(
-          (raw: Record<string, unknown>) => ({
-            id: String(raw.id),
-            material_code: String(raw.material_code ?? ""),
-            material_description: String(raw.material_description ?? ""),
-            quantity: Number(raw.quantity ?? 0),
-            unit_of_measure: raw.unit_of_measure != null ? String(raw.unit_of_measure) : null,
-            unit_price: Number(raw.unit_price ?? 0),
-            price_unit: raw.price_unit != null ? Number(raw.price_unit) : 1,
-            tax_percent: raw.tax_percent != null ? Number(raw.tax_percent) : null,
-            total_price: raw.total_price != null ? Number(raw.total_price) : null,
-          }),
+        const pdfItems = mapPurchaseOrderItemsToPdf(
+          (itemsRes.data ?? []) as Record<string, unknown>[],
         )
 
         const pdfOrder = order as PurchaseOrderPDFOrder

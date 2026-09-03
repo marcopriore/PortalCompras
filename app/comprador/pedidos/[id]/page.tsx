@@ -2203,6 +2203,7 @@ export default function PurchaseOrderDetailPage({
           items: items.map((item) => ({
             material_code: item.material_code,
             material_description: item.material_description,
+            site_code: item.site_code,
             quantity: item.quantity,
             unit_of_measure: item.unit_of_measure,
             price_unit: item.price_unit,

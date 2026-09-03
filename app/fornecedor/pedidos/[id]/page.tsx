@@ -74,6 +74,7 @@ type POItem = {
   id: string
   material_code: string
   material_description: string
+  site_code: string | null
   unit_of_measure: string | null
   quantity: number
   unit_price: number | null
@@ -218,9 +219,6 @@ export default function FornecedorPedidoDetalhePage({
       console.error("purchase_order_items error:", itemsResult.error)
     }
     const rows = (itemsResult.data as POItem[]) ?? []
-    if (rows.length === 0) {
-      console.log("items result:", itemsResult)
-    }
     setItems(rows)
 
     const maxDaysFromItems = rows.reduce((max, item) => {
@@ -777,6 +775,7 @@ export default function FornecedorPedidoDetalhePage({
                 <TableHead className="w-10">#</TableHead>
                 <TableHead>Cód. Material</TableHead>
                 <TableHead>Descrição</TableHead>
+                <TableHead>Centro / Filial</TableHead>
                 <TableHead className="text-center">UN</TableHead>
                 <TableHead className="text-right">Qtd</TableHead>
                 <TableHead className="text-right">Preço Unit.</TableHead>
@@ -787,7 +786,7 @@ export default function FornecedorPedidoDetalhePage({
             <TableBody>
               {items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
+                  <TableCell colSpan={9} className="text-center text-sm text-muted-foreground py-8">
                     Nenhum item retornado para este pedido. Verifique o console se houver erro de
                     permissão ou seed.
                   </TableCell>
@@ -801,6 +800,9 @@ export default function FornecedorPedidoDetalhePage({
                     </TableCell>
                     <TableCell className="max-w-[220px]">
                       {it.material_description ?? "—"}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {it.site_code ?? "—"}
                     </TableCell>
                     <TableCell className="text-center">{it.unit_of_measure ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">

@@ -37,6 +37,7 @@ export async function downloadExcelWorkbook(
 export type PurchaseOrderExcelItem = {
   material_code: string
   material_description: string
+  site_code: string | null
   quantity: number
   unit_of_measure: string | null
   price_unit: number
@@ -77,6 +78,7 @@ export async function buildPurchaseOrderDetailWorkbook(
   const itemHeaders = [
     "Código",
     "Descrição Curta",
+    "Centro / Filial",
     "Qtd",
     "Unidade",
     ...(options.porEnabled ? ["POR"] : []),
@@ -84,11 +86,12 @@ export async function buildPurchaseOrderDetailWorkbook(
     "Total Item",
   ]
   const itemColCount = itemHeaders.length
-  const priceCol = options.porEnabled ? 6 : 5
-  const totalCol = options.porEnabled ? 7 : 6
+  const qtyCol = 4
+  const priceCol = options.porEnabled ? 7 : 6
+  const totalCol = options.porEnabled ? 8 : 7
 
   ws.columns = Array.from({ length: itemColCount }, (_, i) => ({
-    width: i === 1 ? 42 : i === 0 ? 16 : 14,
+    width: i === 1 ? 42 : i === 0 || i === 2 ? 16 : 14,
   }))
 
   ws.mergeCells(1, 1, 1, itemColCount)
@@ -156,6 +159,7 @@ export async function buildPurchaseOrderDetailWorkbook(
     const values: (string | number)[] = [
       item.material_code,
       item.material_description,
+      item.site_code ?? "—",
       item.quantity,
       item.unit_of_measure ?? "—",
       ...(options.porEnabled ? [item.price_unit] : []),
@@ -171,7 +175,7 @@ export async function buildPurchaseOrderDetailWorkbook(
       if (idx + 1 === priceCol || idx + 1 === totalCol) {
         cell.numFmt = '"R$" #,##0.00'
       }
-      if (idx + 1 === 3) {
+      if (idx + 1 === qtyCol) {
         cell.alignment = { horizontal: "center", vertical: "middle" }
       }
     })

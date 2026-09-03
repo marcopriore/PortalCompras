@@ -49,13 +49,20 @@ export function ContractImportExcelDialog({
     const wb = new ExcelJS.Workbook()
     const ws = wb.addWorksheet("Itens do Contrato")
     ws.views = [{ showGridLines: false }]
-    ws.columns = [{ width: 20 }, { width: 15 }, { width: 18 }, { width: 15 }]
+    ws.columns = [
+      { width: 20 },
+      { width: 15 },
+      { width: 18 },
+      { width: 15 },
+      { width: 16 },
+    ]
 
     const headerRow = ws.addRow([
       "Código do Material",
       "Quantidade",
       "Preço Unitário",
       "Prazo (dias)",
+      "Código Filial",
     ])
     headerRow.height = 24
     headerRow.eachCell((cell) => {
@@ -68,7 +75,7 @@ export function ContractImportExcelDialog({
       cell.alignment = { vertical: "middle", horizontal: "center" }
     })
 
-    const orientRow = ws.addRow(["MEC-001", "100", "12.50", "30"])
+    const orientRow = ws.addRow(["MEC-001", "100", "12.50", "30", "MATRIZ"])
     orientRow.height = 20
     orientRow.eachCell((cell) => {
       cell.fill = {
@@ -80,7 +87,7 @@ export function ContractImportExcelDialog({
       cell.alignment = { vertical: "middle", horizontal: "center" }
     })
 
-    for (let i = 3; i <= 52; i++) ws.addRow(["", "", "", ""])
+    for (let i = 3; i <= 52; i++) ws.addRow(["", "", "", "", ""])
     ws.views = [{ state: "frozen", ySplit: 1, showGridLines: false }]
 
     const buf = await wb.xlsx.writeBuffer()
@@ -111,7 +118,14 @@ export function ContractImportExcelDialog({
         setImportStep(3)
         return
       }
-      type RawRow = { rowNumber: number; code: string; qtyRaw: string; priceRaw: string; daysRaw: string }
+      type RawRow = {
+        rowNumber: number
+        code: string
+        qtyRaw: string
+        priceRaw: string
+        daysRaw: string
+        siteCodeRaw: string
+      }
       const rawRows: RawRow[] = []
       ws.eachRow((row, rowNumber) => {
         if (rowNumber <= 2) return
@@ -119,8 +133,9 @@ export function ContractImportExcelDialog({
         const qtyRaw = String(row.getCell(2).value ?? "").trim()
         const priceRaw = String(row.getCell(3).value ?? "").trim()
         const daysRaw = String(row.getCell(4).value ?? "").trim()
-        if (!code && !qtyRaw && !priceRaw) return
-        rawRows.push({ rowNumber, code, qtyRaw, priceRaw, daysRaw })
+        const siteCodeRaw = String(row.getCell(5).value ?? "").trim()
+        if (!code && !qtyRaw && !priceRaw && !siteCodeRaw) return
+        rawRows.push({ rowNumber, code, qtyRaw, priceRaw, daysRaw, siteCodeRaw })
       })
       if (rawRows.length === 0) {
         setImportErrors(["Nenhum item encontrado no arquivo."])
@@ -128,16 +143,28 @@ export function ContractImportExcelDialog({
         return
       }
       const codes = rawRows.map((r) => r.code).filter(Boolean)
-      const { data: catalogItems } = await supabase
-        .from("items")
-        .select("code, short_description, unit_of_measure, status")
-        .eq("company_id", companyId)
-        .in("code", codes)
+      const [{ data: catalogItems }, { data: branchesData }] = await Promise.all([
+        supabase
+          .from("items")
+          .select("code, short_description, unit_of_measure, status")
+          .eq("company_id", companyId)
+          .in("code", codes),
+        supabase
+          .from("company_branches")
+          .select("code")
+          .eq("company_id", companyId)
+          .eq("active", true),
+      ])
       const catalogMap = new Map((catalogItems ?? []).map((i) => [i.code, i]))
+      const siteCodes = new Set(
+        ((branchesData ?? []) as Array<{ code: string }>).map((b) =>
+          b.code.trim().toUpperCase(),
+        ),
+      )
       const items: ContractItemForm[] = []
       const errors: string[] = []
       for (const row of rawRows) {
-        const { rowNumber, code, qtyRaw, priceRaw, daysRaw } = row
+        const { rowNumber, code, qtyRaw, priceRaw, daysRaw, siteCodeRaw } = row
         if (!code) {
           errors.push(`Linha ${rowNumber}: Código é obrigatório`)
           continue
@@ -161,6 +188,20 @@ export function ContractImportExcelDialog({
           errors.push(`Linha ${rowNumber}: Preço inválido para "${code}"`)
           continue
         }
+        let site_code = ""
+        if (siteCodeRaw) {
+          const normalized = siteCodeRaw.toUpperCase()
+          if (!siteCodes.has(normalized)) {
+            errors.push(
+              `Linha ${rowNumber}: Código Filial "${siteCodeRaw}" não encontrado (cadastre em Configurações)`,
+            )
+            continue
+          }
+          const match = ((branchesData ?? []) as Array<{ code: string }>).find(
+            (b) => b.code.trim().toUpperCase() === normalized,
+          )
+          site_code = match?.code ?? siteCodeRaw
+        }
         items.push({
           material_code: catalogItem.code,
           material_description: catalogItem.short_description,
@@ -169,6 +210,7 @@ export function ContractImportExcelDialog({
           unit_price: priceRaw,
           notes: "",
           delivery_days: daysRaw,
+          site_code,
           _fromQuotation: false,
         })
       }
@@ -203,6 +245,7 @@ export function ContractImportExcelDialog({
                 <li><strong>Quantidade</strong> — quantidade contratada, maior que zero (obrigatório)</li>
                 <li><strong>Preço Unitário</strong> — valor unitário em reais (obrigatório)</li>
                 <li><strong>Prazo (dias)</strong> — prazo de entrega em dias corridos (opcional)</li>
+                <li><strong>Código Filial</strong> — centro/filial de entrega (opcional; ex.: MATRIZ)</li>
               </ul>
             </div>
             <Button variant="outline" onClick={() => void handleDownloadTemplate()} className="w-full">

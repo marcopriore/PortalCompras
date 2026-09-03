@@ -1,6 +1,6 @@
 # Smoke test — PRD (pré-cliente)
 
-Checklist para validar releases **v2.19.116+** (negociação IA 2.3–2.4, performance, análise consultiva).
+Checklist para validar releases **v2.19.116+** (negociação IA 2.3–2.4, performance, análise consultiva). A partir de **v2.19.122**: Centro/Filial (`site_code`) — ver seção 7.
 
 **Acessos e senhas PRD:** `docs/PRD-TEST-ACCESS.md`  
 **URL:** https://valore.axisstrategy.com.br/
@@ -94,6 +94,21 @@ Login: `fornecedor@valore.com.br` (ver `PRD-TEST-ACCESS.md`).
 | APIs sem cookie | `contract-matches` POST → **401**; `quotation-ai-analysis` GET → **401** |
 
 **Observação superadmin:** deep link de cotação de outro tenant ainda pode abrir por ID (acesso cross-tenant intencional). Usuários normais não devem reproduzir isso.
+
+---
+
+## 7. Centro / Filial (`site_code`) — v2.19.122+
+
+Pré-requisito: filiais cadastradas em **Configurações → Campos → Centros/Filiais** (endereço preenchido; seed `MATRIZ` sem endereço não gera PO).
+
+| Passo | Esperado |
+|-------|----------|
+| REQ com 2 `site_code` distintos | Coluna Centro/Filial obrigatória nas linhas |
+| Cotação a partir da REQ | `quotation_items.site_code` propagado |
+| Equalização → criar pedidos | **1 PO por centro**; endereço do cabeçalho = cadastro da filial |
+| PDF / Excel do pedido | Coluna Centro/Filial nas linhas |
+| Portal fornecedor — detalhe pedido | Coluna Centro/Filial nas linhas |
+| Outbound ERP / Loja de API | `site_code` por item (não confundir com centro de custo) |
 
 ---
 

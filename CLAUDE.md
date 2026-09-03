@@ -11,7 +11,7 @@
 - Resend (e-mail transacional)
 - Repositório: github.com/marcopriore/PortalCompras
 - Caminho local: C:\Dev\Portal Compras
-- Versão atual: v2.19.112
+- Versão atual: v2.19.122
 
 ---
 
@@ -162,6 +162,7 @@
 | tenant_features | feature_keys liberados por tenant |
 | role_permissions | permission_keys por role |
 | company_settings | company_id, key, value — configurações por tenant |
+| company_branches | centros/filiais de entrega: `code`, `name`, `address`, `city`, `state`, `zip_code`, `active` — UNIQUE (`company_id`, `code`); seed MATRIZ no create-tenant |
 | item_import_logs | log de importações Excel de itens |
 | audit_logs | id, company_id, user_id, user_name, event_type, entity, entity_id, description, metadata, created_at |
 | companies | inclui: logo_url (Storage URL) |
@@ -173,6 +174,7 @@
 ## REGRAS DE NEGÓCIO CRÍTICAS
 
 - **Condição de Pagamento:** obrigatória no cabeçalho da proposta (fornecedor), via `payment_conditions` (tenant).
+- **Centro / Filial (`site_code`):** código de `company_branches` (não confundir com centro de custo contábil). Obrigatório em linhas de REQ, cotação e PO; opcional em contrato. Label UI: "Centro / Filial". **1 PO por `site_code`** (endereço do cabeçalho vem do cadastro da filial). API/ERP outbound: `site_code` por linha de item.
 - **Prazo de Entrega (pedido):** `purchase_orders.delivery_days` = maior `proposal_items.delivery_days` das linhas aceitas.
 - **Data prevista (`estimated_delivery_date`):** persistir string `YYYY-MM-DD`.
 - **Status `refused`:** recusa do fornecedor; não usar `cancelled` para recusa.
@@ -422,6 +424,10 @@ node scripts/seed-supplier-axis.mjs --force
 | v2.19.100 | Seletor omite tenants inativos (acesso via Admin) |
 | v2.19.101 | Rule PRD: commits/migrations sem dados de teste |
 | v2.19.109 | Categorias unificadas + permissão erp.sync |
+| v2.19.122 | Centro/Filial (`site_code`): cadastro filiais, 1 PO por local, API por linha; PDF/Excel/fornecedor |
+| v2.19.121 | Seletor de cliente no portal fornecedor |
+| v2.19.120 | Isolamento multi-tenant fornecedor (activate-tenant, notificações, header Cliente) |
+| v2.19.119 | Vínculo cross-tenant de fornecedor via convite (memberships) |
 | v2.19.112 | Negociação IA: toggle na nova cotação, cron/background jobs, lock tick (075), fix rodadas duplicadas |
 | v2.19.111 | Negociação IA autônoma fase 2.1: plano + motor rodadas + APIs + painel equalização (premium) |
 | v2.19.110 | Config tenant negócio (POR, classificação/rateio, limites numéricos), REQ/PO contábil, aprovações no detalhe, fix totais POR, PDF/Excel pedido, RLS superadmin 068–073 |
@@ -467,6 +473,8 @@ node scripts/seed-supplier-axis.mjs --force
 - `070_requisition_item_account_assignments.sql` — classificação/rateio por linha de requisição.
 - `071_purchase_order_item_price_unit.sql` — coluna `price_unit` (POR).
 - `072_contracts_superadmin_rls.sql`, `073_superadmin_rls_remaining.sql` — RLS superadmin demais tabelas comprador.
+- `078_company_branches.sql` — tabela `company_branches`, seed MATRIZ, `site_code`/`branch_id` inicial nas linhas.
+- `079_site_code_normalize.sql` — normaliza linhas para `site_code` (código); remove `branch_id`; FK `(company_id, site_code)`.
 
 ### RLS (referência)
 - **requisitions: requester cancela proprias** — UPDATE: `USING (requester_id = auth.uid() AND status = 'pending')` + `WITH CHECK (status = 'cancelled' …)`.
