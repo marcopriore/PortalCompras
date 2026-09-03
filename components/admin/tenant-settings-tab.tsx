@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -14,6 +15,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import {
   TENANT_SETTING_GROUPS,
   type TenantSettingDefinition,
@@ -25,6 +34,16 @@ import type {
   ErpVendor,
 } from "@/lib/settings/tenant-feature-settings-registry"
 import type { TenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
+import type {
+  ApiHttpMethod,
+  ApiMatrixResource,
+  ApiMatrixRowDefinition,
+  TenantApiCapabilities,
+} from "@/lib/settings/tenant-api-capabilities-registry"
+import {
+  API_HTTP_METHODS,
+  buildEmptyApiCapabilities,
+} from "@/lib/settings/tenant-api-capabilities-registry"
 
 type GroupedDefinition = TenantSettingDefinition & { value: number }
 
@@ -34,6 +53,9 @@ type SettingsResponse = {
   featureConfig?: TenantFeatureConfig
   booleanDefinitions?: TenantFeatureBooleanDefinition[]
   erpVendorDefinition?: TenantFeatureTextDefinition
+  apiCapabilities?: TenantApiCapabilities
+  inboundMatrixRows?: ApiMatrixRowDefinition[]
+  outboundMatrixRows?: ApiMatrixRowDefinition[]
   error?: string
 }
 
@@ -56,6 +78,88 @@ const FEATURE_KEY_TO_CONFIG: Record<
   account_assignment_enabled: "accountAssignmentEnabled",
   por_enabled: "porEnabled",
   erp_integration_enabled: "erpIntegrationEnabled",
+}
+
+function ApiMatrixTable({
+  title,
+  rows,
+  direction,
+  caps,
+  disabled,
+  onToggle,
+}: {
+  title: string
+  rows: ApiMatrixRowDefinition[]
+  direction: "inbound" | "outbound"
+  caps: TenantApiCapabilities
+  disabled?: boolean
+  onToggle: (
+    direction: "inbound" | "outbound",
+    resource: ApiMatrixResource,
+    method: ApiHttpMethod,
+    value: boolean,
+  ) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </p>
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[140px]">Recurso</TableHead>
+              {API_HTTP_METHODS.map((method) => (
+                <TableHead key={method} className="w-16 text-center">
+                  {method}
+                </TableHead>
+              ))}
+              <TableHead>ENDPOINT</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={`${direction}-${row.resource}`}>
+                <TableCell className="font-medium text-sm">{row.label}</TableCell>
+                {API_HTTP_METHODS.map((method) => {
+                  const cell = row.cells[method]
+                  if (cell.kind === "na") {
+                    return (
+                      <TableCell
+                        key={method}
+                        className="text-center text-muted-foreground"
+                      >
+                        -
+                      </TableCell>
+                    )
+                  }
+                  const checked = Boolean(caps[direction][row.resource]?.[method])
+                  return (
+                    <TableCell key={method} className="text-center">
+                      <div className="flex justify-center">
+                        <Checkbox
+                          checked={checked}
+                          disabled={disabled}
+                          onCheckedChange={(v) =>
+                            onToggle(direction, row.resource, method, v === true)
+                          }
+                          aria-label={`${row.label} ${method}`}
+                        />
+                      </div>
+                    </TableCell>
+                  )
+                })}
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {row.endpoint}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  )
 }
 
 export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
@@ -86,6 +190,15 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
   })
   const [featureDefaults, setFeatureDefaults] =
     React.useState<TenantFeatureConfig>(featureDraft)
+  const [apiCapabilities, setApiCapabilities] = React.useState<TenantApiCapabilities>(
+    () => buildEmptyApiCapabilities(),
+  )
+  const [apiCapabilitiesDefaults, setApiCapabilitiesDefaults] =
+    React.useState<TenantApiCapabilities>(() => buildEmptyApiCapabilities())
+  const [inboundRows, setInboundRows] = React.useState<ApiMatrixRowDefinition[]>([])
+  const [outboundRows, setOutboundRows] = React.useState<ApiMatrixRowDefinition[]>(
+    [],
+  )
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -109,6 +222,8 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
       setGrouped(nextGrouped)
       setBooleanDefs(data.booleanDefinitions ?? [])
       setErpVendorDef(data.erpVendorDefinition ?? null)
+      setInboundRows(data.inboundMatrixRows ?? [])
+      setOutboundRows(data.outboundMatrixRows ?? [])
 
       const nextDraft: Record<string, string> = {}
       const nextDefaults: Record<string, number> = {}
@@ -124,6 +239,10 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
       const config = data.featureConfig ?? featureDraft
       setFeatureDraft(config)
       setFeatureDefaults(config)
+
+      const caps = data.apiCapabilities ?? buildEmptyApiCapabilities()
+      setApiCapabilities(caps)
+      setApiCapabilitiesDefaults(caps)
     } finally {
       setLoading(false)
     }
@@ -165,7 +284,26 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
         nextFeature.erpVendor = erpVendorDef.defaultNewTenant
       }
       setFeatureDraft(nextFeature)
+      setApiCapabilities(buildEmptyApiCapabilities())
     }
+  }
+
+  function setMatrixCell(
+    direction: "inbound" | "outbound",
+    resource: ApiMatrixResource,
+    method: ApiHttpMethod,
+    value: boolean,
+  ) {
+    setApiCapabilities((prev) => ({
+      ...prev,
+      [direction]: {
+        ...prev[direction],
+        [resource]: {
+          ...prev[direction][resource],
+          [method]: value,
+        },
+      },
+    }))
   }
 
   async function handleSave() {
@@ -195,6 +333,7 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
           settings,
           booleans,
           erpVendor: featureDraft.erpVendor,
+          apiCapabilities,
         }),
       })
       const data = (await res.json()) as { error?: string; success?: boolean }
@@ -218,8 +357,17 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
       (key) => featureDraft[key] !== featureDefaults[key],
     )
     const erpChanged = featureDraft.erpVendor !== featureDefaults.erpVendor
-    return numericChanged || featureChanged || erpChanged
-  }, [draft, defaults, featureDraft, featureDefaults])
+    const capsChanged =
+      JSON.stringify(apiCapabilities) !== JSON.stringify(apiCapabilitiesDefaults)
+    return numericChanged || featureChanged || erpChanged || capsChanged
+  }, [
+    draft,
+    defaults,
+    featureDraft,
+    featureDefaults,
+    apiCapabilities,
+    apiCapabilitiesDefaults,
+  ])
 
   if (loading) {
     return (
@@ -242,7 +390,10 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
     (group) =>
       (grouped[group]?.length ?? 0) > 0 ||
       (group === "negocios" &&
-        (booleanDefs.length > 0 || erpVendorDef != null)),
+        (booleanDefs.length > 0 ||
+          erpVendorDef != null ||
+          inboundRows.length > 0 ||
+          outboundRows.length > 0)),
   )
 
   if (visibleGroups.length === 0) {
@@ -392,6 +543,44 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
                 <p className="text-xs text-muted-foreground">
                   {erpVendorDef.description}
                 </p>
+              </div>
+            ) : null}
+
+            {group === "negocios" &&
+            (inboundRows.length > 0 || outboundRows.length > 0) ? (
+              <div className="space-y-4 border-t border-border pt-4">
+                <div>
+                  <h4 className="text-sm font-medium text-foreground">
+                    Matriz de APIs (Loja de API)
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Marque o método liberado para o tenant. Traço (-) = não
+                    aplicável. Outbound também exige Integração outbound ligada.
+                    REQ outbound: POST=criada, PUT=atualizada, DELETE=cancelada,
+                    GET=aprovada/rejeitada.
+                  </p>
+                </div>
+
+                {inboundRows.length > 0 ? (
+                  <ApiMatrixTable
+                    title="Inbound"
+                    rows={inboundRows}
+                    direction="inbound"
+                    caps={apiCapabilities}
+                    onToggle={setMatrixCell}
+                  />
+                ) : null}
+
+                {outboundRows.length > 0 ? (
+                  <ApiMatrixTable
+                    title="Outbound"
+                    rows={outboundRows}
+                    direction="outbound"
+                    caps={apiCapabilities}
+                    disabled={!featureDraft.erpIntegrationEnabled}
+                    onToggle={setMatrixCell}
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>

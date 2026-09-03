@@ -1,5 +1,7 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
+import { loadTenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
+import { companyAllowsOutboundCapability } from "@/lib/settings/tenant-api-capabilities"
 import { logAuditServer } from "@/lib/audit-server"
 import {
   mapContractToOutboundPayload,
@@ -153,6 +155,14 @@ export async function integrateContractWithErp(
 
   const enabled = await isTenantFeatureEnabled(companyId, "api_integrations")
   if (!enabled) {
+    return { success: true, skipped: true, erpCode: existingErpCode }
+  }
+
+  const featureConfig = await loadTenantFeatureConfig(service, companyId)
+  if (
+    !featureConfig.erpIntegrationEnabled ||
+    !(await companyAllowsOutboundCapability(service, companyId, "contract.create"))
+  ) {
     return { success: true, skipped: true, erpCode: existingErpCode }
   }
 

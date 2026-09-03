@@ -10,6 +10,9 @@ import {
   type TenantFeatureBooleanKey,
   type TenantFeatureKey,
 } from "@/lib/settings/tenant-feature-settings-registry"
+import { API_CAPABILITIES_SETTING_KEY } from "@/lib/settings/tenant-api-capabilities-registry"
+import { buildEmptyApiCapabilities } from "@/lib/settings/tenant-api-capabilities-registry"
+import { serializeTenantApiCapabilities } from "@/lib/settings/tenant-api-capabilities"
 
 export type TenantFeatureConfig = {
   accountAssignmentEnabled: boolean
@@ -106,11 +109,18 @@ export async function seedDefaultTenantFeatureSettings(
   companyId: string,
 ): Promise<void> {
   const defaults = buildDefaultTenantFeatureSettingsForNewTenant()
-  const rows = Object.entries(defaults).map(([key, value]) => ({
-    company_id: companyId,
-    key,
-    value,
-  }))
+  const rows = [
+    ...Object.entries(defaults).map(([key, value]) => ({
+      company_id: companyId,
+      key,
+      value,
+    })),
+    {
+      company_id: companyId,
+      key: API_CAPABILITIES_SETTING_KEY,
+      value: serializeTenantApiCapabilities(buildEmptyApiCapabilities()),
+    },
+  ]
 
   const { error } = await supabase
     .from("company_settings")

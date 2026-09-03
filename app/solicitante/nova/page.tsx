@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { logAudit } from "@/lib/audit"
 import { notifyWithEmail } from "@/lib/notify-with-email"
+import { notifyRequisitionOutboundClient } from "@/lib/integrations/notify-requisition-outbound-client"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -403,6 +404,8 @@ export default function SolicitanteNovaPage() {
         approver_name: approverName,
         status: "pending",
       })
+
+      notifyRequisitionOutboundClient(requisitionId, "requisition.created")
 
       router.push(`/solicitante/${requisitionId}`)
     } catch {

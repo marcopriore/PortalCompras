@@ -21,6 +21,16 @@ import {
   TENANT_FEATURE_BOOLEAN_REGISTRY,
   TENANT_FEATURE_TEXT_REGISTRY,
 } from "@/lib/settings/tenant-feature-settings-registry"
+import {
+  loadTenantApiCapabilities,
+  serializeTenantApiCapabilities,
+  validateTenantApiCapabilitiesPatch,
+} from "@/lib/settings/tenant-api-capabilities"
+import {
+  INBOUND_MATRIX_ROWS,
+  OUTBOUND_MATRIX_ROWS,
+} from "@/lib/settings/tenant-api-capabilities-registry"
+import { API_CAPABILITIES_SETTING_KEY } from "@/lib/settings/tenant-api-capabilities-registry"
 
 async function requireSuperAdmin() {
   const supabase = await createClient()
@@ -103,6 +113,7 @@ export async function GET(request: Request) {
     )
 
     const featureConfig = await loadTenantFeatureConfig(service, companyId)
+    const apiCapabilities = await loadTenantApiCapabilities(service, companyId)
 
     return NextResponse.json({
       companyId,
@@ -112,6 +123,9 @@ export async function GET(request: Request) {
       featureConfig,
       booleanDefinitions: TENANT_FEATURE_BOOLEAN_REGISTRY,
       erpVendorDefinition: TENANT_FEATURE_TEXT_REGISTRY[0],
+      apiCapabilities,
+      inboundMatrixRows: INBOUND_MATRIX_ROWS,
+      outboundMatrixRows: OUTBOUND_MATRIX_ROWS,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error"
@@ -129,6 +143,7 @@ export async function PATCH(request: Request) {
       settings?: Record<string, unknown>
       booleans?: Record<string, boolean>
       erpVendor?: string
+      apiCapabilities?: unknown
     }
 
     const companyId = body.companyId
@@ -141,7 +156,7 @@ export async function PATCH(request: Request) {
     const allowedKeys = new Set(getSuperadminTenantSettingKeys())
     const rows: Array<{ company_id: string; key: string; value: string }> = []
     const saved: Record<string, number> = {}
-    const savedFeatures: Record<string, boolean | string> = {}
+    const savedFeatures: Record<string, boolean | string | object> = {}
 
     if (patch && typeof patch === "object") {
       for (const [key, value] of Object.entries(patch)) {
@@ -192,6 +207,19 @@ export async function PATCH(request: Request) {
       }
     }
 
+    if (body.apiCapabilities !== undefined) {
+      const capsValidated = validateTenantApiCapabilitiesPatch(body.apiCapabilities)
+      if (!capsValidated.ok) {
+        return NextResponse.json({ error: capsValidated.error }, { status: 400 })
+      }
+      rows.push({
+        company_id: companyId,
+        key: API_CAPABILITIES_SETTING_KEY,
+        value: serializeTenantApiCapabilities(capsValidated.capabilities),
+      })
+      savedFeatures.apiCapabilities = capsValidated.capabilities
+    }
+
     if (rows.length === 0) {
       return NextResponse.json({ error: "Nenhuma configuração enviada" }, { status: 400 })
     }
@@ -220,8 +248,15 @@ export async function PATCH(request: Request) {
 
     const settings = await loadTenantSettings(service, companyId)
     const featureConfig = await loadTenantFeatureConfig(service, companyId)
+    const apiCapabilities = await loadTenantApiCapabilities(service, companyId)
 
-    return NextResponse.json({ success: true, settings, featureConfig, saved })
+    return NextResponse.json({
+      success: true,
+      settings,
+      featureConfig,
+      apiCapabilities,
+      saved,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error"
     return NextResponse.json({ error: message }, { status: 500 })

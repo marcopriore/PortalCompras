@@ -7,6 +7,7 @@ import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
+import { notifyRequisitionOutboundClient } from "@/lib/integrations/notify-requisition-outbound-client"
 import { toast } from "sonner"
 import {
   CostCenterSelect,
@@ -443,6 +444,8 @@ export default function NovaRequisicaoPage() {
           approver_name: approverName,
           status: "pending",
         })
+
+        notifyRequisitionOutboundClient(requisitionId, "requisition.created")
 
         router.push(`/comprador/requisicoes/${requisitionId}`)
       } catch {

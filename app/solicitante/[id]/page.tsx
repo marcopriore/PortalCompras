@@ -8,6 +8,7 @@ import {
   formatDateTimeLongBR,
 } from "@/lib/formato-data"
 import { createClient } from "@/lib/supabase/client"
+import { notifyRequisitionOutboundClient } from "@/lib/integrations/notify-requisition-outbound-client"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { toast } from "sonner"
@@ -447,6 +448,8 @@ export default function SolicitanteDetailPage({
       .update({ status: "cancelled", rejection_reason: "Cancelado pelo solicitante" })
       .eq("id", requisition.id)
       .eq("requester_id", user.id)
+
+    notifyRequisitionOutboundClient(requisition.id, "requisition.cancelled")
 
     setCancelOpen(false)
     setCancelling(false)

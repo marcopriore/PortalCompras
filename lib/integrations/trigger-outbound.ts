@@ -17,6 +17,7 @@ import { dispatchOutboundIntegration } from "@/lib/integrations/dispatch"
 import { integrateContractWithErp } from "@/lib/integrations/integrate-contract-with-erp"
 import { applyImplantationToPurchaseOrderPayload } from "@/lib/integrations/purchase-order-outbound"
 import { loadImplantationConfig } from "@/lib/settings/tenant-implantation-settings"
+import { companyAllowsOutboundCapability } from "@/lib/settings/tenant-api-capabilities"
 import type { OutboundIntegrationAction } from "@/lib/integrations/types"
 import type { RequisitionOutboundPayload } from "@/lib/integrations/requisition-outbound"
 
@@ -108,6 +109,15 @@ export async function triggerOutboundIntegration(
   const service = createServiceRoleClient()
   const implantation = await loadImplantationConfig(service, companyId)
   if (!implantation.erpIntegrationEnabled) {
+    return { skipped: true, dispatched: false }
+  }
+
+  const actionAllowed = await companyAllowsOutboundCapability(
+    service,
+    companyId,
+    action,
+  )
+  if (!actionAllowed) {
     return { skipped: true, dispatched: false }
   }
 

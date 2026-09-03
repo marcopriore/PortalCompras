@@ -385,7 +385,7 @@ Revisado em 25/08/2026. **Foco atual:** diferenciação de produto e escala; Rec
 | # | Item | Status | Notas |
 |---|------|--------|-------|
 | 6 | **Módulo de Recebimento** | ⏸️ Adiado (longo prazo) | Entrada parcial, embarque, entrega; base para consumo de REQ/contrato. **Não iniciar agora** — produto/empresas ainda não preparados; manter no backlog para não esquecer |
-| 7 | **API Store — implementação** | 🟡 Parcial | Inbound v1 + outbound pedidos/contratos + monitor + docs + idempotência avançada + alertas `integration_error` + **auto-retry com backoff** ✅. Falta: REQ outbound (opcional) |
+| 7 | **API Store — implementação** | 🟡 Parcial | Inbound v1 + outbound pedidos/contratos/REQ + **matriz GET/POST/PUT/DELETE por tenant** + monitor + docs + idempotência + auto-retry ✅ |
 | 8 | **Controle de consumo por item de requisição** | ⏸️ Adiado (longo prazo) | Parcial / Total / Aberta — **parte do Recebimento** (item 6); adiar junto |
 | 9 | **Login fornecedor + usuários por fornecedor** | ✅ | Convite, CNPJ admin, multi-user (máx. 5), gestão no portal fornecedor |
 | 10 | **"Agir como" (impersonation) no comprador** | ✅ | Permissão individual `user.impersonate`; banner; auditoria |
@@ -915,7 +915,9 @@ Fallback aceito: `external_code` (legado). Gravado em `contracts.erp_code`.
 
 ### 10.11 Fluxo operacional — requisições (ERP → Valore)
 
-**Inbound only.** Requisições são criadas no ERP e enviadas ao Valore; **não** há disparo outbound do portal por enquanto.
+**Inbound + outbound opcional.** Requisições costumam nascer no ERP (inbound). Outbound (`requisition.*`) dispara no portal quando a célula correspondente estiver ligada na matriz `api_capabilities` **e** `erp_integration_enabled`: created (nova/catálogo), updated (resubmit), approved/rejected (alçada), cancelled (solicitante).
+
+Código: `integrate-requisition-with-erp.ts` + `trigger-requisition-outbound.ts`.
 
 #### Inbound
 

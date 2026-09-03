@@ -1,5 +1,7 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
+import { loadTenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
+import { companyAllowsOutboundCapability } from "@/lib/settings/tenant-api-capabilities"
 import { logAuditServer } from "@/lib/audit-server"
 import {
   buildErpErrorMessage,
@@ -239,6 +241,50 @@ export async function integratePurchaseOrderWithErp(
 
   const enabled = await isTenantFeatureEnabled(companyId, "api_integrations")
   if (!enabled) {
+    if (operation === "create") {
+      const skipUpdate = await updatePurchaseOrder(service, orderId, companyId, {
+        status: "completed",
+        erp_error_message: null,
+      })
+      if (!skipUpdate.ok) {
+        return {
+          success: false,
+          skipped: true,
+          status: "processing",
+          errorMessage: formatPersistError(skipUpdate.message),
+        }
+      }
+      return { success: true, skipped: true, status: "completed" }
+    }
+
+    if (operation === "update") {
+      return { success: true, skipped: true, status: "completed" }
+    }
+
+    const cancelUpdate = await updatePurchaseOrder(service, orderId, companyId, {
+      status: "cancelled",
+      cancellation_reason:
+        options?.cancellationReason?.trim() || "Pedido cancelado pelo comprador",
+      erp_error_message: null,
+    })
+    if (!cancelUpdate.ok) {
+      return {
+        success: false,
+        skipped: true,
+        status: "completed",
+        errorMessage: formatPersistError(cancelUpdate.message),
+      }
+    }
+    return { success: true, skipped: true, status: "cancelled" }
+  }
+
+  const featureConfig = await loadTenantFeatureConfig(service, companyId)
+  const action = OPERATION_ACTION[operation]
+  const outboundAllowed =
+    featureConfig.erpIntegrationEnabled &&
+    (await companyAllowsOutboundCapability(service, companyId, action))
+
+  if (!outboundAllowed) {
     if (operation === "create") {
       const skipUpdate = await updatePurchaseOrder(service, orderId, companyId, {
         status: "completed",

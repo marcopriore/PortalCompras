@@ -9,6 +9,7 @@ import {
 } from "@/lib/po-account-assignment"
 import { saveRequisitionAccountConfigs } from "@/lib/requisition-account-assignment-persist"
 import { loadImplantationConfig } from "@/lib/settings/tenant-implantation-settings"
+import { triggerRequisitionOutbound } from "@/lib/integrations/trigger-requisition-outbound"
 
 export const runtime = "nodejs"
 
@@ -254,6 +255,9 @@ export async function POST(
         entityId: id,
       }).catch(() => {})
 
+      triggerRequisitionOutbound(companyId, id, "requisition.updated")
+      triggerRequisitionOutbound(companyId, id, "requisition.approved")
+
       return NextResponse.json({
         data: { id, code: req.code, status: "approved", auto_approved: true },
       })
@@ -290,6 +294,9 @@ export async function POST(
         entityId: id,
       }).catch(() => {})
 
+      triggerRequisitionOutbound(companyId, id, "requisition.updated")
+      triggerRequisitionOutbound(companyId, id, "requisition.approved")
+
       return NextResponse.json({
         data: { id, code: req.code, status: "approved", auto_approved: true },
       })
@@ -322,6 +329,8 @@ export async function POST(
       entity: "requisitions",
       entityId: id,
     }).catch(() => {})
+
+    triggerRequisitionOutbound(companyId, id, "requisition.updated")
 
     return NextResponse.json({
       data: {

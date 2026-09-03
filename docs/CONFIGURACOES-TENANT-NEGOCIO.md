@@ -32,11 +32,31 @@ Chaves legadas `cutover_*` ainda são lidas como fallback (`LEGACY_FEATURE_KEY_A
 | `por_enabled` | POR (fator de preço SAP) | Coluna POR no pedido; total = qtd × preço × POR | POR ignorado (multiplicador 1); `price_unit` omitido no outbound |
 | `erp_integration_enabled` | Integração outbound ERP | Dispara outbound conforme `api_integrations` | Não envia (gate adicional ao feature `api_integrations`) |
 | `erp_vendor` | Tipo de ERP (`none` \| `sap` \| `other`) | Afeta extensões SAP no payload (`sap_extensions`, etc.) | Perfil genérico |
+| `api_capabilities` (JSON) | Matriz Loja de API (inbound + outbound) | Só dispara / aceita as rotas ligadas | Ver §2.1 |
 
-**Defaults para tenant novo:** classificação e POR **desligados**; ERP integration **desligado**; vendor `none`.  
-**Defaults legado (chave ausente):** classificação e POR **ligados** (compatibilidade com tenants já em uso).
+**Defaults para tenant novo:** classificação e POR **desligados**; ERP integration **desligado**; vendor `none`; matriz de APIs **tudo off**.  
+**Defaults legado (chave ausente):** classificação e POR **ligados** (compatibilidade com tenants já em uso); `api_capabilities` ausente = inbound aberto + outbound PO/contrato (REQ outbound off).
 
 Outbound: `lib/integrations/purchase-order-outbound.ts` → `applyImplantationToPurchaseOrderPayload()`.
+
+### 2.1 Matriz de APIs (`api_capabilities`)
+
+UI: **Admin → Tenant → Configurações → Negócios** — tabela **Inbound / Outbound** com colunas GET | POST | PUT | DELETE | ENDPOINT (como mockup). Traço = método não aplicável.
+
+| Direção | Gate |
+|---------|------|
+| **Inbound** | `withApiKey` + método HTTP da request → 403 se desligado |
+| **Outbound** | `erp_integration_enabled` **e** célula ligada |
+
+Mapeamento outbound (método → ação ERP):
+
+| Recurso | GET | POST | PUT | DELETE |
+|---------|-----|------|-----|--------|
+| Pedidos | — | `purchase_order.create` | `purchase_order.update` | `purchase_order.delete` |
+| Contratos | — | `contract.create` | — | — |
+| Requisições | `approved` + `rejected` | `created` | `updated` | `cancelled` |
+
+Código: `lib/settings/tenant-api-capabilities*.ts`. Monitor: reenvio só se ação habilitada.
 
 ---
 

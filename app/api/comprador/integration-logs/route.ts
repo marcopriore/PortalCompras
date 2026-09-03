@@ -8,6 +8,10 @@ import {
   fetchOutboundLogs,
 } from "@/lib/integrations/integration-logs-query"
 import { parseIntegrationLogsQuery } from "@/lib/integrations/integration-logs-types"
+import {
+  listEnabledOutboundActions,
+  loadTenantApiCapabilities,
+} from "@/lib/settings/tenant-api-capabilities"
 
 export const runtime = "nodejs"
 
@@ -47,6 +51,8 @@ export async function GET(request: Request) {
         ? await fetchOutboundLogs(service, auth.companyId, parsed)
         : await fetchInboundLogs(service, auth.companyId, parsed)
 
+    const apiCapabilities = await loadTenantApiCapabilities(service, auth.companyId)
+
     return NextResponse.json({
       direction: parsed.direction,
       page: parsed.page,
@@ -54,6 +60,8 @@ export async function GET(request: Request) {
       total: result.total,
       total_pages: Math.ceil(result.total / parsed.pageSize) || 0,
       logs: result.logs,
+      enabled_outbound_actions: listEnabledOutboundActions(apiCapabilities),
+      api_capabilities: apiCapabilities,
     })
   } catch (err) {
     console.error("[integration-logs]", err)

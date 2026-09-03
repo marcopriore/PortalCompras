@@ -1,5 +1,7 @@
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
+import { loadTenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
+import { companyAllowsOutboundCapability } from "@/lib/settings/tenant-api-capabilities"
 import { duplicateExternalCodeMessage } from "@/lib/integrations/erp-errors"
 import { dispatchOutboundIntegration } from "@/lib/integrations/dispatch"
 import { loadRequisitionOutboundPayload } from "@/lib/integrations/trigger-outbound"
@@ -70,6 +72,14 @@ export async function integrateRequisitionWithErp(
   }
 
   const service = createServiceRoleClient()
+  const featureConfig = await loadTenantFeatureConfig(service, companyId)
+  if (
+    !featureConfig.erpIntegrationEnabled ||
+    !(await companyAllowsOutboundCapability(service, companyId, action))
+  ) {
+    return { success: true, skipped: true, action }
+  }
+
   const { data: existing } = await service
     .from("requisitions")
     .select("id")

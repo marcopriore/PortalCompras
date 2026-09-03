@@ -3,6 +3,9 @@ import { resolveApiKey, type ApiKeyContext } from "@/lib/api/external/resolve-ap
 import { apiError } from "@/lib/api/external/responses"
 import { logApiRequest } from "@/lib/api/external/log-request"
 import { hasApiScope, type ApiScope } from "@/lib/api/external/scopes"
+import { createServiceRoleClient } from "@/lib/supabase/service-role"
+import { resolveInboundCapability } from "@/lib/settings/tenant-api-capabilities-registry"
+import { companyAllowsInboundCapability } from "@/lib/settings/tenant-api-capabilities"
 
 export type ApiKeyHandlerContext = {
   request: NextRequest
@@ -54,6 +57,39 @@ export async function runWithApiKey(
       ipAddress: clientIp(request),
     })
     return response
+  }
+
+  if (options?.requiredScope) {
+    const capability = resolveInboundCapability(
+      options.requiredScope,
+      request.method,
+    )
+    if (capability) {
+      const service = createServiceRoleClient()
+      const allowed = await companyAllowsInboundCapability(
+        service,
+        ctx.companyId,
+        capability.resource,
+        capability.method,
+      )
+      if (!allowed) {
+        const response = apiError(
+          `API inbound desabilitada para este tenant: ${capability.resource} ${capability.method}`,
+          "FORBIDDEN",
+          403,
+        )
+        void logApiRequest({
+          companyId: ctx.companyId,
+          apiKeyId: ctx.apiKeyId,
+          method: request.method,
+          path,
+          statusCode: 403,
+          durationMs: Date.now() - started,
+          ipAddress: clientIp(request),
+        })
+        return response
+      }
+    }
   }
 
   const response = await handler({ request, ctx })

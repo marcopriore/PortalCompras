@@ -12,6 +12,7 @@ import {
   hasUserPermission,
   loadUserPermissionKeys,
 } from "@/lib/permissions/resolve-user-permissions"
+import { triggerRequisitionOutbound } from "@/lib/integrations/trigger-requisition-outbound"
 
 export async function POST(request: Request) {
   try {
@@ -138,6 +139,8 @@ export async function POST(request: Request) {
           status: "awaiting_buyer",
         },
       })
+
+      triggerRequisitionOutbound(ctx.companyId, po.requisitionId, "requisition.created")
     }
 
     void notifyCatalogCheckout({

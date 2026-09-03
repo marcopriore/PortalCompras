@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { createNotification } from "@/lib/notify"
 import { sendEmail } from "@/lib/email/send-email"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
+import { triggerRequisitionOutbound } from "@/lib/integrations/trigger-requisition-outbound"
 
 export type ApprovalFlow = "requisition" | "order"
 
@@ -256,6 +257,11 @@ export async function approveApprovalRequest(
     }
     entityApproved = true
     await notifyRequisitionDecision(service, companyId, row.entity_id as string, "approved")
+    triggerRequisitionOutbound(
+      companyId,
+      row.entity_id as string,
+      "requisition.approved",
+    )
   }
 
   const entity = await loadEntitySummary(
@@ -369,6 +375,11 @@ export async function rejectApprovalRequest(
     row.entity_id as string,
     "rejected",
     trimmed,
+  )
+  triggerRequisitionOutbound(
+    companyId,
+    row.entity_id as string,
+    "requisition.rejected",
   )
 
   const entity = await loadEntitySummary(

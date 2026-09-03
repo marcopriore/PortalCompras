@@ -63,6 +63,7 @@ type LogsResponse = {
   total: number
   total_pages: number
   logs: Array<(InboundLogRow | OutboundLogRow) & { company_name?: string | null }>
+  enabled_outbound_actions?: string[]
 }
 
 function statusBadgeInbound(code: number | null) {
@@ -140,6 +141,10 @@ export function IntegrationMonitor({
   const [detailLoading, setDetailLoading] = React.useState(false)
   const [detail, setDetail] = React.useState<Record<string, unknown> | null>(null)
   const [retryingLogId, setRetryingLogId] = React.useState<string | null>(null)
+  const [onlyEnabledActions, setOnlyEnabledActions] = React.useState(true)
+  const [enabledOutboundActions, setEnabledOutboundActions] = React.useState<
+    string[] | null
+  >(null)
 
   React.useEffect(() => {
     if (fixedCompanyId) {
@@ -175,6 +180,7 @@ export function IntegrationMonitor({
       }
       const json = (await res.json()) as LogsResponse
       setData(json)
+      setEnabledOutboundActions(json.enabled_outbound_actions ?? null)
       setFetchError(null)
     } catch (err) {
       setData(null)
@@ -253,6 +259,23 @@ export function IntegrationMonitor({
       setRetryingLogId(null)
     }
   }
+
+  const displayLogs = React.useMemo(() => {
+    const logs = data?.logs ?? []
+    if (
+      direction !== "outbound" ||
+      !onlyEnabledActions ||
+      mode !== "comprador" ||
+      enabledOutboundActions == null
+    ) {
+      return logs
+    }
+    const allowed = new Set(enabledOutboundActions)
+    return logs.filter((log) => {
+      if (!("action" in log)) return true
+      return allowed.has(String(log.action))
+    })
+  }, [data?.logs, direction, onlyEnabledActions, mode, enabledOutboundActions])
 
   return (
     <div className="space-y-6">
@@ -351,6 +374,18 @@ export function IntegrationMonitor({
             </SelectContent>
           </Select>
         )}
+
+        {direction === "outbound" && mode === "comprador" && (
+          <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap">
+            <input
+              type="checkbox"
+              className="rounded border-border"
+              checked={onlyEnabledActions}
+              onChange={(e) => setOnlyEnabledActions(e.target.checked)}
+            />
+            Só ações habilitadas
+          </label>
+        )}
       </div>
 
       <div className="rounded-xl border border-border bg-card">
@@ -398,7 +433,7 @@ export function IntegrationMonitor({
                 </TableCell>
               </TableRow>
             )}
-            {!loading && !fetchError && (data?.logs.length ?? 0) === 0 && (
+            {!loading && !fetchError && displayLogs.length === 0 && (
               <TableRow>
                 <TableCell
                   colSpan={mode === "admin" ? (direction === "outbound" ? 8 : 7) : direction === "outbound" ? 7 : 6}
@@ -409,7 +444,8 @@ export function IntegrationMonitor({
               </TableRow>
             )}
             {!loading &&
-              data?.logs.map((log) => {
+              !fetchError &&
+              displayLogs.map((log) => {
                 const created = formatDateTimeSecondsBR(log.created_at)
 
                 if (log.direction === "inbound") {

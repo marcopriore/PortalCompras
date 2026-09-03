@@ -7,6 +7,11 @@ import {
   type OutboundLogRow,
 } from "@/lib/integrations/integration-logs-types"
 import { isOutboundRetryEligible } from "@/lib/integrations/outbound-retry-eligibility"
+import {
+  loadTenantApiCapabilities,
+  isOutboundCapabilityEnabled,
+} from "@/lib/settings/tenant-api-capabilities"
+import { isOutboundIntegrationAction } from "@/lib/integrations/types"
 
 function rangeFromPage(page: number, pageSize: number) {
   const from = (page - 1) * pageSize
@@ -257,6 +262,18 @@ export async function fetchOutboundLogs(
     }
   }
 
+  const capabilityByCompany = new Map<
+    string,
+    Awaited<ReturnType<typeof loadTenantApiCapabilities>>
+  >()
+  const uniqueCompanyIds = [...new Set(logs.map((l) => l.company_id))]
+  await Promise.all(
+    uniqueCompanyIds.map(async (cid) => {
+      const caps = await loadTenantApiCapabilities(service, cid)
+      capabilityByCompany.set(cid, caps)
+    }),
+  )
+
   for (const log of logs) {
     if (log.entity === "purchase_orders" && log.entity_id) {
       log.entity_status = purchaseOrderStatusById.get(log.entity_id) ?? null
@@ -271,7 +288,7 @@ export async function fetchOutboundLogs(
       log.entity_status = meta?.status ?? null
       log.entity_external_code = meta?.erp_code ?? null
     }
-    log.retry_eligible = isOutboundRetryEligible({
+    const baseEligible = isOutboundRetryEligible({
       action: log.action,
       entity: log.entity,
       entity_id: log.entity_id,
@@ -280,6 +297,12 @@ export async function fetchOutboundLogs(
       entity_external_code: log.entity_external_code,
       error_message: log.error_message,
     })
+    const caps = capabilityByCompany.get(log.company_id)
+    const actionEnabled =
+      caps != null &&
+      isOutboundIntegrationAction(log.action) &&
+      isOutboundCapabilityEnabled(caps, log.action)
+    log.retry_eligible = baseEligible && actionEnabled
   }
 
   return { logs, total: count ?? 0 }

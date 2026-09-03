@@ -8,6 +8,36 @@ function defaultFor(key: TenantSettingKey): number {
   return getTenantSettingDefinition(key)?.defaultValue ?? 0
 }
 
+/** Dedup de fetches idênticos (Strict Mode / múltiplos hooks). */
+const tenantSettingsInflight = new Map<
+  string,
+  Promise<Partial<Record<TenantSettingKey, number>>>
+>()
+
+function fetchTenantSettings(
+  keysKey: string,
+): Promise<Partial<Record<TenantSettingKey, number>>> {
+  const cached = tenantSettingsInflight.get(keysKey)
+  if (cached) return cached
+
+  const promise = fetch(`/api/tenant-settings?keys=${encodeURIComponent(keysKey)}`)
+    .then(async (res) => {
+      if (!res.ok) return {}
+      const data = (await res.json()) as {
+        settings?: Partial<Record<TenantSettingKey, number>>
+      }
+      return data.settings ?? {}
+    })
+    .catch(() => ({}))
+    .finally(() => {
+      // libera após um tick para novos mounts pós-navegação ainda compartilharem
+      setTimeout(() => tenantSettingsInflight.delete(keysKey), 1500)
+    })
+
+  tenantSettingsInflight.set(keysKey, promise)
+  return promise
+}
+
 export function useTenantSettings(keys: TenantSettingKey[]) {
   const keysKey = useMemo(() => [...keys].sort().join(","), [keys])
   const [settings, setSettings] = useState<Partial<Record<TenantSettingKey, number>>>(
@@ -19,23 +49,11 @@ export function useTenantSettings(keys: TenantSettingKey[]) {
     let cancelled = false
     setLoading(true)
 
-    void fetch(`/api/tenant-settings?keys=${encodeURIComponent(keysKey)}`)
-      .then(async (res) => {
-        if (!res.ok) return null
-        return (await res.json()) as {
-          settings?: Partial<Record<TenantSettingKey, number>>
-        }
-      })
-      .then((data) => {
-        if (cancelled) return
-        setSettings(data?.settings ?? {})
-      })
-      .catch(() => {
-        if (!cancelled) setSettings({})
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
+    void fetchTenantSettings(keysKey).then((next) => {
+      if (cancelled) return
+      setSettings(next)
+      setLoading(false)
+    })
 
     return () => {
       cancelled = true
