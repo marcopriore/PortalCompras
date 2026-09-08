@@ -13,6 +13,10 @@ import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { createDraftFromRequisition } from "@/lib/purchase-orders/create-draft-from-requisition"
+import {
+  isOwnRequisitionCreator,
+  OWN_REQUISITION_ORDER_BLOCKED_MESSAGE,
+} from "@/lib/requisitions/own-requisition-guard"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -38,6 +42,7 @@ import {
   Loader2,
   Paperclip,
   Pencil,
+  ShieldAlert,
   ShoppingCart,
   XCircle,
 } from "lucide-react"
@@ -64,6 +69,7 @@ type Requisition = {
   id: string
   code: string
   title: string
+  requester_id: string | null
   requester_name: string | null
   cost_center: string | null
   needed_by: string | null
@@ -461,6 +467,10 @@ export default function RequisicaoDetailPage({
 
   const handleGerarPedido = async () => {
     if (!requisition || !companyId || !userId || creatingPo) return
+    if (isOwnRequisitionCreator(userId, requisition.requester_id)) {
+      toast.error(OWN_REQUISITION_ORDER_BLOCKED_MESSAGE)
+      return
+    }
     setCreatingPo(true)
     try {
       const supabase = createClient()
@@ -489,6 +499,12 @@ export default function RequisicaoDetailPage({
   const canCreateOrder =
     hasPermission("order.create") &&
     (requisition?.status === "approved" || requisition?.status === "in_quotation")
+
+  const isOwnRequisition = isOwnRequisitionCreator(
+    userId,
+    requisition?.requester_id,
+  )
+  const canGenerateOrder = canCreateOrder && !isOwnRequisition
 
   if (loading) {
     return (
@@ -587,7 +603,17 @@ export default function RequisicaoDetailPage({
               Gerar Cotação
             </Button>
           )}
-          {canCreateOrder && (
+          {canCreateOrder && isOwnRequisition && (
+            <Badge
+              variant="outline"
+              className="gap-1 border-amber-300 bg-amber-50 text-amber-900"
+              title={OWN_REQUISITION_ORDER_BLOCKED_MESSAGE}
+            >
+              <ShieldAlert className="h-3.5 w-3.5" />
+              Criador da REQ — sem Gerar Pedido
+            </Badge>
+          )}
+          {canGenerateOrder && (
             <Button
               type="button"
               variant="outline"

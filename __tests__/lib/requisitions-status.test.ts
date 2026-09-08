@@ -31,9 +31,9 @@ describe("mapPoStatusToRequisitionStatus", () => {
     )
   })
 
-  it("mapeia completed e cancelled", () => {
+  it("mapeia completed; cancelled libera para approved", () => {
     expect(mapPoStatusToRequisitionStatus("completed")).toBe("completed")
-    expect(mapPoStatusToRequisitionStatus("cancelled")).toBe("cancelled")
+    expect(mapPoStatusToRequisitionStatus("cancelled")).toBe("approved")
   })
 
   it("retorna null para status desconhecido", () => {

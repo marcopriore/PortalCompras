@@ -120,7 +120,8 @@ export function mapPoStatusToRequisitionStatus(
     case "completed":
       return "completed"
     case "cancelled":
-      return "cancelled"
+      // Cancelar pedido libera a REQ (espelha SQL 084); sync com irmãos fica no trigger.
+      return "approved"
     default:
       return null
   }

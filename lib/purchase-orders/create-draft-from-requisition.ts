@@ -3,6 +3,10 @@ import { loadCompanyBranchesByCode } from "@/lib/branches/branch-queries"
 import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
 import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
 import { copyRequisitionAccountConfigToPurchaseOrderItem } from "@/lib/requisitions/account-config-bridge"
+import {
+  isOwnRequisitionCreator,
+  OWN_REQUISITION_ORDER_BLOCKED_MESSAGE,
+} from "@/lib/requisitions/own-requisition-guard"
 
 export type CreateDraftFromRequisitionResult =
   | { ok: true; purchaseOrderId: string; code: string; purchaseOrderIds?: string[]; codes?: string[] }
@@ -13,6 +17,7 @@ type RequisitionRow = {
   code: string
   title: string
   status: string
+  requester_id: string | null
 }
 
 type RequisitionItemRow = {
@@ -37,7 +42,7 @@ export async function createDraftFromRequisition(
   const [reqRes, itemsRes, branchMap] = await Promise.all([
     supabase
       .from("requisitions")
-      .select("id, code, title, status")
+      .select("id, code, title, status, requester_id")
       .eq("id", requisitionId)
       .eq("company_id", companyId)
       .single(),
@@ -56,6 +61,9 @@ export async function createDraftFromRequisition(
   }
 
   const req = reqRes.data as RequisitionRow
+  if (isOwnRequisitionCreator(userId, req.requester_id)) {
+    return { ok: false, error: OWN_REQUISITION_ORDER_BLOCKED_MESSAGE }
+  }
   if (!["approved", "in_quotation"].includes(req.status)) {
     return {
       ok: false,

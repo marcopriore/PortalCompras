@@ -23,6 +23,7 @@ import {
   RefreshCw,
   Loader2,
   FileSignature,
+  ShieldAlert,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PriceInput } from "@/components/ui/numeric-field-inputs"
@@ -77,6 +78,10 @@ import {
   canAccessQuotation,
   canViewAllQuotations,
 } from "@/lib/quotations/ownership"
+import {
+  findOwnRequisitionCodes,
+  OWN_REQUISITION_ORDER_BLOCKED_MESSAGE,
+} from "@/lib/requisitions/own-requisition-guard"
 import { ensureInitialQuotationRound } from "@/lib/quotations/round-lifecycle"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
@@ -599,6 +604,44 @@ export default function EqualizacaoPage({
   const isReadOnly = quotation?.status === "completed" || !isLastRound || !canSelect
 
   const hasSelection = Object.values(itemSelections).filter(Boolean).length > 0
+
+  const selectedSourceRequisitionCodes = React.useMemo(() => {
+    const codes = new Set<string>()
+    for (const [quotationItemId, proposalId] of Object.entries(itemSelections)) {
+      if (!proposalId) continue
+      const qi = quotationItems.find((item) => item.id === quotationItemId)
+      const code = qi?.source_requisition_code?.trim()
+      if (code) codes.add(code)
+    }
+    return [...codes]
+  }, [itemSelections, quotationItems])
+
+  const [ownSelectedRequisitionCodes, setOwnSelectedRequisitionCodes] =
+    React.useState<string[]>([])
+
+  React.useEffect(() => {
+    if (!companyId || !userId || selectedSourceRequisitionCodes.length === 0) {
+      setOwnSelectedRequisitionCodes([])
+      return
+    }
+    let alive = true
+    void (async () => {
+      const supabase = createClient()
+      const own = await findOwnRequisitionCodes(
+        supabase,
+        companyId,
+        userId,
+        selectedSourceRequisitionCodes,
+      )
+      if (alive) setOwnSelectedRequisitionCodes(own)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [companyId, userId, selectedSourceRequisitionCodes])
+
+  const blocksOwnRequisitionOrderOrContract =
+    ownSelectedRequisitionCodes.length > 0
 
   React.useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
@@ -1621,6 +1664,12 @@ export default function EqualizacaoPage({
       toast.error("Você não tem permissão para gerar contrato.")
       return
     }
+    if (blocksOwnRequisitionOrderOrContract) {
+      toast.error(
+        `${OWN_REQUISITION_ORDER_BLOCKED_MESSAGE} (${ownSelectedRequisitionCodes.join(", ")})`,
+      )
+      return
+    }
     if (!selectedRoundId) {
       toast.error("Selecione uma rodada.")
       return
@@ -1862,6 +1911,12 @@ export default function EqualizacaoPage({
     if (!selectedRoundId) return
     if (!hasSelection) return
     if (!hasPermission("order.create")) return
+    if (blocksOwnRequisitionOrderOrContract) {
+      toast.error(
+        `${OWN_REQUISITION_ORDER_BLOCKED_MESSAGE} (${ownSelectedRequisitionCodes.join(", ")})`,
+      )
+      return
+    }
 
     if (!hasFeature("contract_balance") || equalizacaoSelectionRows.length === 0) {
       await handleFinalize({})
@@ -1917,6 +1972,12 @@ export default function EqualizacaoPage({
     if (!selectedRoundId) return
     if (!hasSelection) return
     if (!hasPermission("order.create")) return
+    if (blocksOwnRequisitionOrderOrContract) {
+      toast.error(
+        `${OWN_REQUISITION_ORDER_BLOCKED_MESSAGE} (${ownSelectedRequisitionCodes.join(", ")})`,
+      )
+      return
+    }
 
     setFinalizing(true)
 
@@ -3074,13 +3135,26 @@ export default function EqualizacaoPage({
                           </p>
                         </div>
                         <div className="flex-shrink-0 flex items-center gap-2">
+                          {blocksOwnRequisitionOrderOrContract && (
+                            <Badge
+                              variant="outline"
+                              className="gap-1 border-amber-300 bg-amber-50 text-amber-900"
+                              title={OWN_REQUISITION_ORDER_BLOCKED_MESSAGE}
+                            >
+                              <ShieldAlert className="h-3.5 w-3.5" />
+                              Sua REQ na seleção
+                            </Badge>
+                          )}
                           {hasFeature("contracts") &&
                             hasPermission("contract.create") && (
                             <Button
                               size="sm"
                               variant="outline"
                               onClick={handleGerarContrato}
-                              disabled={!hasSelection}
+                              disabled={
+                                !hasSelection ||
+                                blocksOwnRequisitionOrderOrContract
+                              }
                               className="gap-1.5"
                             >
                               <FileSignature className="h-4 w-4 text-violet-500" />
@@ -3104,6 +3178,25 @@ export default function EqualizacaoPage({
                                 </span>
                               </TooltipTrigger>
                               <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
+                            </Tooltip>
+                          ) : blocksOwnRequisitionOrderOrContract ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Button
+                                    variant="default"
+                                    size="sm"
+                                    disabled
+                                    className="w-fit whitespace-nowrap shrink-0"
+                                  >
+                                    <ShoppingCart className="mr-2 h-4 w-4" />
+                                    Criar Pedido
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {OWN_REQUISITION_ORDER_BLOCKED_MESSAGE}
+                              </TooltipContent>
                             </Tooltip>
                           ) : (
                             <Button

@@ -88,6 +88,8 @@ export default function RequisicoesPage() {
     "approved",
     "rejected",
     "in_quotation",
+    "awaiting_buyer",
+    "awaiting_approval",
   ])
   const [priority, setPriority] = React.useState<string[]>([])
   const [dateFrom, setDateFrom] = React.useState<string>("")
@@ -319,7 +321,15 @@ export default function RequisicoesPage() {
                 size="sm"
                 onClick={() => {
                   setSearch("")
-                  setStatus(["draft", "pending", "approved", "rejected", "in_quotation"])
+                  setStatus([
+                    "draft",
+                    "pending",
+                    "approved",
+                    "rejected",
+                    "in_quotation",
+                    "awaiting_buyer",
+                    "awaiting_approval",
+                  ])
                   setPriority([])
                   setDateFrom("")
                   setDateTo("")
