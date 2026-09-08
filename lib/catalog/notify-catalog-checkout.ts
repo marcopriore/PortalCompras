@@ -85,75 +85,77 @@ export async function notifyCatalogCheckout(
     .select("id, full_name, profile_type")
     .in("id", [...recipientIds])
 
-  for (const profile of profiles ?? []) {
-    const userId = profile.id as string
-    const isActor = userId === actorUserId
-    const profileType = (profile.profile_type as string) ?? "buyer"
-    const name = (profile.full_name as string) || "usuário"
+  await Promise.all(
+    (profiles ?? []).map(async (profile) => {
+      const userId = profile.id as string
+      const isActor = userId === actorUserId
+      const profileType = (profile.profile_type as string) ?? "buyer"
+      const name = (profile.full_name as string) || "usuário"
 
-    const useRequisitionLink = isActor && isRequester
-    const entity = useRequisitionLink ? "requisition" : "purchase_order"
-    const entityId = useRequisitionLink ? primary.requisitionId : primary.id
-    const notifType = useRequisitionLink
-      ? "requisition.catalog_completed"
-      : "order.catalog_created"
-    const notifTitle = isActor
-      ? "Pedido do catálogo criado"
-      : "Novo pedido via catálogo"
-    const notifBody = isActor
-      ? `Pedido(s) ${codes} e requisição(ões) ${reqCodes} gerados a partir do catálogo.`
-      : `${actorName ?? "Solicitante"} finalizou o catálogo "${title}" — pedido(s) ${codes}.`
+      const useRequisitionLink = isActor && isRequester
+      const entity = useRequisitionLink ? "requisition" : "purchase_order"
+      const entityId = useRequisitionLink ? primary.requisitionId : primary.id
+      const notifType = useRequisitionLink
+        ? "requisition.catalog_completed"
+        : "order.catalog_created"
+      const notifTitle = isActor
+        ? "Pedido do catálogo criado"
+        : "Novo pedido via catálogo"
+      const notifBody = isActor
+        ? `Pedido(s) ${codes} e requisição(ões) ${reqCodes} gerados a partir do catálogo.`
+        : `${actorName ?? "Solicitante"} finalizou o catálogo "${title}" — pedido(s) ${codes}.`
 
-    try {
-      await db.from("notifications").insert({
-        user_id: userId,
-        company_id: companyId,
-        type: notifType,
-        title: notifTitle,
-        body: notifBody,
-        entity,
-        entity_id: entityId,
-      })
-    } catch {
-      /* não bloqueia */
-    }
+      try {
+        await db.from("notifications").insert({
+          user_id: userId,
+          company_id: companyId,
+          type: notifType,
+          title: notifTitle,
+          body: notifBody,
+          entity,
+          entity_id: entityId,
+        })
+      } catch {
+        /* não bloqueia */
+      }
 
-    try {
-      const prefOk = await shouldSendEmail(
-        db,
-        userId,
-        companyId,
-        "order_accepted_email",
-      )
-      if (!prefOk) continue
+      try {
+        const prefOk = await shouldSendEmail(
+          db,
+          userId,
+          companyId,
+          "order_accepted_email",
+        )
+        if (!prefOk) return
 
-      const email = await getAuthEmail(db, userId)
-      if (!email) continue
+        const email = await getAuthEmail(db, userId)
+        if (!email) return
 
-      const portalBase =
-        profileType === "requester" ? "/solicitante" : "/comprador/pedidos"
-      const linkPath = useRequisitionLink
-        ? `/solicitante/${primary.requisitionId}`
-        : `/comprador/pedidos/${primary.id}`
+        const portalBase =
+          profileType === "requester" ? "/solicitante" : "/comprador/pedidos"
+        const linkPath = useRequisitionLink
+          ? `/solicitante/${primary.requisitionId}`
+          : `/comprador/pedidos/${primary.id}`
 
-      const tpl = templateCatalogOrderCreated({
-        recipientName: name,
-        title,
-        orderCodes: codes,
-        requisitionCodes: reqCodes,
-        linkPath,
-        portalLabel: portalBase.includes("solicitante")
-          ? "Ver requisição"
-          : "Ver pedido",
-      })
+        const tpl = templateCatalogOrderCreated({
+          recipientName: name,
+          title,
+          orderCodes: codes,
+          requisitionCodes: reqCodes,
+          linkPath,
+          portalLabel: portalBase.includes("solicitante")
+            ? "Ver requisição"
+            : "Ver pedido",
+        })
 
-      await sendEmail({
-        to: email,
-        subject: tpl.subject,
-        html: tpl.html,
-      })
-    } catch {
-      /* não bloqueia */
-    }
-  }
+        await sendEmail({
+          to: email,
+          subject: tpl.subject,
+          html: tpl.html,
+        })
+      } catch {
+        /* não bloqueia */
+      }
+    }),
+  )
 }

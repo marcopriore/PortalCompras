@@ -40,6 +40,27 @@ function unwrapJoin<T>(value: T | T[] | null): T | null {
   return Array.isArray(value) ? value[0] ?? null : value
 }
 
+export async function fetchCatalogCartById(
+  db: SupabaseClient,
+  cartId: string,
+): Promise<CatalogCart> {
+  const { data: items } = await db
+    .from("catalog_cart_items")
+    .select("*")
+    .eq("cart_id", cartId)
+    .order("created_at")
+
+  const mapped = mapCartRowsToItems((items ?? []) as CartItemRow[])
+  const totalAmount = mapped.reduce((s, i) => s + i.lineTotal, 0)
+
+  return {
+    id: cartId,
+    items: mapped,
+    itemCount: mapped.length,
+    totalAmount,
+  }
+}
+
 export async function fetchCatalogCart(
   db: SupabaseClient,
   companyId: string,
@@ -56,21 +77,7 @@ export async function fetchCatalogCart(
     return { id: "", items: [], itemCount: 0, totalAmount: 0 }
   }
 
-  const { data: items } = await db
-    .from("catalog_cart_items")
-    .select("*")
-    .eq("cart_id", cart.id)
-    .order("created_at")
-
-  const mapped = mapCartRowsToItems((items ?? []) as CartItemRow[])
-  const totalAmount = mapped.reduce((s, i) => s + i.lineTotal, 0)
-
-  return {
-    id: cart.id as string,
-    items: mapped,
-    itemCount: mapped.length,
-    totalAmount,
-  }
+  return fetchCatalogCartById(db, cart.id as string)
 }
 
 export async function getOrCreateCartId(
@@ -193,14 +200,8 @@ export async function resolveCartOfferLine(
     return null
   }
 
-  const { data: catalogItem } = await db
-    .from("items")
-    .select("status")
-    .eq("company_id", companyId)
-    .eq("code", item.material_code)
-    .maybeSingle()
-
-  if ((catalogItem as { status?: string } | null)?.status !== "active") return null
+  // Item do catálogo já foi filtrado por `get_catalog_offers_page` (item active).
+  // Evita 2º round-trip em items; o checkout revalida saldo/contrato.
 
   const kind = contract.contract_kind
   if (kind === "por_quantidade" && contractItemAvailableQuantity(item) <= 0) return null

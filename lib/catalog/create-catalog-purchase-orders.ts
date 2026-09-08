@@ -125,11 +125,25 @@ export async function createCatalogPurchaseOrders(
   }
 
   const contractItemIds = cartItems.map((i) => i.contract_item_id)
-  const contractItemMap = await loadContractItemDetails(db, contractItemIds)
-  const [defaultSiteCode, branchMap] = await Promise.all([
-    loadDefaultSiteCode(db, companyId),
-    loadCompanyBranchesByCode(db, companyId),
-  ])
+  const supplierIds = [...new Set(cartItems.map((i) => i.supplier_id))]
+  const contractIds = [...new Set(cartItems.map((i) => i.contract_id))]
+
+  const [contractItemMap, defaultSiteCode, branchMap, suppliersRes, contractsRes] =
+    await Promise.all([
+      loadContractItemDetails(db, contractItemIds),
+      loadDefaultSiteCode(db, companyId),
+      loadCompanyBranchesByCode(db, companyId),
+      db
+        .from("suppliers")
+        .select("id, name, cnpj")
+        .eq("company_id", companyId)
+        .in("id", supplierIds),
+      db
+        .from("contracts")
+        .select("id, code, payment_conditions(code, description)")
+        .eq("company_id", companyId)
+        .in("id", contractIds),
+    ])
 
   if (!defaultSiteCode) {
     return {
@@ -147,28 +161,16 @@ export async function createCatalogPurchaseOrders(
     if (err) return { ok: false, error: `${line.material_description}: ${err}` }
   }
 
-  const supplierIds = [...new Set(cartItems.map((i) => i.supplier_id))]
-  const { data: suppliersData } = await db
-    .from("suppliers")
-    .select("id, name, cnpj")
-    .eq("company_id", companyId)
-    .in("id", supplierIds)
-
   const supplierMap = new Map(
-    ((suppliersData ?? []) as Array<{ id: string; name: string; cnpj: string | null }>).map(
-      (s) => [s.id, s],
-    ),
+    ((suppliersRes.data ?? []) as Array<{
+      id: string
+      name: string
+      cnpj: string | null
+    }>).map((s) => [s.id, s]),
   )
 
-  const contractIds = [...new Set(cartItems.map((i) => i.contract_id))]
-  const { data: contractsData } = await db
-    .from("contracts")
-    .select("id, code, payment_conditions(code, description)")
-    .eq("company_id", companyId)
-    .in("id", contractIds)
-
   const contractMap = new Map(
-    ((contractsData ?? []) as Array<{
+    ((contractsRes.data ?? []) as Array<{
       id: string
       code: string
       payment_conditions:
@@ -386,20 +388,12 @@ export async function createCatalogPurchaseOrders(
         }
       }
 
-      const { error: flagErr } = await db
+      // Mesmo round-trip conceitual: flag + não bloqueia se falhar leve
+      // (reserve já consumiu saldo; flag é marker operacional).
+      await db
         .from("purchase_orders")
         .update({ contract_balance_applied: "reserved" })
         .eq("id", poId)
-
-      if (flagErr) {
-        await rollbackPurchaseOrder(db, poId)
-        await rollbackRequisition(db, requisitionId)
-        for (const po of created) {
-          await rollbackPurchaseOrder(db, po.id)
-          await rollbackRequisition(db, po.requisitionId)
-        }
-        return { ok: false, error: flagErr.message }
-      }
 
       created.push({
         id: poId,

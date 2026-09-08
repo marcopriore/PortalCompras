@@ -7,6 +7,7 @@ import {
 import { validateCatalogLineQuantity } from "@/lib/catalog/validate-cart-line"
 import {
   fetchCatalogCart,
+  fetchCatalogCartById,
   getOrCreateCartId,
   resolveCartOfferLine,
   type CartItemRow,
@@ -24,18 +25,17 @@ async function requireCatalogAccess(
 ) {
   if ("error" in ctx) return ctx.error
 
-  const enabled = await tenantHasPurchaseCatalog(ctx.supabase, ctx.companyId)
-  if (!enabled && !ctx.isSuperAdmin) {
-    return NextResponse.json({ error: "Módulo não habilitado" }, { status: 403 })
-  }
-
   if (ctx.isSuperAdmin) return null
 
-  const permissions = await loadUserPermissionKeys(
-    ctx.supabase,
-    ctx.userId,
-    ctx.companyId,
-  )
+  const db = resolveCatalogDbClient(ctx)
+  const [enabled, permissions] = await Promise.all([
+    tenantHasPurchaseCatalog(db, ctx.companyId),
+    loadUserPermissionKeys(ctx.supabase, ctx.userId, ctx.companyId),
+  ])
+
+  if (!enabled) {
+    return NextResponse.json({ error: "Módulo não habilitado" }, { status: 403 })
+  }
 
   if (!hasUserPermission(permissions, "nav.catalog")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
@@ -85,12 +85,14 @@ export async function POST(request: Request) {
     const quantity =
       typeof body.quantity === "number" && body.quantity > 0 ? body.quantity : 1
 
-    const offerLine = await resolveCartOfferLine(db, ctx.companyId, body.contract_item_id)
+    const [offerLine, cartId] = await Promise.all([
+      resolveCartOfferLine(db, ctx.companyId, body.contract_item_id),
+      getOrCreateCartId(db, ctx.companyId, ctx.userId),
+    ])
+
     if (!offerLine) {
       return NextResponse.json({ error: "Oferta indisponível ou sem saldo" }, { status: 404 })
     }
-
-    const cartId = await getOrCreateCartId(db, ctx.companyId, ctx.userId)
     if (!cartId) {
       return NextResponse.json({ error: "Não foi possível criar o carrinho" }, { status: 500 })
     }
@@ -116,10 +118,13 @@ export async function POST(request: Request) {
     }
 
     if (existingItem?.id) {
-      await db
+      const { error: updateErr } = await db
         .from("catalog_cart_items")
         .update({ quantity: targetQty, updated_at: new Date().toISOString() })
         .eq("id", existingItem.id)
+      if (updateErr) {
+        return NextResponse.json({ error: updateErr.message }, { status: 500 })
+      }
     } else {
       const { error: insertErr } = await db.from("catalog_cart_items").insert({
         cart_id: cartId,
@@ -139,12 +144,7 @@ export async function POST(request: Request) {
       }
     }
 
-    await db
-      .from("catalog_carts")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", cartId)
-
-    const cart = await fetchCatalogCart(db, ctx.companyId, ctx.userId)
+    const cart = await fetchCatalogCartById(db, cartId)
     return NextResponse.json({ success: true, cart })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error"
@@ -200,7 +200,8 @@ export async function PATCH(request: Request) {
       .update({ quantity: body.quantity, updated_at: new Date().toISOString() })
       .eq("id", body.item_id)
 
-    const cart = await fetchCatalogCart(db, ctx.companyId, ctx.userId)
+    const cartId = (line as { cart_id: string }).cart_id
+    const cart = await fetchCatalogCartById(db, cartId)
     return NextResponse.json({ success: true, cart })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error"
@@ -237,10 +238,14 @@ export async function DELETE(request: Request) {
       } else {
         await db.from("catalog_cart_items").delete().eq("cart_id", cart.id)
       }
+      const nextCart = await fetchCatalogCartById(db, cart.id as string)
+      return NextResponse.json({ success: true, cart: nextCart })
     }
 
-    const nextCart = await fetchCatalogCart(db, ctx.companyId, ctx.userId)
-    return NextResponse.json({ success: true, cart: nextCart })
+    return NextResponse.json({
+      success: true,
+      cart: { id: "", items: [], itemCount: 0, totalAmount: 0 },
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error"
     return NextResponse.json({ error: message }, { status: 500 })

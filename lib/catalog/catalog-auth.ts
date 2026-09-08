@@ -75,7 +75,7 @@ export async function getCatalogAuthContext(): Promise<
 }
 
 export async function tenantHasPurchaseCatalog(
-  supabase: ReturnType<typeof createServerClient>,
+  supabase: SupabaseClient,
   companyId: string,
 ): Promise<boolean> {
   const { data } = await supabase
@@ -86,6 +86,30 @@ export async function tenantHasPurchaseCatalog(
     .maybeSingle()
 
   return Boolean((data as { enabled?: boolean } | null)?.enabled)
+}
+
+/** Gates do catálogo em uma query (menos round-trips no checkout). */
+export async function loadCatalogTenantGates(
+  db: SupabaseClient,
+  companyId: string,
+): Promise<{ purchaseCatalog: boolean; contractBalance: boolean }> {
+  const { data } = await db
+    .from("tenant_features")
+    .select("feature_key, enabled")
+    .eq("company_id", companyId)
+    .in("feature_key", ["purchase_catalog", "contract_balance"])
+
+  const map = new Map(
+    ((data ?? []) as Array<{ feature_key: string; enabled: boolean }>).map((r) => [
+      r.feature_key,
+      Boolean(r.enabled),
+    ]),
+  )
+
+  return {
+    purchaseCatalog: map.get("purchase_catalog") === true,
+    contractBalance: map.get("contract_balance") === true,
+  }
 }
 
 /**

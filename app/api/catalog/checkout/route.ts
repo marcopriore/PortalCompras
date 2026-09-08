@@ -1,13 +1,12 @@
-import { NextResponse } from "next/server"
+import { NextResponse, after } from "next/server"
 import { createCatalogPurchaseOrders } from "@/lib/catalog/create-catalog-purchase-orders"
 import { notifyCatalogCheckout } from "@/lib/catalog/notify-catalog-checkout"
 import { enqueueCatalogOrderApprovals } from "@/lib/catalog/enqueue-catalog-order-approvals"
 import {
   getCatalogAuthContext,
+  loadCatalogTenantGates,
   resolveCatalogDbClient,
-  tenantHasPurchaseCatalog,
 } from "@/lib/catalog/catalog-auth"
-import { tenantHasContractBalance } from "@/lib/contracts/contract-balance-settings"
 import {
   canUserWrite,
   hasUserPermission,
@@ -22,28 +21,37 @@ export async function POST(request: Request) {
     const ctx = await getCatalogAuthContext()
     if ("error" in ctx) return ctx.error
 
-    const enabled = await tenantHasPurchaseCatalog(ctx.supabase, ctx.companyId)
-    if (!enabled && !ctx.isSuperAdmin) {
+    const db = resolveCatalogDbClient(ctx)
+
+    const bodyPromise = request.json() as Promise<{
+      title?: string
+      cost_center?: string
+      needed_by?: string | null
+      priority?: "normal" | "urgent" | "critical"
+      description?: string | null
+    }>
+
+    const [gates, featureConfig, permissions, body] = await Promise.all([
+      loadCatalogTenantGates(db, ctx.companyId),
+      loadTenantFeatureConfig(db, ctx.companyId),
+      ctx.isSuperAdmin
+        ? Promise.resolve(null)
+        : loadUserPermissionKeys(ctx.supabase, ctx.userId, ctx.companyId),
+      bodyPromise,
+    ])
+
+    if (!gates.purchaseCatalog && !ctx.isSuperAdmin) {
       return NextResponse.json({ error: "Módulo não habilitado" }, { status: 403 })
     }
 
-    const contractBalanceEnabled = await tenantHasContractBalance(
-      ctx.supabase,
-      ctx.companyId,
-    )
-    if (!contractBalanceEnabled && !ctx.isSuperAdmin) {
+    if (!gates.contractBalance && !ctx.isSuperAdmin) {
       return NextResponse.json(
         { error: "Consumo de contrato não habilitado para este tenant" },
         { status: 403 },
       )
     }
 
-    if (!ctx.isSuperAdmin) {
-      const permissions = await loadUserPermissionKeys(
-        ctx.supabase,
-        ctx.userId,
-        ctx.companyId,
-      )
+    if (!ctx.isSuperAdmin && permissions) {
       if (!hasUserPermission(permissions, "nav.catalog")) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 })
       }
@@ -52,16 +60,6 @@ export async function POST(request: Request) {
       }
     }
 
-    const body = (await request.json()) as {
-      title?: string
-      cost_center?: string
-      needed_by?: string | null
-      priority?: "normal" | "urgent" | "critical"
-      description?: string | null
-    }
-
-    const db = resolveCatalogDbClient(ctx)
-    const featureConfig = await loadTenantFeatureConfig(db, ctx.companyId)
     const postCheckoutMode = featureConfig.catalogPostCheckoutMode
 
     const { data: cart } = await db
@@ -116,30 +114,28 @@ export async function POST(request: Request) {
         const requisitionIds = [
           ...new Set(result.result.purchaseOrders.map((po) => po.requisitionId)),
         ]
-        for (const po of result.result.purchaseOrders) {
-          try {
-            await db.rpc("release_contract_balance", { p_order_id: po.id })
-          } catch {
-            /* best-effort */
-          }
-          await db.from("purchase_orders").delete().eq("id", po.id)
-        }
-        for (const requisitionId of requisitionIds) {
-          await db.from("requisition_items").delete().eq("requisition_id", requisitionId)
-          await db.from("requisitions").delete().eq("id", requisitionId)
-        }
+        await Promise.all(
+          result.result.purchaseOrders.map(async (po) => {
+            try {
+              await db.rpc("release_contract_balance", { p_order_id: po.id })
+            } catch {
+              /* best-effort */
+            }
+            await db.from("purchase_orders").delete().eq("id", po.id)
+          }),
+        )
+        await Promise.all(
+          requisitionIds.map(async (requisitionId) => {
+            await db.from("requisition_items").delete().eq("requisition_id", requisitionId)
+            await db.from("requisitions").delete().eq("id", requisitionId)
+          }),
+        )
         return NextResponse.json({ error: enqueued.error }, { status: 400 })
       }
     }
 
-    await db.from("catalog_cart_items").delete().eq("cart_id", cart.id)
-    await db
-      .from("catalog_carts")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", cart.id)
-
-    for (const po of result.result.purchaseOrders) {
-      await db.from("audit_logs").insert({
+    const auditRows = result.result.purchaseOrders.flatMap((po) => [
+      {
         event_type: "catalog.checkout",
         description: `Catálogo: pedido ${po.code} + requisição ${po.requisitionCode}`,
         company_id: ctx.companyId,
@@ -159,9 +155,8 @@ export async function POST(request: Request) {
               : "draft",
           catalog_post_checkout_mode: postCheckoutMode,
         },
-      })
-
-      await db.from("audit_logs").insert({
+      },
+      {
         event_type: "requisition.created",
         description: `Requisição ${po.requisitionCode} criada via catálogo (vinculada a ${po.code})`,
         company_id: ctx.companyId,
@@ -179,20 +174,31 @@ export async function POST(request: Request) {
               ? "awaiting_approval"
               : "awaiting_buyer",
         },
-      })
+      },
+    ])
 
+    await Promise.all([
+      db.from("catalog_cart_items").delete().eq("cart_id", cart.id),
+      auditRows.length > 0
+        ? db.from("audit_logs").insert(auditRows)
+        : Promise.resolve(),
+    ])
+
+    for (const po of result.result.purchaseOrders) {
       triggerRequisitionOutbound(ctx.companyId, po.requisitionId, "requisition.created")
     }
 
-    void notifyCatalogCheckout({
-      db,
-      companyId: ctx.companyId,
-      actorUserId: ctx.userId,
-      actorName: ctx.fullName,
-      actorProfileType: ctx.profileType,
-      title: (body.title ?? "").trim() || "Pedido do catálogo",
-      purchaseOrders: result.result.purchaseOrders,
-    })
+    after(() =>
+      notifyCatalogCheckout({
+        db,
+        companyId: ctx.companyId,
+        actorUserId: ctx.userId,
+        actorName: ctx.fullName,
+        actorProfileType: ctx.profileType,
+        title: (body.title ?? "").trim() || "Pedido do catálogo",
+        purchaseOrders: result.result.purchaseOrders,
+      }),
+    )
 
     return NextResponse.json({
       success: true,

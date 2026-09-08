@@ -158,7 +158,6 @@ type CatalogCartSheetProps = {
   cart: CatalogCart
   supplierNames?: Record<string, string>
   syncingItemIds: Set<string>
-  addingOfferId: string | null
   onCheckout: () => void
   onRemove: (itemId: string) => void
   onQuantityChange: (itemId: string, quantity: number) => void
@@ -170,7 +169,6 @@ export function CatalogCartSheet({
   cart,
   supplierNames = {},
   syncingItemIds,
-  addingOfferId,
   onCheckout,
   onRemove,
   onQuantityChange,
@@ -334,15 +332,6 @@ export function CatalogCartSheet({
               </Button>
             </div>
           </>
-        )}
-
-        {addingOfferId && (
-          <div className="pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2">
-            <div className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs shadow-lg">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-              Adicionando...
-            </div>
-          </div>
         )}
       </SheetContent>
     </Sheet>

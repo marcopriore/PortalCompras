@@ -15,11 +15,26 @@ export async function loadUserPermissionKeys(
 ): Promise<Set<PermissionKey>> {
   const permissions = new Set<PermissionKey>()
 
-  const groupLinksRes = await supabase
-    .from("profile_permission_groups")
-    .select("group_id")
-    .eq("company_id", companyId)
-    .eq("user_id", userId)
+  const [groupLinksRes, profilePermissionsRes] = await Promise.all([
+    supabase
+      .from("profile_permission_groups")
+      .select("group_id")
+      .eq("company_id", companyId)
+      .eq("user_id", userId),
+    supabase
+      .from("profile_permissions")
+      .select("permission_key")
+      .eq("company_id", companyId)
+      .eq("user_id", userId)
+      .eq("enabled", true),
+  ])
+
+  applyKeys(
+    permissions,
+    ((profilePermissionsRes.data ?? []) as { permission_key: string }[]).map(
+      (r) => r.permission_key,
+    ),
+  )
 
   if (!groupLinksRes.error) {
     const groupIds = ((groupLinksRes.data ?? []) as { group_id: string }[])
@@ -40,20 +55,6 @@ export async function loadUserPermissionKeys(
       )
     }
   }
-
-  const profilePermissionsRes = await supabase
-    .from("profile_permissions")
-    .select("permission_key")
-    .eq("company_id", companyId)
-    .eq("user_id", userId)
-    .eq("enabled", true)
-
-  applyKeys(
-    permissions,
-    ((profilePermissionsRes.data ?? []) as { permission_key: string }[]).map(
-      (r) => r.permission_key,
-    ),
-  )
 
   return permissions
 }

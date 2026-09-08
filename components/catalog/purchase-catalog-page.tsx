@@ -285,7 +285,7 @@ export function PurchaseCatalogPage({
   }, [cart.items])
 
   async function addToCart(offer: CatalogOffer) {
-    if (!canOrder || addingOfferId) return
+    if (!canOrder) return
 
     const existingQty = cartQtyByOffer.get(offer.contractItemId) ?? 0
     const nextQty = existingQty + 1
@@ -308,27 +308,43 @@ export function PurchaseCatalogPage({
     setCartOpen(true)
     setAddingOfferId(offer.contractItemId)
 
-    try {
-      const res = await fetch("/api/catalog/cart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contract_item_id: offer.contractItemId,
-          quantity: 1,
-        }),
-      })
-      const body = (await res.json().catch(() => ({}))) as {
-        error?: string
-        cart?: CatalogCart
+    // Sync em background: UI já reflete o item; não bloqueia novos adds.
+    void (async () => {
+      try {
+        const res = await fetch("/api/catalog/cart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contract_item_id: offer.contractItemId,
+            quantity: 1,
+          }),
+        })
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string
+          cart?: CatalogCart
+        }
+        if (!res.ok) throw new Error(body.error ?? "Erro ao adicionar ao carrinho")
+        if (body.cart) applyServerCart(body.cart)
+      } catch (err) {
+        try {
+          const res = await fetch("/api/catalog/cart")
+          if (res.ok) {
+            const data = (await res.json()) as { cart?: CatalogCart }
+            if (data.cart) applyServerCart(data.cart)
+            else setCart(previousCart)
+          } else {
+            setCart(previousCart)
+          }
+        } catch {
+          setCart(previousCart)
+        }
+        toast.error(err instanceof Error ? err.message : "Erro ao adicionar")
+      } finally {
+        setAddingOfferId((current) =>
+          current === offer.contractItemId ? null : current,
+        )
       }
-      if (!res.ok) throw new Error(body.error ?? "Erro ao adicionar ao carrinho")
-      if (body.cart) applyServerCart(body.cart)
-    } catch (err) {
-      setCart(previousCart)
-      toast.error(err instanceof Error ? err.message : "Erro ao adicionar")
-    } finally {
-      setAddingOfferId(null)
-    }
+    })()
   }
 
   function markSyncing(itemId: string, syncing: boolean) {
@@ -629,7 +645,6 @@ export function PurchaseCatalogPage({
           cart={cart}
           supplierNames={supplierNameMap}
           syncingItemIds={syncingItemIds}
-          addingOfferId={addingOfferId}
           onCheckout={() => setCheckoutOpen(true)}
           onRemove={(itemId) => void removeCartItem(itemId)}
           onQuantityChange={handleQuantityChange}
