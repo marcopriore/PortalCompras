@@ -67,6 +67,8 @@ export function ConfiguracoesPermissoesTab() {
   const [formName, setFormName] = React.useState("")
   const [formDescription, setFormDescription] = React.useState("")
   const [selectedKeys, setSelectedKeys] = React.useState<Set<string>>(new Set())
+  const selectedKeysRef = React.useRef(selectedKeys)
+  selectedKeysRef.current = selectedKeys
 
   const canManage = React.useMemo(() => {
     if (isSuperAdmin) return true
@@ -163,13 +165,17 @@ export function ConfiguracoesPermissoesTab() {
   }
 
   const handleSaveGroup = async () => {
-    if (!companyId || !formName.trim()) return
+    if (!formName.trim()) return
+    if (!companyId) {
+      setErrorMessage("Empresa não identificada — não foi possível salvar.")
+      return
+    }
     setSaving(true)
     setSuccessMessage(null)
     setErrorMessage(null)
 
     try {
-      const permissionKeys = [...selectedKeys]
+      const permissionKeys = [...selectedKeysRef.current]
       if (editing) {
         const res = await fetch("/api/admin/permission-groups", {
           method: "PATCH",
@@ -181,23 +187,44 @@ export function ConfiguracoesPermissoesTab() {
             permissionKeys,
           }),
         })
-        const data = await res.json()
+        const data = (await res.json()) as {
+          error?: string
+          permissionKeys?: string[]
+          viewOnly?: boolean
+          missing?: string[]
+          unexpected?: string[]
+        }
         if (!res.ok) {
-          setErrorMessage(data.error ?? "Erro ao salvar grupo.")
+          const detail = [
+            data.error ?? "Erro ao salvar grupo.",
+            data.missing?.length
+              ? `Faltou gravar: ${data.missing.join(", ")}`
+              : null,
+            data.unexpected?.length
+              ? `Sobrou no banco: ${data.unexpected.join(", ")}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ")
+          setErrorMessage(detail)
           return
         }
         const savedKeys = Array.isArray(data.permissionKeys)
-          ? (data.permissionKeys as string[])
+          ? data.permissionKeys
           : null
         if (savedKeys) {
           const saved = new Set(savedKeys)
           const missing = permissionKeys.filter((key) => !saved.has(key))
-          if (missing.length > 0) {
+          const unexpected = savedKeys.filter(
+            (key) => !permissionKeys.includes(key),
+          )
+          if (missing.length > 0 || unexpected.length > 0) {
             setErrorMessage(
-              `Grupo atualizado, mas permissões não gravadas: ${missing.join(", ")}`,
+              `Divergência após salvar. Enviado=${permissionKeys.length}, banco=${savedKeys.length}.`,
             )
             return
           }
+          setSelectedKeys(saved)
         }
         await logAudit({
           eventType: "tenant.updated",
@@ -207,9 +234,16 @@ export function ConfiguracoesPermissoesTab() {
           entity: "permission_groups",
           entityId: editing.id,
         })
+        const viewOnlyOn = savedKeys
+          ? savedKeys.includes("view_only")
+          : Boolean(data.viewOnly)
         setSuccessMessage(
           savedKeys
-            ? `Grupo atualizado com sucesso (${savedKeys.length} permissões).`
+            ? `Salvo no banco: ${savedKeys.length} permissões${
+                viewOnlyOn
+                  ? " (COM somente visualização)"
+                  : " (sem somente visualização)"
+              }.`
             : "Grupo atualizado com sucesso.",
         )
       } else {
@@ -457,11 +491,12 @@ export function ConfiguracoesPermissoesTab() {
                   </div>
                   <div className="space-y-2">
                     {items.map((item) => (
-                      <label
+                      <div
                         key={item.key}
-                        className="flex items-start gap-3 text-sm cursor-pointer"
+                        className="flex items-start gap-3 text-sm"
                       >
                         <Checkbox
+                          id={`perm-${item.key}`}
                           checked={selectedKeys.has(item.key)}
                           onCheckedChange={(v) =>
                             toggleKey(item.key, v === true)
@@ -469,13 +504,16 @@ export function ConfiguracoesPermissoesTab() {
                           disabled={saving || editorLoading}
                           className="mt-0.5"
                         />
-                        <span>
+                        <label
+                          htmlFor={`perm-${item.key}`}
+                          className="cursor-pointer leading-snug"
+                        >
                           <span className="font-medium">{item.label}</span>
                           <span className="block text-xs text-muted-foreground font-mono">
                             {item.key}
                           </span>
-                        </span>
-                      </label>
+                        </label>
+                      </div>
                     ))}
                   </div>
                 </div>

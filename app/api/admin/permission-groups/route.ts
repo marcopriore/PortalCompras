@@ -212,7 +212,7 @@ export async function PATCH(request: Request) {
     if (Array.isArray(body.permissionKeys)) {
       const keys = [
         ...new Set(body.permissionKeys.filter(isKnownPermissionKey)),
-      ]
+      ].sort()
 
       const { error: deleteErr } = await supabase
         .from("permission_group_rules")
@@ -225,7 +225,7 @@ export async function PATCH(request: Request) {
       }
 
       if (keys.length > 0) {
-        const { data: inserted, error: insertErr } = await supabase
+        const { error: insertErr } = await supabase
           .from("permission_group_rules")
           .insert(
             keys.map((permission_key) => ({
@@ -235,29 +235,51 @@ export async function PATCH(request: Request) {
               enabled: true,
             })),
           )
-          .select("permission_key")
 
         if (insertErr) {
           return NextResponse.json({ error: insertErr.message }, { status: 500 })
         }
-
-        const saved = new Set(
-          ((inserted ?? []) as { permission_key: string }[]).map(
-            (row) => row.permission_key,
-          ),
-        )
-        const missing = keys.filter((key) => !saved.has(key))
-        if (missing.length > 0) {
-          return NextResponse.json(
-            {
-              error: `Falha ao gravar permissões: ${missing.join(", ")}`,
-            },
-            { status: 500 },
-          )
-        }
       }
 
-      return NextResponse.json({ success: true, permissionKeys: keys })
+      const { data: verifiedRows, error: verifyErr } = await supabase
+        .from("permission_group_rules")
+        .select("permission_key")
+        .eq("company_id", auth.companyId)
+        .eq("group_id", body.id)
+        .eq("enabled", true)
+
+      if (verifyErr) {
+        return NextResponse.json({ error: verifyErr.message }, { status: 500 })
+      }
+
+      const verified = [
+        ...new Set(
+          ((verifiedRows ?? []) as { permission_key: string }[]).map(
+            (row) => row.permission_key,
+          ),
+        ),
+      ].sort()
+
+      const missing = keys.filter((key) => !verified.includes(key))
+      const unexpected = verified.filter((key) => !keys.includes(key))
+      if (missing.length > 0 || unexpected.length > 0) {
+        return NextResponse.json(
+          {
+            error: "As permissões gravadas não conferem com o enviado.",
+            missing,
+            unexpected,
+            expected: keys,
+            actual: verified,
+          },
+          { status: 500 },
+        )
+      }
+
+      return NextResponse.json({
+        success: true,
+        permissionKeys: verified,
+        viewOnly: verified.includes("view_only"),
+      })
     }
 
     return NextResponse.json({ success: true })
