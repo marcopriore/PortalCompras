@@ -88,10 +88,15 @@ export async function tenantHasPurchaseCatalog(
   return Boolean((data as { enabled?: boolean } | null)?.enabled)
 }
 
-/** Superadmin opera em tenant via cookie — escrita usa service role para bypass de RLS. */
-export function resolveCatalogDbClient(ctx: CatalogAuthContext): SupabaseClient {
-  if (ctx.isSuperAdmin) {
-    return createServiceRoleClient()
-  }
-  return ctx.supabase as unknown as SupabaseClient
+/**
+ * Cliente DB do módulo Catálogo após authz na API.
+ *
+ * Ofertas já vêm de RPCs SECURITY DEFINER; carrinho/checkout leem
+ * `contracts` / `contract_items` / `suppliers` / `purchase_orders`, cujas
+ * policies RLS são buyer-only. Requisitante (e superadmin com cookie)
+ * precisa de service role — sempre filtrando por `companyId` / `userId`
+ * no código da API.
+ */
+export function resolveCatalogDbClient(_ctx: CatalogAuthContext): SupabaseClient {
+  return createServiceRoleClient()
 }
