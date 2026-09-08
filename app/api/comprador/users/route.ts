@@ -3,6 +3,10 @@ import { createClient } from "@supabase/supabase-js"
 import { getBuyerContext } from "@/lib/auth/buyer-context"
 import { canUserImpersonate } from "@/lib/impersonation/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
+import {
+  hasUserPermission,
+  loadUserPermissionKeys,
+} from "@/lib/permissions/resolve-user-permissions"
 
 function authAdminClient() {
   return createClient(
@@ -13,31 +17,12 @@ function authAdminClient() {
 
 /**
  * Lista usuários do tenant (buyer/requester) com e-mail.
- * Acesso: admin do tenant, superadmin ou quem tem user.impersonate.
+ * Acesso: superadmin, user.manage ou user.impersonate.
  */
 export async function GET() {
   try {
     const ctx = await getBuyerContext()
     if ("error" in ctx) return ctx.error
-
-    const { data: actor } = await ctx.supabase
-      .from("profiles")
-      .select("role, roles")
-      .eq("id", ctx.userId)
-      .single()
-
-    const rolesRaw = (actor?.roles as string[] | null) ?? []
-    const roles =
-      Array.isArray(rolesRaw) && rolesRaw.filter(Boolean).length > 0
-        ? rolesRaw.filter(Boolean)
-        : actor?.role
-          ? [String(actor.role)]
-          : []
-    const isTenantAdmin =
-      ctx.isSuperAdmin ||
-      actor?.role === "admin" ||
-      roles.includes("admin") ||
-      roles.includes("manager")
 
     const canImpersonate = await canUserImpersonate(
       ctx.userId,
@@ -45,7 +30,14 @@ export async function GET() {
       ctx.isSuperAdmin,
     )
 
-    if (!isTenantAdmin && !canImpersonate) {
+    let canManageUsers = ctx.isSuperAdmin
+    if (!canManageUsers) {
+      const service = createServiceRoleClient()
+      const keys = await loadUserPermissionKeys(service, ctx.userId, ctx.companyId)
+      canManageUsers = hasUserPermission(keys, "user.manage")
+    }
+
+    if (!canManageUsers && !canImpersonate) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
@@ -75,6 +67,31 @@ export async function GET() {
       return true
     })
 
+    const userIds = tenantUsers.map((p) => p.id)
+    const groupsByUser = new Map<
+      string,
+      { id: string; code: string; name: string }[]
+    >()
+    if (userIds.length > 0) {
+      const { data: links } = await supabase
+        .from("profile_permission_groups")
+        .select("user_id, permission_groups(id, code, name)")
+        .eq("company_id", ctx.companyId)
+        .in("user_id", userIds)
+
+      for (const row of links ?? []) {
+        const gRaw = row.permission_groups as
+          | { id: string; code: string; name: string }
+          | { id: string; code: string; name: string }[]
+          | null
+        const g = Array.isArray(gRaw) ? gRaw[0] : gRaw
+        if (!g?.id) continue
+        const list = groupsByUser.get(row.user_id as string) ?? []
+        list.push({ id: g.id, code: g.code, name: g.name })
+        groupsByUser.set(row.user_id as string, list)
+      }
+    }
+
     const users = await Promise.all(
       tenantUsers.map(async (p) => {
         const { data: authUser } = await authAdmin.auth.admin.getUserById(p.id)
@@ -83,11 +100,13 @@ export async function GET() {
           | { id?: string; code?: string; description?: string }[]
           | null
         const cc = Array.isArray(ccRel) ? ccRel[0] : ccRel
+        const permissionGroups = groupsByUser.get(p.id) ?? []
         return {
           id: p.id,
           full_name: p.full_name,
           role: p.role,
           roles: p.roles,
+          permission_groups: permissionGroups,
           status: p.status,
           created_at: p.created_at,
           profile_type: p.profile_type,

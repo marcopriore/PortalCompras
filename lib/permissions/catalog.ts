@@ -121,12 +121,22 @@ export const PERMISSION_CATALOG: PermissionCatalogItem[] = [
     label: "Fluxo Aprovação Pedido — Catálogo",
     group: "Aprovações",
   },
+  {
+    key: "approval.view_all",
+    label: "Ver Todas as Aprovações do Tenant",
+    group: "Aprovações",
+  },
   { key: "export.excel", label: "Exportar Excel", group: "Dados" },
   { key: "import.excel", label: "Importar Excel", group: "Dados" },
   {
     key: "erp.sync",
     label: "Sincronizar ERP (itens e fornecedores)",
     group: "Dados",
+  },
+  {
+    key: "integration.monitor",
+    label: "Monitor de Integração",
+    group: "Administração",
   },
   { key: "supplier.create", label: "Cadastrar Fornecedor", group: "Cadastros" },
   { key: "supplier.edit", label: "Editar Fornecedor", group: "Cadastros" },

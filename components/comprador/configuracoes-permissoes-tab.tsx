@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useUser } from "@/lib/hooks/useUser"
+import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
 import {
   PERMISSION_CATALOG,
@@ -52,7 +53,8 @@ type PermissionGroup = {
 }
 
 export function ConfiguracoesPermissoesTab() {
-  const { userId, companyId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
+  const { userId, companyId, isSuperAdmin, loading: userLoading } = useUser()
+  const { hasPermission } = usePermissions()
 
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -68,8 +70,8 @@ export function ConfiguracoesPermissoesTab() {
 
   const canManage = React.useMemo(() => {
     if (isSuperAdmin) return true
-    return hasRole("admin")
-  }, [isSuperAdmin, hasRole])
+    return hasPermission("settings.manage")
+  }, [isSuperAdmin, hasPermission])
 
   const catalogByGroup = React.useMemo(
     () => groupPermissionsByCategory(PERMISSION_CATALOG),

@@ -1,9 +1,32 @@
 import { NextResponse } from "next/server"
 import { cookies } from "next/headers"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
+import type { PermissionKey } from "@/lib/hooks/usePermissions"
+import {
+  hasUserPermission,
+  loadUserPermissionKeys,
+} from "@/lib/permissions/resolve-user-permissions"
 
-export async function requireTenantAdmin() {
+type AuthOk = {
+  supabase: SupabaseClient
+  user: { id: string }
+  profile: {
+    id: string
+    company_id: string
+    role: string | null
+    roles: string[] | null
+    is_superadmin: boolean | null
+  }
+  companyId: string
+  isSuperAdmin: boolean
+}
+
+async function resolveCompanyAuth(): Promise<
+  AuthOk | { error: NextResponse }
+> {
   const supabase = await createClient()
   const {
     data: { user },
@@ -23,15 +46,9 @@ export async function requireTenantAdmin() {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
   }
 
-  const roles = (profile.roles as string[] | null) ?? []
-  const isAdmin = profile.role === "admin" || roles.includes("admin")
-
-  if (!isAdmin) {
-    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
-  }
-
   let companyId = profile.company_id as string
-  if (profile.is_superadmin) {
+  const isSuperAdmin = Boolean(profile.is_superadmin)
+  if (isSuperAdmin) {
     const cookieStore = await cookies()
     const selectedCookie = cookieStore.get("selected_company_id")
     if (selectedCookie?.value) {
@@ -39,11 +56,44 @@ export async function requireTenantAdmin() {
     }
   }
 
-  return { supabase, user, profile, companyId }
+  return {
+    supabase,
+    user,
+    profile: profile as AuthOk["profile"],
+    companyId,
+    isSuperAdmin,
+  }
 }
 
+/**
+ * Exige superadmin ou uma das permission keys (grupo/perfil).
+ * Não usa bypass por role `admin` — só permissões parametrizadas.
+ */
+export async function requireAnyPermission(
+  permissions: PermissionKey[],
+): Promise<AuthOk | { error: NextResponse }> {
+  const auth = await resolveCompanyAuth()
+  if ("error" in auth) return auth
+
+  if (auth.isSuperAdmin) return auth
+
+  const service = createServiceRoleClient()
+  const keys = await loadUserPermissionKeys(service, auth.user.id, auth.companyId)
+  const ok = permissions.some((p) => hasUserPermission(keys, p))
+  if (!ok) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
+  }
+  return auth
+}
+
+/** Configurações / grupos de perfil: settings.manage */
+export async function requireTenantAdmin() {
+  return requireAnyPermission(["settings.manage"])
+}
+
+/** Monitor e APIs de integração: integration.monitor + feature */
 export async function requireIntegrationsAdmin() {
-  const auth = await requireTenantAdmin()
+  const auth = await requireAnyPermission(["integration.monitor"])
   if ("error" in auth) return auth
 
   const enabled = await isTenantFeatureEnabled(auth.companyId, "api_integrations")

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { requireTenantAdmin } from "@/lib/api/require-tenant-admin"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isKnownPermissionKey } from "@/lib/permissions/catalog"
+import { ensureAdminGroupCatalogPermissions } from "@/lib/permissions/ensure-admin-group-catalog"
 
 type GroupRow = {
   id: string
@@ -23,6 +24,7 @@ export async function GET(request: Request) {
     const groupId = searchParams.get("id")
 
     const supabase = createServiceRoleClient()
+    await ensureAdminGroupCatalogPermissions(supabase, auth.companyId)
 
     if (groupId) {
       const { data: group, error } = await supabase

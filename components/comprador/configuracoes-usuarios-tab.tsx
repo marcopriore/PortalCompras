@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
+import { usePermissions } from '@/lib/hooks/usePermissions'
 import { useImpersonation } from '@/contexts/impersonation-context'
 import { logAudit } from '@/lib/audit'
 import { formatDateBR } from '@/lib/formato-data'
@@ -76,11 +77,21 @@ type Profile = {
   email?: string | null
   role: string
   roles?: string[] | null
+  permission_groups?: { id: string; code: string; name: string }[]
   status: string
   created_at: string
   cost_center_id?: string | null
   cost_center_code?: string | null
   cost_center_description?: string | null
+}
+
+function getProfileDisplayLabels(profile: Profile): string[] {
+  const fromGroups = (profile.permission_groups ?? [])
+    .map((g) => g.name?.trim())
+    .filter((n): n is string => Boolean(n))
+  if (fromGroups.length > 0) return fromGroups
+  const roles = profile.roles ?? (profile.role ? [profile.role] : [])
+  return roles.map((r) => getRoleLabel(r))
 }
 
 type UserForm = {
@@ -233,7 +244,8 @@ export function ConfiguracoesUsuariosTab({
 }: {
   impersonateOnly?: boolean
 }) {
-  const { userId, companyId, isSuperAdmin, hasRole } = useUser()
+  const { userId, companyId, isSuperAdmin } = useUser()
+  const { hasPermission } = usePermissions()
   const { canImpersonate, startImpersonation } = useImpersonation()
 
   const [profiles, setProfiles] = useState<Profile[]>([])
@@ -379,9 +391,9 @@ export function ConfiguracoesUsuariosTab({
   }, [companyId, loadProfiles])
 
   const currentIsAdmin =
-    !impersonateOnly && (isSuperAdmin || hasRole('admin') || hasRole('manager'))
+    !impersonateOnly && (isSuperAdmin || hasPermission("user.manage"))
 
-  const canManageUserPermissions = isSuperAdmin || hasRole('admin')
+  const canManageUserPermissions = isSuperAdmin || hasPermission("user.manage")
 
   async function handleActAs(profile: Profile) {
     if (profile.id === userId) return
@@ -1100,17 +1112,15 @@ export function ConfiguracoesUsuariosTab({
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top">
                     <div className="flex flex-wrap gap-1">
-                      {(profile.roles ?? (profile.role ? [profile.role] : [])).map(
-                        (r) => (
+                      {getProfileDisplayLabels(profile).map((label) => (
                           <Badge
-                            key={r}
+                            key={label}
                             variant="secondary"
                             className="text-xs font-normal"
                           >
-                            {getRoleLabel(r)}
+                            {label}
                           </Badge>
-                        ),
-                      )}
+                        ))}
                     </div>
                   </TableCell>
                   <TableCell className="px-3 py-2 align-top">

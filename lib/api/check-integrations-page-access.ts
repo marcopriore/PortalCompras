@@ -1,6 +1,11 @@
 import { cookies } from "next/headers"
 import { createClient } from "@/lib/supabase/server"
+import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
+import {
+  hasUserPermission,
+  loadUserPermissionKeys,
+} from "@/lib/permissions/resolve-user-permissions"
 
 export type IntegrationsPageAccess =
   | {
@@ -25,7 +30,7 @@ export async function getIntegrationsPageAccess(): Promise<IntegrationsPageAcces
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_id, role, roles, is_superadmin, profile_type")
+    .select("company_id, is_superadmin, profile_type")
     .eq("id", user.id)
     .single()
 
@@ -38,18 +43,20 @@ export async function getIntegrationsPageAccess(): Promise<IntegrationsPageAcces
     return { allowed: false, reason: "forbidden" }
   }
 
-  const roles = (profile.roles as string[] | null) ?? []
-  const isAdmin = profile.role === "admin" || roles.includes("admin")
-  if (!isAdmin) {
-    return { allowed: false, reason: "forbidden" }
-  }
-
   let companyId = profile.company_id as string
   if (profile.is_superadmin) {
     const cookieStore = await cookies()
     const selectedCookie = cookieStore.get("selected_company_id")
     if (selectedCookie?.value) {
       companyId = decodeURIComponent(selectedCookie.value)
+    }
+  }
+
+  if (!profile.is_superadmin) {
+    const service = createServiceRoleClient()
+    const keys = await loadUserPermissionKeys(service, user.id, companyId)
+    if (!hasUserPermission(keys, "integration.monitor")) {
+      return { allowed: false, reason: "forbidden" }
     }
   }
 

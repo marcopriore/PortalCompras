@@ -422,17 +422,24 @@ function getAvatarColor(name: string): string {
 export default function ConfiguracoesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
+  const { companyId, userId, isSuperAdmin, loading: userLoading } = useUser()
   const { hasPermission, hasFeature, loading: permissionsLoading } = usePermissions()
 
-  const canManageCompany = Boolean(isSuperAdmin || hasRole("admin"))
-  const canManageSettings = canManageCompany || hasPermission("settings.manage")
+  const canManageSettings = Boolean(isSuperAdmin || hasPermission("settings.manage"))
+  const canManageUsers = Boolean(isSuperAdmin || hasPermission("user.manage"))
   const canImpersonateUsers = hasPermission("user.impersonate")
-  const canAccessUsersTab = canManageCompany || canImpersonateUsers
+  const canAccessUsersTab = canManageUsers || canImpersonateUsers
+  const canAccessIntegrations = Boolean(
+    isSuperAdmin || hasPermission("integration.monitor"),
+  )
+  const canManagePermissionGroups = canManageSettings
   // Impersonação sem admin: pode gerenciar usuários, mas também precisa das abas pessoais
-  const impersonateOnly = canImpersonateUsers && !canManageSettings
-  const isPersonalSettingsOnly = !canManageSettings && !canImpersonateUsers
+  const impersonateOnly = canImpersonateUsers && !canManageSettings && !canManageUsers
+  const isPersonalSettingsOnly = !canManageSettings && !canImpersonateUsers && !canManageUsers
   const contractBalanceEnabled = hasFeature("contract_balance")
+  const canManageApprovals = canManageSettings
+  // legacy alias used across the page for company/fields/categories edits
+  const canManageCompany = canManageSettings
 
   const initialTab = React.useMemo<ActiveTab>(() => {
     const t = searchParams.get("tab") as ActiveTab | null
@@ -475,8 +482,6 @@ export default function ConfiguracoesPage() {
       return
     }
   }, [searchParams, impersonateOnly, isPersonalSettingsOnly, router])
-
-  const canManageApprovals = canManageCompany
 
   const [authEmail, setAuthEmail] = React.useState<string | null>(null)
 
@@ -1847,11 +1852,15 @@ export default function ConfiguracoesPage() {
               ? ([["categorias", "Categorias", Tags]] as const)
               : []),
             ["termos", "Termos de Fornecimento", FileText],
-            ...(canManageCompany ? [
-              ["usuarios", "Usuários", Users],
-              ["permissoes", "Grupos de Perfis", ShieldCheck],
-              ["integracoes", "Integrações", Zap],
-            ] as const : canAccessUsersTab ? [["usuarios", "Usuários", Users]] as const : []),
+            ...(canManageUsers || canImpersonateUsers
+              ? ([["usuarios", "Usuários", Users]] as const)
+              : []),
+            ...(canManagePermissionGroups
+              ? ([["permissoes", "Grupos de Perfis", ShieldCheck]] as const)
+              : []),
+            ...(canAccessIntegrations
+              ? ([["integracoes", "Integrações", Zap]] as const)
+              : []),
           ] as const)
         ).map(([key, label, Icon]) => (
           <button
@@ -3002,7 +3011,7 @@ export default function ConfiguracoesPage() {
         <div className="grid gap-6">
           {!canManageCompany ? (
             <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
-              Apenas administradores podem gerenciar a configuração de campos.
+              Apenas usuários com permissão de gerenciar configurações podem editar a configuração de campos.
             </div>
           ) : (
             <Card>
@@ -3373,12 +3382,12 @@ export default function ConfiguracoesPage() {
       )}
 
       {/* ABA PERFIS DE ACESSO */}
-      {activeTab === "permissoes" && canManageCompany && (
+      {activeTab === "permissoes" && canManagePermissionGroups && (
         <ConfiguracoesPermissoesTab />
       )}
 
       {/* ABA INTEGRAÇÕES */}
-      {activeTab === "integracoes" && canManageCompany && (
+      {activeTab === "integracoes" && canAccessIntegrations && (
         <div className="grid gap-6 max-w-2xl">
           <div className="rounded-xl border border-border bg-card p-6 space-y-4">
             <div>

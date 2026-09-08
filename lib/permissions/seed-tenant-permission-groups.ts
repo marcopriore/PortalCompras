@@ -3,6 +3,7 @@ import {
   LEGACY_ROLE_GROUPS,
   PERMISSION_CATALOG,
 } from "@/lib/permissions/catalog"
+import { ensureAdminGroupCatalogPermissions } from "@/lib/permissions/ensure-admin-group-catalog"
 
 /**
  * Cria grupos de sistema no tenant novo.
@@ -29,6 +30,7 @@ export async function seedSystemPermissionGroups(
 
   if (templateCompanyId) {
     await cloneSystemPermissionGroups(supabase, templateCompanyId, companyId)
+    await ensureAdminGroupCatalogPermissions(supabase, companyId)
     return
   }
 
@@ -101,6 +103,8 @@ async function cloneSystemPermissionGroups(
       onConflict: "group_id,permission_key",
     })
   }
+
+  await ensureAdminGroupCatalogPermissions(supabase, toCompanyId)
 }
 
 async function seedFallbackSystemPermissionGroups(

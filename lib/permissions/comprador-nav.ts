@@ -19,7 +19,6 @@ type NavEntryRule = AccessRule & {
 
 type RouteRule = AccessRule & {
   prefix: string
-  adminOnly?: boolean
 }
 
 export const COMPRADOR_NAV_RULES: NavEntryRule[] = [
@@ -39,6 +38,7 @@ export const COMPRADOR_NAV_RULES: NavEntryRule[] = [
       "approval.requisition",
       "approval.order",
       "approval.catalog_order",
+      "approval.view_all",
     ],
     anyPermission: true,
   },
@@ -50,6 +50,11 @@ export const COMPRADOR_NAV_RULES: NavEntryRule[] = [
     href: "/comprador/catalogo",
     permissions: ["nav.catalog"],
     features: ["purchase_catalog"],
+  },
+  {
+    href: "/comprador/integracoes/monitor",
+    permissions: ["integration.monitor"],
+    features: ["api_integrations"],
   },
   {
     href: "/comprador/configuracoes/usuarios",
@@ -78,8 +83,13 @@ const COMPRADOR_ROUTE_RULES: RouteRule[] = [
     permissions: ["quotation.create"],
   },
   {
+    prefix: "/comprador/integracoes",
+    permissions: ["integration.monitor"],
+    features: ["api_integrations"],
+  },
+  {
     prefix: "/comprador/configuracoes/permissoes",
-    adminOnly: true,
+    permissions: ["settings.manage"],
   },
   ...COMPRADOR_NAV_RULES.map((entry) => ({
     ...entry,
@@ -178,10 +188,6 @@ export function canAccessCompradorPath(
 
   const rule = sorted.find((r) => matchesPrefix(pathname, r.prefix))
   if (!rule) return true
-
-  if (rule.adminOnly) {
-    return ctx.hasRole?.("admin") ?? false
-  }
 
   return evaluateRule(rule, ctx)
 }

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { syncPendingRequisitionApprovals } from "@/lib/approvals/sync-pending-requisitions"
+import { resolveApprovalsAccess } from "@/lib/approvals/resolve-approvals-access"
 
 export const runtime = "nodejs"
 
@@ -19,41 +19,11 @@ type ApprovalRequestRow = {
   rejection_reason: string | null
 }
 
-async function resolveBuyerCompany(userId: string) {
-  const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("company_id, is_superadmin, profile_type, roles, role")
-    .eq("id", userId)
-    .single()
-
-  if (!profile || profile.profile_type !== "buyer") {
-    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
-  }
-
-  let companyId = profile.company_id as string | null
-  if (profile.is_superadmin) {
-    const cookieStore = await cookies()
-    const selected = cookieStore.get("selected_company_id")?.value
-    if (selected) companyId = decodeURIComponent(selected)
-  }
-  if (!companyId) {
-    return { error: NextResponse.json({ error: "Company not found" }, { status: 404 }) }
-  }
-
-  const roles = Array.isArray(profile.roles)
-    ? profile.roles.filter((r): r is string => typeof r === "string")
-    : []
-  const isAdmin =
-    roles.includes("admin") || profile.role === "admin" || Boolean(profile.is_superadmin)
-
-  return { companyId, isAdmin, userId }
-}
-
 /**
  * GET /api/approvals/queue
  * Fonte da verdade = status atual da entidade.
  * Sync remove órfãos/duplicatas e cria faltantes; pending = 1:1 com REQs pending.
+ * Ver todas: permission approval.view_all (ou superadmin). Caso contrário, só as do aprovador.
  */
 export async function GET() {
   try {
@@ -65,7 +35,7 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const ctx = await resolveBuyerCompany(user.id)
+    const ctx = await resolveApprovalsAccess(user.id)
     if ("error" in ctx) return ctx.error
 
     const service = createServiceRoleClient()
@@ -87,7 +57,7 @@ export async function GET() {
       .eq("status", "pending")
       .order("created_at", { ascending: false })
 
-    if (!ctx.isAdmin) {
+    if (!ctx.canViewAll) {
       pendingArQuery = pendingArQuery.eq("approver_id", ctx.userId)
     }
 
@@ -100,7 +70,7 @@ export async function GET() {
       .order("created_at", { ascending: false })
       .limit(200)
 
-    if (!ctx.isAdmin) {
+    if (!ctx.canViewAll) {
       historyArQuery = historyArQuery.eq("approver_id", ctx.userId)
     }
 
@@ -111,7 +81,7 @@ export async function GET() {
       .eq("flow", "order")
       .order("created_at", { ascending: false })
 
-    if (!ctx.isAdmin) {
+    if (!ctx.canViewAll) {
       orderQuery = orderQuery.eq("approver_id", ctx.userId)
     }
 
@@ -122,7 +92,7 @@ export async function GET() {
       .eq("flow", "catalog_order")
       .order("created_at", { ascending: false })
 
-    if (!ctx.isAdmin) {
+    if (!ctx.canViewAll) {
       catalogQuery = catalogQuery.eq("approver_id", ctx.userId)
     }
 
@@ -145,12 +115,11 @@ export async function GET() {
       if (!arByEntity.has(ar.entity_id)) arByEntity.set(ar.entity_id, ar)
     }
 
-    // Uma linha pending por REQ pending (admin vê todas; aprovador só as dele)
     const pendingRows: ApprovalRequestRow[] = []
     for (const req of pendingReqs ?? []) {
       const ar = arByEntity.get(req.id as string)
       if (!ar) continue
-      if (!ctx.isAdmin && ar.approver_id !== ctx.userId) continue
+      if (!ctx.canViewAll && ar.approver_id !== ctx.userId) continue
       pendingRows.push(ar)
     }
 

@@ -150,6 +150,49 @@ export async function PUT(request: Request) {
       }
     }
 
+    // Mantém profiles.roles alinhado aos grupos (evita badge "Comprador" com grupo Admin).
+    {
+      const { data: assignedGroups } = groupIds.length
+        ? await supabase
+            .from("permission_groups")
+            .select("code, source_role")
+            .eq("company_id", auth.companyId)
+            .in("id", groupIds)
+        : { data: [] as { code: string; source_role: string | null }[] }
+
+      const roleCodes = [
+        ...new Set(
+          (assignedGroups ?? [])
+            .map((g) => (g.source_role || g.code || "").trim())
+            .filter(Boolean),
+        ),
+      ]
+      const primaryRole = roleCodes.includes("admin")
+        ? "admin"
+        : roleCodes.includes("manager")
+          ? "manager"
+          : roleCodes[0] || "buyer"
+      const profileType =
+        roleCodes.includes("requester") &&
+        !roleCodes.some((r) =>
+          ["admin", "buyer", "manager", "approver_requisition", "approver_order"].includes(
+            r,
+          ),
+        )
+          ? "requester"
+          : "buyer"
+
+      await supabase
+        .from("profiles")
+        .update({
+          roles: roleCodes.length > 0 ? roleCodes : ["buyer"],
+          role: primaryRole,
+          profile_type: profileType,
+        })
+        .eq("id", body.userId)
+        .eq("company_id", auth.companyId)
+    }
+
     // Substitui rules diretas: desliga todas conhecidas e liga as selecionadas
     const { data: existingDirect } = await supabase
       .from("profile_permissions")

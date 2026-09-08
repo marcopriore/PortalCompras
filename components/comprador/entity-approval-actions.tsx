@@ -38,7 +38,7 @@ export function EntityApprovalActions({
   companyId,
   onDecided,
 }: EntityApprovalActionsProps) {
-  const { userId, hasRole, isSuperAdmin } = useUser()
+  const { userId, isSuperAdmin } = useUser()
   const { hasPermission, loading: permLoading } = usePermissions()
 
   const permissionKey =
@@ -47,8 +47,9 @@ export function EntityApprovalActions({
       : flow === "catalog_order"
         ? "approval.catalog_order"
         : "approval.order"
-  const isAdmin = isSuperAdmin || hasRole("admin")
+  const canViewAllApprovals = isSuperAdmin || hasPermission("approval.view_all")
   const hasApprovalPermission = hasPermission(permissionKey)
+  const isAdmin = canViewAllApprovals
 
   const [pendingRequest, setPendingRequest] = React.useState<PendingApproval | null>(null)
   const [loadingRequest, setLoadingRequest] = React.useState(true)

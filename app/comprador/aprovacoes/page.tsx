@@ -444,7 +444,7 @@ export default function AprovacoesPage() {
 
   React.useEffect(() => {
     if (userLoading || permissionsLoading) return
-    if (hasPermission("approval.requisition")) {
+    if (hasPermission("approval.requisition") || hasPermission("approval.view_all")) {
       setActiveTab("requisitions")
       return
     }
@@ -482,9 +482,12 @@ export default function AprovacoesPage() {
     )
   }
 
-  const hasReqPermission = hasPermission("approval.requisition")
-  const hasOrderPermission = hasPermission("approval.order")
-  const hasCatalogPermission = hasPermission("approval.catalog_order")
+  const canViewAllApprovals = hasPermission("approval.view_all")
+  const hasReqPermission =
+    hasPermission("approval.requisition") || canViewAllApprovals
+  const hasOrderPermission = hasPermission("approval.order") || canViewAllApprovals
+  const hasCatalogPermission =
+    hasPermission("approval.catalog_order") || canViewAllApprovals
 
   if (!hasReqPermission && !hasOrderPermission && !hasCatalogPermission) {
     return (

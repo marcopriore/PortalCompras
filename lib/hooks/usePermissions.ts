@@ -71,9 +71,11 @@ export type PermissionKey =
   | "approval.requisition"
   | "approval.order"
   | "approval.catalog_order"
+  | "approval.view_all"
   | "export.excel"
   | "import.excel"
   | "erp.sync"
+  | "integration.monitor"
   | "supplier.create"
   | "supplier.edit"
   | "item.create"
@@ -164,9 +166,11 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "approval.requisition",
   "approval.order",
   "approval.catalog_order",
+  "approval.view_all",
   "export.excel",
   "import.excel",
   "erp.sync",
+  "integration.monitor",
   "supplier.create",
   "supplier.edit",
   "item.create",

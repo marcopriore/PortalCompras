@@ -1,45 +1,14 @@
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { syncPendingRequisitionApprovals } from "@/lib/approvals/sync-pending-requisitions"
+import { resolveApprovalsAccess } from "@/lib/approvals/resolve-approvals-access"
 
 export const runtime = "nodejs"
 
-async function resolveBuyerCompany(userId: string) {
-  const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("company_id, is_superadmin, profile_type, roles, role")
-    .eq("id", userId)
-    .single()
-
-  if (!profile || profile.profile_type !== "buyer") {
-    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
-  }
-
-  let companyId = profile.company_id as string | null
-  if (profile.is_superadmin) {
-    const cookieStore = await cookies()
-    const selected = cookieStore.get("selected_company_id")?.value
-    if (selected) companyId = decodeURIComponent(selected)
-  }
-  if (!companyId) {
-    return { error: NextResponse.json({ error: "Company not found" }, { status: 404 }) }
-  }
-
-  const roles = Array.isArray(profile.roles)
-    ? profile.roles.filter((r): r is string => typeof r === "string")
-    : []
-  const isAdmin =
-    roles.includes("admin") || profile.role === "admin" || Boolean(profile.is_superadmin)
-
-  return { companyId, isAdmin, userId }
-}
-
 /**
  * GET /api/approvals/pending-count
- * Admin/superadmin: conta REQs status=pending (igual ao card "Pendente Aprovação").
+ * approval.view_all / superadmin: conta REQs status=pending (+ pedidos catalog pending via queue logic simplificada).
  * Aprovador: conta ARs pending atribuídos a ele (após sync).
  */
 export async function GET() {
@@ -52,13 +21,13 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const ctx = await resolveBuyerCompany(user.id)
+    const ctx = await resolveApprovalsAccess(user.id)
     if ("error" in ctx) return ctx.error
 
     const service = createServiceRoleClient()
     await syncPendingRequisitionApprovals(service, ctx.companyId)
 
-    if (ctx.isAdmin) {
+    if (ctx.canViewAll) {
       const { count, error } = await service
         .from("requisitions")
         .select("id", { count: "exact", head: true })
