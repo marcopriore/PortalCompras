@@ -214,54 +214,50 @@ export async function PATCH(request: Request) {
         ...new Set(body.permissionKeys.filter(isKnownPermissionKey)),
       ]
 
-      const { data: existingRows, error: listErr } = await supabase
+      const { error: deleteErr } = await supabase
         .from("permission_group_rules")
-        .select("permission_key")
+        .delete()
         .eq("company_id", auth.companyId)
         .eq("group_id", body.id)
 
-      if (listErr) {
-        return NextResponse.json({ error: listErr.message }, { status: 500 })
+      if (deleteErr) {
+        return NextResponse.json({ error: deleteErr.message }, { status: 500 })
       }
 
-      const desired = new Set(keys)
-      const existingKeys = new Set(
-        ((existingRows ?? []) as { permission_key: string }[]).map(
-          (row) => row.permission_key,
-        ),
-      )
-
       if (keys.length > 0) {
-        const { error: upsertErr } = await supabase
+        const { data: inserted, error: insertErr } = await supabase
           .from("permission_group_rules")
-          .upsert(
+          .insert(
             keys.map((permission_key) => ({
               company_id: auth.companyId,
               group_id: body.id!,
               permission_key,
               enabled: true,
             })),
-            { onConflict: "group_id,permission_key" },
           )
+          .select("permission_key")
 
-        if (upsertErr) {
-          return NextResponse.json({ error: upsertErr.message }, { status: 500 })
+        if (insertErr) {
+          return NextResponse.json({ error: insertErr.message }, { status: 500 })
+        }
+
+        const saved = new Set(
+          ((inserted ?? []) as { permission_key: string }[]).map(
+            (row) => row.permission_key,
+          ),
+        )
+        const missing = keys.filter((key) => !saved.has(key))
+        if (missing.length > 0) {
+          return NextResponse.json(
+            {
+              error: `Falha ao gravar permissões: ${missing.join(", ")}`,
+            },
+            { status: 500 },
+          )
         }
       }
 
-      const toRemove = [...existingKeys].filter((key) => !desired.has(key))
-      if (toRemove.length > 0) {
-        const { error: deleteErr } = await supabase
-          .from("permission_group_rules")
-          .delete()
-          .eq("company_id", auth.companyId)
-          .eq("group_id", body.id)
-          .in("permission_key", toRemove)
-
-        if (deleteErr) {
-          return NextResponse.json({ error: deleteErr.message }, { status: 500 })
-        }
-      }
+      return NextResponse.json({ success: true, permissionKeys: keys })
     }
 
     return NextResponse.json({ success: true })

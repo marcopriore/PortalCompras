@@ -73,6 +73,9 @@ export function ConfiguracoesPermissoesTab() {
     return hasPermission("settings.manage")
   }, [isSuperAdmin, hasPermission])
 
+  const [editorLoading, setEditorLoading] = React.useState(false)
+  const editLoadIdRef = React.useRef(0)
+
   const catalogByGroup = React.useMemo(
     () => groupPermissionsByCategory(PERMISSION_CATALOG),
     [],
@@ -112,18 +115,21 @@ export function ConfiguracoesPermissoesTab() {
   }
 
   const openEdit = async (group: PermissionGroup) => {
+    const loadId = ++editLoadIdRef.current
     setEditing(group)
     setFormName(group.name)
     setFormDescription(group.description ?? "")
     setSelectedKeys(new Set(group.permission_keys ?? []))
     setEditorOpen(true)
+    setEditorLoading(true)
+    setErrorMessage(null)
 
-    // Garante rules atualizadas do servidor
     try {
       const res = await fetch(`/api/admin/permission-groups?id=${group.id}`, {
         cache: "no-store",
       })
       const data = await res.json()
+      if (loadId !== editLoadIdRef.current) return
       if (res.ok && data.permissions) {
         setSelectedKeys(
           new Set(
@@ -135,6 +141,8 @@ export function ConfiguracoesPermissoesTab() {
       }
     } catch {
       /* mantém keys da listagem */
+    } finally {
+      if (loadId === editLoadIdRef.current) setEditorLoading(false)
     }
   }
 
@@ -171,6 +179,19 @@ export function ConfiguracoesPermissoesTab() {
           setErrorMessage(data.error ?? "Erro ao salvar grupo.")
           return
         }
+        const savedKeys = Array.isArray(data.permissionKeys)
+          ? (data.permissionKeys as string[])
+          : null
+        if (savedKeys) {
+          const saved = new Set(savedKeys)
+          const missing = permissionKeys.filter((key) => !saved.has(key))
+          if (missing.length > 0) {
+            setErrorMessage(
+              `Grupo atualizado, mas permissões não gravadas: ${missing.join(", ")}`,
+            )
+            return
+          }
+        }
         await logAudit({
           eventType: "tenant.updated",
           description: `Grupo de permissões "${formName.trim()}" atualizado`,
@@ -179,7 +200,11 @@ export function ConfiguracoesPermissoesTab() {
           entity: "permission_groups",
           entityId: editing.id,
         })
-        setSuccessMessage("Grupo atualizado com sucesso.")
+        setSuccessMessage(
+          savedKeys
+            ? `Grupo atualizado com sucesso (${savedKeys.length} permissões).`
+            : "Grupo atualizado com sucesso.",
+        )
       } else {
         const res = await fetch("/api/admin/permission-groups", {
           method: "POST",
@@ -434,7 +459,7 @@ export function ConfiguracoesPermissoesTab() {
                           onCheckedChange={(v) =>
                             toggleKey(item.key, v === true)
                           }
-                          disabled={saving}
+                          disabled={saving || editorLoading}
                           className="mt-0.5"
                         />
                         <span>
@@ -463,10 +488,10 @@ export function ConfiguracoesPermissoesTab() {
             <Button
               type="button"
               onClick={() => void handleSaveGroup()}
-              disabled={saving || !formName.trim()}
+              disabled={saving || editorLoading || !formName.trim()}
             >
               <Save className="mr-2 h-4 w-4" />
-              {saving ? "Salvando..." : "Salvar"}
+              {saving ? "Salvando..." : editorLoading ? "Carregando..." : "Salvar"}
             </Button>
           </DialogFooter>
         </DialogContent>
