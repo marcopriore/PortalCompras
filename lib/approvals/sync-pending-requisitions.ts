@@ -70,6 +70,7 @@ export async function syncPendingRequisitionApprovals(
   // 2) Deduplicar: por entity_id, manter o mais recente (lista já ordenada desc)
   const seenEntity = new Set<string>()
   const dupIds: string[] = []
+  const keepByEntity = new Map<string, string>()
   for (const ar of open) {
     const eid = ar.entity_id as string
     if (!pendingReqIds.has(eid)) continue
@@ -78,6 +79,7 @@ export async function syncPendingRequisitionApprovals(
       dupIds.push(ar.id as string)
     } else {
       seenEntity.add(eid)
+      keepByEntity.set(eid, ar.id as string)
     }
   }
 
@@ -87,7 +89,36 @@ export async function syncPendingRequisitionApprovals(
     if (!error) removedDupes = dupIds.length
   }
 
-  // 3) Criar faltantes
+  // 3) Reatribuir aprovador conforme alçada atual (corrige fila após troca de aprovador)
+  const pendingForReassign = (pendingReqs ?? []).filter((r) =>
+    seenEntity.has(r.id as string),
+  )
+  const reassignChunk = 8
+  for (let i = 0; i < pendingForReassign.length; i += reassignChunk) {
+    const chunk = pendingForReassign.slice(i, i + reassignChunk)
+    await Promise.all(
+      chunk.map(async (req) => {
+        const arId = keepByEntity.get(req.id as string)
+        if (!arId) return
+        const approver = await resolveApprover(
+          service,
+          companyId,
+          (req.cost_center as string | null) ?? null,
+        )
+        if (!approver.approver_id) return
+        await service
+          .from("approval_requests")
+          .update({
+            approver_id: approver.approver_id,
+            approver_name: approver.approver_name,
+          })
+          .eq("id", arId)
+          .eq("status", "pending")
+      }),
+    )
+  }
+
+  // 4) Criar faltantes
   const missing = (pendingReqs ?? []).filter((r) => !seenEntity.has(r.id as string))
   let created = 0
   const chunkSize = 5

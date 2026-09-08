@@ -550,8 +550,16 @@ export default function AprovacoesPage() {
           <CardContent className="flex flex-col items-center justify-center py-16">
             <ShieldCheck className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-lg font-medium text-foreground">
-              Nenhuma aprovação pendente. Tudo em dia!
+              {canViewAllApprovals
+                ? "Nenhuma aprovação pendente. Tudo em dia!"
+                : "Nenhuma aprovação atribuída a você no momento."}
             </p>
+            {!canViewAllApprovals ? (
+              <p className="mt-2 max-w-md text-center text-sm text-muted-foreground">
+                Só aparecem itens em que você é o aprovador da alçada. Confira em
+                Configurações → Aprovações se o seu usuário está vinculado às regras.
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       ) : showTabs ? (

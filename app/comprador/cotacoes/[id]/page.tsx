@@ -353,6 +353,16 @@ export default function QuotationDetailsPage({
 
   const handleStatusUpdate = async (newStatus: QuotationStatus) => {
     if (!quotation) return
+    if (
+      newStatus === 'cancelled' &&
+      !isSuperAdmin &&
+      quotation.created_by !== userId
+    ) {
+      toast.error(
+        'Somente o responsável pela cotação ou um superadmin pode cancelar.',
+      )
+      return
+    }
 
     setUpdatingStatus(newStatus)
     try {
@@ -518,6 +528,12 @@ export default function QuotationDetailsPage({
     quotation!.status !== 'cancelled' &&
     (quotation!.created_by === userId || hasPermission('quotation.delegate'))
 
+  const canCancelQuotation =
+    Boolean(quotation) &&
+    quotation!.status !== 'cancelled' &&
+    quotation!.status !== 'completed' &&
+    (isSuperAdmin || quotation!.created_by === userId)
+
   const openDelegateDialog = async () => {
     if (!companyId || !quotation) return
     setDelegateOpen(true)
@@ -651,26 +667,7 @@ export default function QuotationDetailsPage({
               Delegar
             </Button>
           )}
-          {quotation && quotation.status !== 'cancelled' && quotation.status !== 'completed' && (
-            !hasPermission('quotation.cancel') ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="border-destructive text-destructive hover:bg-destructive/10"
-                      onClick={() => setCancelDialogOpen(true)}
-                      disabled
-                      title="Sem permissão"
-                    >
-                      Cancelar Cotação
-                    </Button>
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
-              </Tooltip>
-            ) : (
+          {canCancelQuotation ? (
               <Button
                 type="button"
                 variant="outline"
@@ -680,8 +677,7 @@ export default function QuotationDetailsPage({
               >
                 Cancelar Cotação
               </Button>
-            )
-          )}
+          ) : null}
           {quotation &&
             ['waiting', 'analysis', 'completed'].includes(quotation.status) &&
             (hasPermission('quotation.equalize.view') || hasPermission('quotation.equalize.select')) && (

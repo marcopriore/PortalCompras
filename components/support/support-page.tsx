@@ -40,6 +40,9 @@ import { TableRowActions } from "@/components/ui/table-row-actions"
 import { AttachmentFileList } from "@/components/support/attachment-file-list"
 import { CharacterCounter } from "@/components/support/character-counter"
 import { useTenant } from "@/contexts/tenant-context"
+import { useUser } from "@/lib/hooks/useUser"
+import { createClient } from "@/lib/supabase/client"
+import { Checkbox } from "@/components/ui/checkbox"
 import { exportSupportTicketsExcel } from "@/lib/axisdesk/export-support-tickets"
 import {
   applySupportListFilters,
@@ -105,6 +108,7 @@ export function SupportPage({ portal }: SupportPageProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const { companyId } = useTenant()
+  const { userId } = useUser()
   const companyIdRef = React.useRef(companyId)
   companyIdRef.current = companyId
   const detailBase =
@@ -116,6 +120,7 @@ export function SupportPage({ portal }: SupportPageProps) {
   )
 
   const [tickets, setTickets] = React.useState<AxisDeskChamado[]>([])
+  const [userEmail, setUserEmail] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [refreshing, setRefreshing] = React.useState(false)
   const [exporting, setExporting] = React.useState(false)
@@ -137,6 +142,20 @@ export function SupportPage({ portal }: SupportPageProps) {
   React.useEffect(() => {
     setQDraft(filters.q)
   }, [filters.q])
+
+  React.useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+      if (!cancelled) setUserEmail(user?.email ?? null)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const replaceFilters = React.useCallback(
     (patch: Partial<SupportListFilters>) => {
@@ -281,8 +300,12 @@ export function SupportPage({ portal }: SupportPageProps) {
   }, [createOpen, createForm.tipo, loadCreateCategorias])
 
   const filteredTickets = React.useMemo(
-    () => applySupportListFilters(tickets, filters),
-    [tickets, filters],
+    () =>
+      applySupportListFilters(tickets, filters, {
+        userId,
+        email: userEmail,
+      }),
+    [tickets, filters, userId, userEmail],
   )
 
   const totalPages = Math.max(
@@ -480,6 +503,24 @@ export function SupportPage({ portal }: SupportPageProps) {
                     </button>
                   )}
                 </div>
+              </div>
+
+              <div className="flex flex-col justify-end">
+                <p className="text-xs font-medium text-muted-foreground mb-1">
+                  Escopo
+                </p>
+                <label className="flex h-9 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm cursor-pointer select-none w-48">
+                  <Checkbox
+                    checked={filters.viewAll}
+                    onCheckedChange={(checked) =>
+                      replaceFilters({
+                        viewAll: checked === true,
+                        page: 1,
+                      })
+                    }
+                  />
+                  <span>Visualizar todos</span>
+                </label>
               </div>
 
               <div className="flex flex-col">

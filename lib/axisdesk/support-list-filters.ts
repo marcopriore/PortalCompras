@@ -12,6 +12,8 @@ export type SupportListFilters = {
   slaAte: string
   criadoDe: string
   criadoAte: string
+  /** Quando true, lista todos os chamados do tenant; senão, só do usuário logado. */
+  viewAll: boolean
   page: number
 }
 
@@ -26,6 +28,7 @@ export const SUPPORT_LIST_DEFAULT_FILTERS: SupportListFilters = {
   slaAte: "",
   criadoDe: "",
   criadoAte: "",
+  viewAll: false,
   page: 1,
 }
 
@@ -57,6 +60,9 @@ export function parseSupportListFilters(
     slaAte: searchParams.get("slaAte")?.trim() ?? "",
     criadoDe: searchParams.get("criadoDe")?.trim() ?? "",
     criadoAte: searchParams.get("criadoAte")?.trim() ?? "",
+    viewAll:
+      searchParams.get("viewAll") === "1" ||
+      searchParams.get("viewAll") === "true",
     page: parsePage(searchParams.get("page")),
   }
 }
@@ -81,6 +87,7 @@ export function buildSupportListSearchParams(
   if (filters.slaAte) params.set("slaAte", filters.slaAte)
   if (filters.criadoDe) params.set("criadoDe", filters.criadoDe)
   if (filters.criadoAte) params.set("criadoAte", filters.criadoAte)
+  if (filters.viewAll) params.set("viewAll", "1")
   if (filters.page > 1) params.set("page", String(filters.page))
   return params
 }
@@ -132,10 +139,21 @@ export function sanitizeCategoriaFilter(
 export function applySupportListFilters(
   tickets: AxisDeskChamado[],
   filters: SupportListFilters,
+  owner?: { userId?: string | null; email?: string | null },
 ): AxisDeskChamado[] {
   const q = filters.q.trim().toLowerCase()
+  const ownerEmail = owner?.email?.trim().toLowerCase() ?? ""
+  const ownerId = owner?.userId?.trim() ?? ""
 
   return tickets.filter((ticket) => {
+    if (!filters.viewAll) {
+      const sid = ticket.solicitante?.id_externo?.trim() ?? ""
+      const semail = ticket.solicitante?.email?.trim().toLowerCase() ?? ""
+      const isMine =
+        (ownerId.length > 0 && sid === ownerId) ||
+        (ownerEmail.length > 0 && semail === ownerEmail)
+      if (!isMine) return false
+    }
     if (q && !ticket.titulo.toLowerCase().includes(q)) return false
     if (filters.status.length > 0 && !filters.status.includes(ticket.status)) {
       return false

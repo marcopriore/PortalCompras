@@ -114,6 +114,7 @@ export type AxisDeskChamado = {
   created_at: string
   updated_at?: string | null
   solicitante?: {
+    id_externo?: string
     nome: string
     email: string
   }

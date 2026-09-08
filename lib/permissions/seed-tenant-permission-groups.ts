@@ -4,6 +4,7 @@ import {
   PERMISSION_CATALOG,
 } from "@/lib/permissions/catalog"
 import { ensureAdminGroupCatalogPermissions } from "@/lib/permissions/ensure-admin-group-catalog"
+import { ensureManagerCatalogPermissions } from "@/lib/permissions/ensure-manager-catalog-permissions"
 
 /**
  * Cria grupos de sistema no tenant novo.
@@ -31,6 +32,7 @@ export async function seedSystemPermissionGroups(
   if (templateCompanyId) {
     await cloneSystemPermissionGroups(supabase, templateCompanyId, companyId)
     await ensureAdminGroupCatalogPermissions(supabase, companyId)
+    await ensureManagerCatalogPermissions(supabase, companyId)
     return
   }
 
@@ -105,6 +107,7 @@ async function cloneSystemPermissionGroups(
   }
 
   await ensureAdminGroupCatalogPermissions(supabase, toCompanyId)
+  await ensureManagerCatalogPermissions(supabase, toCompanyId)
 }
 
 async function seedFallbackSystemPermissionGroups(
@@ -146,6 +149,8 @@ async function seedFallbackSystemPermissionGroups(
       }
     }
   }
+
+  await ensureManagerCatalogPermissions(supabase, companyId)
 }
 
 export async function assignPermissionGroupsByRoleCodes(

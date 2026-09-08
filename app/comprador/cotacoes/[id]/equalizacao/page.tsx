@@ -1056,9 +1056,12 @@ export default function EqualizacaoPage({
   }, [remainingMs, selectedRound?.status])
 
   const hasActiveRoundGlobally = rounds.some((r) => r.status === "active")
+  const canCreateOrderOrContract =
+    hasPermission("order.create") || hasPermission("contract.create")
   const showFinalizeRoundButton =
     selectedRound?.status === "active" && quotation?.status !== "completed"
   const showNovaRoundButton =
+    canCreateOrderOrContract &&
     quotation?.status !== "completed" &&
     quotation?.status !== "cancelled" &&
     (selectedRound?.status === "closed" ||
@@ -1614,6 +1617,10 @@ export default function EqualizacaoPage({
   }, [itemSelections, quotationItems, proposals, orderedItems])
 
   function handleGerarContrato() {
+    if (!hasPermission("contract.create")) {
+      toast.error("Você não tem permissão para gerar contrato.")
+      return
+    }
     if (!selectedRoundId) {
       toast.error("Selecione uma rodada.")
       return
@@ -3067,7 +3074,8 @@ export default function EqualizacaoPage({
                           </p>
                         </div>
                         <div className="flex-shrink-0 flex items-center gap-2">
-                          {hasFeature("contracts") && (
+                          {hasFeature("contracts") &&
+                            hasPermission("contract.create") && (
                             <Button
                               size="sm"
                               variant="outline"
