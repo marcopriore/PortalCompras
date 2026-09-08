@@ -232,6 +232,7 @@ export function usePermissions(): UsePermissionsReturn {
 
   React.useEffect(() => {
     let alive = true
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null
 
     const load = async () => {
       if (isSuperAdmin && !isImpersonating) {
@@ -327,10 +328,27 @@ export function usePermissions(): UsePermissionsReturn {
       }
     }
 
-    if (!userLoading) load()
+    const scheduleReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer)
+      reloadTimer = setTimeout(() => {
+        void load()
+      }, 300)
+    }
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") scheduleReload()
+    }
+
+    if (!userLoading) void load()
+
+    window.addEventListener("focus", scheduleReload)
+    document.addEventListener("visibilitychange", onVisibility)
 
     return () => {
       alive = false
+      if (reloadTimer) clearTimeout(reloadTimer)
+      window.removeEventListener("focus", scheduleReload)
+      document.removeEventListener("visibilitychange", onVisibility)
     }
   }, [companyId, userId, isSuperAdmin, isImpersonating, userLoading])
 

@@ -17,6 +17,7 @@ import {
   loadUserPermissionKeys,
 } from "@/lib/permissions/resolve-user-permissions"
 import { hasCatalogViewAccessFromKeys } from "@/lib/permissions/catalog-access"
+import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import type { PermissionKey } from "@/lib/hooks/usePermissions"
 
 async function requireCatalogAccess(
@@ -30,7 +31,11 @@ async function requireCatalogAccess(
   const db = resolveCatalogDbClient(ctx)
   const [enabled, permissions] = await Promise.all([
     tenantHasPurchaseCatalog(db, ctx.companyId),
-    loadUserPermissionKeys(ctx.supabase, ctx.userId, ctx.companyId),
+    loadUserPermissionKeys(
+      createServiceRoleClient(),
+      ctx.userId,
+      ctx.companyId,
+    ),
   ])
 
   if (!enabled) {

@@ -150,7 +150,13 @@ export function PurchaseCatalogPage({
 
   const moduleEnabled = hasFeature("purchase_catalog")
   const canBrowse = moduleEnabled && hasCatalogViewAccess(hasPermission)
-  const canOrder = canWrite("catalog.order")
+  const clientCanOrder = canWrite("catalog.order")
+  const [serverCanOrder, setServerCanOrder] = React.useState<boolean | null>(null)
+  const canOrder = serverCanOrder ?? clientCanOrder
+
+  React.useEffect(() => {
+    setServerCanOrder(null)
+  }, [clientCanOrder])
 
   const applyServerCart = React.useCallback((next: CatalogCart) => {
     serverCartRef.current = next
@@ -183,12 +189,16 @@ export function PurchaseCatalogPage({
           offers: CatalogOffer[]
           total: number
           hasMore: boolean
+          can_order?: boolean
           commodityGroups?: string[]
           suppliers?: Array<{ id: string; name: string; code: string }>
         }
 
         if (requestId !== offersRequestRef.current) return
 
+        if (typeof data.can_order === "boolean") {
+          setServerCanOrder(data.can_order)
+        }
         setTotalOffers(data.total)
         setHasMoreOffers(data.hasMore)
         setOffers((prev) =>

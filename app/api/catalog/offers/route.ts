@@ -10,6 +10,7 @@ import {
   canUserWrite,
   loadUserPermissionKeys,
 } from "@/lib/permissions/resolve-user-permissions"
+import { createServiceRoleClient } from "@/lib/supabase/service-role"
 
 const DEFAULT_LIMIT = 18
 const MAX_LIMIT = 50
@@ -28,8 +29,9 @@ export async function GET(request: Request) {
 
     let canOrder = ctx.isSuperAdmin
     if (!ctx.isSuperAdmin) {
+      const service = createServiceRoleClient()
       const permissions = await loadUserPermissionKeys(
-        ctx.supabase,
+        service,
         ctx.userId,
         ctx.companyId,
       )

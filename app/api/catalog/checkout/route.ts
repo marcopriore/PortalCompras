@@ -36,7 +36,11 @@ export async function POST(request: Request) {
       loadTenantFeatureConfig(db, ctx.companyId),
       ctx.isSuperAdmin
         ? Promise.resolve(null)
-        : loadUserPermissionKeys(ctx.supabase, ctx.userId, ctx.companyId),
+        : loadUserPermissionKeys(
+            createServiceRoleClient(),
+            ctx.userId,
+            ctx.companyId,
+          ),
       bodyPromise,
     ])
 
