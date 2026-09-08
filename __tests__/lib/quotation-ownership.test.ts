@@ -1,24 +1,35 @@
 import { describe, expect, it } from "vitest"
 import {
   canAccessQuotation,
+  canViewAllByPermission,
   canViewAllQuotations,
   formatResponsibleName,
   isBuyerOrHigherProfile,
 } from "@/lib/quotations/ownership"
 
 describe("quotation ownership", () => {
-  it("allows superadmin and admin to view all", () => {
+  it("allows superadmin to view all without permission keys", () => {
     expect(
       canViewAllQuotations({
         isSuperAdmin: true,
         hasPermission: () => false,
       }),
     ).toBe(true)
+  })
+
+  it("does not bypass via role admin — only permission keys", () => {
     expect(
       canViewAllQuotations({
         isSuperAdmin: false,
         hasRole: (r) => r === "admin",
         hasPermission: () => false,
+      }),
+    ).toBe(false)
+    expect(
+      canViewAllQuotations({
+        isSuperAdmin: false,
+        hasRole: (r) => r === "admin",
+        hasPermission: (p) => p === "quotation.view_all",
       }),
     ).toBe(true)
   })
@@ -38,6 +49,38 @@ describe("quotation ownership", () => {
         hasPermission: () => false,
       }),
     ).toBe(false)
+  })
+
+  it("canViewAllByPermission uses permission keys (no admin role bypass)", () => {
+    expect(
+      canViewAllByPermission(
+        {
+          isSuperAdmin: false,
+          hasRole: (r) => r === "admin",
+          hasPermission: () => false,
+        },
+        "order.view_all",
+      ),
+    ).toBe(false)
+    expect(
+      canViewAllByPermission(
+        {
+          isSuperAdmin: false,
+          hasRole: () => false,
+          hasPermission: (p) => p === "requisition.view_all",
+        },
+        "requisition.view_all",
+      ),
+    ).toBe(true)
+    expect(
+      canViewAllByPermission(
+        {
+          isSuperAdmin: true,
+          hasPermission: () => false,
+        },
+        "order.view_all",
+      ),
+    ).toBe(true)
   })
 
   it("restricts access to the owner when view_all is off", () => {

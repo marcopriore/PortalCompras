@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 
-type ApprovalFlow = "requisition" | "order"
+type ApprovalFlow = "requisition" | "order" | "catalog_order"
 
 type PendingApproval = {
   id: string
@@ -39,11 +39,16 @@ export function EntityApprovalActions({
   onDecided,
 }: EntityApprovalActionsProps) {
   const { userId, hasRole, isSuperAdmin } = useUser()
-  const { hasPermission } = usePermissions()
+  const { hasPermission, loading: permLoading } = usePermissions()
 
-  const permissionKey = flow === "requisition" ? "approval.requisition" : "approval.order"
-  const hasApprovalPermission = hasPermission(permissionKey)
+  const permissionKey =
+    flow === "requisition"
+      ? "approval.requisition"
+      : flow === "catalog_order"
+        ? "approval.catalog_order"
+        : "approval.order"
   const isAdmin = isSuperAdmin || hasRole("admin")
+  const hasApprovalPermission = hasPermission(permissionKey)
 
   const [pendingRequest, setPendingRequest] = React.useState<PendingApproval | null>(null)
   const [loadingRequest, setLoadingRequest] = React.useState(true)
@@ -161,7 +166,7 @@ export function EntityApprovalActions({
     }
   }
 
-  if (loadingRequest || !canAct || !pendingRequest) {
+  if (permLoading || loadingRequest || !canAct || !pendingRequest) {
     return null
   }
 

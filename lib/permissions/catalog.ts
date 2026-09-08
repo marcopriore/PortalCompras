@@ -116,6 +116,11 @@ export const PERMISSION_CATALOG: PermissionCatalogItem[] = [
   },
   { key: "approval.requisition", label: "Fluxo Aprovação Requisição", group: "Aprovações" },
   { key: "approval.order", label: "Fluxo Aprovação Pedido", group: "Aprovações" },
+  {
+    key: "approval.catalog_order",
+    label: "Fluxo Aprovação Pedido — Catálogo",
+    group: "Aprovações",
+  },
   { key: "export.excel", label: "Exportar Excel", group: "Dados" },
   { key: "import.excel", label: "Importar Excel", group: "Dados" },
   {

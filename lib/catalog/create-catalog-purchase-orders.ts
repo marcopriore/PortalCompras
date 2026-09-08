@@ -8,6 +8,7 @@ import {
 } from "@/lib/branches/branch-queries"
 import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
 import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
+import type { CatalogPostCheckoutMode } from "@/lib/settings/tenant-feature-settings-registry"
 
 export type CatalogCartLineRow = {
   id: string
@@ -102,9 +103,17 @@ export async function createCatalogPurchaseOrders(
   userName: string | null,
   cartItems: CatalogCartLineRow[],
   input: CatalogCheckoutInput,
+  options?: { postCheckoutMode?: CatalogPostCheckoutMode },
 ): Promise<
   { ok: true; result: CatalogPurchaseOrderResult } | { ok: false; error: string }
 > {
+  const postCheckoutMode = options?.postCheckoutMode ?? "buyer_review"
+  const requisitionStatus =
+    postCheckoutMode === "cost_center_approval"
+      ? "awaiting_approval"
+      : "awaiting_buyer"
+  const purchaseOrderStatus =
+    postCheckoutMode === "cost_center_approval" ? "awaiting_approval" : "draft"
   if (cartItems.length === 0) {
     return { ok: false, error: "Carrinho vazio" }
   }
@@ -215,7 +224,7 @@ export async function createCatalogPurchaseOrders(
         cost_center: input.costCenter.trim(),
         needed_by: input.neededBy?.trim() || null,
         priority: input.priority ?? "normal",
-        status: "awaiting_buyer",
+        status: requisitionStatus,
         origin: "catalog",
         requester_id: userId,
         requester_name: userName,
@@ -317,7 +326,7 @@ export async function createCatalogPurchaseOrders(
           total_price: Math.round(branchTotal * 100) / 100,
           observations: observationParts.join("\n"),
           created_by: userId,
-          status: "draft",
+          status: purchaseOrderStatus,
         })
         .select("id, code")
         .single()

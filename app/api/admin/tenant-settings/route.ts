@@ -122,7 +122,12 @@ export async function GET(request: Request) {
       grouped,
       featureConfig,
       booleanDefinitions: TENANT_FEATURE_BOOLEAN_REGISTRY,
-      erpVendorDefinition: TENANT_FEATURE_TEXT_REGISTRY[0],
+      erpVendorDefinition: TENANT_FEATURE_TEXT_REGISTRY.find(
+        (d) => d.key === "erp_vendor",
+      ),
+      catalogPostCheckoutDefinition: TENANT_FEATURE_TEXT_REGISTRY.find(
+        (d) => d.key === "catalog_post_checkout_mode",
+      ),
       apiCapabilities,
       inboundMatrixRows: INBOUND_MATRIX_ROWS,
       outboundMatrixRows: OUTBOUND_MATRIX_ROWS,
@@ -143,6 +148,7 @@ export async function PATCH(request: Request) {
       settings?: Record<string, unknown>
       booleans?: Record<string, boolean>
       erpVendor?: string
+      catalogPostCheckoutMode?: string
       apiCapabilities?: unknown
     }
 
@@ -181,13 +187,18 @@ export async function PATCH(request: Request) {
       }
     }
 
-    if (body.booleans || body.erpVendor !== undefined) {
+    if (
+      body.booleans ||
+      body.erpVendor !== undefined ||
+      body.catalogPostCheckoutMode !== undefined
+    ) {
       const featureValidated = validateTenantFeaturePatch({
         booleans:
           body.booleans && Object.keys(body.booleans).length > 0
             ? body.booleans
             : undefined,
         erpVendor: body.erpVendor,
+        catalogPostCheckoutMode: body.catalogPostCheckoutMode,
       })
       if (!featureValidated.ok) {
         return NextResponse.json({ error: featureValidated.error }, { status: 400 })
@@ -201,6 +212,8 @@ export async function PATCH(request: Request) {
         })
         if (row.key === "erp_vendor") {
           savedFeatures.erpVendor = row.value
+        } else if (row.key === "catalog_post_checkout_mode") {
+          savedFeatures.catalogPostCheckoutMode = row.value
         } else {
           savedFeatures[row.key] = row.value === "1"
         }

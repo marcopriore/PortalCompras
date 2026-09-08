@@ -8,7 +8,7 @@ import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
-import { formatResponsibleName } from "@/lib/quotations/ownership"
+import { canViewAllByPermission, formatResponsibleName } from "@/lib/quotations/ownership"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -40,6 +40,7 @@ import { TableRowActions } from "@/components/ui/table-row-actions"
 
 type PurchaseOrderStatus =
   | "draft"
+  | "awaiting_approval"
   | "processing"
   | "sent"
   | "refused"
@@ -77,6 +78,7 @@ const PAGE_SIZE = TABLE_PAGE_SIZE
 
 const DEFAULT_STATUS: string[] = [
   "draft",
+  "awaiting_approval",
   "sent",
   "refused",
   "processing",
@@ -88,6 +90,7 @@ const DEFAULT_STATUS: string[] = [
 
 const STATUS_OPTIONS = [
   { value: "draft", label: "Rascunho" },
+  { value: "awaiting_approval", label: "Pendente Aprovação" },
   { value: "sent", label: "Aguardando Aceite" },
   { value: "refused", label: "Recusado pelo Fornecedor" },
   { value: "processing", label: "Processando Integração" },
@@ -104,9 +107,12 @@ const money = new Intl.NumberFormat("pt-BR", {
 
 export default function PedidosPage() {
   const router = useRouter()
-  const { companyId, userId, loading: userLoading } = useUser()
+  const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
   const { hasPermission, loading: permLoading } = usePermissions()
-  const viewAllOrders = hasPermission("order.view_all")
+  const viewAllOrders = canViewAllByPermission(
+    { isSuperAdmin, hasRole, hasPermission },
+    "order.view_all",
+  )
 
   const [orders, setOrders] = React.useState<PurchaseOrder[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -134,7 +140,10 @@ export default function PedidosPage() {
 
       if (!silent) setLoading(true)
       const supabase = createClient()
-      const viewAll = hasPermission("order.view_all")
+      const viewAll = canViewAllByPermission(
+        { isSuperAdmin, hasRole, hasPermission },
+        "order.view_all",
+      )
       let query = supabase
         .from("purchase_orders")
         .select(
@@ -175,7 +184,7 @@ export default function PedidosPage() {
       setLastUpdated(new Date())
       if (!silent) setLoading(false)
     },
-    [companyId, userId, userLoading, permLoading, hasPermission],
+    [companyId, userId, userLoading, permLoading, hasPermission, isSuperAdmin, hasRole],
   )
 
   React.useEffect(() => {
@@ -196,7 +205,7 @@ export default function PedidosPage() {
   useAutoRefresh({
     intervalMs: pollingIntervalMs,
     onRefresh: refreshPedidos,
-    enabled: Boolean(companyId) && !userLoading,
+    enabled: Boolean(companyId) && !userLoading && !permLoading,
   })
 
   const handleFilterChange =
@@ -379,7 +388,7 @@ export default function PedidosPage() {
     }
   }
 
-  if (userLoading) {
+  if (userLoading || permLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
         Carregando...

@@ -287,7 +287,7 @@ type SecurityPasswordForm = {
 
 type ApprovalRule = {
   id: string
-  flow: "requisition" | "order"
+  flow: "requisition" | "order" | "catalog_order"
   cost_center: string | null
   category: string | null
   min_value: number | null
@@ -310,8 +310,6 @@ type ApprovalRuleForm = {
 }
 
 type ApprovalOrderForm = {
-  category: string
-  useAllCategories: boolean
   minValue: string
   maxValue: string
   useNoMax: boolean
@@ -425,7 +423,7 @@ export default function ConfiguracoesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
-  const { hasPermission, loading: permissionsLoading } = usePermissions()
+  const { hasPermission, hasFeature, loading: permissionsLoading } = usePermissions()
 
   const canManageCompany = Boolean(isSuperAdmin || hasRole("admin"))
   const canManageSettings = canManageCompany || hasPermission("settings.manage")
@@ -434,6 +432,7 @@ export default function ConfiguracoesPage() {
   // Impersonação sem admin: pode gerenciar usuários, mas também precisa das abas pessoais
   const impersonateOnly = canImpersonateUsers && !canManageSettings
   const isPersonalSettingsOnly = !canManageSettings && !canImpersonateUsers
+  const contractBalanceEnabled = hasFeature("contract_balance")
 
   const initialTab = React.useMemo<ActiveTab>(() => {
     const t = searchParams.get("tab") as ActiveTab | null
@@ -523,17 +522,18 @@ export default function ConfiguracoesPage() {
   const [mfaError, setMfaError] = React.useState<string | null>(null)
   const [mfaSuccess, setMfaSuccess] = React.useState<string | null>(null)
 
-  const { hasFeature } = usePermissions()
-  const contractBalanceEnabled = hasFeature("contract_balance")
-
   const [approvalRequisitionEnabled, setApprovalRequisitionEnabled] = React.useState(false)
   const [approvalOrderEnabled, setApprovalOrderEnabled] = React.useState(false)
+  const [approvalCatalogEnabled, setApprovalCatalogEnabled] = React.useState(false)
   const [approvalRules, setApprovalRules] = React.useState<ApprovalRule[]>([])
   const [approvalOrderRules, setApprovalOrderRules] = React.useState<ApprovalRule[]>([])
+  const [approvalCatalogRules, setApprovalCatalogRules] = React.useState<ApprovalRule[]>([])
   const [approversRequisition, setApproversRequisition] = React.useState<ApproverProfile[]>([])
   const [approversOrder, setApproversOrder] = React.useState<ApproverProfile[]>([])
-  const [tenantCategories, setTenantCategories] = React.useState<string[]>([])
   const [ruleModalOpen, setRuleModalOpen] = React.useState(false)
+  const [ruleModalFlow, setRuleModalFlow] = React.useState<"requisition" | "catalog_order">(
+    "requisition",
+  )
   const [editingRuleId, setEditingRuleId] = React.useState<string | null>(null)
   const [ruleForm, setRuleForm] = React.useState<ApprovalRuleForm>({
     costCenter: "",
@@ -543,8 +543,6 @@ export default function ConfiguracoesPage() {
   const [orderModalOpen, setOrderModalOpen] = React.useState(false)
   const [editingOrderId, setEditingOrderId] = React.useState<string | null>(null)
   const [orderForm, setOrderForm] = React.useState<ApprovalOrderForm>({
-    category: "",
-    useAllCategories: false,
     minValue: "",
     maxValue: "",
     useNoMax: false,
@@ -696,7 +694,11 @@ export default function ConfiguracoesPage() {
           .from("tenant_features")
           .select("feature_key, enabled")
           .eq("company_id", companyId)
-          .in("feature_key", ["approval_requisition", "approval_order"]),
+          .in("feature_key", [
+            "approval_requisition",
+            "approval_order",
+            "approval_catalog_order",
+          ]),
         supabase
           .from("approval_levels")
           .select("id, flow, cost_center, category, min_value, max_value, approver_id, approver_name")
@@ -706,13 +708,16 @@ export default function ConfiguracoesPage() {
       tfData.forEach((row) => {
         if (row.feature_key === "approval_requisition") setApprovalRequisitionEnabled(Boolean(row.enabled))
         if (row.feature_key === "approval_order") setApprovalOrderEnabled(Boolean(row.enabled))
+        if (row.feature_key === "approval_catalog_order")
+          setApprovalCatalogEnabled(Boolean(row.enabled))
       })
       const levels = ((levelsRes.data ?? []) as ApprovalRule[]).map((r) => ({
         ...r,
-        flow: (r.flow ?? "requisition") as "requisition" | "order",
+        flow: (r.flow ?? "requisition") as "requisition" | "order" | "catalog_order",
       }))
       setApprovalRules(levels.filter((l) => l.flow === "requisition"))
       setApprovalOrderRules(levels.filter((l) => l.flow === "order"))
+      setApprovalCatalogRules(levels.filter((l) => l.flow === "catalog_order"))
     }
     loadApprovals()
   }, [activeTab, companyId, canManageApprovals, userLoading])
@@ -737,27 +742,6 @@ export default function ConfiguracoesPage() {
       setApproversOrder(((orderRes.data as unknown) as ApproverProfile[]) ?? [])
     }
     loadApprovers()
-  }, [companyId, activeTab, userLoading])
-
-  React.useEffect(() => {
-    const loadTenantCategories = async () => {
-      if (userLoading || !companyId || activeTab !== "aprovacoes") return
-      const supabase = createClient()
-      const [quotRes, suppRes] = await Promise.all([
-        supabase.from("quotations").select("category").eq("company_id", companyId),
-        supabase.from("suppliers").select("category").eq("company_id", companyId),
-      ])
-      const set = new Set<string>()
-      const addCategory = (v: unknown) => {
-        if (typeof v === "string" && v.trim()) set.add(v.trim())
-      }
-      ;(quotRes.data ?? []).forEach((r: { category?: unknown }) => addCategory(r.category))
-      ;(suppRes.data ?? []).forEach((r: { category?: unknown }) => addCategory(r.category))
-      const fallback = ["MRO", "Matéria-Prima", "Serviços", "TI", "Outros"]
-      const list = set.size > 0 ? Array.from(set).sort() : fallback
-      setTenantCategories(list)
-    }
-    loadTenantCategories()
   }, [companyId, activeTab, userLoading])
 
   React.useEffect(() => {
@@ -1337,7 +1321,7 @@ export default function ConfiguracoesPage() {
   }
 
   const handleToggleApprovalFeature = async (
-    key: "approval_requisition" | "approval_order",
+    key: "approval_requisition" | "approval_order" | "approval_catalog_order",
     enabled: boolean
   ) => {
     if (!companyId) return
@@ -1350,20 +1334,26 @@ export default function ConfiguracoesPage() {
           { onConflict: "company_id,feature_key" }
         )
       if (key === "approval_requisition") setApprovalRequisitionEnabled(enabled)
-      else setApprovalOrderEnabled(enabled)
+      else if (key === "approval_order") setApprovalOrderEnabled(enabled)
+      else setApprovalCatalogEnabled(enabled)
       toast.success(enabled ? "Módulo habilitado." : "Módulo desabilitado.")
     } catch {
       toast.error("Falha ao atualizar.")
     }
   }
 
-  const handleOpenNewRule = () => {
+  const handleOpenNewRule = (flow: "requisition" | "catalog_order" = "requisition") => {
+    setRuleModalFlow(flow)
     setEditingRuleId(null)
     setRuleForm({ costCenter: "", useFallback: false, approverId: "" })
     setRuleModalOpen(true)
   }
 
-  const handleOpenEditRule = (rule: ApprovalRule) => {
+  const handleOpenEditRule = (
+    rule: ApprovalRule,
+    flow: "requisition" | "catalog_order" = "requisition",
+  ) => {
+    setRuleModalFlow(flow)
     setEditingRuleId(rule.id)
     setRuleForm({
       costCenter: rule.cost_center === "*" ? "" : (rule.cost_center ?? ""),
@@ -1392,8 +1382,10 @@ export default function ConfiguracoesPage() {
     }
     const approver = approversRequisition.find((a) => a.id === ruleForm.approverId)
     const approverName = approver?.full_name ?? null
+    const targetRules =
+      ruleModalFlow === "catalog_order" ? approvalCatalogRules : approvalRules
 
-    const existing = approvalRules.find(
+    const existing = targetRules.find(
       (r) => r.cost_center === costCenterValue && r.id !== editingRuleId
     )
     if (existing) {
@@ -1409,7 +1401,7 @@ export default function ConfiguracoesPage() {
     const supabase = createClient()
     try {
       const payload = {
-        flow: "requisition" as const,
+        flow: ruleModalFlow,
         cost_center: costCenterValue,
         category: "*" as const,
         min_value: null as number | null,
@@ -1433,11 +1425,15 @@ export default function ConfiguracoesPage() {
           }))
           return
         }
-        setApprovalRules((prev) =>
+        const applyUpdate = (prev: ApprovalRule[]) =>
           prev.map((r) =>
             r.id === editingRuleId ? { ...r, ...payload } : r
           )
-        )
+        if (ruleModalFlow === "catalog_order") {
+          setApprovalCatalogRules(applyUpdate)
+        } else {
+          setApprovalRules(applyUpdate)
+        }
         setMessages((m) => ({ ...m, approvals: { success: "Regra atualizada.", error: null } }))
       } else {
         const insertPayload = {
@@ -1449,7 +1445,7 @@ export default function ConfiguracoesPage() {
           max_value: payload.max_value,
           approver_id: payload.approver_id,
           approver_name: payload.approver_name,
-          level_order: approvalRules.length + 1,
+          level_order: targetRules.length + 1,
         }
         const { data: insertData, error: insertErr } = await supabase
           .from("approval_levels")
@@ -1465,10 +1461,17 @@ export default function ConfiguracoesPage() {
           }))
           return
         }
-        setApprovalRules((prev) => [
-          ...prev,
-          ...(insertData as unknown as ApprovalRule[]),
-        ])
+        if (ruleModalFlow === "catalog_order") {
+          setApprovalCatalogRules((prev) => [
+            ...prev,
+            ...(insertData as unknown as ApprovalRule[]),
+          ])
+        } else {
+          setApprovalRules((prev) => [
+            ...prev,
+            ...(insertData as unknown as ApprovalRule[]),
+          ])
+        }
         setMessages((m) => ({ ...m, approvals: { success: "Regra criada.", error: null } }))
       }
       setRuleModalOpen(false)
@@ -1485,8 +1488,6 @@ export default function ConfiguracoesPage() {
   const handleOpenNewOrder = () => {
     setEditingOrderId(null)
     setOrderForm({
-      category: "",
-      useAllCategories: false,
       minValue: "",
       maxValue: "",
       useNoMax: false,
@@ -1498,8 +1499,6 @@ export default function ConfiguracoesPage() {
   const handleOpenEditOrder = (rule: ApprovalRule) => {
     setEditingOrderId(rule.id)
     setOrderForm({
-      category: rule.category === "*" ? "" : (rule.category ?? ""),
-      useAllCategories: rule.category === "*",
       minValue: rule.min_value != null ? String(rule.min_value) : "",
       maxValue: rule.max_value != null ? String(rule.max_value) : "",
       useNoMax: rule.max_value == null,
@@ -1510,14 +1509,6 @@ export default function ConfiguracoesPage() {
 
   const handleSaveOrder = async () => {
     if (!companyId) return
-    const categoryValue = orderForm.useAllCategories ? "*" : orderForm.category.trim()
-    if (!categoryValue) {
-      setMessages((m) => ({
-        ...m,
-        approvals: { success: null, error: "Informe a Categoria ou marque a opção Todas." },
-      }))
-      return
-    }
     const minVal = Number(orderForm.minValue)
     if (!Number.isFinite(minVal) || minVal < 0) {
       setMessages((m) => ({
@@ -1558,7 +1549,7 @@ export default function ConfiguracoesPage() {
       const payload = {
         flow: "order" as const,
         cost_center: "*" as const,
-        category: categoryValue,
+        category: "*" as const,
         min_value: minVal,
         max_value: maxVal,
         approver_id: orderForm.approverId,
@@ -1636,6 +1627,7 @@ export default function ConfiguracoesPage() {
       await supabase.from("approval_levels").delete().eq("id", deleteRuleId)
       setApprovalRules((prev) => prev.filter((r) => r.id !== deleteRuleId))
       setApprovalOrderRules((prev) => prev.filter((r) => r.id !== deleteRuleId))
+      setApprovalCatalogRules((prev) => prev.filter((r) => r.id !== deleteRuleId))
       setMessages((m) => ({ ...m, approvals: { success: "Regra removida.", error: null } }))
     } catch (e: unknown) {
       setMessages((m) => ({
@@ -2312,7 +2304,7 @@ export default function ConfiguracoesPage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <Card>
                   <CardContent className="pt-6">
                     <div className="flex items-start justify-between gap-4">
@@ -2351,7 +2343,7 @@ export default function ConfiguracoesPage() {
                         <div>
                           <p className="font-medium">Aprovação de Pedidos</p>
                           <p className="text-sm text-muted-foreground">
-                            Pedidos gerados precisarão de aprovação conforme alçadas configuradas.
+                            Após Confirmar Pedido, alçada por faixa de valor antes do envio ao fornecedor.
                           </p>
                         </div>
                       </div>
@@ -2373,13 +2365,45 @@ export default function ConfiguracoesPage() {
                     </div>
                   </CardContent>
                 </Card>
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex gap-3">
+                        <ShoppingCart className="h-8 w-8 text-muted-foreground shrink-0" />
+                        <div>
+                          <p className="font-medium">Pedido — Catálogo</p>
+                          <p className="text-sm text-muted-foreground">
+                            Checkout do catálogo em modo Pendente Aprovação usa gestor do centro de custo.
+                          </p>
+                        </div>
+                      </div>
+                      {hasFeature("approval_catalog_order") ? (
+                        <Switch
+                          checked={approvalCatalogEnabled}
+                          onCheckedChange={(v) =>
+                            handleToggleApprovalFeature("approval_catalog_order", v)
+                          }
+                        />
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span>
+                              <Switch checked={false} disabled />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>Módulo não liberado para este tenant</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
 
               {approvalRequisitionEnabled && (
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between gap-4">
                   <CardTitle>Regras de Aprovação de Requisição</CardTitle>
-                  <Button onClick={handleOpenNewRule} disabled={approvalsSaving}>
+                  <Button onClick={() => handleOpenNewRule("requisition")} disabled={approvalsSaving}>
                     <Plus className="mr-2 h-4 w-4" />
                     Nova Regra
                   </Button>
@@ -2417,7 +2441,76 @@ export default function ConfiguracoesPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  onClick={() => handleOpenEditRule(rule)}
+                                  onClick={() => handleOpenEditRule(rule, "requisition")}
+                                  disabled={approvalsSaving}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setDeleteRuleId(rule.id)}
+                                  disabled={approvalsSaving}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+              )}
+
+              {approvalCatalogEnabled && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-4">
+                  <CardTitle>Regras de Aprovação — Pedido Catálogo</CardTitle>
+                  <Button
+                    onClick={() => handleOpenNewRule("catalog_order")}
+                    disabled={approvalsSaving}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nova Regra
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  {approvalCatalogRules.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
+                      <ShieldOff className="h-12 w-12 text-muted-foreground mb-4" />
+                      <p className="text-sm text-muted-foreground">
+                        Nenhuma regra configurada. Checkout em modo Pendente Aprovação exigirá alçada por CC.
+                      </p>
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Centro de Custo</TableHead>
+                          <TableHead>Aprovador</TableHead>
+                          <TableHead className="w-24 text-right">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {approvalCatalogRules.map((rule) => (
+                          <TableRow key={rule.id}>
+                            <TableCell>
+                              {rule.cost_center === "*" ? (
+                                <Badge variant="secondary">Todos (fallback)</Badge>
+                              ) : (
+                                rule.cost_center ?? "—"
+                              )}
+                            </TableCell>
+                            <TableCell>{rule.approver_name ?? "—"}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleOpenEditRule(rule, "catalog_order")}
                                   disabled={approvalsSaving}
                                 >
                                   <Pencil className="h-4 w-4" />
@@ -2462,7 +2555,6 @@ export default function ConfiguracoesPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Categoria</TableHead>
                           <TableHead>Faixa de Valor</TableHead>
                           <TableHead>Aprovador</TableHead>
                           <TableHead className="w-24 text-right">Ações</TableHead>
@@ -2471,13 +2563,6 @@ export default function ConfiguracoesPage() {
                       <TableBody>
                         {approvalOrderRules.map((rule) => (
                           <TableRow key={rule.id}>
-                            <TableCell>
-                              {rule.category === "*" ? (
-                                <Badge variant="secondary">Todas</Badge>
-                              ) : (
-                                rule.category ?? "—"
-                              )}
-                            </TableCell>
                             <TableCell>{formatOrderRange(rule)}</TableCell>
                             <TableCell>{rule.approver_name ?? "—"}</TableCell>
                             <TableCell className="text-right">
@@ -2512,7 +2597,12 @@ export default function ConfiguracoesPage() {
               <Dialog open={ruleModalOpen} onOpenChange={setRuleModalOpen}>
                 <DialogContent className="sm:max-w-[480px]">
                   <DialogHeader>
-                    <DialogTitle>{editingRuleId ? "Editar Regra" : "Nova Regra"}</DialogTitle>
+                    <DialogTitle>
+                      {editingRuleId ? "Editar Regra" : "Nova Regra"}
+                      {ruleModalFlow === "catalog_order"
+                        ? " — Pedido Catálogo"
+                        : ""}
+                    </DialogTitle>
                     <DialogDescription>
                       Configure o Centro de Custo e o aprovador responsável
                     </DialogDescription>
@@ -2596,49 +2686,10 @@ export default function ConfiguracoesPage() {
                   <DialogHeader>
                     <DialogTitle>{editingOrderId ? "Editar Alçada" : "Nova Alçada"}</DialogTitle>
                     <DialogDescription>
-                      Configure categoria, faixa de valor e aprovador
+                      Configure a faixa de valor do pedido e o aprovador
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 pt-2">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        id="useAllCategories"
-                        checked={orderForm.useAllCategories}
-                        onChange={(e) =>
-                          setOrderForm((f) => ({
-                            ...f,
-                            useAllCategories: e.target.checked,
-                            category: e.target.checked ? "" : f.category,
-                          }))
-                        }
-                        className="h-4 w-4 rounded border-border"
-                      />
-                      <Label htmlFor="useAllCategories" className="cursor-pointer">
-                        Todas as categorias
-                      </Label>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="orderCategory">Categoria</Label>
-                      <Select
-                        value={orderForm.category || undefined}
-                        onValueChange={(v) =>
-                          setOrderForm((f) => ({ ...f, category: v }))
-                        }
-                        disabled={orderForm.useAllCategories}
-                      >
-                        <SelectTrigger id="orderCategory">
-                          <SelectValue placeholder="Ex: Suprimentos" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {tenantCategories.map((c) => (
-                            <SelectItem key={c} value={c}>
-                              {c}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
                     <div className="grid grid-cols-2 gap-4 items-end">
                       <div className="space-y-2">
                         <Label htmlFor="orderMinValue">Valor Mínimo</Label>

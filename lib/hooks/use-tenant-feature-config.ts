@@ -48,6 +48,7 @@ export function useTenantFeatureConfig() {
       porEnabled: config.porEnabled,
       erpIntegrationEnabled: config.erpIntegrationEnabled,
       erpVendor: config.erpVendor,
+      catalogPostCheckoutMode: config.catalogPostCheckoutMode,
     }),
     [config, loading, get],
   )

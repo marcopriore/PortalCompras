@@ -4,7 +4,7 @@ import { sendEmail } from "@/lib/email/send-email"
 import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
 import { triggerRequisitionOutbound } from "@/lib/integrations/trigger-requisition-outbound"
 
-export type ApprovalFlow = "requisition" | "order"
+export type ApprovalFlow = "requisition" | "order" | "catalog_order"
 
 export type ApprovalRequestRow = {
   id: string
@@ -141,6 +141,300 @@ async function notifyRequisitionDecision(
   await sendEmail({ to: toEmail, subject, html })
 }
 
+async function notifyCatalogOrderDecision(
+  service: SupabaseClient,
+  companyId: string,
+  purchaseOrderId: string,
+  decision: "approved" | "rejected",
+  reason?: string,
+) {
+  const { data: po } = await service
+    .from("purchase_orders")
+    .select("code, requisition_code, created_by")
+    .eq("id", purchaseOrderId)
+    .eq("company_id", companyId)
+    .maybeSingle()
+
+  if (!po?.created_by) return
+
+  const code = String(po.code ?? "")
+  const isApproved = decision === "approved"
+
+  await createNotification(
+    {
+      userId: po.created_by,
+      companyId,
+      type: isApproved ? "order.approved" : "order.rejected",
+      title: isApproved
+        ? "Pedido do catálogo aprovado"
+        : "Pedido do catálogo reprovado",
+      body: isApproved
+        ? `O pedido ${code} foi aprovado e enviado ao fornecedor.`
+        : `O pedido ${code} foi reprovado. Motivo: ${reason ?? ""}`,
+      entity: "purchase_order",
+      entityId: purchaseOrderId,
+    },
+    service,
+  )
+}
+
+async function notifySupplierOrderSent(
+  service: SupabaseClient,
+  order: {
+    id: string
+    code: string
+    supplier_name: string | null
+    company_id: string
+    supplier_id: string | null
+  },
+) {
+  if (!order.supplier_id) return
+
+  const { data: supplierProfiles } = await service
+    .from("profiles")
+    .select("id, full_name")
+    .eq("supplier_id", order.supplier_id)
+    .eq("company_id", order.company_id)
+    .eq("profile_type", "supplier")
+    .eq("status", "active")
+
+  for (const supplierProfile of supplierProfiles ?? []) {
+    await createNotification(
+      {
+        userId: supplierProfile.id,
+        companyId: order.company_id,
+        type: "order.sent",
+        title: "Novo pedido de compra recebido",
+        body: `O pedido ${order.code} foi emitido para você. Acesse o portal para visualizar e aceitar.`,
+        entity: "purchase_order",
+        entityId: order.id,
+      },
+      service,
+    )
+
+    const { data: prefs } = await service
+      .from("notification_preferences")
+      .select("order_approved_email")
+      .eq("user_id", supplierProfile.id)
+      .eq("company_id", order.company_id)
+      .maybeSingle()
+
+    const wantsEmail =
+      (prefs as { order_approved_email?: boolean } | null)?.order_approved_email ??
+      false
+    if (!wantsEmail) continue
+
+    const { data: authData } = await service.auth.admin.getUserById(
+      supplierProfile.id,
+    )
+    const toEmail = authData.user?.email
+    if (!toEmail) continue
+
+    await sendEmail({
+      to: toEmail,
+      subject: `Novo Pedido de Compra — ${order.code}`,
+      html: `<p>Olá, <strong>${supplierProfile.full_name ?? order.supplier_name ?? ""}</strong>!</p>
+         <p>O pedido <strong>${order.code}</strong> foi emitido para você.</p>
+         <p>Acesse o portal do fornecedor para visualizar os detalhes e confirmar o recebimento.</p>`,
+    })
+  }
+}
+
+async function applyPurchaseOrderSendAfterApproval(
+  service: SupabaseClient,
+  companyId: string,
+  purchaseOrderId: string,
+  options?: { notifyCatalogRequester?: boolean },
+) {
+  const { data: po, error: poErr } = await service
+    .from("purchase_orders")
+    .select("id, code, status, supplier_id, supplier_name, company_id")
+    .eq("id", purchaseOrderId)
+    .eq("company_id", companyId)
+    .maybeSingle()
+
+  if (poErr) {
+    return { ok: false as const, message: poErr.message }
+  }
+  if (!po) {
+    return { ok: false as const, message: "Pedido não encontrado." }
+  }
+  if (po.status !== "draft" && po.status !== "awaiting_approval") {
+    return {
+      ok: false as const,
+      message: `Pedido não está pendente de aprovação (status '${po.status}').`,
+    }
+  }
+
+  const { error: updErr } = await service
+    .from("purchase_orders")
+    .update({ status: "sent" })
+    .eq("id", purchaseOrderId)
+    .eq("company_id", companyId)
+
+  if (updErr) {
+    return { ok: false as const, message: updErr.message }
+  }
+
+  try {
+    await notifySupplierOrderSent(service, {
+      id: po.id,
+      code: String(po.code ?? ""),
+      supplier_name: po.supplier_name,
+      company_id: companyId,
+      supplier_id: po.supplier_id,
+    })
+  } catch {
+    /* notificação não bloqueia */
+  }
+
+  if (options?.notifyCatalogRequester) {
+    await notifyCatalogOrderDecision(service, companyId, purchaseOrderId, "approved")
+  }
+  return { ok: true as const }
+}
+
+async function applyCatalogOrderRejection(
+  service: SupabaseClient,
+  companyId: string,
+  purchaseOrderId: string,
+  reason: string,
+  decidedByName?: string,
+) {
+  const { data: po, error: poErr } = await service
+    .from("purchase_orders")
+    .select("id, code, status, requisition_code")
+    .eq("id", purchaseOrderId)
+    .eq("company_id", companyId)
+    .maybeSingle()
+
+  if (poErr) {
+    return { ok: false as const, message: poErr.message }
+  }
+  if (!po) {
+    return { ok: false as const, message: "Pedido não encontrado." }
+  }
+
+  const requisitionCode =
+    typeof po.requisition_code === "string" ? po.requisition_code.trim() : ""
+
+  if (requisitionCode) {
+    const { error: reqErr } = await service
+      .from("requisitions")
+      .update({
+        status: "rejected",
+        rejection_reason: reason,
+        ...(decidedByName?.trim()
+          ? { approver_name: decidedByName.trim() }
+          : {}),
+      })
+      .eq("company_id", companyId)
+      .eq("code", requisitionCode)
+
+    if (reqErr) {
+      return { ok: false as const, message: reqErr.message }
+    }
+  }
+
+  try {
+    await service.rpc("release_contract_balance", { p_order_id: purchaseOrderId })
+  } catch {
+    /* best-effort */
+  }
+
+  const { error: cancelErr } = await service
+    .from("purchase_orders")
+    .update({
+      status: "cancelled",
+      cancellation_reason: reason,
+      contract_balance_applied: "released",
+    })
+    .eq("id", purchaseOrderId)
+    .eq("company_id", companyId)
+
+  if (cancelErr) {
+    return { ok: false as const, message: cancelErr.message }
+  }
+
+  await notifyCatalogOrderDecision(
+    service,
+    companyId,
+    purchaseOrderId,
+    "rejected",
+    reason,
+  )
+  return { ok: true as const }
+}
+
+/** Reprova alçada de Pedido (order): volta o PO para draft para o comprador corrigir. */
+async function applyOrderApprovalRejection(
+  service: SupabaseClient,
+  companyId: string,
+  purchaseOrderId: string,
+  reason: string,
+) {
+  const { data: po, error: poErr } = await service
+    .from("purchase_orders")
+    .select("id, code, status, created_by")
+    .eq("id", purchaseOrderId)
+    .eq("company_id", companyId)
+    .maybeSingle()
+
+  if (poErr) {
+    return { ok: false as const, message: poErr.message }
+  }
+  if (!po) {
+    return { ok: false as const, message: "Pedido não encontrado." }
+  }
+  if (po.status !== "awaiting_approval" && po.status !== "draft") {
+    return {
+      ok: false as const,
+      message: `Pedido não está pendente de aprovação (status '${po.status}').`,
+    }
+  }
+
+  const { error: updErr } = await service
+    .from("purchase_orders")
+    .update({
+      status: "draft",
+      cancellation_reason: reason,
+    })
+    .eq("id", purchaseOrderId)
+    .eq("company_id", companyId)
+
+  if (updErr) {
+    return { ok: false as const, message: updErr.message }
+  }
+
+  if (po.created_by) {
+    await createNotification(
+      {
+        userId: po.created_by,
+        companyId,
+        type: "order.rejected",
+        title: "Pedido reprovado na alçada",
+        body: `O pedido ${po.code ?? ""} foi reprovado e voltou para rascunho. Motivo: ${reason}`,
+        entity: "purchase_order",
+        entityId: purchaseOrderId,
+      },
+      service,
+    )
+  }
+
+  return { ok: true as const }
+}
+
+/** @deprecated alias */
+const applyCatalogOrderApproval = (
+  service: SupabaseClient,
+  companyId: string,
+  purchaseOrderId: string,
+) =>
+  applyPurchaseOrderSendAfterApproval(service, companyId, purchaseOrderId, {
+    notifyCatalogRequester: true,
+  })
+
+
 /** Cria fila de aprovação ao criar REQ via API (espelha o portal). */
 export async function enqueueRequisitionApprovalIfNeeded(
   service: SupabaseClient,
@@ -190,20 +484,132 @@ export async function approveApprovalRequest(
   }
 
   const flow = row.flow as ApprovalFlow
-  if (flow === "order") {
-    return {
-      ok: false as const,
-      code: "FORBIDDEN" as const,
-      message:
-        "Aprovação de pedido via API ainda não é suportada (fluxo incompleto no portal).",
-    }
-  }
-
   if (row.status !== "pending") {
     return {
       ok: false as const,
       code: "CONFLICT" as const,
       message: `Solicitação já decidida (status '${row.status}').`,
+    }
+  }
+
+  if (flow === "order") {
+    const featureOk = await isTenantFeatureEnabled(companyId, "approval_order")
+    if (!featureOk) {
+      return {
+        ok: false as const,
+        code: "FORBIDDEN" as const,
+        message: "Módulo de aprovação de pedidos desabilitado.",
+      }
+    }
+
+    const decidedAt = new Date().toISOString()
+    const { error: updErr } = await service
+      .from("approval_requests")
+      .update({ status: "approved", decided_at: decidedAt })
+      .eq("id", requestId)
+      .eq("company_id", companyId)
+
+    if (updErr) {
+      return {
+        ok: false as const,
+        code: "INTERNAL_ERROR" as const,
+        message: updErr.message,
+      }
+    }
+
+    const applied = await applyPurchaseOrderSendAfterApproval(
+      service,
+      companyId,
+      row.entity_id as string,
+    )
+    if (!applied.ok) {
+      return {
+        ok: false as const,
+        code: "INTERNAL_ERROR" as const,
+        message: applied.message,
+      }
+    }
+
+    const entity = await loadEntitySummary(
+      service,
+      companyId,
+      flow,
+      row.entity_id as string,
+    )
+
+    return {
+      ok: true as const,
+      approval: mapApprovalToApi(
+        {
+          ...(row as ApprovalRequestRow),
+          status: "approved",
+          decided_at: decidedAt,
+        },
+        entity,
+      ),
+      entity_fully_approved: true,
+    }
+  }
+
+  if (flow === "catalog_order") {
+    const featureOk = await isTenantFeatureEnabled(
+      companyId,
+      "approval_catalog_order",
+    )
+    if (!featureOk) {
+      return {
+        ok: false as const,
+        code: "FORBIDDEN" as const,
+        message: "Módulo de aprovação de pedido do catálogo desabilitado.",
+      }
+    }
+
+    const decidedAt = new Date().toISOString()
+    const { error: updErr } = await service
+      .from("approval_requests")
+      .update({ status: "approved", decided_at: decidedAt })
+      .eq("id", requestId)
+      .eq("company_id", companyId)
+
+    if (updErr) {
+      return {
+        ok: false as const,
+        code: "INTERNAL_ERROR" as const,
+        message: updErr.message,
+      }
+    }
+
+    const applied = await applyCatalogOrderApproval(
+      service,
+      companyId,
+      row.entity_id as string,
+    )
+    if (!applied.ok) {
+      return {
+        ok: false as const,
+        code: "INTERNAL_ERROR" as const,
+        message: applied.message,
+      }
+    }
+
+    const entity = await loadEntitySummary(
+      service,
+      companyId,
+      flow,
+      row.entity_id as string,
+    )
+
+    return {
+      ok: true as const,
+      approval: mapApprovalToApi(
+        {
+          ...(row as ApprovalRequestRow),
+          status: "approved",
+          decided_at: decidedAt,
+        },
+        entity,
+      ),
+      entity_fully_approved: true,
     }
   }
 
@@ -312,20 +718,143 @@ export async function rejectApprovalRequest(
   }
 
   const flow = row.flow as ApprovalFlow
-  if (flow === "order") {
-    return {
-      ok: false as const,
-      code: "FORBIDDEN" as const,
-      message:
-        "Reprovação de pedido via API ainda não é suportada (fluxo incompleto no portal).",
-    }
-  }
-
   if (row.status !== "pending") {
     return {
       ok: false as const,
       code: "CONFLICT" as const,
       message: `Solicitação já decidida (status '${row.status}').`,
+    }
+  }
+
+  if (flow === "order") {
+    const featureOk = await isTenantFeatureEnabled(companyId, "approval_order")
+    if (!featureOk) {
+      return {
+        ok: false as const,
+        code: "FORBIDDEN" as const,
+        message: "Módulo de aprovação de pedidos desabilitado.",
+      }
+    }
+
+    const decidedAt = new Date().toISOString()
+    const { error: updErr } = await service
+      .from("approval_requests")
+      .update({
+        status: "rejected",
+        rejection_reason: trimmed,
+        decided_at: decidedAt,
+      })
+      .eq("id", requestId)
+      .eq("company_id", companyId)
+
+    if (updErr) {
+      return {
+        ok: false as const,
+        code: "INTERNAL_ERROR" as const,
+        message: updErr.message,
+      }
+    }
+
+    const applied = await applyOrderApprovalRejection(
+      service,
+      companyId,
+      row.entity_id as string,
+      trimmed,
+    )
+    if (!applied.ok) {
+      return {
+        ok: false as const,
+        code: "INTERNAL_ERROR" as const,
+        message: applied.message,
+      }
+    }
+
+    const entity = await loadEntitySummary(
+      service,
+      companyId,
+      flow,
+      row.entity_id as string,
+    )
+
+    return {
+      ok: true as const,
+      approval: mapApprovalToApi(
+        {
+          ...(row as ApprovalRequestRow),
+          status: "rejected",
+          rejection_reason: trimmed,
+          decided_at: decidedAt,
+        },
+        entity,
+      ),
+    }
+  }
+
+  if (flow === "catalog_order") {
+    const featureOk = await isTenantFeatureEnabled(
+      companyId,
+      "approval_catalog_order",
+    )
+    if (!featureOk) {
+      return {
+        ok: false as const,
+        code: "FORBIDDEN" as const,
+        message: "Módulo de aprovação de pedido do catálogo desabilitado.",
+      }
+    }
+
+    const decidedAt = new Date().toISOString()
+    const { error: updErr } = await service
+      .from("approval_requests")
+      .update({
+        status: "rejected",
+        rejection_reason: trimmed,
+        decided_at: decidedAt,
+      })
+      .eq("id", requestId)
+      .eq("company_id", companyId)
+
+    if (updErr) {
+      return {
+        ok: false as const,
+        code: "INTERNAL_ERROR" as const,
+        message: updErr.message,
+      }
+    }
+
+    const applied = await applyCatalogOrderRejection(
+      service,
+      companyId,
+      row.entity_id as string,
+      trimmed,
+      options?.decidedByName,
+    )
+    if (!applied.ok) {
+      return {
+        ok: false as const,
+        code: "INTERNAL_ERROR" as const,
+        message: applied.message,
+      }
+    }
+
+    const entity = await loadEntitySummary(
+      service,
+      companyId,
+      flow,
+      row.entity_id as string,
+    )
+
+    return {
+      ok: true as const,
+      approval: mapApprovalToApi(
+        {
+          ...(row as ApprovalRequestRow),
+          status: "rejected",
+          rejection_reason: trimmed,
+          decided_at: decidedAt,
+        },
+        entity,
+      ),
     }
   }
 

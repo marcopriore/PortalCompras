@@ -5,11 +5,13 @@ export type TenantFeatureBooleanKey =
   | "por_enabled"
   | "erp_integration_enabled"
 
-export type TenantFeatureTextKey = "erp_vendor"
+export type ErpVendor = "none" | "sap" | "other"
+
+export type CatalogPostCheckoutMode = "buyer_review" | "cost_center_approval"
+
+export type TenantFeatureTextKey = "erp_vendor" | "catalog_post_checkout_mode"
 
 export type TenantFeatureKey = TenantFeatureBooleanKey | TenantFeatureTextKey
-
-export type ErpVendor = "none" | "sap" | "other"
 
 /** Chaves legadas (cutover) — lidas como fallback ao carregar. */
 export const LEGACY_FEATURE_KEY_ALIASES: Record<string, TenantFeatureKey> = {
@@ -28,15 +30,25 @@ export type TenantFeatureBooleanDefinition = {
   defaultLegacyMissing: boolean
 }
 
-export type TenantFeatureTextDefinition = {
-  key: TenantFeatureTextKey
-  label: string
-  description: string
-  group: TenantSettingGroup
-  defaultNewTenant: ErpVendor
-  defaultLegacyMissing: ErpVendor
-  options: { value: ErpVendor; label: string }[]
-}
+export type TenantFeatureTextDefinition =
+  | {
+      key: "erp_vendor"
+      label: string
+      description: string
+      group: TenantSettingGroup
+      defaultNewTenant: ErpVendor
+      defaultLegacyMissing: ErpVendor
+      options: { value: ErpVendor; label: string }[]
+    }
+  | {
+      key: "catalog_post_checkout_mode"
+      label: string
+      description: string
+      group: TenantSettingGroup
+      defaultNewTenant: CatalogPostCheckoutMode
+      defaultLegacyMissing: CatalogPostCheckoutMode
+      options: { value: CatalogPostCheckoutMode; label: string }[]
+    }
 
 export const TENANT_FEATURE_BOOLEAN_REGISTRY: TenantFeatureBooleanDefinition[] =
   [
@@ -84,6 +96,22 @@ export const TENANT_FEATURE_TEXT_REGISTRY: TenantFeatureTextDefinition[] = [
       { value: "other", label: "Outro ERP" },
     ],
   },
+  {
+    key: "catalog_post_checkout_mode",
+    label: "Catálogo — após checkout",
+    description:
+      "Pendente Comprador: time de compras revisa o PO draft. Pendente Aprovação: gestor do centro de custo aprova o pedido (fluxo Pedido — Catálogo), sem fila de comprador.",
+    group: "negocios",
+    defaultNewTenant: "buyer_review",
+    defaultLegacyMissing: "buyer_review",
+    options: [
+      { value: "buyer_review", label: "Pendente Comprador" },
+      {
+        value: "cost_center_approval",
+        label: "Pendente Aprovação (gestor CC)",
+      },
+    ],
+  },
 ]
 
 const BOOL_BY_KEY = new Map(
@@ -97,7 +125,7 @@ export function isTenantFeatureBooleanKey(
 }
 
 export function isTenantFeatureTextKey(key: string): key is TenantFeatureTextKey {
-  return key === "erp_vendor"
+  return key === "erp_vendor" || key === "catalog_post_checkout_mode"
 }
 
 export function isTenantFeatureKey(key: string): key is TenantFeatureKey {
@@ -106,6 +134,12 @@ export function isTenantFeatureKey(key: string): key is TenantFeatureKey {
 
 export function isErpVendor(value: string): value is ErpVendor {
   return value === "none" || value === "sap" || value === "other"
+}
+
+export function isCatalogPostCheckoutMode(
+  value: string,
+): value is CatalogPostCheckoutMode {
+  return value === "buyer_review" || value === "cost_center_approval"
 }
 
 export function normalizeFeatureSettingKey(key: string): TenantFeatureKey | null {

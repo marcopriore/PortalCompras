@@ -89,7 +89,7 @@ type Priority = "normal" | "urgent" | "critical"
 type ApprovalRequest = {
   id: string
   company_id: string
-  flow: "requisition" | "order"
+  flow: "requisition" | "order" | "catalog_order"
   entity_id: string
   approver_id: string | null
   approver_name: string | null
@@ -164,6 +164,7 @@ export default function AprovacoesPage() {
 
   const [requisitionRows, setRequisitionRows] = React.useState<ApprovalRequisitionRow[]>([])
   const [orderRows, setOrderRows] = React.useState<ApprovalOrderRow[]>([])
+  const [catalogOrderRows, setCatalogOrderRows] = React.useState<ApprovalOrderRow[]>([])
 
   const [activeTab, setActiveTab] = React.useState("requisitions")
 
@@ -175,9 +176,13 @@ export default function AprovacoesPage() {
   const [orderSearch, setOrderSearch] = React.useState("")
   const [orderPage, setOrderPage] = React.useState(1)
 
+  const [catalogStatus, setCatalogStatus] = React.useState<string[]>(['pending'])
+  const [catalogSearch, setCatalogSearch] = React.useState("")
+  const [catalogPage, setCatalogPage] = React.useState(1)
+
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false)
   const [rejectTarget, setRejectTarget] = React.useState<{
-    flow: "requisition" | "order"
+    flow: "requisition" | "order" | "catalog_order"
     requestId: string
     entityId: string
   } | null>(null)
@@ -191,7 +196,7 @@ export default function AprovacoesPage() {
   approvalContextRef.current = { companyId, userId }
 
   const loadData = React.useCallback(async (silent = false) => {
-    if (userLoading || !companyId || !userId) return
+    if (userLoading || permissionsLoading || !companyId || !userId) return
     const started = { companyId, userId }
     const stillHere = () =>
       approvalContextRef.current.companyId === started.companyId &&
@@ -206,8 +211,10 @@ export default function AprovacoesPage() {
         data?: {
           requisition_requests: ApprovalRequest[]
           order_requests: ApprovalRequest[]
+          catalog_order_requests?: ApprovalRequest[]
           requisitions: Requisition[]
           orders: PurchaseOrder[]
+          catalog_orders?: PurchaseOrder[]
         }
       }
 
@@ -219,11 +226,14 @@ export default function AprovacoesPage() {
 
       const reqRequests = payload.data?.requisition_requests ?? []
       const orderRequests = payload.data?.order_requests ?? []
+      const catalogRequests = payload.data?.catalog_order_requests ?? []
       const requisitions = payload.data?.requisitions ?? []
       const orders = payload.data?.orders ?? []
+      const catalogOrders = payload.data?.catalog_orders ?? []
 
       const reqMap = new Map(requisitions.map((r) => [r.id, r]))
       const orderMap = new Map(orders.map((o) => [o.id, o]))
+      const catalogMap = new Map(catalogOrders.map((o) => [o.id, o]))
 
       if (!stillHere()) return
       setRequisitionRows(
@@ -238,6 +248,12 @@ export default function AprovacoesPage() {
           order: orderMap.get(request.entity_id) ?? null,
         })),
       )
+      setCatalogOrderRows(
+        catalogRequests.map((request) => ({
+          request,
+          order: catalogMap.get(request.entity_id) ?? null,
+        })),
+      )
       setLastUpdated(new Date())
       window.dispatchEvent(new Event("approval-updated"))
     } catch {
@@ -245,12 +261,12 @@ export default function AprovacoesPage() {
     } finally {
       if (stillHere() && !silent) setLoading(false)
     }
-  }, [companyId, userId, userLoading])
+  }, [companyId, userId, userLoading, permissionsLoading])
 
   React.useEffect(() => {
-    if (userLoading || !companyId || !userId) return
+    if (userLoading || permissionsLoading || !companyId || !userId) return
     void loadData(false)
-  }, [companyId, userId, userLoading, loadData])
+  }, [companyId, userId, userLoading, permissionsLoading, loadData])
 
   const refreshAprovacoes = React.useCallback(async () => {
     setIsRefreshing(true)
@@ -272,12 +288,16 @@ export default function AprovacoesPage() {
   const pendingTotal = React.useMemo(
     () =>
       requisitionRows.filter((r) => r.request.status === "pending").length +
-      orderRows.filter((r) => r.request.status === "pending").length,
-    [requisitionRows, orderRows],
+      orderRows.filter((r) => r.request.status === "pending").length +
+      catalogOrderRows.filter((r) => r.request.status === "pending").length,
+    [requisitionRows, orderRows, catalogOrderRows],
   )
 
   const pendingRequisitions = requisitionRows.filter((r) => r.request.status === "pending").length
   const pendingOrders = orderRows.filter((r) => r.request.status === "pending").length
+  const pendingCatalogOrders = catalogOrderRows.filter(
+    (r) => r.request.status === "pending",
+  ).length
 
   const filteredRequisitions = React.useMemo(() => {
     const q = reqSearch.trim().toLowerCase()
@@ -305,6 +325,20 @@ export default function AprovacoesPage() {
     })
   }, [orderRows, orderStatus, orderSearch])
 
+  const filteredCatalogOrders = React.useMemo(() => {
+    const q = catalogSearch.trim().toLowerCase()
+    return catalogOrderRows.filter((row) => {
+      const matchStatus =
+        catalogStatus.length === 0 || catalogStatus.includes(row.request.status)
+      const o = row.order
+      const matchSearch =
+        !q ||
+        (o?.code?.toLowerCase().includes(q) ?? false) ||
+        (o?.supplier_name?.toLowerCase().includes(q) ?? false)
+      return matchStatus && matchSearch
+    })
+  }, [catalogOrderRows, catalogStatus, catalogSearch])
+
   const PAGE_SIZE = TABLE_PAGE_SIZE
   const reqPaginated = filteredRequisitions.slice(
     (reqPage - 1) * PAGE_SIZE,
@@ -316,11 +350,18 @@ export default function AprovacoesPage() {
     orderPage * PAGE_SIZE,
   )
 
+  const catalogPaginated = filteredCatalogOrders.slice(
+    (catalogPage - 1) * PAGE_SIZE,
+    catalogPage * PAGE_SIZE,
+  )
+
   const hasReqFilters = reqStatus.length > 0 || reqSearch.trim() !== ""
   const hasOrderFilters = orderStatus.length > 0 || orderSearch.trim() !== ""
+  const hasCatalogFilters =
+    catalogStatus.length > 0 || catalogSearch.trim() !== ""
 
   const handleApprove = async (
-    flow: "requisition" | "order",
+    flow: "requisition" | "order" | "catalog_order",
     requestId: string,
     entityId: string,
   ) => {
@@ -342,7 +383,9 @@ export default function AprovacoesPage() {
       toast.success(
         flow === "requisition"
           ? "Requisição aprovada com sucesso."
-          : "Pedido aprovado com sucesso.",
+          : flow === "catalog_order"
+            ? "Pedido do catálogo aprovado e enviado ao fornecedor."
+            : "Pedido aprovado com sucesso.",
       )
       await loadData()
       window.dispatchEvent(new Event("approval-updated"))
@@ -353,7 +396,11 @@ export default function AprovacoesPage() {
     }
   }
 
-  const openRejectDialog = (flow: "requisition" | "order", requestId: string, entityId: string) => {
+  const openRejectDialog = (
+    flow: "requisition" | "order" | "catalog_order",
+    requestId: string,
+    entityId: string,
+  ) => {
     setRejectTarget({ flow, requestId, entityId })
     setRejectReason("")
     setRejectDialogOpen(true)
@@ -379,7 +426,9 @@ export default function AprovacoesPage() {
       toast.success(
         rejectTarget.flow === "requisition"
           ? "Requisição reprovada."
-          : "Pedido reprovado.",
+          : rejectTarget.flow === "catalog_order"
+            ? "Pedido do catálogo reprovado."
+            : "Pedido reprovado.",
       )
       setRejectDialogOpen(false)
       setRejectTarget(null)
@@ -392,6 +441,22 @@ export default function AprovacoesPage() {
       setRejectSaving(false)
     }
   }
+
+  React.useEffect(() => {
+    if (userLoading || permissionsLoading) return
+    if (hasPermission("approval.requisition")) {
+      setActiveTab("requisitions")
+      return
+    }
+    if (hasPermission("approval.order")) {
+      setActiveTab("orders")
+      return
+    }
+    if (hasPermission("approval.catalog_order")) {
+      setActiveTab("catalog_orders")
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when permission load settles
+  }, [userLoading, permissionsLoading])
 
   if (userLoading) {
     return (
@@ -419,8 +484,9 @@ export default function AprovacoesPage() {
 
   const hasReqPermission = hasPermission("approval.requisition")
   const hasOrderPermission = hasPermission("approval.order")
+  const hasCatalogPermission = hasPermission("approval.catalog_order")
 
-  if (!hasReqPermission && !hasOrderPermission) {
+  if (!hasReqPermission && !hasOrderPermission && !hasCatalogPermission) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-3">
@@ -444,9 +510,14 @@ export default function AprovacoesPage() {
     )
   }
 
-  const totalRegistros = requisitionRows.length + orderRows.length
+  const totalRegistros =
+    requisitionRows.length + orderRows.length + catalogOrderRows.length
   const showEmptyState = totalRegistros === 0 && !loading
-  const showTabs = hasReqPermission && hasOrderPermission
+  const permissionCount =
+    Number(hasReqPermission) +
+    Number(hasOrderPermission) +
+    Number(hasCatalogPermission)
+  const showTabs = permissionCount > 1
 
   return (
     <div className="space-y-6">
@@ -483,14 +554,24 @@ export default function AprovacoesPage() {
       ) : showTabs ? (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
-            <TabsTrigger value="requisitions">
-              Requisições ({pendingRequisitions})
-            </TabsTrigger>
-            <TabsTrigger value="orders">
-              Pedidos de Compra ({pendingOrders})
-            </TabsTrigger>
+            {hasReqPermission ? (
+              <TabsTrigger value="requisitions">
+                Requisições ({pendingRequisitions})
+              </TabsTrigger>
+            ) : null}
+            {hasOrderPermission ? (
+              <TabsTrigger value="orders">
+                Pedidos de Compra ({pendingOrders})
+              </TabsTrigger>
+            ) : null}
+            {hasCatalogPermission ? (
+              <TabsTrigger value="catalog_orders">
+                Pedido — Catálogo ({pendingCatalogOrders})
+              </TabsTrigger>
+            ) : null}
           </TabsList>
 
+          {hasReqPermission ? (
           <TabsContent value="requisitions" className="space-y-4">
             <div className="bg-muted/40 border border-border rounded-xl p-4 space-y-4">
               <div className="flex flex-wrap gap-3 items-end">
@@ -641,7 +722,9 @@ export default function AprovacoesPage() {
               </CardContent>
             </Card>
           </TabsContent>
+          ) : null}
 
+          {hasOrderPermission ? (
           <TabsContent value="orders" className="space-y-4">
             <div className="bg-muted/40 border border-border rounded-xl p-4 space-y-4">
               <div className="flex flex-wrap gap-3 items-end">
@@ -787,6 +870,154 @@ export default function AprovacoesPage() {
               </CardContent>
             </Card>
           </TabsContent>
+          ) : null}
+
+          {hasCatalogPermission ? (
+          <TabsContent value="catalog_orders" className="space-y-4">
+            <div className="bg-muted/40 border border-border rounded-xl p-4 space-y-4">
+              <div className="flex flex-wrap gap-3 items-end">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Status</p>
+                  <MultiSelectFilter
+                    label="Status"
+                    options={[
+                      { value: "pending", label: "Pendente" },
+                      { value: "approved", label: "Aprovado" },
+                      { value: "rejected", label: "Reprovado" },
+                    ]}
+                    selected={catalogStatus}
+                    onChange={setCatalogStatus}
+                    width="w-40"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Buscar</p>
+                  <SearchWithClear
+                    value={catalogSearch}
+                    onChange={setCatalogSearch}
+                    placeholder="Buscar por código ou fornecedor..."
+                    className="w-64 pl-9 pr-8"
+                  />
+                </div>
+                <div className="flex items-center gap-3 ml-auto">
+                  <span className="text-sm text-muted-foreground">
+                    {filteredCatalogOrders.length} resultado(s)
+                  </span>
+                  {hasCatalogFilters && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setCatalogStatus(["pending"])
+                        setCatalogSearch("")
+                        setCatalogPage(1)
+                      }}
+                    >
+                      Limpar filtros
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+            <Card>
+              <CardContent className="p-0">
+                {loading ? (
+                  <div className="py-12 text-center text-sm text-muted-foreground">
+                    Carregando...
+                  </div>
+                ) : filteredCatalogOrders.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-muted-foreground">
+                    Nenhum pedido de catálogo encontrado.
+                  </div>
+                ) : (
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Código</TableHead>
+                          <TableHead>Fornecedor</TableHead>
+                          <TableHead>Valor Total</TableHead>
+                          <TableHead>Data</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {catalogPaginated.map((row) => {
+                          const s = getApprovalStatusMeta(row.request.status)
+                          const o = row.order
+                          return (
+                            <TableRow key={row.request.id}>
+                              <TableCell className="font-mono text-sm">
+                                {o?.code ?? "—"}
+                              </TableCell>
+                              <TableCell>{o?.supplier_name ?? "—"}</TableCell>
+                              <TableCell>
+                                {o?.total_price != null
+                                  ? money.format(o.total_price)
+                                  : "—"}
+                              </TableCell>
+                              <TableCell>
+                                {formatDateBR(row.request.created_at)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className={s.className}>
+                                  {s.label}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <TableRowActions
+                                  actions={[
+                                    {
+                                      label: "Ver Detalhes",
+                                      icon: Eye,
+                                      href: `/comprador/pedidos/${row.request.entity_id}?from=aprovacoes`,
+                                    },
+                                    {
+                                      label: "Aprovar",
+                                      icon: Check,
+                                      onClick: () =>
+                                        handleApprove(
+                                          "catalog_order",
+                                          row.request.id,
+                                          row.request.entity_id,
+                                        ),
+                                      disabled: actionLoading === row.request.id,
+                                      hidden: row.request.status !== "pending",
+                                    },
+                                    {
+                                      label: "Reprovar",
+                                      icon: X,
+                                      onClick: () =>
+                                        openRejectDialog(
+                                          "catalog_order",
+                                          row.request.id,
+                                          row.request.entity_id,
+                                        ),
+                                      disabled: actionLoading === row.request.id,
+                                      hidden: row.request.status !== "pending",
+                                      destructive: true,
+                                    },
+                                  ]}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                    <TablePagination
+                      page={catalogPage}
+                      total={filteredCatalogOrders.length}
+                      pageSize={PAGE_SIZE}
+                      onPageChange={setCatalogPage}
+                    />
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+          ) : null}
         </Tabs>
       ) : (
         <>
@@ -1080,6 +1311,134 @@ export default function AprovacoesPage() {
                         total={filteredOrders.length}
                         pageSize={PAGE_SIZE}
                         onPageChange={setOrderPage}
+                      />
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+          {hasCatalogPermission && (
+            <div className="space-y-4">
+              <div className="bg-muted/40 border border-border rounded-xl p-4 space-y-4">
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Status</p>
+                    <MultiSelectFilter
+                      label="Status"
+                      options={[
+                        { value: "pending", label: "Pendente" },
+                        { value: "approved", label: "Aprovado" },
+                        { value: "rejected", label: "Reprovado" },
+                      ]}
+                      selected={catalogStatus}
+                      onChange={setCatalogStatus}
+                      width="w-40"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Buscar</p>
+                    <SearchWithClear
+                      value={catalogSearch}
+                      onChange={setCatalogSearch}
+                      placeholder="Buscar por código ou fornecedor..."
+                      className="w-64 pl-9 pr-8"
+                    />
+                  </div>
+                </div>
+              </div>
+              <Card>
+                <CardContent className="p-0">
+                  {loading ? (
+                    <div className="py-12 text-center text-sm text-muted-foreground">
+                      Carregando...
+                    </div>
+                  ) : filteredCatalogOrders.length === 0 ? (
+                    <div className="py-12 text-center text-sm text-muted-foreground">
+                      Nenhum pedido de catálogo encontrado.
+                    </div>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Código</TableHead>
+                            <TableHead>Fornecedor</TableHead>
+                            <TableHead>Valor Total</TableHead>
+                            <TableHead>Data</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-right">Ações</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {catalogPaginated.map((row) => {
+                            const s = getApprovalStatusMeta(row.request.status)
+                            const o = row.order
+                            return (
+                              <TableRow key={row.request.id}>
+                                <TableCell className="font-mono text-sm">
+                                  {o?.code ?? "—"}
+                                </TableCell>
+                                <TableCell>{o?.supplier_name ?? "—"}</TableCell>
+                                <TableCell>
+                                  {o?.total_price != null
+                                    ? money.format(o.total_price)
+                                    : "—"}
+                                </TableCell>
+                                <TableCell>
+                                  {formatDateBR(row.request.created_at)}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={s.className}>
+                                    {s.label}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <TableRowActions
+                                    actions={[
+                                      {
+                                        label: "Ver Detalhes",
+                                        icon: Eye,
+                                        href: `/comprador/pedidos/${row.request.entity_id}?from=aprovacoes`,
+                                      },
+                                      {
+                                        label: "Aprovar",
+                                        icon: Check,
+                                        onClick: () =>
+                                          handleApprove(
+                                            "catalog_order",
+                                            row.request.id,
+                                            row.request.entity_id,
+                                          ),
+                                        disabled: actionLoading === row.request.id,
+                                        hidden: row.request.status !== "pending",
+                                      },
+                                      {
+                                        label: "Reprovar",
+                                        icon: X,
+                                        onClick: () =>
+                                          openRejectDialog(
+                                            "catalog_order",
+                                            row.request.id,
+                                            row.request.entity_id,
+                                          ),
+                                        disabled: actionLoading === row.request.id,
+                                        hidden: row.request.status !== "pending",
+                                        destructive: true,
+                                      },
+                                    ]}
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            )
+                          })}
+                        </TableBody>
+                      </Table>
+                      <TablePagination
+                        page={catalogPage}
+                        total={filteredCatalogOrders.length}
+                        pageSize={PAGE_SIZE}
+                        onPageChange={setCatalogPage}
                       />
                     </>
                   )}

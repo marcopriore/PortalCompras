@@ -32,6 +32,7 @@ import type {
   TenantFeatureBooleanDefinition,
   TenantFeatureTextDefinition,
   ErpVendor,
+  CatalogPostCheckoutMode,
 } from "@/lib/settings/tenant-feature-settings-registry"
 import type { TenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
 import type {
@@ -53,6 +54,7 @@ type SettingsResponse = {
   featureConfig?: TenantFeatureConfig
   booleanDefinitions?: TenantFeatureBooleanDefinition[]
   erpVendorDefinition?: TenantFeatureTextDefinition
+  catalogPostCheckoutDefinition?: TenantFeatureTextDefinition
   apiCapabilities?: TenantApiCapabilities
   inboundMatrixRows?: ApiMatrixRowDefinition[]
   outboundMatrixRows?: ApiMatrixRowDefinition[]
@@ -182,11 +184,15 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
   const [erpVendorDef, setErpVendorDef] = React.useState<
     TenantFeatureTextDefinition | null
   >(null)
+  const [catalogModeDef, setCatalogModeDef] = React.useState<
+    Extract<TenantFeatureTextDefinition, { key: "catalog_post_checkout_mode" }> | null
+  >(null)
   const [featureDraft, setFeatureDraft] = React.useState<TenantFeatureConfig>({
     accountAssignmentEnabled: true,
     porEnabled: true,
     erpIntegrationEnabled: false,
     erpVendor: "none",
+    catalogPostCheckoutMode: "buyer_review",
   })
   const [featureDefaults, setFeatureDefaults] =
     React.useState<TenantFeatureConfig>(featureDraft)
@@ -222,6 +228,10 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
       setGrouped(nextGrouped)
       setBooleanDefs(data.booleanDefinitions ?? [])
       setErpVendorDef(data.erpVendorDefinition ?? null)
+      const catalogDef = data.catalogPostCheckoutDefinition
+      setCatalogModeDef(
+        catalogDef?.key === "catalog_post_checkout_mode" ? catalogDef : null,
+      )
       setInboundRows(data.inboundMatrixRows ?? [])
       setOutboundRows(data.outboundMatrixRows ?? [])
 
@@ -280,8 +290,11 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
         const mapped = FEATURE_KEY_TO_CONFIG[def.key]
         nextFeature[mapped] = def.defaultNewTenant
       }
-      if (erpVendorDef) {
+      if (erpVendorDef?.key === "erp_vendor") {
         nextFeature.erpVendor = erpVendorDef.defaultNewTenant
+      }
+      if (catalogModeDef) {
+        nextFeature.catalogPostCheckoutMode = catalogModeDef.defaultNewTenant
       }
       setFeatureDraft(nextFeature)
       setApiCapabilities(buildEmptyApiCapabilities())
@@ -333,6 +346,7 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
           settings,
           booleans,
           erpVendor: featureDraft.erpVendor,
+          catalogPostCheckoutMode: featureDraft.catalogPostCheckoutMode,
           apiCapabilities,
         }),
       })
@@ -357,9 +371,18 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
       (key) => featureDraft[key] !== featureDefaults[key],
     )
     const erpChanged = featureDraft.erpVendor !== featureDefaults.erpVendor
+    const catalogModeChanged =
+      featureDraft.catalogPostCheckoutMode !==
+      featureDefaults.catalogPostCheckoutMode
     const capsChanged =
       JSON.stringify(apiCapabilities) !== JSON.stringify(apiCapabilitiesDefaults)
-    return numericChanged || featureChanged || erpChanged || capsChanged
+    return (
+      numericChanged ||
+      featureChanged ||
+      erpChanged ||
+      catalogModeChanged ||
+      capsChanged
+    )
   }, [
     draft,
     defaults,
@@ -542,6 +565,35 @@ export function TenantSettingsTab({ companyId }: TenantSettingsTabProps) {
                 </Select>
                 <p className="text-xs text-muted-foreground">
                   {erpVendorDef.description}
+                </p>
+              </div>
+            ) : null}
+
+            {group === "negocios" && catalogModeDef ? (
+              <div className="space-y-1.5 max-w-md">
+                <Label htmlFor="catalog-checkout-mode">{catalogModeDef.label}</Label>
+                <Select
+                  value={featureDraft.catalogPostCheckoutMode}
+                  onValueChange={(value) =>
+                    setFeatureDraft((prev) => ({
+                      ...prev,
+                      catalogPostCheckoutMode: value as CatalogPostCheckoutMode,
+                    }))
+                  }
+                >
+                  <SelectTrigger id="catalog-checkout-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {catalogModeDef.options.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {catalogModeDef.description}
                 </p>
               </div>
             ) : null}

@@ -108,6 +108,7 @@ type FeatureKey =
   | 'logs'
   | 'approval_requisition'
   | 'approval_order'
+  | 'approval_catalog_order'
   | 'ai_analytics'
   | 'ai_negotiation'
   | 'ai_negotiation_autonomous'
@@ -202,6 +203,12 @@ const CORE_FEATURES: Array<{
     key: 'approval_order',
     label: 'Aprovação de Pedidos',
     description: 'Fluxo de aprovação de pedidos de compra',
+    icon: 'ShoppingCart',
+  },
+  {
+    key: 'approval_catalog_order',
+    label: 'Aprovação Pedido — Catálogo',
+    description: 'Aprovação por gestor de CC após checkout do catálogo',
     icon: 'ShoppingCart',
   },
 ]

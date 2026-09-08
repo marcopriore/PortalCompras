@@ -115,8 +115,28 @@ export async function GET() {
       orderQuery = orderQuery.eq("approver_id", ctx.userId)
     }
 
-    const [{ data: pendingArs }, { data: historyArs }, { data: orderData }] =
-      await Promise.all([pendingArQuery, historyArQuery, orderQuery])
+    let catalogQuery = service
+      .from("approval_requests")
+      .select("*")
+      .eq("company_id", ctx.companyId)
+      .eq("flow", "catalog_order")
+      .order("created_at", { ascending: false })
+
+    if (!ctx.isAdmin) {
+      catalogQuery = catalogQuery.eq("approver_id", ctx.userId)
+    }
+
+    const [
+      { data: pendingArs },
+      { data: historyArs },
+      { data: orderData },
+      { data: catalogData },
+    ] = await Promise.all([
+      pendingArQuery,
+      historyArQuery,
+      orderQuery,
+      catalogQuery,
+    ])
 
     const pendingReqIds = new Set((pendingReqs ?? []).map((r) => r.id as string))
     const arByEntity = new Map<string, ApprovalRequestRow>()
@@ -146,8 +166,12 @@ export async function GET() {
     ]
     const orderRequests = (orderData ?? []) as ApprovalRequestRow[]
     const orderEntityIds = [...new Set(orderRequests.map((r) => r.entity_id))]
+    const catalogRequests = (catalogData ?? []) as ApprovalRequestRow[]
+    const catalogEntityIds = [
+      ...new Set(catalogRequests.map((r) => r.entity_id)),
+    ]
 
-    const [histReqsRes, ordsRes] = await Promise.all([
+    const [histReqsRes, ordsRes, catalogOrdsRes] = await Promise.all([
       historyEntityIds.length > 0
         ? service
             .from("requisitions")
@@ -162,6 +186,14 @@ export async function GET() {
             .select("id, code, total_price, supplier_name, status, created_at")
             .in("id", orderEntityIds)
         : Promise.resolve({ data: [] as unknown[] }),
+      catalogEntityIds.length > 0
+        ? service
+            .from("purchase_orders")
+            .select(
+              "id, code, total_price, supplier_name, status, created_at, requisition_code",
+            )
+            .in("id", catalogEntityIds)
+        : Promise.resolve({ data: [] as unknown[] }),
     ])
 
     const requisitions = [
@@ -172,11 +204,15 @@ export async function GET() {
     return NextResponse.json({
       data: {
         synced,
-        pending_count: pendingRows.length,
+        pending_count:
+          pendingRows.length +
+          catalogRequests.filter((r) => r.status === "pending").length,
         requisition_requests: reqRequests,
         order_requests: orderRequests,
+        catalog_order_requests: catalogRequests,
         requisitions,
         orders: ordsRes.data ?? [],
+        catalog_orders: catalogOrdsRes.data ?? [],
       },
     })
   } catch (err) {

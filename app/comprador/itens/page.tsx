@@ -63,7 +63,7 @@ type ImportPreviewRow = {
 
 export default function ItensPage() {
   const { companyId, loading: userLoading, hasRole, isSuperAdmin } = useUser()
-  const { hasPermission, loading: permissionsLoading } = usePermissions()
+  const { hasPermission } = usePermissions()
 
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)

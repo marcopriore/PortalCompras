@@ -28,6 +28,8 @@ export function getPOStatusForBuyer(status: string): {
   switch (status) {
     case "draft":
       return { label: "Rascunho", color: "slate" }
+    case "awaiting_approval":
+      return { label: "Pendente Aprovação", color: "amber" }
     case "sent":
       return { label: "Aguardando Aceite", color: "amber" }
     case "processing":

@@ -123,6 +123,7 @@ export default function FornecedorPedidosPage() {
           )
           .eq("supplier_id", supplierId)
           .neq("status", "draft")
+          .neq("status", "awaiting_approval")
           .order("created_at", { ascending: false })
 
         if (qErr) throw qErr

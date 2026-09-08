@@ -9,6 +9,12 @@ import {
 } from "@/lib/requisitions/timeline"
 
 describe("mapPoStatusToRequisitionStatus", () => {
+  it("mapeia awaiting_approval do PO para awaiting_approval da REQ", () => {
+    expect(mapPoStatusToRequisitionStatus("awaiting_approval")).toBe(
+      "awaiting_approval",
+    )
+  })
+
   it("mapeia draft/error/refused/integration_error para awaiting_buyer", () => {
     expect(mapPoStatusToRequisitionStatus("draft")).toBe("awaiting_buyer")
     expect(mapPoStatusToRequisitionStatus("error")).toBe("awaiting_buyer")
@@ -44,6 +50,9 @@ describe("getRequisitionStatusMeta", () => {
     expect(getRequisitionStatusMeta("awaiting_buyer").label).toBe(
       "Pendente Comprador",
     )
+    expect(getRequisitionStatusMeta("awaiting_approval").label).toBe(
+      "Pendente Aprovação",
+    )
     expect(getRequisitionStatusMeta("awaiting_supplier").label).toBe(
       "Pendente Aceite Fornecedor",
     )
@@ -69,6 +78,26 @@ describe("requisition timeline", () => {
     expect(steps.find((s) => s.key === "awaiting_buyer")?.status).toBe("active")
     expect(steps.find((s) => s.key === "awaiting_supplier")?.status).toBe(
       "pending",
+    )
+  })
+
+  it("catálogo: Pendente Aprovação (gestor CC)", () => {
+    const steps = buildCatalogRequisitionTimeline(
+      {
+        status: "awaiting_approval",
+        created_at: "2026-01-01T10:00:00Z",
+        origin: "catalog",
+      },
+      [{ status: "draft", created_at: "2026-01-02T10:00:00Z" }],
+    )
+    expect(steps.map((s) => s.label)).toEqual([
+      "Criada",
+      "Pendente Aprovação",
+      "Aceite Fornecedor",
+      "Concluída",
+    ])
+    expect(steps.find((s) => s.key === "awaiting_approval")?.status).toBe(
+      "active",
     )
   })
 

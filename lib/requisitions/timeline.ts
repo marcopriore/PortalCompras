@@ -34,11 +34,19 @@ type TimelineOrder = {
 }
 
 function buyerStepStatus(reqStatus: string): RequisitionTimelineStepStatus {
-  if (reqStatus === "awaiting_buyer") return "active"
+  if (reqStatus === "awaiting_buyer" || reqStatus === "awaiting_approval") {
+    return "active"
+  }
   if (reqStatus === "awaiting_supplier" || reqStatus === "completed") {
     return "completed"
   }
   return "pending"
+}
+
+function catalogReviewLabel(reqStatus: string): string {
+  if (reqStatus === "awaiting_approval") return "Pendente Aprovação"
+  if (reqStatus === "awaiting_buyer") return "Pendente Comprador"
+  return "Liberado"
 }
 
 function supplierStepStatus(reqStatus: string): RequisitionTimelineStepStatus {
@@ -69,7 +77,7 @@ function step(
   return { key, label, status, date: dateWhenDone(status, date) }
 }
 
-/** Catálogo: Criada → Pendente Comprador → Aceite Fornecedor → Concluída */
+/** Catálogo: Criada → Pendente Comprador/Aprovação → Aceite Fornecedor → Concluída */
 export function buildCatalogRequisitionTimeline(
   req: TimelineRequisition,
   orders: TimelineOrder[],
@@ -85,10 +93,12 @@ export function buildCatalogRequisitionTimeline(
     orders.find((o) => o.status === "completed")?.estimated_delivery_date ??
     null
 
+  const reviewKey =
+    req.status === "awaiting_approval" ? "awaiting_approval" : "awaiting_buyer"
+
   return [
     step("created", "Criada", "completed", req.created_at),
-    // Sem sent_at no PO — data só quando a etapa tiver timestamp próprio
-    step("awaiting_buyer", "Pendente Comprador", buyerStatus, null),
+    step(reviewKey, catalogReviewLabel(req.status), buyerStatus, null),
     step("awaiting_supplier", "Aceite Fornecedor", supplierStatus, supplierDoneAt),
     step("completed", "Concluída", doneStatus, completedAt),
   ]

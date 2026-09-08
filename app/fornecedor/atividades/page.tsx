@@ -84,6 +84,7 @@ export default function FornecedorAtividadesPage() {
             .select("id, code, status, updated_at")
             .eq("supplier_id", supplierId)
             .neq("status", "draft")
+            .neq("status", "awaiting_approval")
             .order("updated_at", { ascending: false })
             .limit(200),
         ])

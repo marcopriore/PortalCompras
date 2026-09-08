@@ -30,12 +30,13 @@ function withHeaderExtensions(payload: PurchaseOrderApi) {
   }
 }
 
-function allEnabled() {
+function allEnabled(): TenantFeatureConfig {
   return {
     accountAssignmentEnabled: true,
     porEnabled: true,
     erpIntegrationEnabled: true,
-    erpVendor: "sap" as const,
+    erpVendor: "sap",
+    catalogPostCheckoutMode: "buyer_review",
   }
 }
 

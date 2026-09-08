@@ -16,6 +16,7 @@ export type FeatureKey =
   | "settings"
   | "approval_requisition"
   | "approval_order"
+  | "approval_catalog_order"
   | "ai_analytics"
   | "ai_negotiation"
   | "ai_negotiation_autonomous"
@@ -69,6 +70,7 @@ export type PermissionKey =
   | "requisition.view_all"
   | "approval.requisition"
   | "approval.order"
+  | "approval.catalog_order"
   | "export.excel"
   | "import.excel"
   | "erp.sync"
@@ -106,6 +108,7 @@ const ALL_FEATURES: FeatureKey[] = [
   "settings",
   "approval_requisition",
   "approval_order",
+  "approval_catalog_order",
   "ai_analytics",
   "ai_negotiation",
   "ai_negotiation_autonomous",
@@ -160,6 +163,7 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "requisition.view_all",
   "approval.requisition",
   "approval.order",
+  "approval.catalog_order",
   "export.excel",
   "import.excel",
   "erp.sync",

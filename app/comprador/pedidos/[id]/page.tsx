@@ -80,6 +80,7 @@ import {
 import { toast } from "sonner"
 import type { LucideIcon } from "lucide-react"
 import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
+import { matchOrderApprovalLevel } from "@/lib/approvals/order-approval"
 import { getBuyerOrderErrorCopy } from "@/lib/integrations/erp-errors"
 import { buildContractItemLineNumberMap } from "@/lib/contracts/contract-balance-helpers"
 import { PoItemAccountConfigTableCells } from "@/components/comprador/po-item-account-config-cells"
@@ -113,6 +114,7 @@ import {
 
 type PurchaseOrderStatus =
   | "draft"
+  | "awaiting_approval"
   | "processing"
   | "sent"
   | "refused"
@@ -229,9 +231,19 @@ function useDebounce<T>(value: T, delay: number): T {
 
 function formatPersistError(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message.trim()) return error.message
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message: unknown }).message
-    if (typeof message === "string" && message.trim()) return message
+  if (error && typeof error === "object") {
+    const e = error as {
+      message?: unknown
+      details?: unknown
+      hint?: unknown
+      code?: unknown
+    }
+    if (typeof e.message === "string" && e.message.trim()) return e.message
+    if (typeof e.details === "string" && e.details.trim()) return e.details
+    if (typeof e.hint === "string" && e.hint.trim()) return e.hint
+    if (typeof e.code === "string" && e.code.trim()) {
+      return `${fallback} (${e.code})`
+    }
   }
   return fallback
 }
@@ -359,7 +371,7 @@ function buildTimeline(order: PurchaseOrder, logs: AuditLog[]): TimelineEvent[] 
     iconColor: "text-blue-500",
   })
 
-  if (order.status !== "draft") {
+  if (order.status !== "draft" && order.status !== "awaiting_approval") {
     inferred.push({
       id: "inf-sent",
       date: order.created_at,
@@ -564,7 +576,7 @@ export default function PurchaseOrderDetailPage({
   const backHref =
     searchParams.get("from") === "aprovacoes" ? "/comprador/aprovacoes" : "/comprador/pedidos"
   const { companyId, userId, loading: userLoading } = useUser()
-  const { hasPermission } = usePermissions()
+  const { hasPermission, hasFeature } = usePermissions()
   const { id } = React.use(params)
   const { maxQuantity, priceDecimalPlaces } = useNumericLimits()
   const {
@@ -586,6 +598,7 @@ export default function PurchaseOrderDetailPage({
   const [order, setOrder] = React.useState<PurchaseOrder | null>(null)
   const [orderLogs, setOrderLogs] = React.useState<AuditLog[]>([])
   const [items, setItems] = React.useState<PurchaseOrderItem[]>([])
+  const [pendingCatalogApproval, setPendingCatalogApproval] = React.useState(false)
   const [paymentOptions, setPaymentOptions] = React.useState<PaymentConditionOption[]>([])
   const [loading, setLoading] = React.useState(true)
   const [exporting, setExporting] = React.useState(false)
@@ -903,7 +916,8 @@ export default function PurchaseOrderDetailPage({
           setOrderLogs((logsRes.data as AuditLog[]) ?? [])
         }
 
-        if (loadedOrder?.status === "draft") {
+        if (loadedOrder?.status === "draft" || loadedOrder?.status === "awaiting_approval") {
+          if (loadedOrder.status === "draft") {
           const reqItemIds = poItems
             .map((item) => item.requisition_item_id)
             .filter((value): value is string => Boolean(value))
@@ -977,6 +991,29 @@ export default function PurchaseOrderDetailPage({
           } else {
             setRequisitionIdByCode({})
           }
+          } else {
+            setEditItems([])
+            setDraftSupplier(null)
+            setRequisitionIdByCode({})
+          }
+        }
+
+        if (
+          (loadedOrder?.status === "draft" ||
+            loadedOrder?.status === "awaiting_approval") &&
+          companyId
+        ) {
+          const { data: catalogAr } = await supabase
+            .from("approval_requests")
+            .select("id")
+            .eq("company_id", companyId)
+            .eq("entity_id", id)
+            .eq("flow", "catalog_order")
+            .eq("status", "pending")
+            .limit(1)
+          setPendingCatalogApproval((catalogAr ?? []).length > 0)
+        } else {
+          setPendingCatalogApproval(false)
         }
       } finally {
         if (!silent) setLoading(false)
@@ -1163,6 +1200,12 @@ export default function PurchaseOrderDetailPage({
 
   const handleConfirmOrder = async () => {
     if (!order || !companyId) return
+    if (order.status === "awaiting_approval" || pendingCatalogApproval) {
+      toast.error(
+        "Este pedido está pendente de aprovação do gestor do centro de custo.",
+      )
+      return
+    }
 
     const isManualDraft = order.status === "draft" && editItems.length > 0
     if (isManualDraft) {
@@ -1183,8 +1226,15 @@ export default function PurchaseOrderDetailPage({
       const supabase = createClient()
 
       if (isManualDraft) {
+        if (!draftSupplier) {
+          toast.error("Selecione um fornecedor.")
+          return
+        }
         const saved = await persistDraftForConfirm()
-        if (!saved) return
+        if (!saved) {
+          toast.error("Não foi possível salvar o rascunho antes de confirmar.")
+          return
+        }
         await updateLinkedRequisitionsOnConfirm()
       } else {
         const accountResult = await savePurchaseOrderAccountConfigs(
@@ -1215,27 +1265,89 @@ export default function PurchaseOrderDetailPage({
         if (headerError) throw headerError
       }
 
+      const orderTotalForApproval = isManualDraft
+        ? editItems.reduce(
+            (sum, line) =>
+              sum +
+              computePoLineTotal(line.quantity, line.unit_price, line.price_unit),
+            0,
+          )
+        : (order.total_price ??
+          items.reduce(
+            (sum, line) =>
+              sum +
+              computePoLineTotal(
+                Number(line.quantity),
+                Number(line.unit_price),
+                line.price_unit ?? 1,
+              ),
+            0,
+          ))
+
+      let nextStatus: "sent" | "awaiting_approval" = "sent"
+      if (hasFeature("approval_order")) {
+        const { data: levels, error: levelsErr } = await supabase
+          .from("approval_levels")
+          .select("id, approver_id, approver_name, min_value, max_value, created_at")
+          .eq("company_id", companyId)
+          .eq("flow", "order")
+        if (levelsErr) throw levelsErr
+
+        const match = matchOrderApprovalLevel(
+          (levels ?? []) as Array<{
+            id: string
+            approver_id: string | null
+            approver_name: string | null
+            min_value: number | null
+            max_value: number | null
+            created_at?: string | null
+          }>,
+          orderTotalForApproval,
+        )
+
+        if (match) {
+          const { error: arErr } = await supabase.from("approval_requests").insert({
+            company_id: companyId,
+            flow: "order",
+            entity_id: order.id,
+            approver_id: match.approver_id,
+            approver_name: match.approver_name,
+            status: "pending",
+          })
+          if (arErr) throw arErr
+          nextStatus = "awaiting_approval"
+        }
+      }
+
       const { error } = await supabase
         .from("purchase_orders")
         .update({
-          status: "sent",
+          status: nextStatus,
           updated_at: new Date().toISOString(),
         })
         .eq("id", order.id)
         .eq("company_id", companyId)
       if (error) throw error
-      void notifySupplierOrderSent({
-        id: order.id,
-        code: order.code,
-        supplier_name: draftSupplier?.name ?? order.supplier_name,
-        company_id: order.company_id,
-        supplier_id: draftSupplier?.id ?? order.supplier_id ?? null,
-      })
-      toast.success("Pedido enviado ao fornecedor. Aguardando aceite.")
+
+      if (nextStatus === "sent") {
+        void notifySupplierOrderSent({
+          id: order.id,
+          code: order.code,
+          supplier_name: draftSupplier?.name ?? order.supplier_name,
+          company_id: order.company_id,
+          supplier_id: draftSupplier?.id ?? order.supplier_id ?? null,
+        })
+        toast.success("Pedido enviado ao fornecedor. Aguardando aceite.")
+      } else {
+        toast.success("Pedido enviado para aprovação.")
+      }
       await fetchOrderData({ silent: true })
     } catch (e) {
-      console.error(e)
-      toast.error("Não foi possível confirmar o pedido.")
+      console.error(
+        "handleConfirmOrder",
+        e instanceof Error ? e.message : JSON.stringify(e),
+      )
+      toast.error(formatPersistError(e, "Não foi possível confirmar o pedido."))
     } finally {
       setConfirmingPedido(false)
     }
@@ -1798,11 +1910,7 @@ export default function PurchaseOrderDetailPage({
               quantity: row.quantity,
               unit_price: row.unit_price,
               price_unit: row.price_unit,
-              total_price: computePoLineTotal(
-                row.quantity,
-                row.unit_price,
-                row.price_unit,
-              ),
+              // total_price é coluna gerada no banco — não enviar no UPDATE
             })
             .eq("id", row.id)
             .eq("company_id", companyId)
@@ -2335,13 +2443,20 @@ export default function PurchaseOrderDetailPage({
     hasPermission("order.edit") ||
     (hasPermission("order.edit_own") && order.created_by === userId)
 
+  const isAwaitingCatalogApproval =
+    order.status === "awaiting_approval" || pendingCatalogApproval
+
   const canEditAccountConfig =
     accountAssignmentEnabled &&
     canEditOrder &&
-    (isEditing || (order.status === "draft" && !integratedOrder))
+    (isEditing || (order.status === "draft" && !integratedOrder)) &&
+    !isAwaitingCatalogApproval
 
   const isDraftEditable =
-    order.status === "draft" && !integratedOrder && canEditOrder
+    order.status === "draft" &&
+    !integratedOrder &&
+    canEditOrder &&
+    !isAwaitingCatalogApproval
 
   const showHeaderEdit = isEditing || isDraftEditable
 
@@ -2394,6 +2509,12 @@ export default function PurchaseOrderDetailPage({
             companyId={companyId}
             onDecided={() => fetchOrderData({ silent: true })}
           />
+          <EntityApprovalActions
+            flow="catalog_order"
+            entityId={id}
+            companyId={companyId}
+            onDecided={() => fetchOrderData({ silent: true })}
+          />
           <span
             className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${poStatusBadgeClass(statusDisplay.color)}`}
           >
@@ -2402,7 +2523,10 @@ export default function PurchaseOrderDetailPage({
             ) : null}
             {statusDisplay.label}
           </span>
-          {order.status === "draft" && !integratedOrder && canEditOrder && (
+          {order.status === "draft" &&
+            !integratedOrder &&
+            canEditOrder &&
+            !isAwaitingCatalogApproval && (
             <>
               <Button
                 type="button"

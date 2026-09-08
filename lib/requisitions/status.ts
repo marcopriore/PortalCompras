@@ -7,6 +7,7 @@ export type RequisitionStatus =
   | "rejected"
   | "in_quotation"
   | "awaiting_buyer"
+  | "awaiting_approval"
   | "awaiting_supplier"
   | "completed"
   | "cancelled"
@@ -45,6 +46,10 @@ const STATUS_META: Record<RequisitionStatus, RequisitionStatusMeta> = {
     label: "Pendente Comprador",
     className: "bg-amber-100 text-amber-900",
   },
+  awaiting_approval: {
+    label: "Pendente Aprovação",
+    className: "bg-yellow-100 text-yellow-800",
+  },
   awaiting_supplier: {
     label: "Pendente Aceite Fornecedor",
     className: "bg-orange-100 text-orange-900",
@@ -79,6 +84,7 @@ export const REQUISITION_STATUS_FILTER_OPTIONS: Array<{
   { value: "cancelled", label: "Cancelada" },
   { value: "in_quotation", label: "Em Cotação" },
   { value: "awaiting_buyer", label: "Pendente Comprador" },
+  { value: "awaiting_approval", label: "Pendente Aprovação" },
   { value: "awaiting_supplier", label: "Pendente Aceite Fornecedor" },
   { value: "completed", label: "Concluída" },
 ]
@@ -91,6 +97,7 @@ export const SOLICITANTE_DEFAULT_STATUS_FILTER: RequisitionStatus[] = [
   "rejected",
   "in_quotation",
   "awaiting_buyer",
+  "awaiting_approval",
   "awaiting_supplier",
   "completed",
 ]
@@ -105,6 +112,8 @@ export function mapPoStatusToRequisitionStatus(
     case "refused":
     case "integration_error":
       return "awaiting_buyer"
+    case "awaiting_approval":
+      return "awaiting_approval"
     case "sent":
     case "processing":
       return "awaiting_supplier"

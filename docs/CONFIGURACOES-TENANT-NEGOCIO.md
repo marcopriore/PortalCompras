@@ -32,9 +32,10 @@ Chaves legadas `cutover_*` ainda são lidas como fallback (`LEGACY_FEATURE_KEY_A
 | `por_enabled` | POR (fator de preço SAP) | Coluna POR no pedido; total = qtd × preço × POR | POR ignorado (multiplicador 1); `price_unit` omitido no outbound |
 | `erp_integration_enabled` | Integração outbound ERP | Dispara outbound conforme `api_integrations` | Não envia (gate adicional ao feature `api_integrations`) |
 | `erp_vendor` | Tipo de ERP (`none` \| `sap` \| `other`) | Afeta extensões SAP no payload (`sap_extensions`, etc.) | Perfil genérico |
+| `catalog_post_checkout_mode` | Catálogo — após checkout (`buyer_review` \| `cost_center_approval`) | Ver §2.2 | Default legado `buyer_review` |
 | `api_capabilities` (JSON) | Matriz Loja de API (inbound + outbound) | Só dispara / aceita as rotas ligadas | Ver §2.1 |
 
-**Defaults para tenant novo:** classificação e POR **desligados**; ERP integration **desligado**; vendor `none`; matriz de APIs **tudo off**.  
+**Defaults para tenant novo:** classificação e POR **desligados**; ERP integration **desligado**; vendor `none`; catálogo `buyer_review`; matriz de APIs **tudo off**.  
 **Defaults legado (chave ausente):** classificação e POR **ligados** (compatibilidade com tenants já em uso); `api_capabilities` ausente = inbound aberto + outbound PO/contrato (REQ outbound off).
 
 Outbound: `lib/integrations/purchase-order-outbound.ts` → `applyImplantationToPurchaseOrderPayload()`.
@@ -57,6 +58,17 @@ Mapeamento outbound (método → ação ERP):
 | Requisições | `approved` + `rejected` | `created` | `updated` | `cancelled` |
 
 Código: `lib/settings/tenant-api-capabilities*.ts`. Monitor: reenvio só se ação habilitada.
+
+### 2.2 Catálogo — pós-checkout (`catalog_post_checkout_mode`)
+
+| Valor | Comportamento |
+|-------|---------------|
+| `buyer_review` (default) | REQ `awaiting_buyer` + PO `draft` — comprador confirma; depois alçada `order` por valor (se módulo/alçada casar) ou direto `sent` |
+| `cost_center_approval` | REQ `awaiting_approval` + PO `awaiting_approval` + `approval_requests.flow = catalog_order` — gestor do CC aprova; ao aprovar o PO vai a `sent` (sem alçada `order`); ao reprovar REQ `rejected` + PO `cancelled` |
+
+**Alçada de Pedido (`order`):** só por **faixa de valor** (sem categoria). No Confirmar Pedido: se `approval_order` ligado e o total cair em alguma alçada → `awaiting_approval` + AR; senão → `sent`. Approve → `sent`; reprova → volta a `draft`.
+
+Requisitos do modo `cost_center_approval`: feature `approval_catalog_order` + alçada `flow = catalog_order` em Configurações → Aprovações. RPC: `get_approver_for_catalog_order`. Migrations `080`–`082`.
 
 ---
 

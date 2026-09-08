@@ -1,11 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import {
+  isCatalogPostCheckoutMode,
   isErpVendor,
   isTenantFeatureBooleanKey,
   LEGACY_FEATURE_KEY_ALIASES,
   normalizeFeatureSettingKey,
   TENANT_FEATURE_BOOLEAN_REGISTRY,
   TENANT_FEATURE_TEXT_REGISTRY,
+  type CatalogPostCheckoutMode,
   type ErpVendor,
   type TenantFeatureBooleanKey,
   type TenantFeatureKey,
@@ -19,6 +21,7 @@ export type TenantFeatureConfig = {
   porEnabled: boolean
   erpIntegrationEnabled: boolean
   erpVendor: ErpVendor
+  catalogPostCheckoutMode: CatalogPostCheckoutMode
 }
 
 type RawSettings = Partial<Record<string, string>>
@@ -45,6 +48,15 @@ function erpVendorFromStorage(
   return isErpVendor(v) ? v : legacy
 }
 
+function catalogModeFromStorage(
+  raw: string | undefined,
+  legacy: CatalogPostCheckoutMode,
+): CatalogPostCheckoutMode {
+  if (raw == null || String(raw).trim() === "") return legacy
+  const v = String(raw).trim().toLowerCase()
+  return isCatalogPostCheckoutMode(v) ? v : legacy
+}
+
 function normalizeRawSettings(raw: RawSettings): RawSettings {
   const out: RawSettings = { ...raw }
   for (const [legacyKey, canonicalKey] of Object.entries(LEGACY_FEATURE_KEY_ALIASES)) {
@@ -63,7 +75,10 @@ export function parseTenantFeatureConfig(raw: RawSettings): TenantFeatureConfig 
     return boolFromStorage(key, normalized[key], def.defaultLegacyMissing)
   }
 
-  const erpDef = TENANT_FEATURE_TEXT_REGISTRY[0]
+  const erpDef = TENANT_FEATURE_TEXT_REGISTRY.find((d) => d.key === "erp_vendor")!
+  const catalogDef = TENANT_FEATURE_TEXT_REGISTRY.find(
+    (d) => d.key === "catalog_post_checkout_mode",
+  )!
 
   return {
     accountAssignmentEnabled: bool("account_assignment_enabled"),
@@ -72,6 +87,10 @@ export function parseTenantFeatureConfig(raw: RawSettings): TenantFeatureConfig 
     erpVendor: erpVendorFromStorage(
       normalized.erp_vendor,
       erpDef.defaultLegacyMissing,
+    ),
+    catalogPostCheckoutMode: catalogModeFromStorage(
+      normalized.catalog_post_checkout_mode,
+      catalogDef.defaultLegacyMissing,
     ),
   }
 }
@@ -174,6 +193,7 @@ export const loadImplantationConfig = loadTenantFeatureConfig
 export function validateTenantFeaturePatch(body: {
   booleans?: Record<string, unknown>
   erpVendor?: unknown
+  catalogPostCheckoutMode?: unknown
 }):
   | { ok: true; rows: { key: TenantFeatureKey; value: string }[] }
   | { ok: false; error: string } {
@@ -200,6 +220,19 @@ export function validateTenantFeaturePatch(body: {
       return { ok: false, error: "Tipo de ERP inválido." }
     }
     rows.push({ key: "erp_vendor", value: body.erpVendor })
+  }
+
+  if (body.catalogPostCheckoutMode !== undefined) {
+    if (
+      typeof body.catalogPostCheckoutMode !== "string" ||
+      !isCatalogPostCheckoutMode(body.catalogPostCheckoutMode)
+    ) {
+      return { ok: false, error: "Modo de checkout do catálogo inválido." }
+    }
+    rows.push({
+      key: "catalog_post_checkout_mode",
+      value: body.catalogPostCheckoutMode,
+    })
   }
 
   if (rows.length === 0) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createCatalogPurchaseOrders } from "@/lib/catalog/create-catalog-purchase-orders"
 import { notifyCatalogCheckout } from "@/lib/catalog/notify-catalog-checkout"
+import { enqueueCatalogOrderApprovals } from "@/lib/catalog/enqueue-catalog-order-approvals"
 import {
   getCatalogAuthContext,
   resolveCatalogDbClient,
@@ -13,6 +14,8 @@ import {
   loadUserPermissionKeys,
 } from "@/lib/permissions/resolve-user-permissions"
 import { triggerRequisitionOutbound } from "@/lib/integrations/trigger-requisition-outbound"
+import { loadTenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
+import { createServiceRoleClient } from "@/lib/supabase/service-role"
 
 export async function POST(request: Request) {
   try {
@@ -58,6 +61,8 @@ export async function POST(request: Request) {
     }
 
     const db = resolveCatalogDbClient(ctx)
+    const featureConfig = await loadTenantFeatureConfig(db, ctx.companyId)
+    const postCheckoutMode = featureConfig.catalogPostCheckoutMode
 
     const { data: cart } = await db
       .from("catalog_carts")
@@ -92,10 +97,39 @@ export async function POST(request: Request) {
         priority: body.priority,
         description: body.description,
       },
+      { postCheckoutMode },
     )
 
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 400 })
+    }
+
+    if (postCheckoutMode === "cost_center_approval") {
+      const service = createServiceRoleClient()
+      const enqueued = await enqueueCatalogOrderApprovals(
+        service,
+        ctx.companyId,
+        (body.cost_center ?? "").trim(),
+        result.result.purchaseOrders,
+      )
+      if (!enqueued.ok) {
+        const requisitionIds = [
+          ...new Set(result.result.purchaseOrders.map((po) => po.requisitionId)),
+        ]
+        for (const po of result.result.purchaseOrders) {
+          try {
+            await db.rpc("release_contract_balance", { p_order_id: po.id })
+          } catch {
+            /* best-effort */
+          }
+          await db.from("purchase_orders").delete().eq("id", po.id)
+        }
+        for (const requisitionId of requisitionIds) {
+          await db.from("requisition_items").delete().eq("requisition_id", requisitionId)
+          await db.from("requisitions").delete().eq("id", requisitionId)
+        }
+        return NextResponse.json({ error: enqueued.error }, { status: 400 })
+      }
     }
 
     await db.from("catalog_cart_items").delete().eq("cart_id", cart.id)
@@ -119,7 +153,11 @@ export async function POST(request: Request) {
           requisition_code: po.requisitionCode,
           origin: "catalog",
           supplier_id: po.supplierId,
-          status: "draft",
+          status:
+            postCheckoutMode === "cost_center_approval"
+              ? "awaiting_approval"
+              : "draft",
+          catalog_post_checkout_mode: postCheckoutMode,
         },
       })
 
@@ -136,7 +174,10 @@ export async function POST(request: Request) {
           purchase_order_id: po.id,
           purchase_order_code: po.code,
           origin: "catalog",
-          status: "awaiting_buyer",
+          status:
+            postCheckoutMode === "cost_center_approval"
+              ? "awaiting_approval"
+              : "awaiting_buyer",
         },
       })
 

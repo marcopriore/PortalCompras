@@ -35,7 +35,11 @@ export const COMPRADOR_NAV_RULES: NavEntryRule[] = [
   },
   {
     href: "/comprador/aprovacoes",
-    permissions: ["approval.requisition", "approval.order"],
+    permissions: [
+      "approval.requisition",
+      "approval.order",
+      "approval.catalog_order",
+    ],
     anyPermission: true,
   },
   { href: "/comprador/itens", permissions: ["nav.items"] },

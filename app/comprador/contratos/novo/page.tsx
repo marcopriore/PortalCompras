@@ -283,8 +283,8 @@ export default function NovoContratoPage() {
   }, [itemSearch])
 
   React.useEffect(() => {
-    if (userLoading || !companyId || !canAccess) {
-      setLoading(false)
+    if (userLoading || permissionsLoading || !companyId || !canAccess) {
+      if (!userLoading && !permissionsLoading && !canAccess) setLoading(false)
       return
     }
 
@@ -311,13 +311,13 @@ export default function NovoContratoPage() {
     return () => {
       cancelled = true
     }
-  }, [userLoading, companyId, canAccess])
+  }, [userLoading, permissionsLoading, companyId, canAccess])
 
   const [paymentConditionsLoaded, setPaymentConditionsLoaded] =
     React.useState(false)
 
   React.useEffect(() => {
-    if (userLoading || !companyId || !canAccess) return
+    if (userLoading || permissionsLoading || !companyId || !canAccess) return
 
     setPaymentConditionsLoaded(false)
     let cancelled = false
@@ -408,7 +408,7 @@ export default function NovoContratoPage() {
   ])
 
   React.useEffect(() => {
-    if (userLoading || !companyId || !canAccess) return
+    if (userLoading || permissionsLoading || !companyId || !canAccess) return
 
     const q = debouncedItemSearch.trim()
     if (q.length < 2) {
@@ -462,7 +462,7 @@ export default function NovoContratoPage() {
     return () => {
       cancelled = true
     }
-  }, [debouncedItemSearch, companyId, canAccess, userLoading])
+  }, [debouncedItemSearch, companyId, canAccess, userLoading, permissionsLoading])
 
 
   function addItemFromCatalog(item: CatalogItemRow) {

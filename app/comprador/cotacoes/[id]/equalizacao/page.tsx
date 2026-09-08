@@ -453,7 +453,7 @@ export default function EqualizacaoPage({
   const router = useRouter()
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading, profileType } = useUser()
   const { value: scorePriceWeight } = useTenantSetting("score_weight_price")
-  const { hasFeature, hasPermission } = usePermissions()
+  const { hasFeature, hasPermission, loading: permLoading } = usePermissions()
   const {
     loading: aiAccessLoading,
     showConsultiveAi,
@@ -720,6 +720,7 @@ export default function EqualizacaoPage({
               "id, code, description, status, category, payment_condition, response_deadline, created_at, created_by",
             )
             .eq("id", id)
+            .eq("company_id", companyId)
             .single(),
           supabase
             .from("quotation_items")
@@ -945,19 +946,19 @@ export default function EqualizacaoPage({
   useAutoRefresh({
     intervalMs: pollingIntervalMs,
     onRefresh: refreshEqualizacao,
-    enabled: Boolean(companyId && id) && !userLoading,
+    enabled: Boolean(companyId && id) && !userLoading && !permLoading,
   })
 
   fetchEqualizationDataRef.current = fetchEqualizationData
 
   React.useEffect(() => {
-    if (userLoading || !companyId) return
+    if (userLoading || permLoading || !companyId) return
     const showLoading = isFirstLoadRef.current
     if (isFirstLoadRef.current) {
       isFirstLoadRef.current = false
     }
     void fetchEqualizationData({ showLoading })
-  }, [fetchEqualizationData, userLoading, companyId])
+  }, [fetchEqualizationData, userLoading, permLoading, companyId])
 
   React.useEffect(() => {
     if (!companyId) return
@@ -2603,7 +2604,7 @@ export default function EqualizacaoPage({
       </>
     ) : null
 
-  if (userLoading) {
+  if (userLoading || permLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
         Carregando...

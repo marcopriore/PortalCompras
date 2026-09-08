@@ -141,6 +141,7 @@ export default function FornecedorDashboardPage() {
             )
             .eq("supplier_id", supplierId)
             .neq("status", "draft")
+            .neq("status", "awaiting_approval")
             .order("updated_at", { ascending: false })
             .limit(8),
         ])

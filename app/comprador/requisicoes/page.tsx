@@ -7,6 +7,7 @@ import { formatDateBR } from "@/lib/formato-data"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { canViewAllByPermission } from "@/lib/quotations/ownership"
 
 import { RequisicoesImportExcelDialog } from "@/components/comprador/requisicoes-import-excel-dialog"
 
@@ -68,12 +69,12 @@ export function getPriorityMeta(priority: Priority): { label: string; className:
 export default function RequisicoesPage() {
   const router = useRouter()
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
-  const { hasPermission, canWrite } = usePermissions()
+  const { hasPermission, canWrite, loading: permLoading } = usePermissions()
 
-  const canViewAll =
-    Boolean(isSuperAdmin) ||
-    hasRole("admin") ||
-    hasPermission("requisition.view_all")
+  const canViewAll = canViewAllByPermission(
+    { isSuperAdmin, hasRole, hasPermission },
+    "requisition.view_all",
+  )
 
   const [requisitions, setRequisitions] = React.useState<Requisition[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -98,7 +99,7 @@ export default function RequisicoesPage() {
   }, [search, status, priority, dateFrom, dateTo])
 
   const loadRequisitions = React.useCallback(async () => {
-    if (userLoading || !companyId) return
+    if (userLoading || permLoading || !companyId) return
 
     const supabase = createClient()
     setLoading(true)
@@ -119,7 +120,7 @@ export default function RequisicoesPage() {
     } finally {
       setLoading(false)
     }
-  }, [companyId, userLoading, canViewAll, userId])
+  }, [companyId, userLoading, permLoading, canViewAll, userId])
 
   React.useEffect(() => {
     void loadRequisitions()
@@ -166,7 +167,7 @@ export default function RequisicoesPage() {
     }
   }, [requisitions])
 
-  if (userLoading) {
+  if (userLoading || permLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
         Carregando...

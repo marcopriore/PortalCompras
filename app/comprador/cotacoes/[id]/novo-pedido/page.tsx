@@ -107,8 +107,8 @@ export default function NovoPedidoPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
-  const { userId, companyId, isSuperAdmin, hasRole } = useUser()
-  const { hasPermission } = usePermissions()
+  const { userId, companyId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
+  const { hasPermission, loading: permLoading } = usePermissions()
   const viewAllQuotations = canViewAllQuotations({
     isSuperAdmin,
     hasRole,
@@ -135,7 +135,7 @@ export default function NovoPedidoPage({
   )
 
   React.useEffect(() => {
-    if (!companyId || !id) return
+    if (userLoading || permLoading || !companyId || !id) return
 
     const supabase = createClient()
     let alive = true
@@ -148,6 +148,7 @@ export default function NovoPedidoPage({
           .from("quotations")
           .select("id, code, description, status, created_by")
           .eq("id", id)
+          .eq("company_id", companyId)
           .single(),
         supabase
           .from("quotation_proposals")
@@ -229,7 +230,7 @@ export default function NovoPedidoPage({
     return () => {
       alive = false
     }
-  }, [companyId, id, userId, viewAllQuotations, router])
+  }, [companyId, id, userId, viewAllQuotations, router, userLoading, permLoading])
 
   const totalPrice = React.useMemo(
     () => items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),

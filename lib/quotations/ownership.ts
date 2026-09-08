@@ -8,8 +8,19 @@ export type QuotationOwnerContext = {
 
 export function canViewAllQuotations(ctx: QuotationOwnerContext): boolean {
   if (ctx.isSuperAdmin) return true
-  if (ctx.hasRole?.("admin")) return true
   return ctx.hasPermission("quotation.view_all")
+}
+
+/** Superadmin ou permission key específica (pedidos, REQ, etc.). Sem bypass por role admin. */
+export function canViewAllByPermission(
+  ctx: QuotationOwnerContext,
+  permission: Extract<
+    PermissionKey,
+    "quotation.view_all" | "order.view_all" | "requisition.view_all"
+  >,
+): boolean {
+  if (ctx.isSuperAdmin) return true
+  return ctx.hasPermission(permission)
 }
 
 export function canAccessQuotation(opts: {
