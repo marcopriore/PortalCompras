@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Loader2, Search, ShoppingCart, X } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { hasCatalogViewAccess } from "@/lib/permissions/catalog-access"
 import type { CatalogCart, CatalogOffer } from "@/lib/catalog/types"
 import {
   mergeCartItem,
@@ -94,7 +95,12 @@ export function PurchaseCatalogPage({
 }: PurchaseCatalogPageProps) {
   const router = useRouter()
   const { companyId, userId, loading: userLoading } = useUser()
-  const { hasFeature, canWrite, loading: permissionsLoading } = usePermissions()
+  const {
+    hasFeature,
+    hasPermission,
+    canWrite,
+    loading: permissionsLoading,
+  } = usePermissions()
 
   const [offers, setOffers] = React.useState<CatalogOffer[]>([])
   const [commodityGroups, setCommodityGroups] = React.useState<string[]>([])
@@ -143,7 +149,7 @@ export function PurchaseCatalogPage({
   )
 
   const moduleEnabled = hasFeature("purchase_catalog")
-  const canBrowse = moduleEnabled
+  const canBrowse = moduleEnabled && hasCatalogViewAccess(hasPermission)
   const canOrder = canWrite("catalog.order")
 
   const applyServerCart = React.useCallback((next: CatalogCart) => {

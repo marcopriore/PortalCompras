@@ -15,7 +15,7 @@ export const PERMISSION_CATALOG: PermissionCatalogItem[] = [
   { key: "nav.items", label: "Itens", group: "Navegação" },
   { key: "nav.suppliers", label: "Fornecedores", group: "Navegação" },
   { key: "nav.reports", label: "Relatórios", group: "Navegação" },
-  { key: "nav.catalog", label: "Ver Catálogo de Compras", group: "Navegação" },
+  { key: "nav.catalog", label: "Menu Catálogo", group: "Navegação" },
   { key: "dashboard.metrics", label: "Cards de métricas", group: "Dashboard" },
   {
     key: "dashboard.spend_category",
@@ -110,8 +110,13 @@ export const PERMISSION_CATALOG: PermissionCatalogItem[] = [
   { key: "requisition.approve", label: "Aprovar Requisições", group: "Requisições" },
   { key: "requisition.view_all", label: "Ver Requisições de Todos", group: "Requisições" },
   {
+    key: "catalog.view",
+    label: "Visualizar itens do Catálogo",
+    group: "Catálogo",
+  },
+  {
     key: "catalog.order",
-    label: "Pedir no Catálogo (carrinho e checkout)",
+    label: "Criar carrinho e pedido no Catálogo",
     group: "Catálogo",
   },
   {

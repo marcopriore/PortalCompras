@@ -115,6 +115,7 @@ const ADMIN_PERMISSIONS = [
   "requisition.create.requester",
   "requisition.approve",
   "requisition.view_all",
+  "catalog.view",
   "catalog.order",
   "catalog.buyer_review",
   "approval.requisition",

@@ -5,8 +5,9 @@ import {
   resolveCatalogDbClient,
   tenantHasPurchaseCatalog,
 } from "@/lib/catalog/catalog-auth"
+import { hasCatalogViewAccessFromKeys } from "@/lib/permissions/catalog-access"
 import {
-  hasUserPermission,
+  canUserWrite,
   loadUserPermissionKeys,
 } from "@/lib/permissions/resolve-user-permissions"
 
@@ -25,15 +26,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Módulo não habilitado" }, { status: 403 })
     }
 
+    let canOrder = ctx.isSuperAdmin
     if (!ctx.isSuperAdmin) {
       const permissions = await loadUserPermissionKeys(
         ctx.supabase,
         ctx.userId,
         ctx.companyId,
       )
-      if (!hasUserPermission(permissions, "nav.catalog")) {
+      if (!hasCatalogViewAccessFromKeys(permissions)) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 })
       }
+      canOrder = canUserWrite(permissions, "catalog.order")
     }
 
     const { searchParams } = new URL(request.url)
@@ -68,6 +71,7 @@ export async function GET(request: Request) {
       hasMore: result.hasMore,
       offset,
       limit,
+      can_order: canOrder,
       ...(includeFacets
         ? {
             commodityGroups: result.commodityGroups,

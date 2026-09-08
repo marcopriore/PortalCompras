@@ -110,7 +110,12 @@ export function Sidebar({ type }: SidebarProps) {
     if (type === "solicitante") {
       return solicitanteNavItems.filter((item) => {
         if (item.href === "/solicitante/catalogo") {
-          return hasFeature("purchase_catalog") && hasPermission("nav.catalog")
+          return (
+            hasFeature("purchase_catalog") &&
+            (hasPermission("catalog.view") ||
+              hasPermission("nav.catalog") ||
+              hasPermission("catalog.order"))
+          )
         }
         return true
       })

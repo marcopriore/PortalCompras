@@ -9,9 +9,9 @@ import {
 } from "@/lib/catalog/catalog-auth"
 import {
   canUserWrite,
-  hasUserPermission,
   loadUserPermissionKeys,
 } from "@/lib/permissions/resolve-user-permissions"
+import { hasCatalogViewAccessFromKeys } from "@/lib/permissions/catalog-access"
 import { triggerRequisitionOutbound } from "@/lib/integrations/trigger-requisition-outbound"
 import { loadTenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     }
 
     if (!ctx.isSuperAdmin && permissions) {
-      if (!hasUserPermission(permissions, "nav.catalog")) {
+      if (!hasCatalogViewAccessFromKeys(permissions)) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 })
       }
       if (!canUserWrite(permissions, "catalog.order")) {

@@ -14,9 +14,9 @@ import {
 } from "@/lib/catalog/cart-service"
 import {
   canUserWrite,
-  hasUserPermission,
   loadUserPermissionKeys,
 } from "@/lib/permissions/resolve-user-permissions"
+import { hasCatalogViewAccessFromKeys } from "@/lib/permissions/catalog-access"
 import type { PermissionKey } from "@/lib/hooks/usePermissions"
 
 async function requireCatalogAccess(
@@ -37,7 +37,7 @@ async function requireCatalogAccess(
     return NextResponse.json({ error: "Módulo não habilitado" }, { status: 403 })
   }
 
-  if (!hasUserPermission(permissions, "nav.catalog")) {
+  if (!hasCatalogViewAccessFromKeys(permissions)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 

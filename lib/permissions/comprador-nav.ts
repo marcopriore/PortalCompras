@@ -48,7 +48,8 @@ export const COMPRADOR_NAV_RULES: NavEntryRule[] = [
   { href: "/comprador/suporte" },
   {
     href: "/comprador/catalogo",
-    permissions: ["nav.catalog"],
+    permissions: ["nav.catalog", "catalog.view", "catalog.order"],
+    anyPermission: true,
     features: ["purchase_catalog"],
   },
   {

@@ -85,6 +85,7 @@ export type PermissionKey =
   | "settings.manage"
   | "portal.solicitante"
   | "view_only"
+  | "catalog.view"
   | "catalog.order"
   | "catalog.buyer_review"
 
@@ -180,6 +181,7 @@ const ALL_PERMISSIONS: PermissionKey[] = [
   "settings.manage",
   "portal.solicitante",
   "view_only",
+  "catalog.view",
   "catalog.order",
   "catalog.buyer_review",
 ]
