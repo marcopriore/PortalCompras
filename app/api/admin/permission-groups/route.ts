@@ -141,14 +141,19 @@ export async function POST(request: Request) {
     }
 
     if (keys.length > 0) {
-      await supabase.from("permission_group_rules").insert(
-        keys.map((permission_key) => ({
-          company_id: auth.companyId,
-          group_id: group.id,
-          permission_key,
-          enabled: true,
-        })),
-      )
+      const { error: rulesErr } = await supabase
+        .from("permission_group_rules")
+        .insert(
+          keys.map((permission_key) => ({
+            company_id: auth.companyId,
+            group_id: group.id,
+            permission_key,
+            enabled: true,
+          })),
+        )
+      if (rulesErr) {
+        return NextResponse.json({ error: rulesErr.message }, { status: 500 })
+      }
     }
 
     return NextResponse.json({ group })
@@ -205,22 +210,57 @@ export async function PATCH(request: Request) {
     }
 
     if (Array.isArray(body.permissionKeys)) {
-      const keys = body.permissionKeys.filter(isKnownPermissionKey)
-      await supabase
+      const keys = [
+        ...new Set(body.permissionKeys.filter(isKnownPermissionKey)),
+      ]
+
+      const { data: existingRows, error: listErr } = await supabase
         .from("permission_group_rules")
-        .delete()
+        .select("permission_key")
         .eq("company_id", auth.companyId)
         .eq("group_id", body.id)
 
+      if (listErr) {
+        return NextResponse.json({ error: listErr.message }, { status: 500 })
+      }
+
+      const desired = new Set(keys)
+      const existingKeys = new Set(
+        ((existingRows ?? []) as { permission_key: string }[]).map(
+          (row) => row.permission_key,
+        ),
+      )
+
       if (keys.length > 0) {
-        await supabase.from("permission_group_rules").insert(
-          keys.map((permission_key) => ({
-            company_id: auth.companyId,
-            group_id: body.id!,
-            permission_key,
-            enabled: true,
-          })),
-        )
+        const { error: upsertErr } = await supabase
+          .from("permission_group_rules")
+          .upsert(
+            keys.map((permission_key) => ({
+              company_id: auth.companyId,
+              group_id: body.id!,
+              permission_key,
+              enabled: true,
+            })),
+            { onConflict: "group_id,permission_key" },
+          )
+
+        if (upsertErr) {
+          return NextResponse.json({ error: upsertErr.message }, { status: 500 })
+        }
+      }
+
+      const toRemove = [...existingKeys].filter((key) => !desired.has(key))
+      if (toRemove.length > 0) {
+        const { error: deleteErr } = await supabase
+          .from("permission_group_rules")
+          .delete()
+          .eq("company_id", auth.companyId)
+          .eq("group_id", body.id)
+          .in("permission_key", toRemove)
+
+        if (deleteErr) {
+          return NextResponse.json({ error: deleteErr.message }, { status: 500 })
+        }
       }
     }
 
