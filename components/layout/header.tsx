@@ -14,6 +14,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { NotificationBell } from "@/components/ui/notification-bell"
 import { logAudit } from "@/lib/audit"
+import { useCompanyLogo } from "@/lib/hooks/use-company-logo"
 
 interface HeaderProps {
   userName: string
@@ -29,6 +30,7 @@ export function Header({
   tenantSelector,
 }: HeaderProps) {
   const [mounted, setMounted] = useState(false)
+  const companyLogoUrl = useCompanyLogo()
 
   useEffect(() => {
     setMounted(true)
@@ -54,7 +56,15 @@ export function Header({
 
   return (
     <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between">
-      <div className="flex items-center gap-4 flex-1 max-w-xl">
+      <div className="flex items-center gap-4 flex-1 min-w-0 max-w-xl">
+        {companyLogoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- URL pública do Storage; tamanho dinâmico por tenant
+          <img
+            src={companyLogoUrl}
+            alt="Logo da empresa"
+            className="h-9 max-w-[160px] w-auto object-contain object-left shrink-0"
+          />
+        ) : null}
         {tenantSelector}
       </div>
 

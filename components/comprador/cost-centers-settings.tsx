@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
@@ -36,6 +35,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Pencil, Plus, Trash2 } from "lucide-react"
+import { SettingsCollapsibleCard } from "@/components/ui/settings-collapsible-card"
 
 export type CostCenter = {
   id: string
@@ -167,29 +167,22 @@ export function CostCentersSettings() {
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <CardTitle>Centros de Custo</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Cadastre os centros disponíveis para requisições e vínculo obrigatório
-                no usuário.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              onClick={() => {
-                setForm({ code: "", description: "", active: true })
-                setDialog({ open: true, mode: "create", item: null })
-              }}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Novo Centro
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
+      <SettingsCollapsibleCard
+        title="Centros de Custo"
+        description="Cadastre os centros disponíveis para requisições e vínculo obrigatório no usuário."
+        actions={
+          <Button
+            size="sm"
+            onClick={() => {
+              setForm({ code: "", description: "", active: true })
+              setDialog({ open: true, mode: "create", item: null })
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Centro
+          </Button>
+        }
+      >
           {loading ? (
             <div className="space-y-2">
               {[1, 2, 3].map((i) => (
@@ -251,8 +244,7 @@ export function CostCentersSettings() {
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
+      </SettingsCollapsibleCard>
 
       <Dialog
         open={dialog.open}

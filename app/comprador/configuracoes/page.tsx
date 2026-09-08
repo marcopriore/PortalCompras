@@ -7,8 +7,10 @@ import { ConfiguracoesPermissoesTab } from "@/components/comprador/configuracoes
 import { CostCentersSettings } from "@/components/comprador/cost-centers-settings"
 import { BranchSettings } from "@/components/comprador/branch-settings"
 import { CategoriesSettings } from "@/components/comprador/categories-settings"
+import { SettingsCollapsibleCard } from "@/components/ui/settings-collapsible-card"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { notifyCompanyLogoUpdated } from "@/lib/hooks/use-company-logo"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import {
   CONTRACT_PO_LINK_PROMPT_KEY,
@@ -1204,6 +1206,7 @@ export default function ConfiguracoesPage() {
       if (updateError) throw updateError
 
       setCompanyForm((prev) => ({ ...prev, logo_url: publicUrl }))
+      notifyCompanyLogoUpdated(companyId, publicUrl)
       toast.success("Logo atualizada com sucesso!")
     } catch {
       toast.error("Erro ao fazer upload")
@@ -3008,56 +3011,50 @@ export default function ConfiguracoesPage() {
       )}
 
       {activeTab === "campos" && (
-        <div className="grid gap-6">
+        <div className="grid gap-4">
           {!canManageCompany ? (
             <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground">
               Apenas usuários com permissão de gerenciar configurações podem editar a configuração de campos.
             </div>
           ) : (
-            <Card>
-              <CardHeader>
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <CardTitle>Condições de Pagamento</CardTitle>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Defina as condições disponíveis para os fornecedores selecionarem.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        setConditionForm({ code: "", description: "", active: true })
-                        setConditionDialog({ open: true, mode: "create", item: null })
-                      }}
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Nova Condição
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => importInputRef.current?.click()}
-                    >
-                      <Upload className="mr-2 h-4 w-4" />
-                      Importar Excel
-                    </Button>
-                    <input
-                      ref={importInputRef}
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      className="hidden"
-                      onChange={(ev) => void handleImportExcel(ev)}
-                    />
-                    <Button type="button" variant="ghost" size="sm" onClick={handleDownloadTemplate}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Modelo
-                    </Button>
-                  </div>
+            <SettingsCollapsibleCard
+              title="Condições de Pagamento"
+              description="Defina as condições disponíveis para os fornecedores selecionarem."
+              actions={
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setConditionForm({ code: "", description: "", active: true })
+                      setConditionDialog({ open: true, mode: "create", item: null })
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nova Condição
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => importInputRef.current?.click()}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    Importar Excel
+                  </Button>
+                  <input
+                    ref={importInputRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={(ev) => void handleImportExcel(ev)}
+                  />
+                  <Button type="button" variant="ghost" size="sm" onClick={handleDownloadTemplate}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Modelo
+                  </Button>
                 </div>
-              </CardHeader>
-              <CardContent>
+              }
+            >
                 {loadingConditions ? (
                   <div className="space-y-2">
                     {[1, 2, 3].map((i) => (
@@ -3119,8 +3116,7 @@ export default function ConfiguracoesPage() {
                     </TableBody>
                   </Table>
                 )}
-              </CardContent>
-            </Card>
+            </SettingsCollapsibleCard>
           )}
 
           {canManageCompany ? <BranchSettings /> : null}
@@ -3128,15 +3124,10 @@ export default function ConfiguracoesPage() {
           {canManageCompany ? <CostCentersSettings /> : null}
 
           {canManageCompany && contractBalanceEnabled ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Consumo de contrato na equalização</CardTitle>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Ao criar pedido na equalização, o sistema pode verificar contratos
-                  ativos e sugerir vínculo por linha antes de gerar o pedido.
-                </p>
-              </CardHeader>
-              <CardContent>
+            <SettingsCollapsibleCard
+              title="Consumo de contrato na equalização"
+              description="Ao criar pedido na equalização, o sistema pode verificar contratos ativos e sugerir vínculo por linha antes de gerar o pedido."
+            >
                 {loadingContractSettings ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -3162,8 +3153,7 @@ export default function ConfiguracoesPage() {
                     />
                   </div>
                 )}
-              </CardContent>
-            </Card>
+            </SettingsCollapsibleCard>
           ) : null}
         </div>
       )}
