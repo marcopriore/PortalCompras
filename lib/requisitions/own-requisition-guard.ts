@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 export const OWN_REQUISITION_ORDER_BLOCKED_MESSAGE =
-  "Você não pode gerar pedido ou contrato de uma requisição criada por você."
+  "Criador da Requisição não pode criar pedido/cotação"
 
 /** True when the current user is the requester (criador) of the requisition. */
 export function isOwnRequisitionCreator(

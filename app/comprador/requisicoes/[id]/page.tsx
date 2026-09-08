@@ -462,6 +462,10 @@ export default function RequisicaoDetailPage({
 
   const handleGerarCotacao = () => {
     if (!requisition) return
+    if (isOwnRequisitionCreator(userId, requisition.requester_id)) {
+      toast.error(OWN_REQUISITION_ORDER_BLOCKED_MESSAGE)
+      return
+    }
     router.push(`/comprador/cotacoes/nova?requisition_id=${requisition.id}`)
   }
 
@@ -598,19 +602,20 @@ export default function RequisicaoDetailPage({
               Editar e Resubmeter
             </Button>
           )}
-          {requisition.status === "approved" && (
+          {requisition.status === "approved" && !isOwnRequisition && (
             <Button type="button" onClick={() => setQuotationOpen(true)}>
               Gerar Cotação
             </Button>
           )}
-          {canCreateOrder && isOwnRequisition && (
+          {isOwnRequisition &&
+            (requisition.status === "approved" || canCreateOrder) && (
             <Badge
               variant="outline"
-              className="gap-1 border-amber-300 bg-amber-50 text-amber-900"
+              className="gap-1 border-amber-300 bg-amber-50 text-amber-900 max-w-full whitespace-normal text-left"
               title={OWN_REQUISITION_ORDER_BLOCKED_MESSAGE}
             >
-              <ShieldAlert className="h-3.5 w-3.5" />
-              Criador da REQ — sem Gerar Pedido
+              <ShieldAlert className="h-3.5 w-3.5 shrink-0" />
+              {OWN_REQUISITION_ORDER_BLOCKED_MESSAGE}
             </Badge>
           )}
           {canGenerateOrder && (
