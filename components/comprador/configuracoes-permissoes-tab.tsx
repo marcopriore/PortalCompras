@@ -107,22 +107,19 @@ export function ConfiguracoesPermissoesTab() {
   }, [userLoading, canManage, loadGroups])
 
   const openCreate = () => {
+    editLoadIdRef.current += 1
     setEditing(null)
     setFormName("")
     setFormDescription("")
     setSelectedKeys(new Set())
+    setEditorLoading(false)
     setEditorOpen(true)
   }
 
   const openEdit = async (group: PermissionGroup) => {
     const loadId = ++editLoadIdRef.current
-    setEditing(group)
-    setFormName(group.name)
-    setFormDescription(group.description ?? "")
-    setSelectedKeys(new Set(group.permission_keys ?? []))
-    setEditorOpen(true)
-    setEditorLoading(true)
     setErrorMessage(null)
+    setEditorLoading(true)
 
     try {
       const res = await fetch(`/api/admin/permission-groups?id=${group.id}`, {
@@ -130,17 +127,27 @@ export function ConfiguracoesPermissoesTab() {
       })
       const data = await res.json()
       if (loadId !== editLoadIdRef.current) return
-      if (res.ok && data.permissions) {
-        setSelectedKeys(
-          new Set(
-            Object.entries(data.permissions as Record<string, boolean>)
+
+      const keys =
+        res.ok && data.permissions
+          ? Object.entries(data.permissions as Record<string, boolean>)
               .filter(([, enabled]) => enabled)
-              .map(([key]) => key),
-          ),
-        )
-      }
+              .map(([key]) => key)
+          : (group.permission_keys ?? [])
+
+      setEditing(group)
+      setFormName(group.name)
+      setFormDescription(group.description ?? "")
+      setSelectedKeys(new Set(keys))
+      setEditorOpen(true)
     } catch {
-      /* mantém keys da listagem */
+      if (loadId !== editLoadIdRef.current) return
+      setEditing(group)
+      setFormName(group.name)
+      setFormDescription(group.description ?? "")
+      setSelectedKeys(new Set(group.permission_keys ?? []))
+      setEditorOpen(true)
+      setErrorMessage("Não foi possível recarregar as permissões do servidor.")
     } finally {
       if (loadId === editLoadIdRef.current) setEditorLoading(false)
     }
