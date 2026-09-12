@@ -6,6 +6,9 @@ import {
   approveApprovalRequest,
   rejectApprovalRequest,
 } from "@/lib/api/external/approval-service"
+import { canPortalUserDecideApproval } from "@/lib/approvals/assert-portal-approval-actor"
+import type { PermissionKey } from "@/lib/hooks/usePermissions"
+import { loadUserPermissionKeys } from "@/lib/permissions/resolve-user-permissions"
 
 export const runtime = "nodejs"
 
@@ -21,8 +24,9 @@ async function resolveBuyerCompany(userId: string) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
   }
 
+  const isSuperAdmin = Boolean(profile.is_superadmin)
   let companyId = profile.company_id as string | null
-  if (profile.is_superadmin) {
+  if (isSuperAdmin) {
     const cookieStore = await cookies()
     const selected = cookieStore.get("selected_company_id")?.value
     if (selected) companyId = decodeURIComponent(selected)
@@ -35,6 +39,7 @@ async function resolveBuyerCompany(userId: string) {
     companyId,
     userId,
     fullName: profile.full_name ?? "",
+    isSuperAdmin,
   }
 }
 
@@ -64,6 +69,35 @@ export async function POST(
 
     const action = body.action === "reject" ? "reject" : "approve"
     const service = createServiceRoleClient()
+
+    const { data: approvalRow, error: approvalErr } = await service
+      .from("approval_requests")
+      .select("id, flow, approver_id, status")
+      .eq("company_id", ctx.companyId)
+      .eq("id", id)
+      .maybeSingle()
+
+    if (approvalErr) {
+      return NextResponse.json({ error: approvalErr.message }, { status: 500 })
+    }
+    if (!approvalRow) {
+      return NextResponse.json({ error: "Aprovação não encontrada." }, { status: 404 })
+    }
+
+    const permissions: Set<PermissionKey> = ctx.isSuperAdmin
+      ? new Set()
+      : await loadUserPermissionKeys(service, ctx.userId, ctx.companyId)
+
+    const actor = canPortalUserDecideApproval({
+      isSuperAdmin: ctx.isSuperAdmin,
+      userId: ctx.userId,
+      approverId: approvalRow.approver_id as string | null,
+      flow: String(approvalRow.flow ?? ""),
+      permissions,
+    })
+    if (!actor.ok) {
+      return NextResponse.json({ error: actor.reason }, { status: 403 })
+    }
 
     if (action === "approve") {
       const result = await approveApprovalRequest(service, ctx.companyId, id, {
