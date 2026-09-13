@@ -294,6 +294,23 @@ async function applyPurchaseOrderSendAfterApproval(
   return { ok: true as const }
 }
 
+/**
+ * Cancel payload after catalog-order (CC) rejection.
+ *
+ * Balance release is owned by `trg_po_contract_balance`
+ * (`awaiting_approval` → `cancelled` when `contract_balance_applied = 'reserved'`).
+ * Do not call `release_contract_balance` here: that RPC is not idempotent and
+ * would double-decrement `reserved_quantity` / `reserved_value` on the item.
+ * Do not set `contract_balance_applied` to `'released'` — the column check only
+ * allows null | reserved | consumed; the trigger clears it to null.
+ */
+export function buildCatalogOrderRejectionPoUpdate(reason: string) {
+  return {
+    status: "cancelled" as const,
+    cancellation_reason: reason,
+  }
+}
+
 async function applyCatalogOrderRejection(
   service: SupabaseClient,
   companyId: string,
@@ -336,19 +353,9 @@ async function applyCatalogOrderRejection(
     }
   }
 
-  try {
-    await service.rpc("release_contract_balance", { p_order_id: purchaseOrderId })
-  } catch {
-    /* best-effort */
-  }
-
   const { error: cancelErr } = await service
     .from("purchase_orders")
-    .update({
-      status: "cancelled",
-      cancellation_reason: reason,
-      contract_balance_applied: "released",
-    })
+    .update(buildCatalogOrderRejectionPoUpdate(reason))
     .eq("id", purchaseOrderId)
     .eq("company_id", companyId)
 

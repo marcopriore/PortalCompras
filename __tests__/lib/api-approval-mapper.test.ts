@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { mapApprovalToApi } from "@/lib/api/external/approval-service"
+import {
+  buildCatalogOrderRejectionPoUpdate,
+  mapApprovalToApi,
+} from "@/lib/api/external/approval-service"
 import { isApiScope } from "@/lib/api/external/scopes"
 
 describe("mapApprovalToApi", () => {
@@ -27,6 +30,17 @@ describe("mapApprovalToApi", () => {
     expect(mapped.entity_code).toBe("REQ-1")
     expect(mapped.entity_external_code).toBe("ERP-1")
     expect(mapped.flow).toBe("requisition")
+  })
+})
+
+describe("buildCatalogOrderRejectionPoUpdate", () => {
+  it("cancela o PO sem liberar saldo no app (trigger SQL é o dono)", () => {
+    const update = buildCatalogOrderRejectionPoUpdate("Saldo indevido")
+    expect(update).toEqual({
+      status: "cancelled",
+      cancellation_reason: "Saldo indevido",
+    })
+    expect(update).not.toHaveProperty("contract_balance_applied")
   })
 })
 
