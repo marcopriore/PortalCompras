@@ -82,13 +82,32 @@ async function loadContractItemDetails(
   return new Map(((data ?? []) as Row[]).map((row) => [row.id, row]))
 }
 
-async function rollbackPurchaseOrder(db: SupabaseClient, orderId: string) {
-  try {
-    await db.rpc("release_contract_balance", { p_order_id: orderId })
-  } catch {
-    /* best-effort */
+/**
+ * `release_contract_balance` is not idempotent: it subtracts this PO's qty from the
+ * shared `contract_items.reserved_*` pool even when this order never reserved.
+ * Only release when `reserve_contract_balance` already succeeded for this id.
+ */
+export async function rollbackCatalogPurchaseOrder(
+  db: SupabaseClient,
+  orderId: string,
+  options: { releaseBalance: boolean },
+): Promise<void> {
+  if (options.releaseBalance) {
+    try {
+      await db.rpc("release_contract_balance", { p_order_id: orderId })
+    } catch {
+      /* best-effort */
+    }
   }
   await db.from("purchase_orders").delete().eq("id", orderId)
+}
+
+async function rollbackPurchaseOrder(
+  db: SupabaseClient,
+  orderId: string,
+  releaseBalance: boolean,
+) {
+  await rollbackCatalogPurchaseOrder(db, orderId, { releaseBalance })
 }
 
 async function rollbackRequisition(db: SupabaseClient, requisitionId: string) {
@@ -237,7 +256,7 @@ export async function createCatalogPurchaseOrders(
 
     if (reqErr || !reqRow) {
       for (const po of created) {
-        await rollbackPurchaseOrder(db, po.id)
+        await rollbackPurchaseOrder(db, po.id, true)
         await rollbackRequisition(db, po.requisitionId)
       }
       return { ok: false, error: reqErr?.message ?? "Falha ao criar requisição" }
@@ -265,7 +284,7 @@ export async function createCatalogPurchaseOrders(
     if (reqItemsErr) {
       await rollbackRequisition(db, requisitionId)
       for (const po of created) {
-        await rollbackPurchaseOrder(db, po.id)
+        await rollbackPurchaseOrder(db, po.id, true)
         await rollbackRequisition(db, po.requisitionId)
       }
       return { ok: false, error: reqItemsErr.message }
@@ -290,7 +309,7 @@ export async function createCatalogPurchaseOrders(
       if (!deliveryAddress) {
         await rollbackRequisition(db, requisitionId)
         for (const po of created) {
-          await rollbackPurchaseOrder(db, po.id)
+          await rollbackPurchaseOrder(db, po.id, true)
           await rollbackRequisition(db, po.requisitionId)
         }
         return {
@@ -336,7 +355,7 @@ export async function createCatalogPurchaseOrders(
       if (poErr || !poData) {
         await rollbackRequisition(db, requisitionId)
         for (const po of created) {
-          await rollbackPurchaseOrder(db, po.id)
+          await rollbackPurchaseOrder(db, po.id, true)
           await rollbackRequisition(db, po.requisitionId)
         }
         return { ok: false, error: poErr?.message ?? "Falha ao criar pedido" }
@@ -362,10 +381,10 @@ export async function createCatalogPurchaseOrders(
       )
 
       if (itemsErr) {
-        await rollbackPurchaseOrder(db, poId)
+        await rollbackPurchaseOrder(db, poId, false)
         await rollbackRequisition(db, requisitionId)
         for (const po of created) {
-          await rollbackPurchaseOrder(db, po.id)
+          await rollbackPurchaseOrder(db, po.id, true)
           await rollbackRequisition(db, po.requisitionId)
         }
         return { ok: false, error: itemsErr.message }
@@ -376,10 +395,10 @@ export async function createCatalogPurchaseOrders(
       })
 
       if (reserveErr) {
-        await rollbackPurchaseOrder(db, poId)
+        await rollbackPurchaseOrder(db, poId, false)
         await rollbackRequisition(db, requisitionId)
         for (const po of created) {
-          await rollbackPurchaseOrder(db, po.id)
+          await rollbackPurchaseOrder(db, po.id, true)
           await rollbackRequisition(db, po.requisitionId)
         }
         return {
