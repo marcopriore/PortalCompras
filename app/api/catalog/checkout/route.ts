@@ -1,5 +1,8 @@
 import { NextResponse, after } from "next/server"
-import { createCatalogPurchaseOrders } from "@/lib/catalog/create-catalog-purchase-orders"
+import {
+  createCatalogPurchaseOrders,
+  rollbackCatalogPurchaseOrder,
+} from "@/lib/catalog/create-catalog-purchase-orders"
 import { notifyCatalogCheckout } from "@/lib/catalog/notify-catalog-checkout"
 import { enqueueCatalogOrderApprovals } from "@/lib/catalog/enqueue-catalog-order-approvals"
 import {
@@ -119,14 +122,9 @@ export async function POST(request: Request) {
           ...new Set(result.result.purchaseOrders.map((po) => po.requisitionId)),
         ]
         await Promise.all(
-          result.result.purchaseOrders.map(async (po) => {
-            try {
-              await db.rpc("release_contract_balance", { p_order_id: po.id })
-            } catch {
-              /* best-effort */
-            }
-            await db.from("purchase_orders").delete().eq("id", po.id)
-          }),
+          result.result.purchaseOrders.map((po) =>
+            rollbackCatalogPurchaseOrder(db, po.id, { releaseBalance: true }),
+          ),
         )
         await Promise.all(
           requisitionIds.map(async (requisitionId) => {

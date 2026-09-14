@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import {
   catalogItemAvailableQuantity,
   validateCatalogLineQuantity,
 } from "@/lib/catalog/validate-cart-line"
 import { mapCartRowsToItems } from "@/lib/catalog/checkout"
-import { groupCatalogLinesBySupplier } from "@/lib/catalog/create-catalog-purchase-orders"
+import {
+  groupCatalogLinesBySupplier,
+  rollbackCatalogPurchaseOrder,
+} from "@/lib/catalog/create-catalog-purchase-orders"
 import type { ContractItem } from "@/types/contracts"
 
 const baseItem: Pick<
@@ -133,5 +137,40 @@ describe("groupCatalogLinesBySupplier", () => {
     expect(groups.size).toBe(2)
     expect(groups.get("s1")).toHaveLength(2)
     expect(groups.get("s2")).toHaveLength(1)
+  })
+})
+
+function mockRollbackDb() {
+  const rpc = vi.fn().mockResolvedValue({ data: null, error: null })
+  const deleteEq = vi.fn().mockResolvedValue({ error: null })
+  const db = {
+    rpc,
+    from: vi.fn((table: string) => {
+      expect(table).toBe("purchase_orders")
+      return {
+        delete: () => ({ eq: deleteEq }),
+      }
+    }),
+  }
+  return { db: db as unknown as SupabaseClient, rpc, deleteEq }
+}
+
+describe("rollbackCatalogPurchaseOrder", () => {
+  it("does not call release_contract_balance when reserve never succeeded", async () => {
+    const { db, rpc, deleteEq } = mockRollbackDb()
+    await rollbackCatalogPurchaseOrder(db, "po-failed-reserve", {
+      releaseBalance: false,
+    })
+    expect(rpc).not.toHaveBeenCalled()
+    expect(deleteEq).toHaveBeenCalledWith("id", "po-failed-reserve")
+  })
+
+  it("releases reserved balance before deleting a successful PO", async () => {
+    const { db, rpc, deleteEq } = mockRollbackDb()
+    await rollbackCatalogPurchaseOrder(db, "po-reserved", { releaseBalance: true })
+    expect(rpc).toHaveBeenCalledWith("release_contract_balance", {
+      p_order_id: "po-reserved",
+    })
+    expect(deleteEq).toHaveBeenCalledWith("id", "po-reserved")
   })
 })
