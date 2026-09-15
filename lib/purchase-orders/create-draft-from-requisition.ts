@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { loadCompanyBranchesByCode } from "@/lib/branches/branch-queries"
 import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
 import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
+import type { CompanyBranchAddressFields } from "@/lib/branches/types"
 import { copyRequisitionAccountConfigToPurchaseOrderItem } from "@/lib/requisitions/account-config-bridge"
 import {
   isOwnRequisitionCreator,
@@ -27,6 +28,53 @@ type RequisitionItemRow = {
   quantity: number
   unit_of_measure: string | null
   site_code: string | null
+}
+
+export function siteCodeMissingDeliveryAddressError(
+  siteCode: string,
+  branch: (CompanyBranchAddressFields & { code?: string }) | null | undefined,
+): string | null {
+  const deliveryAddress = formatBranchDeliveryAddress(branch)
+  if (deliveryAddress) return null
+  return `Centro/filial sem endereço cadastrado (${branch?.code ?? siteCode}). Atualize em Configurações.`
+}
+
+/**
+ * Apaga rascunhos recém-criados e devolve a REQ ao status anterior.
+ * O trigger `trg_sync_requisition_from_po` só roda em INSERT/UPDATE — DELETE
+ * deixa a requisição em awaiting_buyer sem pedido, bloqueando Gerar Pedido.
+ */
+export async function rollbackDraftPurchaseOrdersAndRestoreRequisition(
+  supabase: SupabaseClient,
+  params: {
+    companyId: string
+    requisitionCode: string
+    previousStatus: string
+    createdIds: string[]
+  },
+): Promise<void> {
+  const { companyId, requisitionCode, previousStatus, createdIds } = params
+
+  if (createdIds.length > 0) {
+    await supabase.from("purchase_orders").delete().in("id", createdIds)
+  }
+
+  const { data: remaining } = await supabase
+    .from("purchase_orders")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("requisition_code", requisitionCode)
+    .neq("status", "cancelled")
+    .limit(1)
+
+  if ((remaining ?? []).length > 0) return
+  if (!["approved", "in_quotation"].includes(previousStatus)) return
+
+  await supabase
+    .from("requisitions")
+    .update({ status: previousStatus })
+    .eq("company_id", companyId)
+    .eq("code", requisitionCode)
 }
 
 export async function createDraftFromRequisition(
@@ -92,17 +140,37 @@ export async function createDraftFromRequisition(
     })),
   )
 
+  for (const [siteCode] of lineGroups) {
+    const missing = siteCodeMissingDeliveryAddressError(
+      siteCode,
+      branchMap.get(siteCode),
+    )
+    if (missing) {
+      return { ok: false, error: missing }
+    }
+  }
+
   const createdIds: string[] = []
   const createdCodes: string[] = []
+
+  const fail = async (error: string): Promise<CreateDraftFromRequisitionResult> => {
+    await rollbackDraftPurchaseOrdersAndRestoreRequisition(supabase, {
+      companyId,
+      requisitionCode: req.code,
+      previousStatus: req.status,
+      createdIds,
+    })
+    return { ok: false, error }
+  }
 
   for (const [siteCode, grouped] of lineGroups) {
     const branch = branchMap.get(siteCode)
     const deliveryAddress = formatBranchDeliveryAddress(branch)
     if (!deliveryAddress) {
-      return {
-        ok: false,
-        error: `Centro/filial sem endereço cadastrado (${branch?.code ?? siteCode}). Atualize em Configurações.`,
-      }
+      return fail(
+        siteCodeMissingDeliveryAddressError(siteCode, branch) ??
+          `Centro/filial sem endereço cadastrado (${siteCode}). Atualize em Configurações.`,
+      )
     }
 
     const { data: poData, error: poError } = await supabase
@@ -127,11 +195,11 @@ export async function createDraftFromRequisition(
       .single()
 
     if (poError || !poData) {
-      if (createdIds.length > 0) {
-        await supabase.from("purchase_orders").delete().in("id", createdIds)
-      }
-      return { ok: false, error: poError?.message ?? "Não foi possível criar o pedido." }
+      return fail(poError?.message ?? "Não foi possível criar o pedido.")
     }
+
+    createdIds.push(poData.id as string)
+    createdCodes.push((poData.code as string) ?? "—")
 
     const poItemsPayload = grouped.map(({ item }) => ({
       purchase_order_id: poData.id,
@@ -155,14 +223,9 @@ export async function createDraftFromRequisition(
       .select("id, requisition_item_id")
 
     if (itemsError || !insertedItems) {
-      await supabase.from("purchase_orders").delete().eq("id", poData.id)
-      if (createdIds.length > 0) {
-        await supabase.from("purchase_orders").delete().in("id", createdIds)
-      }
-      return {
-        ok: false,
-        error: itemsError?.message ?? "Não foi possível salvar os itens do pedido.",
-      }
+      return fail(
+        itemsError?.message ?? "Não foi possível salvar os itens do pedido.",
+      )
     }
 
     const copyResults = await Promise.all(
@@ -181,15 +244,8 @@ export async function createDraftFromRequisition(
       (result): result is { ok: false; message: string } => !result.ok,
     )
     if (firstCopyError) {
-      await supabase.from("purchase_orders").delete().eq("id", poData.id)
-      if (createdIds.length > 0) {
-        await supabase.from("purchase_orders").delete().in("id", createdIds)
-      }
-      return { ok: false, error: firstCopyError.message }
+      return fail(firstCopyError.message)
     }
-
-    createdIds.push(poData.id as string)
-    createdCodes.push(poData.code as string)
   }
 
   return {
