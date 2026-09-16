@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   getRequisitionStatusMeta,
   mapPoStatusToRequisitionStatus,
+  deriveRequisitionStatusFromPurchaseOrderStatuses,
 } from "@/lib/requisitions/status"
 import {
   buildCatalogRequisitionTimeline,
@@ -38,6 +39,48 @@ describe("mapPoStatusToRequisitionStatus", () => {
 
   it("retorna null para status desconhecido", () => {
     expect(mapPoStatusToRequisitionStatus("unknown")).toBeNull()
+  })
+})
+
+describe("deriveRequisitionStatusFromPurchaseOrderStatuses", () => {
+  it("usa o PO ativo menos avançado no split por filial", () => {
+    expect(
+      deriveRequisitionStatusFromPurchaseOrderStatuses(["completed", "draft"]),
+    ).toBe("awaiting_buyer")
+    expect(
+      deriveRequisitionStatusFromPurchaseOrderStatuses(["sent", "draft"]),
+    ).toBe("awaiting_buyer")
+    expect(
+      deriveRequisitionStatusFromPurchaseOrderStatuses(["completed", "sent"]),
+    ).toBe("awaiting_supplier")
+  })
+
+  it("só marca completed quando todos os POs ativos concluíram", () => {
+    expect(
+      deriveRequisitionStatusFromPurchaseOrderStatuses(["completed", "completed"]),
+    ).toBe("completed")
+  })
+
+  it("ignora cancelled e libera REQ sem PO ativo", () => {
+    expect(
+      deriveRequisitionStatusFromPurchaseOrderStatuses(["cancelled"]),
+    ).toBe("approved")
+    expect(
+      deriveRequisitionStatusFromPurchaseOrderStatuses(["cancelled", "cancelled"], {
+        quotationId: "q1",
+      }),
+    ).toBe("in_quotation")
+    expect(
+      deriveRequisitionStatusFromPurchaseOrderStatuses(["cancelled"], {
+        origin: "catalog",
+      }),
+    ).toBe("cancelled")
+  })
+
+  it("com irmão ativo, cancelled não puxa a REQ para approved", () => {
+    expect(
+      deriveRequisitionStatusFromPurchaseOrderStatuses(["cancelled", "sent"]),
+    ).toBe("awaiting_supplier")
   })
 })
 

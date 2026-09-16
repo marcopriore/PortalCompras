@@ -14,6 +14,8 @@ import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { createDraftFromRequisition } from "@/lib/purchase-orders/create-draft-from-requisition"
 import {
+  CATALOG_REQUISITION_ORDER_BLOCKED_MESSAGE,
+  isCatalogRequisitionOrigin,
   isOwnRequisitionCreator,
   OWN_REQUISITION_ORDER_BLOCKED_MESSAGE,
 } from "@/lib/requisitions/own-requisition-guard"
@@ -462,6 +464,10 @@ export default function RequisicaoDetailPage({
 
   const handleGerarCotacao = () => {
     if (!requisition) return
+    if (isCatalogRequisitionOrigin(requisition.origin)) {
+      toast.error(CATALOG_REQUISITION_ORDER_BLOCKED_MESSAGE)
+      return
+    }
     if (isOwnRequisitionCreator(userId, requisition.requester_id)) {
       toast.error(OWN_REQUISITION_ORDER_BLOCKED_MESSAGE)
       return
@@ -471,6 +477,10 @@ export default function RequisicaoDetailPage({
 
   const handleGerarPedido = async () => {
     if (!requisition || !companyId || !userId || creatingPo) return
+    if (isCatalogRequisitionOrigin(requisition.origin)) {
+      toast.error(CATALOG_REQUISITION_ORDER_BLOCKED_MESSAGE)
+      return
+    }
     if (isOwnRequisitionCreator(userId, requisition.requester_id)) {
       toast.error(OWN_REQUISITION_ORDER_BLOCKED_MESSAGE)
       return
@@ -508,7 +518,9 @@ export default function RequisicaoDetailPage({
     userId,
     requisition?.requester_id,
   )
-  const canGenerateOrder = canCreateOrder && !isOwnRequisition
+  const isCatalogOrigin = isCatalogRequisitionOrigin(requisition?.origin)
+  const canGenerateOrder =
+    canCreateOrder && !isOwnRequisition && !isCatalogOrigin
 
   if (loading) {
     return (
@@ -602,7 +614,9 @@ export default function RequisicaoDetailPage({
               Editar e Resubmeter
             </Button>
           )}
-          {requisition.status === "approved" && !isOwnRequisition && (
+          {requisition.status === "approved" &&
+            !isOwnRequisition &&
+            !isCatalogOrigin && (
             <Button type="button" onClick={() => setQuotationOpen(true)}>
               Gerar Cotação
             </Button>

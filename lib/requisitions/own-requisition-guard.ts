@@ -3,6 +3,15 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 export const OWN_REQUISITION_ORDER_BLOCKED_MESSAGE =
   "Criador da Requisição não pode criar pedido/cotação"
 
+export const CATALOG_REQUISITION_ORDER_BLOCKED_MESSAGE =
+  "Requisição do catálogo não gera pedido ou cotação por esta tela. Use o Catálogo de Compras."
+
+export function isCatalogRequisitionOrigin(
+  origin: string | null | undefined,
+): boolean {
+  return origin === "catalog"
+}
+
 /** True when the current user is the requester (criador) of the requisition. */
 export function isOwnRequisitionCreator(
   userId: string | null | undefined,

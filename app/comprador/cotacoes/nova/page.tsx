@@ -22,6 +22,10 @@ import { SuggestSuppliersButton } from '@/components/comprador/suggest-suppliers
 import { Button } from '@/components/ui/button'
 import { QuantityInput } from '@/components/ui/numeric-field-inputs'
 import { useNumericLimits } from '@/lib/hooks/use-numeric-limits'
+import {
+  CATALOG_REQUISITION_ORDER_BLOCKED_MESSAGE,
+  isCatalogRequisitionOrigin,
+} from '@/lib/requisitions/own-requisition-guard'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -217,7 +221,16 @@ function NovaCotacaoContent() {
       ])
 
       if (reqRes.data) {
-        const reqAny = reqRes.data as any
+        const reqAny = reqRes.data as {
+          title?: string
+          commodity_group?: string
+          origin?: string | null
+        }
+        if (isCatalogRequisitionOrigin(reqAny.origin)) {
+          toast.error(CATALOG_REQUISITION_ORDER_BLOCKED_MESSAGE)
+          router.replace('/comprador/cotacoes/nova')
+          return
+        }
         setDescription(() => reqAny.title ?? '')
         setCategory(reqAny.commodity_group ?? '')
       }
@@ -344,13 +357,21 @@ function NovaCotacaoContent() {
       const supabase = createClient()
       const { data: reqs } = await supabase
         .from('requisitions')
-        .select('id, code, title, created_at')
+        .select('id, code, title, created_at, origin')
         .eq('company_id', companyId)
         .eq('status', 'approved')
         .is('quotation_id', null)
         .order('created_at', { ascending: false })
 
-      if (!reqs || reqs.length === 0) {
+      const availableReqs = ((reqs ?? []) as Array<{
+        id: string
+        code: string
+        title: string
+        created_at: string
+        origin: string | null
+      }>).filter((r) => !isCatalogRequisitionOrigin(r.origin))
+
+      if (availableReqs.length === 0) {
         setRequisitions([])
         return
       }
@@ -360,7 +381,7 @@ function NovaCotacaoContent() {
         .select('requisition_id, material_code, material_description, unit_of_measure, quantity, site_code')
         .in(
           'requisition_id',
-          reqs.map((r) => r.id),
+          availableReqs.map((r) => r.id),
         )
 
       type ReqItemRow = {
@@ -379,7 +400,7 @@ function NovaCotacaoContent() {
       }
 
       setRequisitions(
-        reqs.map((r) => ({
+        availableReqs.map((r) => ({
           id: r.id,
           code: r.code,
           title: r.title,
