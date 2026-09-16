@@ -120,9 +120,59 @@ export function mapPoStatusToRequisitionStatus(
     case "completed":
       return "completed"
     case "cancelled":
-      // Cancelar pedido libera a REQ (espelha SQL 084); sync com irmãos fica no trigger.
+      // Cancelar o único PO ativo libera a REQ (espelha SQL 084/085).
       return "approved"
     default:
       return null
   }
+}
+
+/**
+ * Rank of remaining work: lower = less advanced (bottleneck of a split REQ).
+ * Mirrors `po_status_open_progress_rank` in migration 085.
+ */
+const PO_OPEN_PROGRESS_RANK: Record<string, number> = {
+  draft: 1,
+  error: 1,
+  refused: 1,
+  integration_error: 1,
+  awaiting_approval: 2,
+  sent: 3,
+  processing: 3,
+  completed: 4,
+}
+
+export type DeriveRequisitionStatusFromPosOptions = {
+  origin?: string | null
+  quotationId?: string | null
+}
+
+/**
+ * Status da REQ a partir dos POs da mesma `requisition_code`.
+ * Usa o PO ativo **menos avançado** (split por filial: um completed não encerra a REQ).
+ * Sem PO ativo: catálogo → cancelled; com cotação → in_quotation; senão approved.
+ */
+export function deriveRequisitionStatusFromPurchaseOrderStatuses(
+  poStatuses: string[],
+  options?: DeriveRequisitionStatusFromPosOptions,
+): RequisitionStatus | null {
+  const active = poStatuses.filter((status) => status !== "cancelled")
+  if (active.length === 0) {
+    if (options?.origin === "catalog") return "cancelled"
+    if (options?.quotationId) return "in_quotation"
+    return "approved"
+  }
+
+  let leastStatus: string | null = null
+  let leastRank = Number.POSITIVE_INFINITY
+  for (const status of active) {
+    const rank = PO_OPEN_PROGRESS_RANK[status] ?? 9
+    if (rank < leastRank) {
+      leastRank = rank
+      leastStatus = status
+    }
+  }
+
+  if (!leastStatus) return null
+  return mapPoStatusToRequisitionStatus(leastStatus)
 }

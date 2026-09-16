@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { isOwnRequisitionCreator } from "@/lib/requisitions/own-requisition-guard"
+import {
+  isCatalogRequisitionOrigin,
+  isOwnRequisitionCreator,
+} from "@/lib/requisitions/own-requisition-guard"
 
 describe("isOwnRequisitionCreator", () => {
   it("returns true when user is the requester", () => {
@@ -10,5 +13,13 @@ describe("isOwnRequisitionCreator", () => {
     expect(isOwnRequisitionCreator("u1", "u2")).toBe(false)
     expect(isOwnRequisitionCreator("u1", null)).toBe(false)
     expect(isOwnRequisitionCreator(null, "u1")).toBe(false)
+  })
+})
+
+describe("isCatalogRequisitionOrigin", () => {
+  it("is true only for catalog origin", () => {
+    expect(isCatalogRequisitionOrigin("catalog")).toBe(true)
+    expect(isCatalogRequisitionOrigin("manual")).toBe(false)
+    expect(isCatalogRequisitionOrigin(null)).toBe(false)
   })
 })

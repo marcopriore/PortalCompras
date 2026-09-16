@@ -4,6 +4,8 @@ import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-addres
 import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
 import { copyRequisitionAccountConfigToPurchaseOrderItem } from "@/lib/requisitions/account-config-bridge"
 import {
+  CATALOG_REQUISITION_ORDER_BLOCKED_MESSAGE,
+  isCatalogRequisitionOrigin,
   isOwnRequisitionCreator,
   OWN_REQUISITION_ORDER_BLOCKED_MESSAGE,
 } from "@/lib/requisitions/own-requisition-guard"
@@ -18,6 +20,7 @@ type RequisitionRow = {
   title: string
   status: string
   requester_id: string | null
+  origin: string | null
 }
 
 type RequisitionItemRow = {
@@ -42,7 +45,7 @@ export async function createDraftFromRequisition(
   const [reqRes, itemsRes, branchMap] = await Promise.all([
     supabase
       .from("requisitions")
-      .select("id, code, title, status, requester_id")
+      .select("id, code, title, status, requester_id, origin")
       .eq("id", requisitionId)
       .eq("company_id", companyId)
       .single(),
@@ -61,6 +64,9 @@ export async function createDraftFromRequisition(
   }
 
   const req = reqRes.data as RequisitionRow
+  if (isCatalogRequisitionOrigin(req.origin)) {
+    return { ok: false, error: CATALOG_REQUISITION_ORDER_BLOCKED_MESSAGE }
+  }
   if (isOwnRequisitionCreator(userId, req.requester_id)) {
     return { ok: false, error: OWN_REQUISITION_ORDER_BLOCKED_MESSAGE }
   }
