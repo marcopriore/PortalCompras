@@ -14,6 +14,8 @@ import {
 import { logAudit } from "@/lib/audit"
 import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
 import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
+import { findFirstMissingBranchDelivery, missingBranchDeliveryMessage } from "@/lib/branches/validate-branch-delivery"
+import { rollbackDraftPurchaseOrders } from "@/lib/purchase-orders/rollback-draft-purchase-orders"
 import type { CompanyBranchRow } from "@/lib/branches/branch-queries"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -266,19 +268,28 @@ export default function NovoPedidoPage({
     setSubmitting(true)
     setErpError(null)
 
+    const supabase = createClient()
+    const createdIds: string[] = []
+
     try {
-      const supabase = createClient()
       const branchGroups = groupLinesBySiteCode(items)
+      const missingBranch = findFirstMissingBranchDelivery(
+        branchGroups.keys(),
+        branchByCode,
+      )
+      if (missingBranch) {
+        throw new Error(missingBranch)
+      }
+
       const createdCodes: string[] = []
 
       for (const [siteCode, branchItems] of branchGroups) {
         const branch = branchByCode.get(siteCode)
         const deliveryAddress = formatBranchDeliveryAddress(branch)
         if (!deliveryAddress) {
-          toast.error(
-            `Centro/filial sem endereço cadastrado (${branch?.code ?? siteCode}). Atualize em Configurações.`,
+          throw new Error(
+            missingBranchDeliveryMessage(siteCode, branch?.code),
           )
-          return
         }
 
         let branchTotal = 0
@@ -317,8 +328,7 @@ export default function NovoPedidoPage({
           .single()
 
         if (poError || !poData) {
-          setErpError("Erro ao criar pedido de compra.")
-          return
+          throw new Error("Erro ao criar pedido de compra.")
         }
 
         const purchaseOrderId = poData.id as string
@@ -343,10 +353,10 @@ export default function NovoPedidoPage({
 
         if (itemsInsertError) {
           await supabase.from("purchase_orders").delete().eq("id", purchaseOrderId)
-          setErpError("Erro ao salvar itens do pedido.")
-          return
+          throw new Error("Erro ao salvar itens do pedido.")
         }
 
+        createdIds.push(purchaseOrderId)
         createdCodes.push((poData.code as string) ?? "—")
 
         await logAudit({
@@ -367,6 +377,20 @@ export default function NovoPedidoPage({
 
       setErpError(null)
       router.push("/comprador/pedidos")
+    } catch (err) {
+      if (createdIds.length > 0) {
+        try {
+          await rollbackDraftPurchaseOrders(supabase, createdIds)
+        } catch {
+          /* still surface the original create error */
+        }
+      }
+      const message =
+        err instanceof Error && err.message.trim().length > 0
+          ? err.message
+          : "Erro ao criar pedido de compra."
+      setErpError(message)
+      toast.error(message)
     } finally {
       setSubmitting(false)
     }
