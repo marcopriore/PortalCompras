@@ -112,6 +112,12 @@ import { toast } from "sonner"
 import { formatDateBR } from "@/lib/formato-data"
 import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
 import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
+import {
+  findFirstMissingBranchDelivery,
+  missingBranchDeliveryMessage,
+  missingItemSiteCodeMessage,
+} from "@/lib/branches/validate-branch-delivery"
+import { rollbackDraftPurchaseOrders } from "@/lib/purchase-orders/rollback-draft-purchase-orders"
 import type { CompanyBranch } from "@/lib/branches/types"
 
 type QuotationItem = {
@@ -1981,8 +1987,41 @@ export default function EqualizacaoPage({
 
     setFinalizing(true)
 
+    const supabase = createClient()
+    const createdOrdersList: { id: string; code: string; supplierName: string }[] =
+      []
+
     try {
-      const supabase = createClient()
+      const { data: branchesData, error: branchesError } = await supabase
+        .from("company_branches")
+        .select("id, code, name, address, city, state, zip_code")
+        .eq("company_id", companyId)
+      if (branchesError) throw branchesError
+      const branchByCode = new Map(
+        ((branchesData ?? []) as CompanyBranch[]).map((b) => [b.code, b]),
+      )
+
+      const plannedSiteCodes = new Set<string>()
+      for (const p of proposals) {
+        const linesForPo = quotationItems.filter(
+          (qi) => itemSelections[qi.id] === p.id && !orderedItems.has(qi.id),
+        )
+        for (const qi of linesForPo) {
+          const pi = proposalItemsByProposal.get(p.id)?.get(qi.id)
+          if (!pi || pi.unit_price <= 0) continue
+          if (!qi.site_code) {
+            throw new Error(missingItemSiteCodeMessage(qi.material_code))
+          }
+          plannedSiteCodes.add(qi.site_code)
+        }
+      }
+      const missingBranch = findFirstMissingBranchDelivery(
+        plannedSiteCodes,
+        branchByCode,
+      )
+      if (missingBranch) {
+        throw new Error(missingBranch)
+      }
 
       const acceptedProposalItemIds: string[] = []
       const rejectedProposalItemIds: string[] = []
@@ -2035,17 +2074,6 @@ export default function EqualizacaoPage({
         if (quotationProposalsRejectedBatchError) throw quotationProposalsRejectedBatchError
       }
 
-      const createdOrdersList: { id: string; code: string; supplierName: string }[] = []
-
-      const { data: branchesData, error: branchesError } = await supabase
-        .from("company_branches")
-        .select("id, code, name, address, city, state, zip_code")
-        .eq("company_id", companyId)
-      if (branchesError) throw branchesError
-      const branchByCode = new Map(
-        ((branchesData ?? []) as CompanyBranch[]).map((b) => [b.code, b]),
-      )
-
       async function reserveContractBalanceForOrder(orderId: string) {
         const res = await fetch(
           `/api/purchase-orders/${orderId}/reserve-contract-balance`,
@@ -2084,9 +2112,7 @@ export default function EqualizacaoPage({
           const pi = proposalItemsByProposal.get(p.id)?.get(qi.id)
           if (!pi || pi.unit_price <= 0) continue
           if (!qi.site_code) {
-            throw new Error(
-              `Item ${qi.material_code} sem centro/filial. Atualize a cotação a partir da requisição.`,
-            )
+            throw new Error(missingItemSiteCodeMessage(qi.material_code))
           }
           const link = contractLinksForOrder[qi.id]
           const unitPrice = link ? link.unitPrice : pi.unit_price
@@ -2133,7 +2159,7 @@ export default function EqualizacaoPage({
           const deliveryAddress = formatBranchDeliveryAddress(branch)
           if (!deliveryAddress) {
             throw new Error(
-              `Centro/filial sem endereço cadastrado (${branch?.code ?? siteCode}). Atualize em Configurações.`,
+              missingBranchDeliveryMessage(siteCode, branch?.code),
             )
           }
 
@@ -2294,6 +2320,16 @@ export default function EqualizacaoPage({
       setItemSelections({})
       setOrderSuccessDialog({ open: true, orders: createdOrdersList })
     } catch (err) {
+      if (createdOrdersList.length > 0) {
+        try {
+          await rollbackDraftPurchaseOrders(
+            supabase,
+            createdOrdersList.map((order) => order.id),
+          )
+        } catch {
+          /* still surface the original finalize error */
+        }
+      }
       console.error(err)
       const fallback = "Erro ao finalizar cotação. Tente novamente."
       const message =
