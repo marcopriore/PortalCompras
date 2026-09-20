@@ -55,7 +55,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const { data: items } = await service
         .from("requisition_items")
         .select(
-          "id, material_code, material_description, quantity, unit_of_measure, estimated_price, commodity_group, observations",
+          "id, material_code, material_description, quantity, unit_of_measure, estimated_price, commodity_group, observations, site_code",
         )
         .eq("requisition_id", data.id)
         .order("created_at", { ascending: true })
@@ -131,6 +131,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         }
         if (result.code === "FORBIDDEN") {
           return apiError(result.message, "FORBIDDEN", 403)
+        }
+        if (result.code === "VALIDATION_ERROR") {
+          return apiError(result.message, "VALIDATION_ERROR", 400)
         }
         return apiError("Erro ao atualizar requisição.", "INTERNAL_ERROR", 500)
       }

@@ -10,6 +10,7 @@ export type RequisitionItemRow = {
   estimated_price: number | null
   commodity_group: string | null
   observations: string | null
+  site_code?: string | null
 }
 
 export function mapRequisitionToApi(
@@ -41,6 +42,7 @@ export function mapRequisitionToApi(
       estimated_price: item.estimated_price,
       commodity_group: item.commodity_group,
       observations: item.observations,
+      site_code: item.site_code ?? null,
     })),
   }
 }

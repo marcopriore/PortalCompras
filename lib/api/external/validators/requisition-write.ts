@@ -6,6 +6,7 @@ export type RequisitionItemWriteInput = {
   estimated_price: number | null
   commodity_group: string | null
   observations: string | null
+  site_code: string | null
 }
 
 export type RequisitionWriteInput = {
@@ -45,6 +46,9 @@ function parseItem(raw: unknown, index: number): RequisitionItemWriteInput | str
     return Number.isFinite(n) ? n : null
   }
 
+  const site_code =
+    row.site_code != null ? String(row.site_code).trim() || null : null
+
   return {
     material_code: row.material_code != null ? String(row.material_code).trim() || null : null,
     material_description,
@@ -55,6 +59,7 @@ function parseItem(raw: unknown, index: number): RequisitionItemWriteInput | str
     commodity_group:
       row.commodity_group != null ? String(row.commodity_group).trim() || null : null,
     observations: row.observations != null ? String(row.observations).trim() || null : null,
+    site_code,
   }
 }
 
@@ -126,6 +131,33 @@ export function requisitionHeaderToRow(
   }
 }
 
+/**
+ * Preenche site_code (MATRIZ / filial default) e rejeita códigos fora do cadastro.
+ * Deve rodar antes de INSERT/PUT para não violar NOT NULL em requisition_items.
+ */
+export function applySiteCodesToRequisitionItems(
+  items: RequisitionItemWriteInput[],
+  defaultSiteCode: string | null,
+  validSiteCodes: Set<string>,
+): RequisitionItemWriteInput[] | string {
+  if (validSiteCodes.size === 0) {
+    return "Cadastre ao menos um centro / filial (MATRIZ) em Configurações."
+  }
+
+  const resolved: RequisitionItemWriteInput[] = []
+  for (let i = 0; i < items.length; i++) {
+    const siteCode = items[i].site_code?.trim() || defaultSiteCode
+    if (!siteCode) {
+      return `Item ${i}: site_code é obrigatório. Cadastre a filial MATRIZ ou envie site_code.`
+    }
+    if (!validSiteCodes.has(siteCode)) {
+      return `Item ${i}: site_code '${siteCode}' não existe no cadastro de centros/filiais.`
+    }
+    resolved.push({ ...items[i], site_code: siteCode })
+  }
+  return resolved
+}
+
 export function requisitionItemsToRows(
   companyId: string,
   requisitionId: string,
@@ -141,6 +173,7 @@ export function requisitionItemsToRows(
     estimated_price: item.estimated_price,
     commodity_group: item.commodity_group,
     observations: item.observations,
+    site_code: item.site_code,
   }))
 }
 

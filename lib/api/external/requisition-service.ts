@@ -5,13 +5,19 @@ import {
   type RequisitionItemRow,
 } from "@/lib/api/external/mappers/requisition"
 import {
+  applySiteCodesToRequisitionItems,
   parseRequisitionWriteInput,
   requisitionHeaderToRow,
   requisitionItemsToRows,
   REQUISITION_CANCELLABLE_STATUSES,
   REQUISITION_EDITABLE_STATUSES,
+  type RequisitionItemWriteInput,
   type RequisitionWriteInput,
 } from "@/lib/api/external/validators/requisition-write"
+import { loadCompanyBranchesByCode } from "@/lib/branches/branch-queries"
+
+const REQUISITION_ITEM_SELECT =
+  "id, material_code, material_description, quantity, unit_of_measure, estimated_price, commodity_group, observations, site_code"
 
 async function generateRequisitionCode(
   service: SupabaseClient,
@@ -47,13 +53,70 @@ async function loadRequisitionWithItems(
 
   const { data: items } = await service
     .from("requisition_items")
-    .select(
-      "id, material_code, material_description, quantity, unit_of_measure, estimated_price, commodity_group, observations",
-    )
+    .select(REQUISITION_ITEM_SELECT)
     .eq("requisition_id", requisitionId)
     .order("created_at", { ascending: true })
 
   return mapRequisitionToApi(row, (items ?? []) as RequisitionItemRow[])
+}
+
+async function resolveWriteItems(
+  service: SupabaseClient,
+  companyId: string,
+  items: RequisitionItemWriteInput[],
+): Promise<RequisitionItemWriteInput[] | { error: string }> {
+  const branchMap = await loadCompanyBranchesByCode(service, companyId)
+  const defaultSiteCode =
+    branchMap.get("MATRIZ")?.code ?? [...branchMap.keys()][0] ?? null
+  const resolved = applySiteCodesToRequisitionItems(
+    items,
+    defaultSiteCode,
+    new Set(branchMap.keys()),
+  )
+  if (typeof resolved === "string") return { error: resolved }
+  return resolved
+}
+
+/**
+ * Troca os itens da REQ inserindo os novos primeiro.
+ * Só apaga os antigos depois do INSERT — um PUT que falhe (ex.: site_code
+ * NOT NULL) não pode zerar as linhas já gravadas.
+ */
+export async function replaceRequisitionItems(
+  service: SupabaseClient,
+  requisitionId: string,
+  itemRows: ReturnType<typeof requisitionItemsToRows>,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const { data: existing, error: existingError } = await service
+    .from("requisition_items")
+    .select("id")
+    .eq("requisition_id", requisitionId)
+
+  if (existingError) {
+    return { ok: false, message: existingError.message }
+  }
+
+  const { error: insertError } = await service
+    .from("requisition_items")
+    .insert(itemRows)
+
+  if (insertError) {
+    return { ok: false, message: insertError.message }
+  }
+
+  const oldIds = ((existing ?? []) as { id: string }[]).map((row) => row.id)
+  if (oldIds.length > 0) {
+    const { error: deleteError } = await service
+      .from("requisition_items")
+      .delete()
+      .in("id", oldIds)
+
+    if (deleteError) {
+      return { ok: false, message: deleteError.message }
+    }
+  }
+
+  return { ok: true }
 }
 
 export async function createRequisitionFromApi(
@@ -70,6 +133,15 @@ export async function createRequisitionFromApi(
 
   if (existing) {
     return { ok: false as const, code: "CONFLICT" as const, external_code: input.external_code }
+  }
+
+  const resolvedItems = await resolveWriteItems(service, companyId, input.items)
+  if ("error" in resolvedItems) {
+    return {
+      ok: false as const,
+      code: "VALIDATION_ERROR" as const,
+      message: resolvedItems.error,
+    }
   }
 
   const code = await generateRequisitionCode(service, companyId)
@@ -93,7 +165,11 @@ export async function createRequisitionFromApi(
     return { ok: false as const, code: "INTERNAL_ERROR" as const, message: error?.message }
   }
 
-  const itemRows = requisitionItemsToRows(companyId, created.id as string, input.items)
+  const itemRows = requisitionItemsToRows(
+    companyId,
+    created.id as string,
+    resolvedItems,
+  )
   const { error: itemsError } = await service.from("requisition_items").insert(itemRows)
 
   if (itemsError) {
@@ -145,6 +221,15 @@ export async function updateRequisitionFromApi(
     }
   }
 
+  const resolvedItems = await resolveWriteItems(service, companyId, input.items)
+  if ("error" in resolvedItems) {
+    return {
+      ok: false as const,
+      code: "VALIDATION_ERROR" as const,
+      message: resolvedItems.error,
+    }
+  }
+
   if (input.external_code !== current.external_code) {
     const { data: duplicate } = await service
       .from("requisitions")
@@ -181,20 +266,10 @@ export async function updateRequisitionFromApi(
     return { ok: false as const, code: "INTERNAL_ERROR" as const, message: updateError.message }
   }
 
-  const { error: deleteError } = await service
-    .from("requisition_items")
-    .delete()
-    .eq("requisition_id", requisitionId)
-
-  if (deleteError) {
-    return { ok: false as const, code: "INTERNAL_ERROR" as const, message: deleteError.message }
-  }
-
-  const itemRows = requisitionItemsToRows(companyId, requisitionId, input.items)
-  const { error: itemsError } = await service.from("requisition_items").insert(itemRows)
-
-  if (itemsError) {
-    return { ok: false as const, code: "INTERNAL_ERROR" as const, message: itemsError.message }
+  const itemRows = requisitionItemsToRows(companyId, requisitionId, resolvedItems)
+  const replaced = await replaceRequisitionItems(service, requisitionId, itemRows)
+  if (!replaced.ok) {
+    return { ok: false as const, code: "INTERNAL_ERROR" as const, message: replaced.message }
   }
 
   const requisition = await loadRequisitionWithItems(service, requisitionId)

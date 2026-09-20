@@ -74,6 +74,9 @@ export async function POST(request: NextRequest) {
             conflicts.push(result.external_code)
             continue
           }
+          if (result.code === "VALIDATION_ERROR") {
+            return apiError(result.message, "VALIDATION_ERROR", 400)
+          }
           return apiError("Erro ao criar requisições.", "INTERNAL_ERROR", 500)
         }
         if (result.requisition) created.push(result.requisition)

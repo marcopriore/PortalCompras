@@ -125,6 +125,7 @@ export const API_DOC_ENDPOINTS: ApiDocEndpoint[] = [
       { name: "items", type: "array", required: true, description: "Itens (mín. 1)" },
       { name: "items[].material_description", type: "string", required: true, description: "Descrição do item" },
       { name: "items[].quantity", type: "number", required: true, description: "Quantidade > 0" },
+      { name: "items[].site_code", type: "string", description: "Centro/filial (company_branches.code). Default: MATRIZ" },
     ],
     requestExample: `{
   "external_code": "ERP-REQ-1001",
