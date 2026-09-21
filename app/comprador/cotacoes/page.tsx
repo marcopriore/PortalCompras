@@ -35,6 +35,7 @@ import {
   canViewAllQuotations,
   formatResponsibleName,
 } from "@/lib/quotations/ownership"
+import { insertQuotationItems } from "@/lib/quotations/quotation-items-persist"
 
 type QuotationSupplier = { supplier_name: string | null }
 type QuotationItem = {
@@ -119,7 +120,7 @@ export default function CotacoesPage() {
         supabase
           .from("quotation_items")
           .select(
-            "material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec",
+            "material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec, source_requisition_code, site_code",
           )
           .eq("quotation_id", quotation.id)
           .eq("company_id", companyId),
@@ -157,20 +158,23 @@ export default function CotacoesPage() {
       const newId = newQuotation.id as string
 
       if (itemsRes.data && itemsRes.data.length > 0) {
-        const { error: itemsInsertError } = await supabase.from("quotation_items").insert(
-          itemsRes.data.map((item) => ({
-            quotation_id: newId,
-            company_id: companyId,
+        const inserted = await insertQuotationItems(supabase, {
+          companyId,
+          quotationId: newId,
+          items: itemsRes.data.map((item) => ({
             material_code: item.material_code ?? "",
             material_description: item.material_description ?? "",
             long_description: item.long_description ?? null,
             unit_of_measure: item.unit_of_measure,
             quantity: item.quantity,
             complementary_spec: item.complementary_spec ?? null,
+            source_requisition_code: item.source_requisition_code ?? null,
+            site_code: item.site_code ?? null,
           })),
-        )
-        if (itemsInsertError) {
-          toast.error("Erro ao clonar cotação.")
+        })
+        if (!inserted.ok) {
+          await supabase.from("quotations").delete().eq("id", newId).eq("company_id", companyId)
+          toast.error(inserted.error || "Erro ao clonar cotação.")
           return
         }
       }
