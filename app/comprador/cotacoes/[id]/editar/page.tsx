@@ -15,6 +15,7 @@ import {
   canViewAllQuotations,
   formatResponsibleName,
 } from "@/lib/quotations/ownership"
+import { replaceQuotationItems } from "@/lib/quotations/quotation-items-persist"
 import { SuggestSuppliersButton } from "@/components/comprador/suggest-suppliers-button"
 import { Button } from "@/components/ui/button"
 import { QuantityInput } from "@/components/ui/numeric-field-inputs"
@@ -581,30 +582,24 @@ export default function EditarCotacaoPage({
         .eq("id", id)
         .eq("company_id", companyId!)
 
-      await supabase.from("quotation_items").delete().eq("quotation_id", id)
+      const replaced = await replaceQuotationItems(supabase, {
+        companyId: companyId!,
+        quotationId: id,
+        items: selectedItems.map((item) => ({
+          material_code: item.code,
+          material_description: item.description,
+          long_description: item.long_description ?? null,
+          unit_of_measure: item.unit_of_measure,
+          quantity: item.quantity,
+          complementary_spec: item.complementary_spec,
+          source_requisition_code: item.requisition_code ?? null,
+          site_code: item.site_code ?? null,
+        })),
+      })
 
-      if (selectedItems.length > 0) {
-        const { error: itemsError } = await supabase
-          .from("quotation_items")
-          .insert(
-            selectedItems.map((item) => ({
-              quotation_id: id,
-              company_id: companyId!,
-              material_code: item.code,
-              material_description: item.description,
-              long_description: item.long_description ?? null,
-              unit_of_measure: item.unit_of_measure,
-              quantity: item.quantity,
-              complementary_spec: item.complementary_spec,
-              source_requisition_code: item.requisition_code ?? null,
-              site_code: item.site_code ?? null,
-            })),
-          )
-
-        if (itemsError) {
-          toast.error("Erro ao salvar itens da cotação.")
-          return
-        }
+      if (!replaced.ok) {
+        toast.error(replaced.error || "Erro ao salvar itens da cotação.")
+        return
       }
 
       await supabase

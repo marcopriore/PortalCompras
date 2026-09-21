@@ -10,6 +10,7 @@ import { useUser } from '@/lib/hooks/useUser'
 import { usePermissions } from '@/lib/hooks/usePermissions'
 import { logAudit } from '@/lib/audit'
 import { ensureInitialQuotationRound } from '@/lib/quotations/round-lifecycle'
+import { insertQuotationItems } from '@/lib/quotations/quotation-items-persist'
 import { createAndStartNegotiationPlan } from '@/lib/negotiation/client-start'
 import { useAiNegotiationUiAccess } from '@/lib/hooks/use-tenant-feature-flags'
 import {
@@ -486,10 +487,10 @@ function NovaCotacaoContent() {
       const quotationId = data.id as string
 
       if (selectedItems.length > 0) {
-        const { error: itemsError } = await supabase.from('quotation_items').insert(
-          selectedItems.map((item) => ({
-            quotation_id: quotationId,
-            company_id: companyId!,
+        const inserted = await insertQuotationItems(supabase, {
+          companyId: companyId!,
+          quotationId,
+          items: selectedItems.map((item) => ({
             material_code: item.code,
             material_description: item.description,
             long_description: item.long_description ?? null,
@@ -499,10 +500,11 @@ function NovaCotacaoContent() {
             source_requisition_code: item.requisition_code ?? null,
             site_code: item.site_code ?? null,
           })),
-        )
+        })
 
-        if (itemsError) {
-          toast.error('Erro ao salvar itens da cotação. Tente novamente.')
+        if (!inserted.ok) {
+          await supabase.from('quotations').delete().eq('id', quotationId).eq('company_id', companyId!)
+          toast.error(inserted.error || 'Erro ao salvar itens da cotação. Tente novamente.')
           return
         }
       }
