@@ -6,6 +6,11 @@ import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { logAudit } from "@/lib/audit"
 import { notifyWithEmail } from "@/lib/notify-with-email"
+import {
+  buildImportedRequisitionItemRows,
+  indexBranchCodes,
+  resolveImportedSiteCode,
+} from "@/lib/requisitions/import-excel"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -52,6 +57,7 @@ type ImportPreviewRow = {
   unitOfMeasure: string | null
   commodityGroup: string | null
   observations: string | null
+  siteCode: string
 }
 
 type CatalogItemRow = {
@@ -203,6 +209,7 @@ export function RequisicoesImportExcelDialog({
       { header: "unidade", key: "unidade", width: 12 },
       { header: "grupo_commodity", key: "grupo_commodity", width: 20 },
       { header: "observacoes", key: "observacoes", width: 28 },
+      { header: "centro_filial", key: "centro_filial", width: 16 },
     ]
     ws.columns = columns
 
@@ -240,6 +247,7 @@ export function RequisicoesImportExcelDialog({
         unidade: "UN",
         grupo_commodity: "Mecânica",
         observacoes: "",
+        centro_filial: "MATRIZ",
       },
       {
         codigo_requisicao: "REQ-BATCH-001",
@@ -253,6 +261,7 @@ export function RequisicoesImportExcelDialog({
         unidade: "UN",
         grupo_commodity: "Mecânica",
         observacoes: "",
+        centro_filial: "MATRIZ",
       },
       {
         codigo_requisicao: "REQ-BATCH-002",
@@ -266,6 +275,7 @@ export function RequisicoesImportExcelDialog({
         unidade: "LT",
         grupo_commodity: "Lubrificantes",
         observacoes: "Entrega em 48h (se possível).",
+        centro_filial: "MATRIZ",
       },
     ])
 
@@ -327,6 +337,7 @@ export function RequisicoesImportExcelDialog({
       const unitOfMeasure = normalizeText(values[9]) || null
       const commodityGroup = normalizeText(values[10]) || null
       const observations = normalizeText(values[11]) || null
+      const siteCodeRaw = normalizeText(values[12])
 
       const isEmptyRow =
         !groupKeyRaw &&
@@ -339,7 +350,8 @@ export function RequisicoesImportExcelDialog({
         !values[8] &&
         !unitOfMeasure &&
         !commodityGroup &&
-        !observations
+        !observations &&
+        !siteCodeRaw
 
       if (isEmptyRow) return
 
@@ -392,12 +404,32 @@ export function RequisicoesImportExcelDialog({
         unitOfMeasure,
         commodityGroup,
         observations,
+        siteCode: siteCodeRaw,
       })
     })
 
     const uniqueCodes = [...new Set(rows.map((r) => r.materialCode).filter(Boolean))]
-    const catalogMap = await loadCatalogByCodes(companyId, uniqueCodes)
-    const validatedRows = validateRowsAgainstCatalog(rows, catalogMap, errors)
+    const supabase = createClient()
+    const [{ data: branchesData }, catalogMap] = await Promise.all([
+      supabase
+        .from("company_branches")
+        .select("code")
+        .eq("company_id", companyId)
+        .eq("active", true),
+      loadCatalogByCodes(companyId, uniqueCodes),
+    ])
+    const branchIndex = indexBranchCodes(
+      ((branchesData ?? []) as Array<{ code: string }>).map((b) => b.code),
+    )
+    const rowsWithSite = rows.map((row) => {
+      const resolved = resolveImportedSiteCode(row.siteCode, branchIndex)
+      if (!resolved.ok) {
+        errors.push(`Linha ${row.rowNumber}: ${resolved.error}`)
+        return row
+      }
+      return { ...row, siteCode: resolved.siteCode }
+    })
+    const validatedRows = validateRowsAgainstCatalog(rowsWithSite, catalogMap, errors)
 
     setImportPreview(validatedRows)
     setImportErrors(errors)
@@ -430,16 +462,6 @@ export function RequisicoesImportExcelDialog({
       for (const [groupKey, lines] of groups.entries()) {
         try {
           const header = lines[0]
-          const payloadItems = lines.map((l) => ({
-            requisition_id: "TEMP",
-            company_id: companyId,
-            material_code: l.materialCode.trim() || null,
-            material_description: l.materialDescription.trim(),
-            quantity: Math.max(1, Number(l.quantity) || 1),
-            unit_of_measure: l.unitOfMeasure?.trim() || null,
-            commodity_group: l.commodityGroup?.trim() || null,
-            observations: l.observations?.trim() || null,
-          }))
 
           const { data: profileRes } = await supabase
             .from("profiles")
@@ -477,16 +499,29 @@ export function RequisicoesImportExcelDialog({
 
           const requisitionId = (requisitionRes as { id: string }).id
           const requisitionCode = (requisitionRes as { code: string }).code
-          const itemsPayload = payloadItems.map((p) => ({
-            ...p,
-            requisition_id: requisitionId,
-          }))
+          const itemsPayload = buildImportedRequisitionItemRows(
+            companyId,
+            requisitionId,
+            lines.map((l) => ({
+              materialCode: l.materialCode,
+              materialDescription: l.materialDescription,
+              quantity: l.quantity,
+              unitOfMeasure: l.unitOfMeasure,
+              commodityGroup: l.commodityGroup,
+              observations: l.observations,
+              siteCode: l.siteCode,
+            })),
+          )
 
           const { error: itemsErr } = await supabase
             .from("requisition_items")
             .insert(itemsPayload)
 
           if (itemsErr) {
+            await supabase
+              .from("requisitions")
+              .update({ status: "cancelled" })
+              .eq("id", requisitionId)
             errorGroups++
             errorDetails.push(`${groupKey}: erro ao inserir itens.`)
             continue
@@ -715,6 +750,7 @@ export function RequisicoesImportExcelDialog({
               <span className="text-xs text-muted-foreground">
                 Use data no formato <code>YYYY-MM-DD</code>. O{" "}
                 <code>codigo_item</code> deve existir e estar ativo no catálogo.
+                Centro/filial (<code>centro_filial</code>) é opcional e usa MATRIZ se vazio.
               </span>
             </div>
 
@@ -784,6 +820,7 @@ export function RequisicoesImportExcelDialog({
                     <TableHead>Cód. Item</TableHead>
                     <TableHead>Descrição</TableHead>
                     <TableHead>Qtd</TableHead>
+                    <TableHead>Centro/Filial</TableHead>
                     <TableHead>Prioridade</TableHead>
                     <TableHead>Data</TableHead>
                   </TableRow>
@@ -796,13 +833,14 @@ export function RequisicoesImportExcelDialog({
                       <TableCell>{row.materialCode}</TableCell>
                       <TableCell className="max-w-48 truncate">{row.materialDescription}</TableCell>
                       <TableCell>{row.quantity}</TableCell>
+                      <TableCell>{row.siteCode}</TableCell>
                       <TableCell>{row.priority}</TableCell>
                       <TableCell>{row.neededByYmd}</TableCell>
                     </TableRow>
                   ))}
                   {importPreview.length > 10 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-muted-foreground text-xs">
+                      <TableCell colSpan={8} className="text-muted-foreground text-xs">
                         ...e mais {importPreview.length - 10} linha(s)
                       </TableCell>
                     </TableRow>
