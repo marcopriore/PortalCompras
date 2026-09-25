@@ -102,6 +102,25 @@ export const SOLICITANTE_DEFAULT_STATUS_FILTER: RequisitionStatus[] = [
   "completed",
 ]
 
+/**
+ * Cancelar cotação só pode devolver a REQ para approved quando ela ainda
+ * está em cotação. Status de ciclo de pedido (awaiting_*, completed) já
+ * têm PO — resetar reabre "Gerar Pedido" e duplica o pedido.
+ */
+export function isRequisitionReleasableOnQuotationCancel(
+  status: string,
+): boolean {
+  return status === "in_quotation"
+}
+
+export function requisitionsToReleaseOnQuotationCancel<
+  T extends { status: string },
+>(requisitions: T[]): T[] {
+  return requisitions.filter((row) =>
+    isRequisitionReleasableOnQuotationCancel(row.status),
+  )
+}
+
 /** Mapeia status do PO → status da REQ (espelha a função SQL). */
 export function mapPoStatusToRequisitionStatus(
   poStatus: string,
