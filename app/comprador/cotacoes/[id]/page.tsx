@@ -15,6 +15,7 @@ import {
   isBuyerOrHigherProfile,
 } from '@/lib/quotations/ownership'
 import { ensureInitialQuotationRound } from '@/lib/quotations/round-lifecycle'
+import { requisitionsToReleaseOnQuotationCancel } from '@/lib/requisitions/status'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -449,23 +450,29 @@ export default function QuotationDetailsPage({
         if (companyId) {
           const { data: reqs } = await supabase
             .from('requisitions')
-            .select('id, code')
+            .select('id, code, status')
             .eq('company_id', companyId)
             .eq('quotation_id', quotation.id)
 
-          if (reqs && reqs.length > 0) {
+          const releasable = requisitionsToReleaseOnQuotationCancel(
+            (reqs ?? []) as { id: string; code: string; status: string }[],
+          )
+
+          if (releasable.length > 0) {
             await supabase
               .from('requisitions')
               .update({
                 status: 'approved',
                 quotation_id: null,
               })
+              .eq('company_id', companyId)
+              .eq('status', 'in_quotation')
               .in(
                 'id',
-                reqs.map((r) => r.id),
+                releasable.map((r) => r.id),
               )
 
-            for (const req of reqs) {
+            for (const req of releasable) {
               void logAudit({
                 eventType: 'requisition.approved',
                 description: `Requisição liberada após cancelamento da cotação ${quotation.code}`,

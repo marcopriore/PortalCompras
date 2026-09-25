@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
   getRequisitionStatusMeta,
+  isRequisitionReleasableOnQuotationCancel,
   mapPoStatusToRequisitionStatus,
+  requisitionsToReleaseOnQuotationCancel,
 } from "@/lib/requisitions/status"
 import {
   buildCatalogRequisitionTimeline,
@@ -38,6 +40,31 @@ describe("mapPoStatusToRequisitionStatus", () => {
 
   it("retorna null para status desconhecido", () => {
     expect(mapPoStatusToRequisitionStatus("unknown")).toBeNull()
+  })
+})
+
+describe("requisitionsToReleaseOnQuotationCancel", () => {
+  it("libera só REQ em cotação; preserva ciclo de pedido", () => {
+    expect(isRequisitionReleasableOnQuotationCancel("in_quotation")).toBe(true)
+    expect(isRequisitionReleasableOnQuotationCancel("approved")).toBe(false)
+    expect(isRequisitionReleasableOnQuotationCancel("awaiting_buyer")).toBe(
+      false,
+    )
+    expect(isRequisitionReleasableOnQuotationCancel("awaiting_approval")).toBe(
+      false,
+    )
+    expect(isRequisitionReleasableOnQuotationCancel("awaiting_supplier")).toBe(
+      false,
+    )
+    expect(isRequisitionReleasableOnQuotationCancel("completed")).toBe(false)
+
+    const released = requisitionsToReleaseOnQuotationCancel([
+      { id: "a", status: "in_quotation" },
+      { id: "b", status: "awaiting_buyer" },
+      { id: "c", status: "completed" },
+      { id: "d", status: "awaiting_approval" },
+    ])
+    expect(released.map((row) => row.id)).toEqual(["a"])
   })
 })
 
