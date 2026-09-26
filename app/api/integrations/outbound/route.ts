@@ -4,6 +4,7 @@ import { cookies } from "next/headers"
 import { isOutboundIntegrationAction } from "@/lib/integrations/types"
 import { triggerOutboundIntegration } from "@/lib/integrations/trigger-outbound"
 import { requireIntegrationsAdmin } from "@/lib/api/require-tenant-admin"
+import { authorizePortalOutboundAction } from "@/lib/integrations/portal-outbound-auth"
 
 export const runtime = "nodejs"
 
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("company_id, is_superadmin")
+        .select("company_id, is_superadmin, profile_type")
         .eq("id", user.id)
         .single()
 
@@ -52,12 +53,44 @@ export async function POST(request: Request) {
       }
 
       companyId = profile.company_id as string
-      if (profile.is_superadmin) {
+      const isSuperAdmin = Boolean(profile.is_superadmin)
+      if (isSuperAdmin) {
         const cookieStore = await cookies()
         const selected = cookieStore.get("selected_company_id")
         if (selected?.value) {
           companyId = decodeURIComponent(selected.value)
         }
+      }
+
+      let requisitionRequesterId: string | null = null
+      if (
+        profile.profile_type === "requester" &&
+        action.startsWith("requisition.")
+      ) {
+        const { data: requisition } = await supabase
+          .from("requisitions")
+          .select("requester_id")
+          .eq("id", entityId)
+          .eq("company_id", companyId)
+          .maybeSingle()
+        requisitionRequesterId =
+          (requisition?.requester_id as string | null | undefined) ?? null
+      }
+
+      const portalAuth = authorizePortalOutboundAction({
+        action,
+        actor: {
+          userId: user.id,
+          profileType: profile.profile_type,
+          isSuperAdmin,
+        },
+        requisitionRequesterId,
+      })
+      if (!portalAuth.ok) {
+        return NextResponse.json(
+          { error: portalAuth.error },
+          { status: portalAuth.status },
+        )
       }
     }
 
