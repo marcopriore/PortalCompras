@@ -91,6 +91,21 @@ export async function requireTenantAdmin() {
   return requireAnyPermission(["settings.manage"])
 }
 
+/** Gestão de usuários do tenant: user.manage */
+export async function requireUserManager() {
+  return requireAnyPermission(["user.manage"])
+}
+
+/** Superadmin apenas (criação/exclusão de tenant). */
+export async function requireSuperAdmin() {
+  const auth = await resolveCompanyAuth()
+  if ("error" in auth) return auth
+  if (!auth.isSuperAdmin) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
+  }
+  return auth
+}
+
 /** Monitor e APIs de integração: integration.monitor + feature */
 export async function requireIntegrationsAdmin() {
   const auth = await requireAnyPermission(["integration.monitor"])

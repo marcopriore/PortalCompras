@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { canManageTargetUser } from '@/lib/admin/target-user'
+import { requireUserManager } from '@/lib/api/require-tenant-admin'
 import { sendEmail } from '@/lib/email/send-email'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { loadPasswordPolicy } from '@/lib/settings/password-policy'
@@ -10,10 +12,14 @@ import {
 
 export async function POST(request: Request) {
   try {
-    const { userId, userEmail, userName, newPassword, sendByEmail, companyId } =
+    const auth = await requireUserManager()
+    if ('error' in auth) return auth.error
+    const companyId = auth.companyId
+
+    const { userId, userEmail, userName, newPassword, sendByEmail } =
       await request.json()
 
-    if (!userId || !newPassword || !companyId) {
+    if (!userId || !newPassword) {
       return NextResponse.json(
         { error: 'Campos obrigatórios ausentes' },
         { status: 400 },
@@ -21,6 +27,16 @@ export async function POST(request: Request) {
     }
 
     const supabaseAdmin = createServiceRoleClient()
+    const { data: target } = await supabaseAdmin
+      .from('profiles')
+      .select('company_id, is_superadmin')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (!canManageTargetUser(target, companyId)) {
+      return NextResponse.json({ error: 'Usuário não encontrado.' }, { status: 404 })
+    }
+
     const policy = await loadPasswordPolicy(supabaseAdmin, companyId)
 
     const validation = await validateNewPasswordForTenant(
