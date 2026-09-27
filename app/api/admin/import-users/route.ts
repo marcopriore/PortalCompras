@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireUserManager } from '@/lib/api/require-tenant-admin'
 
 type ImportUserPayload = {
   email: string
@@ -30,6 +31,10 @@ function generatePassword(): string {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireUserManager()
+    if ('error' in auth) return auth.error
+    const companyId = auth.companyId
+
     const body = await request.json()
     const users = (body?.users ?? []) as ImportUserPayload[]
 
@@ -50,10 +55,10 @@ export async function POST(request: Request) {
 
     // Processar sequencialmente para facilitar rollback por usuário
     for (const user of users) {
-      const { email, fullName, role, roles, status, companyId } = user
+      const { email, fullName, role, roles, status } = user
       const rolesArray = Array.isArray(roles) ? roles : role ? [role] : []
 
-      if (!email || !fullName || !status || !companyId) {
+      if (!email || !fullName || !status) {
         errors.push({
           email: email || '',
           reason: 'Campos obrigatórios ausentes',

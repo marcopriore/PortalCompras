@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireSuperAdmin } from '@/lib/api/require-tenant-admin'
 import { seedDefaultTenantSettings } from '@/lib/settings/tenant-settings'
 import { seedDefaultTenantFeatureSettings } from '@/lib/settings/tenant-feature-settings'
 import { seedDefaultTenantFeatures } from '@/lib/settings/seed-tenant-features'
@@ -17,6 +18,9 @@ import {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireSuperAdmin()
+    if ('error' in auth) return auth.error
+
     const { name, cnpj, adminName, adminEmail, adminPassword } =
       await request.json()
 

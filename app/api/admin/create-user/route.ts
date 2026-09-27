@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireUserManager } from '@/lib/api/require-tenant-admin'
 import { createNotification } from '@/lib/notify'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { loadPasswordPolicy } from '@/lib/settings/password-policy'
@@ -16,13 +17,17 @@ function resolveProfileType(roles: string[]): string {
 
 export async function POST(request: Request) {
   try {
-    const { email, password, fullName, role, roles, companyId, profileType, costCenterId } =
+    const auth = await requireUserManager()
+    if ('error' in auth) return auth.error
+    const companyId = auth.companyId
+
+    const { email, password, fullName, role, roles, profileType, costCenterId } =
       await request.json()
 
     const rolesArray = Array.isArray(roles) ? roles : role ? [role] : []
     const primaryRole = rolesArray[0] ?? role ?? ''
 
-    if (!email || !password || !fullName || !companyId) {
+    if (!email || !password || !fullName) {
       return NextResponse.json(
         { error: 'Campos obrigatórios ausentes' },
         { status: 400 },
