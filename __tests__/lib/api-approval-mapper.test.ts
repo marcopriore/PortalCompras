@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { mapApprovalToApi } from "@/lib/api/external/approval-service"
+import {
+  mapApprovalToApi,
+  shouldRejectCatalogRequisitionForCancelledOrder,
+} from "@/lib/api/external/approval-service"
 import { isApiScope } from "@/lib/api/external/scopes"
 
 describe("mapApprovalToApi", () => {
@@ -27,6 +30,30 @@ describe("mapApprovalToApi", () => {
     expect(mapped.entity_code).toBe("REQ-1")
     expect(mapped.entity_external_code).toBe("ERP-1")
     expect(mapped.flow).toBe("requisition")
+  })
+})
+
+describe("shouldRejectCatalogRequisitionForCancelledOrder", () => {
+  it("rejeita a REQ quando o checkout gerou um único PO", () => {
+    expect(shouldRejectCatalogRequisitionForCancelledOrder([])).toBe(true)
+  })
+
+  it("rejeita a REQ quando os irmãos já estão cancelados", () => {
+    expect(
+      shouldRejectCatalogRequisitionForCancelledOrder(["cancelled", "cancelled"]),
+    ).toBe(true)
+  })
+
+  it("não rejeita a REQ se outro PO do split por filial ainda está ativo", () => {
+    expect(
+      shouldRejectCatalogRequisitionForCancelledOrder(["awaiting_approval"]),
+    ).toBe(false)
+    expect(
+      shouldRejectCatalogRequisitionForCancelledOrder([
+        "cancelled",
+        "sent",
+      ]),
+    ).toBe(false)
   })
 })
 
