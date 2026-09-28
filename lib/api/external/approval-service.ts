@@ -19,6 +19,19 @@ export type ApprovalRequestRow = {
   created_at: string
 }
 
+/**
+ * Catalog checkout can emit one REQ and several POs (split by site_code).
+ * Rejecting one catalog_order AR must not mark the whole REQ rejected while
+ * sibling POs are still active — the SQL trigger then skips `rejected` REQs.
+ */
+export function shouldRejectCatalogRequisitionForCancelledOrder(
+  siblingPoStatuses: Array<string | null | undefined>,
+): boolean {
+  return !siblingPoStatuses.some(
+    (status) => Boolean(status) && status !== "cancelled",
+  )
+}
+
 export function mapApprovalToApi(
   row: ApprovalRequestRow,
   entity?: {
@@ -318,7 +331,27 @@ async function applyCatalogOrderRejection(
   const requisitionCode =
     typeof po.requisition_code === "string" ? po.requisition_code.trim() : ""
 
+  let rejectRequisition = Boolean(requisitionCode)
   if (requisitionCode) {
+    const { data: siblings, error: sibErr } = await service
+      .from("purchase_orders")
+      .select("id, status")
+      .eq("company_id", companyId)
+      .eq("requisition_code", requisitionCode)
+      .neq("id", purchaseOrderId)
+
+    if (sibErr) {
+      return { ok: false as const, message: sibErr.message }
+    }
+
+    rejectRequisition = shouldRejectCatalogRequisitionForCancelledOrder(
+      ((siblings ?? []) as Array<{ status?: string | null }>).map(
+        (row) => row.status,
+      ),
+    )
+  }
+
+  if (requisitionCode && rejectRequisition) {
     const { error: reqErr } = await service
       .from("requisitions")
       .update({
