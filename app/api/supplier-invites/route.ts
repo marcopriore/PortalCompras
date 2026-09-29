@@ -2,6 +2,7 @@ import { randomBytes } from "crypto"
 import { NextResponse } from "next/server"
 import { formatDateTimeLongBR } from "@/lib/formato-data"
 import { getBuyerContext } from "@/lib/auth/buyer-context"
+import { requireSupplierPortalAdmin } from "@/lib/auth/supplier-portal-admin"
 import { sendEmail } from "@/lib/email/send-email"
 import { templateSupplierPortalInvite } from "@/lib/email/templates"
 import { getAppEmailBaseUrl } from "@/lib/email/templates"
@@ -18,7 +19,7 @@ function generateInviteToken(): string {
 /** POST — envia convite para admin do fornecedor */
 export async function POST(request: Request) {
   try {
-    const ctx = await getBuyerContext()
+    const ctx = await requireSupplierPortalAdmin()
     if ("error" in ctx) return ctx.error
 
     const body = (await request.json()) as {

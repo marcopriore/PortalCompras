@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getBuyerContext } from "@/lib/auth/buyer-context"
+import { requireSupplierPortalAdmin } from "@/lib/auth/supplier-portal-admin"
 import { logAuditServer } from "@/lib/audit-server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import {
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
 /** POST — cria usuário adicional (login por e-mail) */
 export async function POST(request: Request) {
   try {
-    const ctx = await getBuyerContext()
+    const ctx = await requireSupplierPortalAdmin()
     if ("error" in ctx) return ctx.error
 
     const body = (await request.json()) as {

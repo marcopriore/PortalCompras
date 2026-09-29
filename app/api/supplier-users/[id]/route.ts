@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getBuyerContext } from "@/lib/auth/buyer-context"
+import { requireSupplierPortalAdmin } from "@/lib/auth/supplier-portal-admin"
 import { logAuditServer } from "@/lib/audit-server"
 import {
   getSupplierPortalUser,
@@ -19,7 +19,7 @@ type PatchBody = {
 /** PATCH — desativa/reativa ou redefine senha de usuário do portal fornecedor (comprador) */
 export async function PATCH(request: Request, context: RouteCtx) {
   try {
-    const ctx = await getBuyerContext()
+    const ctx = await requireSupplierPortalAdmin()
     if ("error" in ctx) return ctx.error
 
     const { id } = await context.params
