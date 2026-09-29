@@ -101,9 +101,11 @@ function getAvatarColor(name: string): string {
 
 export default function FornecedoresPage() {
   const { companyId, loading: userLoading, hasRole, isSuperAdmin } = useUser()
-  const { hasPermission } = usePermissions()
+  const { hasPermission, canWrite } = usePermissions()
 
   const isMasterAdmin = isSuperAdmin || hasRole('admin')
+  const canManageSupplierPortal =
+    isMasterAdmin || canWrite('user.manage')
   const canSyncErp = isSuperAdmin || hasPermission('erp.sync')
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -696,7 +698,7 @@ export default function FornecedoresPage() {
                 supplierName={selectedSupplier.name}
                 supplierEmail={selectedSupplier.email}
                 supplierCnpj={selectedSupplier.cnpj}
-                canManage={isMasterAdmin}
+                canManage={canManageSupplierPortal}
               />
               {supplierScores[selectedSupplier.id] && (
                 <div className="space-y-3 border-t border-border pt-4">
