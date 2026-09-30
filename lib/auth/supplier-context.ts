@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
+import {
+  canManageSupplierPortalUsers,
+  SUPPLIER_ADMIN_REQUIRED_MESSAGE,
+} from "@/lib/auth/supplier-admin-guard"
 
 export type SupplierContext = {
   supabase: ReturnType<typeof createServerClient>
@@ -12,6 +16,20 @@ export type SupplierContext = {
 }
 
 export type SupplierContextResult = SupplierContext | { error: NextResponse }
+
+export async function requireSupplierAdmin(): Promise<SupplierContextResult> {
+  const ctx = await getSupplierContext()
+  if ("error" in ctx) return ctx
+  if (!canManageSupplierPortalUsers(ctx.isSupplierAdmin)) {
+    return {
+      error: NextResponse.json(
+        { error: SUPPLIER_ADMIN_REQUIRED_MESSAGE },
+        { status: 403 },
+      ),
+    }
+  }
+  return ctx
+}
 
 export async function getSupplierContext(): Promise<SupplierContextResult> {
   const cookieStore = await cookies()

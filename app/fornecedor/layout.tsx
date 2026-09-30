@@ -35,7 +35,7 @@ export default async function FornecedorLayout({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("full_name, company_id, supplier_id")
+    .select("full_name, company_id, supplier_id, is_supplier_admin")
     .eq("id", user.id)
     .single()
 
@@ -43,6 +43,7 @@ export default async function FornecedorLayout({
     full_name?: string | null
     company_id?: string | null
     supplier_id?: string | null
+    is_supplier_admin?: boolean | null
   } | null
 
   const fullName =
@@ -75,6 +76,7 @@ export default async function FornecedorLayout({
         supplierClients={supplierClients}
         activeCompanyId={profileRow?.company_id ?? null}
         activeSupplierId={profileRow?.supplier_id ?? null}
+        isSupplierAdmin={Boolean(profileRow?.is_supplier_admin)}
       >
         <PasswordExpiryGuard portal="fornecedor">{children}</PasswordExpiryGuard>
       </FornecedorPortalShell>

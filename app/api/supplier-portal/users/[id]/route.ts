@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getSupplierContext } from "@/lib/auth/supplier-context"
+import { requireSupplierAdmin } from "@/lib/auth/supplier-context"
 import { logAuditServer } from "@/lib/audit-server"
 import {
   cancelSupplierPortalUser,
@@ -21,7 +21,7 @@ type PatchBody = {
 /** PATCH — bloquear, reativar, cancelar ou atualizar usuário */
 export async function PATCH(request: Request, context: RouteCtx) {
   try {
-    const ctx = await getSupplierContext()
+    const ctx = await requireSupplierAdmin()
     if ("error" in ctx) return ctx.error
 
     const { id } = await context.params
