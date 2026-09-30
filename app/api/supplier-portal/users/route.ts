@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getSupplierContext } from "@/lib/auth/supplier-context"
+import { requireSupplierAdmin } from "@/lib/auth/supplier-context"
 import { logAuditServer } from "@/lib/audit-server"
 import {
   MAX_SUPPLIER_PORTAL_USERS,
@@ -11,7 +11,7 @@ import {
 /** GET — lista usuários do fornecedor logado */
 export async function GET() {
   try {
-    const ctx = await getSupplierContext()
+    const ctx = await requireSupplierAdmin()
     if ("error" in ctx) return ctx.error
 
     const users = await listSupplierPortalUsers(ctx.companyId, ctx.supplierId)
@@ -31,7 +31,7 @@ export async function GET() {
 /** POST — adiciona usuário (não-admin) */
 export async function POST(request: Request) {
   try {
-    const ctx = await getSupplierContext()
+    const ctx = await requireSupplierAdmin()
     if ("error" in ctx) return ctx.error
 
     const body = (await request.json()) as {

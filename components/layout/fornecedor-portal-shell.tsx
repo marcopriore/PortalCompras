@@ -56,6 +56,7 @@ export interface FornecedorPortalShellProps {
   supplierClients: SupplierClientOption[]
   activeCompanyId: string | null
   activeSupplierId: string | null
+  isSupplierAdmin?: boolean
   children: React.ReactNode
 }
 
@@ -66,6 +67,7 @@ export default function FornecedorPortalShell({
   supplierClients,
   activeCompanyId,
   activeSupplierId,
+  isSupplierAdmin = false,
   children,
 }: FornecedorPortalShellProps) {
   const pathname = usePathname()
@@ -149,7 +151,7 @@ export default function FornecedorPortalShell({
           ) : null}
 
           <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
-            {navItems.map((item) => {
+            {navItems.filter((item) => item.href !== "/fornecedor/usuarios" || isSupplierAdmin).map((item) => {
               const Icon = item.icon
               const active = isActive(item.href)
               const linkClass = cn(
