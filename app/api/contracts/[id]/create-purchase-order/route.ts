@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { canUseBuyerOrderApi } from "@/lib/auth/buyer-order-access"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { isContractEligibleForPurchaseOrder } from "@/lib/contracts/contract-balance-helpers"
 import { tenantHasContractBalance } from "@/lib/contracts/contract-balance-settings"
@@ -10,6 +11,7 @@ import {
 } from "@/lib/branches/branch-queries"
 import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
 import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
+import { requireApiWritePermission } from "@/lib/permissions/require-api-write"
 
 async function getBuyerContext() {
   const cookieStore = await cookies()
@@ -42,7 +44,7 @@ async function getBuyerContext() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_id, is_superadmin")
+    .select("company_id, is_superadmin, profile_type")
     .eq("id", user.id)
     .single()
 
@@ -51,6 +53,10 @@ async function getBuyerContext() {
   }
 
   const isSuperAdmin = Boolean(profile.is_superadmin)
+  if (!canUseBuyerOrderApi(profile.profile_type, isSuperAdmin)) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
+  }
+
   let companyId = profile.company_id as string
 
   if (isSuperAdmin) {
@@ -74,6 +80,15 @@ export async function POST(request: Request, context: RouteCtx) {
   try {
     const ctx = await getBuyerContext()
     if ("error" in ctx) return ctx.error
+
+    const forbidden = await requireApiWritePermission(
+      ctx.supabase,
+      ctx.userId,
+      ctx.companyId,
+      ctx.isSuperAdmin,
+      "order.create",
+    )
+    if (forbidden) return forbidden
 
     const contractBalanceEnabled = await tenantHasContractBalance(
       ctx.supabase,
