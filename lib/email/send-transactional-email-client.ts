@@ -1,8 +1,7 @@
 export async function sendTransactionalEmailClient(params: {
-  to: string
-  subject: string
-  html: string
-  companyId: string
+  quotationId: string
+  roundNumber: number
+  supplierUserIds: string[]
 }): Promise<void> {
   try {
     const res = await fetch("/api/send-transactional-email", {
