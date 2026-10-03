@@ -10,6 +10,7 @@ import {
 import { saveRequisitionAccountConfigs } from "@/lib/requisition-account-assignment-persist"
 import { loadImplantationConfig } from "@/lib/settings/tenant-implantation-settings"
 import { triggerRequisitionOutbound } from "@/lib/integrations/trigger-requisition-outbound"
+import { replaceRequisitionItems } from "@/lib/requisitions/replace-requisition-items"
 
 export const runtime = "nodejs"
 
@@ -154,6 +155,29 @@ export async function POST(
         ? body.needed_by
         : null
 
+    const payloadItems = body.items.map((it) => ({
+      id: it.id ?? "",
+      requisition_id: id,
+      company_id: companyId,
+      material_code: (it.material_code ?? "").trim() || null,
+      material_description: it.material_description.trim(),
+      quantity: Math.max(1, Number(it.quantity) || 1),
+      unit_of_measure: (it.unit_of_measure ?? "").trim() || null,
+      commodity_group: (it.commodity_group ?? "").trim() || null,
+      observations: (it.observations ?? "").trim() || null,
+      site_code: (it.site_code ?? "").trim(),
+    }))
+
+    const replaced = await replaceRequisitionItems(service, id, payloadItems)
+    if (!replaced.ok) {
+      const status = replaced.error.includes("id ausente") ||
+        replaced.error.includes("centro / filial") ||
+        replaced.error.includes("descrição")
+        ? 400
+        : 500
+      return NextResponse.json({ error: replaced.error }, { status })
+    }
+
     const { error: updateErr } = await service
       .from("requisitions")
       .update({
@@ -173,41 +197,6 @@ export async function POST(
 
     if (updateErr) {
       return NextResponse.json({ error: updateErr.message }, { status: 500 })
-    }
-
-    const { error: deleteItemsErr } = await service
-      .from("requisition_items")
-      .delete()
-      .eq("requisition_id", id)
-
-    if (deleteItemsErr) {
-      return NextResponse.json({ error: deleteItemsErr.message }, { status: 500 })
-    }
-
-    const payloadItems = body.items.map((it) => ({
-      id: it.id,
-      requisition_id: id,
-      company_id: companyId,
-      material_code: (it.material_code ?? "").trim() || null,
-      material_description: it.material_description.trim(),
-      quantity: Math.max(1, Number(it.quantity) || 1),
-      unit_of_measure: (it.unit_of_measure ?? "").trim() || null,
-      commodity_group: (it.commodity_group ?? "").trim() || null,
-      observations: (it.observations ?? "").trim() || null,
-      site_code: it.site_code!.trim(),
-    }))
-
-    const missingIds = payloadItems.filter((row) => !row.id)
-    if (missingIds.length > 0) {
-      return NextResponse.json({ error: "Itens inválidos: id ausente." }, { status: 400 })
-    }
-
-    const { error: insertItemsErr } = await service
-      .from("requisition_items")
-      .insert(payloadItems)
-
-    if (insertItemsErr) {
-      return NextResponse.json({ error: insertItemsErr.message }, { status: 500 })
     }
 
     const accountResult = await saveRequisitionAccountConfigs(

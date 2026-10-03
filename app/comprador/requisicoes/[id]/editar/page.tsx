@@ -40,6 +40,7 @@ import {
   type ItemAccountConfigFieldErrors,
 } from "@/lib/po-account-assignment"
 import { saveRequisitionAccountConfigs } from "@/lib/requisition-account-assignment-persist"
+import { replaceRequisitionItems } from "@/lib/requisitions/replace-requisition-items"
 import { useImplantationConfig } from "@/lib/hooks/use-implantation-config"
 
 type Priority = "normal" | "urgent" | "critical"
@@ -296,37 +297,25 @@ export default function EditarRequisicaoPage({
         return
       }
 
-      const { error: deleteItemsErr } = await supabase
-        .from("requisition_items")
-        .delete()
-        .eq("requisition_id", id)
-
-      if (deleteItemsErr) {
-        toast.error(deleteItemsErr.message?.trim() || "Erro ao atualizar itens.")
+      const payloadItems = items.map((it) => ({
+        id: it.id,
+        requisition_id: id,
+        company_id: companyId,
+        material_code: (it.materialCode ?? "").trim() || null,
+        material_description: it.materialDescription.trim(),
+        quantity: Math.max(1, Number(it.quantity) || 1),
+        unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
+        commodity_group: (it.commodityGroup ?? "").trim() || null,
+        observations: (it.observations ?? "").trim() || null,
+        site_code: it.siteCode,
+      }))
+      const replaced = await replaceRequisitionItems(supabase, id, payloadItems)
+      if (!replaced.ok) {
+        toast.error(replaced.error)
         return
       }
 
       if (items.length > 0) {
-        const payloadItems = items.map((it) => ({
-          id: it.id,
-          requisition_id: id,
-          company_id: companyId,
-          material_code: (it.materialCode ?? "").trim() || null,
-          material_description: it.materialDescription.trim(),
-          quantity: Math.max(1, Number(it.quantity) || 1),
-          unit_of_measure: (it.unitOfMeasure ?? "").trim() || null,
-          commodity_group: (it.commodityGroup ?? "").trim() || null,
-          observations: (it.observations ?? "").trim() || null,
-          site_code: it.siteCode,
-        }))
-        const { error: insertItemsErr } = await supabase
-          .from("requisition_items")
-          .insert(payloadItems)
-        if (insertItemsErr) {
-          toast.error(insertItemsErr.message?.trim() || "Erro ao salvar os itens da requisição.")
-          return
-        }
-
         const accountResult = await saveRequisitionAccountConfigs(
           supabase,
           companyId,
