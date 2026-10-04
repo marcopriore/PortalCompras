@@ -3,18 +3,18 @@ import { createClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { sendEmail } from "@/lib/email/send-email"
 import { templateProposalSubmitted } from "@/lib/email/templates"
+import {
+  isAuthorizedProposalSubmittedNotifier,
+  proposalSubmittedNotifyFields,
+} from "@/lib/notifications/proposal-submitted-access"
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
       quotationId?: string
-      quotationCode?: string
-      roundNumber?: number
-      supplierName?: string
-      totalPrice?: number
     }
 
-    if (!body.quotationId || !body.quotationCode || !body.supplierName) {
+    if (!body.quotationId) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
     }
 
@@ -26,17 +26,86 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const { data: caller } = await supabase
+      .from("profiles")
+      .select("profile_type, supplier_id")
+      .eq("id", user.id)
+      .single()
+
+    if (caller?.profile_type !== "supplier" || !caller.supplier_id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
     const service = createServiceRoleClient()
 
     const { data: quotation } = await service
       .from("quotations")
-      .select("id, company_id, created_by")
+      .select("id, company_id, created_by, code")
       .eq("id", body.quotationId)
       .single()
 
     if (!quotation?.company_id) {
       return NextResponse.json({ error: "Quotation not found" }, { status: 404 })
     }
+
+    const supplierIds = new Set<string>([caller.supplier_id])
+    const { data: memberships, error: membershipErr } = await service
+      .from("supplier_portal_memberships")
+      .select("supplier_id")
+      .eq("user_id", user.id)
+      .eq("company_id", quotation.company_id)
+      .eq("status", "active")
+
+    if (!membershipErr) {
+      for (const row of memberships ?? []) {
+        if (row.supplier_id) supplierIds.add(row.supplier_id)
+      }
+    }
+
+    const { data: proposal } = await service
+      .from("quotation_proposals")
+      .select("id, supplier_id, supplier_name, total_price, status, round_id")
+      .eq("quotation_id", quotation.id)
+      .in("supplier_id", [...supplierIds])
+      .eq("status", "submitted")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (
+      !proposal ||
+      !isAuthorizedProposalSubmittedNotifier(
+        {
+          profileType: caller.profile_type,
+          supplierIds: [...supplierIds],
+        },
+        proposal,
+      )
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    let roundNumber: number | null = null
+    if (proposal.round_id) {
+      const { data: round } = await service
+        .from("quotation_rounds")
+        .select("round_number")
+        .eq("id", proposal.round_id)
+        .maybeSingle()
+      roundNumber = typeof round?.round_number === "number" ? round.round_number : null
+    }
+
+    const fields = proposalSubmittedNotifyFields({
+      quotationCode: quotation.code,
+      supplierName: proposal.supplier_name,
+      roundNumber,
+      totalPrice:
+        typeof proposal.total_price === "number"
+          ? proposal.total_price
+          : proposal.total_price != null
+            ? Number(proposal.total_price)
+            : null,
+    })
 
     const buyerIds: string[] = []
     if (quotation.created_by) {
@@ -66,9 +135,9 @@ export async function POST(request: Request) {
         company_id: quotation.company_id,
         type: "proposal.submitted",
         title: "Nova proposta recebida",
-        body: `${body.supplierName} enviou proposta para ${body.quotationCode}`,
+        body: `${fields.supplierName} enviou proposta para ${fields.quotationCode}`,
         entity: "quotation",
-        entity_id: body.quotationId,
+        entity_id: quotation.id,
       })
       if (insErr) {
         console.error("notify-proposal-submitted insert:", insErr)
@@ -91,10 +160,10 @@ export async function POST(request: Request) {
       if (wantsEmail && buyerEmail) {
         const { subject, html } = templateProposalSubmitted({
           buyerName: buyer.full_name ?? "Comprador",
-          supplierName: body.supplierName,
-          quotationCode: body.quotationCode,
-          roundNumber: body.roundNumber ?? 1,
-          totalPrice: body.totalPrice ?? 0,
+          supplierName: fields.supplierName,
+          quotationCode: fields.quotationCode,
+          roundNumber: fields.roundNumber,
+          totalPrice: fields.totalPrice,
         })
         await sendEmail({ to: buyerEmail, subject, html })
       }
