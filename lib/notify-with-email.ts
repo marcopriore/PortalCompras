@@ -6,7 +6,7 @@ export interface NotifyWithEmailBody {
   body?: string
   entity?: string
   entityId?: string
-  /** Se vazio, apenas notificação in-app (sem e-mail). */
+  /** Ignorado no servidor — o destino é o e-mail da conta do userId. */
   toEmail?: string
   subject: string
   html: string

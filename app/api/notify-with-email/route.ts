@@ -3,47 +3,11 @@ import { createClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { sendEmail } from "@/lib/email/send-email"
 import type { NotifyWithEmailBody } from "@/lib/notify-with-email"
-
-async function canNotifyRecipient(
-  service: ReturnType<typeof createServiceRoleClient>,
-  caller: {
-    company_id: string | null
-    profile_type: string | null
-    supplier_id: string | null
-    is_superadmin: boolean | null
-  },
-  params: NotifyWithEmailBody,
-): Promise<boolean> {
-  if (caller.company_id === params.companyId || caller.is_superadmin) {
-    return true
-  }
-
-  const entity = params.entity ?? ""
-  if (
-    !params.entityId ||
-    (entity !== "purchase_orders" && entity !== "purchase_order")
-  ) {
-    return false
-  }
-
-  const { data: po } = await service
-    .from("purchase_orders")
-    .select("id, company_id, supplier_id")
-    .eq("id", params.entityId)
-    .maybeSingle()
-
-  if (!po || po.company_id !== params.companyId) {
-    return false
-  }
-
-  if (caller.profile_type === "supplier") {
-    return Boolean(
-      caller.supplier_id && po.supplier_id === caller.supplier_id,
-    )
-  }
-
-  return po.company_id === caller.company_id
-}
+import {
+  canNotifyRecipient,
+  isAllowedNotifyEmailPrefKey,
+  wantsNotifyEmail,
+} from "@/lib/notify-with-email-guard"
 
 export async function POST(request: Request) {
   try {
@@ -57,6 +21,10 @@ export async function POST(request: Request) {
       !params.html ||
       !params.emailPrefKey
     ) {
+      return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
+    }
+
+    if (!isAllowedNotifyEmailPrefKey(params.emailPrefKey)) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
     }
 
@@ -99,7 +67,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    const allowed = await canNotifyRecipient(service, callerProfile, params)
+    const entity = params.entity ?? ""
+    let purchaseOrder: { company_id: string; supplier_id: string | null } | null =
+      null
+    if (
+      params.entityId &&
+      (entity === "purchase_orders" || entity === "purchase_order")
+    ) {
+      const { data: po } = await service
+        .from("purchase_orders")
+        .select("id, company_id, supplier_id")
+        .eq("id", params.entityId)
+        .maybeSingle()
+      purchaseOrder = po
+        ? { company_id: po.company_id, supplier_id: po.supplier_id }
+        : null
+    }
+
+    const allowed = canNotifyRecipient({
+      caller: callerProfile,
+      companyId: params.companyId,
+      entity: params.entity,
+      entityId: params.entityId,
+      purchaseOrder,
+    })
     if (!allowed) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
@@ -124,16 +115,16 @@ export async function POST(request: Request) {
       .eq("company_id", params.companyId)
       .maybeSingle()
 
-    const prefMap = prefs as Record<string, boolean> | null
-    const wantsEmail = prefMap?.[params.emailPrefKey] ?? false
-
-    const to = params.toEmail?.trim()
-    if (wantsEmail && to) {
-      await sendEmail({
-        to,
-        subject: params.subject,
-        html: params.html,
-      })
+    if (wantsNotifyEmail(prefs as Record<string, boolean> | null, params.emailPrefKey)) {
+      const { data: authData } = await service.auth.admin.getUserById(params.userId)
+      const to = authData.user?.email?.trim()
+      if (to) {
+        await sendEmail({
+          to,
+          subject: params.subject,
+          html: params.html,
+        })
+      }
     }
 
     return NextResponse.json({ ok: true })
