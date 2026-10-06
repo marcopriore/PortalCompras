@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { isSpendAnalysisCallerAllowed } from "@/lib/ai/spend-analysis-access"
+import { isTenantFeatureEnabled } from "@/lib/api/external/check-tenant-feature"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 
 export const runtime = "nodejs"
@@ -75,14 +77,6 @@ function extractAnthropicText(payload: unknown): string {
 
 export async function GET(request: Request) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "ANTHROPIC_API_KEY não configurada" },
-        { status: 500 },
-      )
-    }
-
     const { searchParams } = new URL(request.url)
     const period = getPeriod(searchParams.get("period"))
 
@@ -116,14 +110,44 @@ export async function GET(request: Request) {
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("company_id")
+      .select("company_id, profile_type, is_superadmin")
       .eq("id", user.id)
       .single()
 
     if (profileError || !profile?.company_id) {
       return NextResponse.json({ error: "Company not found" }, { status: 404 })
     }
-    const companyId = profile.company_id
+
+    const isSuperAdmin = Boolean(profile.is_superadmin)
+    if (
+      !isSpendAnalysisCallerAllowed({
+        profileType: profile.profile_type as string | null,
+        isSuperAdmin,
+      })
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    let companyId = profile.company_id as string
+    if (isSuperAdmin) {
+      const selectedCookie = cookieStore.get("selected_company_id")
+      if (selectedCookie?.value) {
+        companyId = decodeURIComponent(selectedCookie.value)
+      }
+    }
+
+    const featureEnabled = await isTenantFeatureEnabled(companyId, "ai_analytics")
+    if (!featureEnabled && !isSuperAdmin) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "ANTHROPIC_API_KEY não configurada" },
+        { status: 500 },
+      )
+    }
 
     const service = createServiceRoleClient()
     const startDate = new Date(Date.now() - period * 24 * 60 * 60 * 1000).toISOString()
@@ -131,7 +155,7 @@ export async function GET(request: Request) {
     const { data: purchaseOrdersData, error: purchaseOrdersError } = await service
       .from("purchase_orders")
       .select("id, supplier_id")
-      .eq("company_id", profile.company_id)
+      .eq("company_id", companyId)
       .in("status", ORDER_STATUSES)
       .gte("created_at", startDate)
 
@@ -287,7 +311,7 @@ export async function GET(request: Request) {
     const { data: waitingQuotationsData, error: waitingQuotationsError } = await service
       .from("quotations")
       .select("id")
-      .eq("company_id", profile.company_id)
+      .eq("company_id", companyId)
       .eq("status", "waiting")
 
     if (waitingQuotationsError) throw waitingQuotationsError
