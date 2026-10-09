@@ -8,6 +8,7 @@ import {
   isContractStatus,
   isContractType,
 } from "@/types/contracts"
+import { BUYER_CREATED_CONTRACT_STATUS } from "@/lib/contracts/buyer-writable-status"
 import { requireApiWritePermission } from "@/lib/permissions/require-api-write"
 
 const CONTRACT_SELECT = `
@@ -147,7 +148,6 @@ export async function POST(request: Request) {
     const supplier_id = body.supplier_id
     const title = body.title
     const type = body.type
-    const status = body.status
     const start_date = body.start_date
     const end_date = body.end_date
 
@@ -174,16 +174,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid type" }, { status: 400 })
     }
 
-    let statusValue: string = "draft"
-    if (status !== undefined && status !== null) {
-      if (typeof status !== "string") {
-        return NextResponse.json({ error: "Invalid status" }, { status: 400 })
-      }
-      statusValue = status
-    }
-    if (!isContractStatus(statusValue)) {
-      return NextResponse.json({ error: "Invalid status" }, { status: 400 })
-    }
+    const statusValue = BUYER_CREATED_CONTRACT_STATUS
 
     let contract_kind: ContractKind = "por_valor"
     if (body.contract_kind !== undefined && body.contract_kind !== null) {

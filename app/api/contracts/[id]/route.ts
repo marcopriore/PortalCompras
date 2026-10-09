@@ -7,6 +7,7 @@ import {
   isContractStatus,
   isContractType,
 } from "@/types/contracts"
+import { isBuyerWritableContractStatus } from "@/lib/contracts/buyer-writable-status"
 import { requireApiWritePermission } from "@/lib/permissions/require-api-write"
 
 const CONTRACT_SELECT = `
@@ -156,6 +157,15 @@ export async function PATCH(request: Request, context: RouteCtx) {
       if (typeof body.status !== "string" || !isContractStatus(body.status)) {
         return NextResponse.json({ error: "Invalid status" }, { status: 400 })
       }
+      if (!isBuyerWritableContractStatus(body.status)) {
+        return NextResponse.json(
+          {
+            error:
+              "Status active só via aceite do fornecedor; pending_acceptance só via enviar para aceite.",
+          },
+          { status: 400 },
+        )
+      }
       patch.status = body.status
     }
     if (body.start_date !== undefined) {
@@ -277,6 +287,15 @@ export async function DELETE(_request: Request, context: RouteCtx) {
   try {
     const ctx = await getAuthedContext()
     if ("error" in ctx) return ctx.error
+
+    const forbidden = await requireApiWritePermission(
+      ctx.supabase,
+      ctx.userId,
+      ctx.companyId,
+      ctx.isSuperAdmin,
+      "contract.edit",
+    )
+    if (forbidden) return forbidden
 
     const { id } = await context.params
 
