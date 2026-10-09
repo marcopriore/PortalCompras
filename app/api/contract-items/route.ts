@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { contractItemFromRow, type ContractItem } from "@/types/contracts"
+import { requireApiWritePermission } from "@/lib/permissions/require-api-write"
 
 async function getAuthedContext() {
   const cookieStore = await cookies()
@@ -52,7 +53,7 @@ async function getAuthedContext() {
     }
   }
 
-  return { supabase, companyId, isSuperAdmin }
+  return { supabase, companyId, userId: user.id, isSuperAdmin }
 }
 
 type ItemInput = {
@@ -71,6 +72,15 @@ export async function POST(request: Request) {
   try {
     const ctx = await getAuthedContext()
     if ("error" in ctx) return ctx.error
+
+    const forbidden = await requireApiWritePermission(
+      ctx.supabase,
+      ctx.userId,
+      ctx.companyId,
+      ctx.isSuperAdmin,
+      "contract.edit",
+    )
+    if (forbidden) return forbidden
 
     const body = (await request.json()) as {
       contract_id?: string
@@ -155,6 +165,15 @@ export async function PATCH(request: Request) {
     const ctx = await getAuthedContext()
     if ("error" in ctx) return ctx.error
 
+    const forbidden = await requireApiWritePermission(
+      ctx.supabase,
+      ctx.userId,
+      ctx.companyId,
+      ctx.isSuperAdmin,
+      "contract.edit",
+    )
+    if (forbidden) return forbidden
+
     const id = new URL(request.url).searchParams.get("id")
     if (!id) {
       return NextResponse.json({ error: "Missing id" }, { status: 400 })
@@ -205,6 +224,15 @@ export async function DELETE(request: Request) {
   try {
     const ctx = await getAuthedContext()
     if ("error" in ctx) return ctx.error
+
+    const forbidden = await requireApiWritePermission(
+      ctx.supabase,
+      ctx.userId,
+      ctx.companyId,
+      ctx.isSuperAdmin,
+      "contract.edit",
+    )
+    if (forbidden) return forbidden
 
     const id = new URL(request.url).searchParams.get("id")
     if (!id) {
