@@ -102,6 +102,42 @@ export const SOLICITANTE_DEFAULT_STATUS_FILTER: RequisitionStatus[] = [
   "completed",
 ]
 
+/** Status terminais: o trigger de PO não pode reabrir a REQ. */
+export const REQUISITION_STATUSES_LOCKED_FROM_PO_SYNC = [
+  "rejected",
+  "completed",
+  "cancelled",
+] as const
+
+export function isRequisitionLockedFromPoSync(status: string): boolean {
+  return (REQUISITION_STATUSES_LOCKED_FROM_PO_SYNC as readonly string[]).includes(
+    status,
+  )
+}
+
+/**
+ * Próximo status da REQ ao cancelar um PO (espelha SQL 084/085).
+ * Retorna `null` para manter o status atual (REQ concluída/cancelada/rejeitada,
+ * ou cancelamento de um PO que já estava completed sem irmãos ativos).
+ */
+export function requisitionStatusAfterPoCancel(input: {
+  currentRequisitionStatus: string
+  previousPoStatus?: string | null
+  siblingPoStatus?: string | null
+  hasQuotation?: boolean
+}): RequisitionStatus | null {
+  if (isRequisitionLockedFromPoSync(input.currentRequisitionStatus)) {
+    return null
+  }
+  if (input.siblingPoStatus) {
+    return mapPoStatusToRequisitionStatus(input.siblingPoStatus)
+  }
+  if (input.previousPoStatus === "completed") {
+    return null
+  }
+  return input.hasQuotation ? "in_quotation" : "approved"
+}
+
 /** Mapeia status do PO → status da REQ (espelha a função SQL). */
 export function mapPoStatusToRequisitionStatus(
   poStatus: string,
@@ -120,7 +156,7 @@ export function mapPoStatusToRequisitionStatus(
     case "completed":
       return "completed"
     case "cancelled":
-      // Cancelar pedido libera a REQ (espelha SQL 084); sync com irmãos fica no trigger.
+      // Cancelar pedido em voo libera a REQ (espelha SQL 084); completed fica no trigger.
       return "approved"
     default:
       return null
