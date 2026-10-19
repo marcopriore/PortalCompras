@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
   getRequisitionStatusMeta,
+  isRequisitionLockedFromPoSync,
   mapPoStatusToRequisitionStatus,
+  requisitionStatusAfterPoCancel,
 } from "@/lib/requisitions/status"
 import {
   buildCatalogRequisitionTimeline,
@@ -38,6 +40,46 @@ describe("mapPoStatusToRequisitionStatus", () => {
 
   it("retorna null para status desconhecido", () => {
     expect(mapPoStatusToRequisitionStatus("unknown")).toBeNull()
+  })
+})
+
+describe("requisitionStatusAfterPoCancel", () => {
+  it("não reabre REQ completed ao cancelar o único PO concluído", () => {
+    expect(
+      requisitionStatusAfterPoCancel({
+        currentRequisitionStatus: "completed",
+        previousPoStatus: "completed",
+      }),
+    ).toBeNull()
+    expect(isRequisitionLockedFromPoSync("completed")).toBe(true)
+    expect(isRequisitionLockedFromPoSync("cancelled")).toBe(true)
+    expect(isRequisitionLockedFromPoSync("rejected")).toBe(true)
+  })
+
+  it("libera REQ em voo ao cancelar draft/sent sem irmãos", () => {
+    expect(
+      requisitionStatusAfterPoCancel({
+        currentRequisitionStatus: "awaiting_buyer",
+        previousPoStatus: "draft",
+      }),
+    ).toBe("approved")
+    expect(
+      requisitionStatusAfterPoCancel({
+        currentRequisitionStatus: "awaiting_supplier",
+        previousPoStatus: "sent",
+        hasQuotation: true,
+      }),
+    ).toBe("in_quotation")
+  })
+
+  it("deriva o status do irmão ativo quando o PO cancelado não é o único", () => {
+    expect(
+      requisitionStatusAfterPoCancel({
+        currentRequisitionStatus: "awaiting_supplier",
+        previousPoStatus: "sent",
+        siblingPoStatus: "completed",
+      }),
+    ).toBe("completed")
   })
 })
 
