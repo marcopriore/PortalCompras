@@ -6,11 +6,11 @@ import {
 } from "@/lib/catalog/catalog-auth"
 import { validateCatalogLineQuantity } from "@/lib/catalog/validate-cart-line"
 import {
-  fetchCatalogCart,
-  fetchCatalogCartById,
-  getOrCreateCartId,
-  resolveCartOfferLine,
-  type CartItemRow,
+    fetchCatalogCart,
+    fetchCatalogCartById,
+    getOrCreateCartId,
+    loadOwnedCartLine,
+    resolveCartOfferLine,
 } from "@/lib/catalog/cart-service"
 import {
   canUserWrite,
@@ -174,18 +174,17 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Quantidade inválida" }, { status: 400 })
     }
 
-    const { data: line } = await db
-      .from("catalog_cart_items")
-      .select("*")
-      .eq("id", body.item_id)
-      .eq("company_id", ctx.companyId)
-      .maybeSingle()
+    const owned = await loadOwnedCartLine(db, {
+      companyId: ctx.companyId,
+      userId: ctx.userId,
+      itemId: body.item_id,
+    })
 
-    if (!line) {
+    if (!owned) {
       return NextResponse.json({ error: "Item não encontrado" }, { status: 404 })
     }
 
-    const row = line as CartItemRow
+    const row = owned.line
     const offerLine = await resolveCartOfferLine(db, ctx.companyId, row.contract_item_id)
     if (!offerLine) {
       return NextResponse.json({ error: "Item indisponível no contrato" }, { status: 400 })
@@ -200,13 +199,17 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: err }, { status: 400 })
     }
 
-    await db
+    const { error: updateErr } = await db
       .from("catalog_cart_items")
       .update({ quantity: body.quantity, updated_at: new Date().toISOString() })
       .eq("id", body.item_id)
+      .eq("cart_id", owned.cartId)
 
-    const cartId = (line as { cart_id: string }).cart_id
-    const cart = await fetchCatalogCartById(db, cartId)
+    if (updateErr) {
+      return NextResponse.json({ error: updateErr.message }, { status: 500 })
+    }
+
+    const cart = await fetchCatalogCartById(db, owned.cartId)
     return NextResponse.json({ success: true, cart })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error"
