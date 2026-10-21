@@ -80,6 +80,36 @@ export async function fetchCatalogCart(
   return fetchCatalogCartById(db, cart.id as string)
 }
 
+/**
+ * PATCH do carrinho usa service role (RLS de `catalog_cart_items` não aplica).
+ * Só devolve a linha se ela pertencer ao carrinho do usuário autenticado.
+ */
+export async function loadOwnedCartLine(
+  db: SupabaseClient,
+  params: { companyId: string; userId: string; itemId: string },
+): Promise<{ cartId: string; line: CartItemRow } | null> {
+  const { data: cart } = await db
+    .from("catalog_carts")
+    .select("id")
+    .eq("company_id", params.companyId)
+    .eq("user_id", params.userId)
+    .maybeSingle()
+
+  if (!cart?.id) return null
+
+  const cartId = cart.id as string
+  const { data: line } = await db
+    .from("catalog_cart_items")
+    .select("*")
+    .eq("id", params.itemId)
+    .eq("cart_id", cartId)
+    .eq("company_id", params.companyId)
+    .maybeSingle()
+
+  if (!line) return null
+  return { cartId, line: line as CartItemRow }
+}
+
 export async function getOrCreateCartId(
   db: SupabaseClient,
   companyId: string,
