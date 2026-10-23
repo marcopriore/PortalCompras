@@ -12,7 +12,11 @@ import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
-import { createDraftFromRequisition } from "@/lib/purchase-orders/create-draft-from-requisition"
+import {
+  createDraftFromRequisition,
+  isActivePurchaseOrderStatus,
+  isOpenQuotationStatus,
+} from "@/lib/purchase-orders/create-draft-from-requisition"
 import {
   isOwnRequisitionCreator,
   OWN_REQUISITION_ORDER_BLOCKED_MESSAGE,
@@ -508,7 +512,12 @@ export default function RequisicaoDetailPage({
     userId,
     requisition?.requester_id,
   )
-  const canGenerateOrder = canCreateOrder && !isOwnRequisition
+  const hasOpenQuotation = isOpenQuotationStatus(quotationData?.status)
+  const hasActiveOrder = orders.some((order) =>
+    isActivePurchaseOrderStatus(order.status),
+  )
+  const canGenerateOrder =
+    canCreateOrder && !isOwnRequisition && !hasOpenQuotation && !hasActiveOrder
 
   if (loading) {
     return (

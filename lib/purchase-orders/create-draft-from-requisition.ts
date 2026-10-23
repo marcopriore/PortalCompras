@@ -12,12 +12,35 @@ export type CreateDraftFromRequisitionResult =
   | { ok: true; purchaseOrderId: string; code: string; purchaseOrderIds?: string[]; codes?: string[] }
   | { ok: false; error: string }
 
+/** Cotação ainda em andamento — Gerar Pedido desviaria o fluxo da equalização. */
+export const OPEN_QUOTATION_STATUSES = ["draft", "waiting", "analysis"] as const
+
+export const REQUISITION_HAS_OPEN_QUOTATION_MESSAGE =
+  "Esta requisição está em cotação. Conclua ou cancele a cotação antes de gerar pedido."
+
+export const REQUISITION_HAS_ACTIVE_ORDER_MESSAGE =
+  "Já existe um pedido ativo para esta requisição."
+
+export function isOpenQuotationStatus(
+  status: string | null | undefined,
+): boolean {
+  if (!status) return false
+  return (OPEN_QUOTATION_STATUSES as readonly string[]).includes(status)
+}
+
+export function isActivePurchaseOrderStatus(
+  status: string | null | undefined,
+): boolean {
+  return Boolean(status && status !== "cancelled")
+}
+
 type RequisitionRow = {
   id: string
   code: string
   title: string
   status: string
   requester_id: string | null
+  quotation_id: string | null
 }
 
 type RequisitionItemRow = {
@@ -42,7 +65,7 @@ export async function createDraftFromRequisition(
   const [reqRes, itemsRes, branchMap] = await Promise.all([
     supabase
       .from("requisitions")
-      .select("id, code, title, status, requester_id")
+      .select("id, code, title, status, requester_id, quotation_id")
       .eq("id", requisitionId)
       .eq("company_id", companyId)
       .single(),
@@ -69,6 +92,31 @@ export async function createDraftFromRequisition(
       ok: false,
       error: "A requisição precisa estar aprovada para gerar pedido.",
     }
+  }
+
+  if (req.quotation_id) {
+    const { data: quotation } = await supabase
+      .from("quotations")
+      .select("status")
+      .eq("id", req.quotation_id)
+      .eq("company_id", companyId)
+      .maybeSingle()
+
+    if (isOpenQuotationStatus(quotation?.status as string | undefined)) {
+      return { ok: false, error: REQUISITION_HAS_OPEN_QUOTATION_MESSAGE }
+    }
+  }
+
+  const { data: activeOrders } = await supabase
+    .from("purchase_orders")
+    .select("id, status")
+    .eq("company_id", companyId)
+    .eq("requisition_code", req.code)
+    .neq("status", "cancelled")
+    .limit(1)
+
+  if ((activeOrders ?? []).some((row) => isActivePurchaseOrderStatus(row.status))) {
+    return { ok: false, error: REQUISITION_HAS_ACTIVE_ORDER_MESSAGE }
   }
 
   const reqItems = (itemsRes.data as RequisitionItemRow[]) ?? []
