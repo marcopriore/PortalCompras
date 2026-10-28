@@ -15,6 +15,7 @@ import {
   isBuyerOrHigherProfile,
 } from '@/lib/quotations/ownership'
 import { ensureInitialQuotationRound } from '@/lib/quotations/round-lifecycle'
+import { isRequisitionAvailableForQuotation } from '@/lib/requisitions/own-requisition-guard'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -410,21 +411,34 @@ export default function QuotationDetailsPage({
         if (reqCodes.length > 0 && companyId) {
           const { data: reqs } = await supabase2
             .from('requisitions')
-            .select('id')
+            .select('id, status, requester_id, quotation_id')
             .eq('company_id', companyId)
+            .eq('status', 'approved')
             .is('quotation_id', null)
             .in('code', reqCodes)
 
-          if (reqs && reqs.length > 0) {
+          const linkable = (
+            (reqs ?? []) as Array<{
+              id: string
+              status: string | null
+              requester_id: string | null
+              quotation_id: string | null
+            }>
+          ).filter((r) => isRequisitionAvailableForQuotation(r, userId))
+
+          if (linkable.length > 0) {
             await supabase2
               .from('requisitions')
               .update({
                 status: 'in_quotation',
                 quotation_id: quotation.id,
               })
-              .in('id', reqs.map((r) => r.id))
+              .eq('company_id', companyId)
+              .eq('status', 'approved')
+              .is('quotation_id', null)
+              .in('id', linkable.map((r) => r.id))
 
-            for (const req of reqs) {
+            for (const req of linkable) {
               void logAudit({
                 eventType: 'requisition.in_quotation',
                 description: `Requisição vinculada à cotação ${quotation.code}`,

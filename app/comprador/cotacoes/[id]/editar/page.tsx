@@ -16,6 +16,7 @@ import {
   formatResponsibleName,
 } from "@/lib/quotations/ownership"
 import { SuggestSuppliersButton } from "@/components/comprador/suggest-suppliers-button"
+import { isRequisitionAvailableForQuotation } from "@/lib/requisitions/own-requisition-guard"
 import { Button } from "@/components/ui/button"
 import { QuantityInput } from "@/components/ui/numeric-field-inputs"
 import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
@@ -438,13 +439,23 @@ export default function EditarCotacaoPage({
       const supabase = createClient()
       const { data: reqs } = await supabase
         .from("requisitions")
-        .select("id, code, title, created_at")
+        .select("id, code, title, created_at, requester_id, status, quotation_id")
         .eq("company_id", companyId)
         .eq("status", "approved")
         .is("quotation_id", null)
         .order("created_at", { ascending: false })
 
-      if (!reqs || reqs.length === 0) {
+      const visibleReqs = ((reqs ?? []) as Array<{
+        id: string
+        code: string
+        title: string
+        created_at: string
+        requester_id: string | null
+        status: string | null
+        quotation_id: string | null
+      }>).filter((r) => isRequisitionAvailableForQuotation(r, userId))
+
+      if (visibleReqs.length === 0) {
         setRequisitions([])
         return
       }
@@ -454,7 +465,7 @@ export default function EditarCotacaoPage({
         .select("requisition_id, material_code, material_description, unit_of_measure, quantity, site_code")
         .in(
           "requisition_id",
-          reqs.map((r) => r.id),
+          visibleReqs.map((r) => r.id),
         )
 
       type ReqItemRow = {
@@ -473,7 +484,7 @@ export default function EditarCotacaoPage({
       }
 
       setRequisitions(
-        reqs.map((r) => ({
+        visibleReqs.map((r) => ({
           id: r.id,
           code: r.code,
           title: r.title,
@@ -643,21 +654,35 @@ export default function EditarCotacaoPage({
       if (reqCodes.length > 0) {
         const { data: reqsToUpdate } = await supabase
           .from("requisitions")
-          .select("id, code")
+          .select("id, code, status, requester_id, quotation_id")
           .eq("company_id", companyId!)
+          .eq("status", "approved")
           .is("quotation_id", null)
           .in("code", reqCodes)
 
-        if (reqsToUpdate && reqsToUpdate.length > 0) {
+        const linkable = (
+          (reqsToUpdate ?? []) as Array<{
+            id: string
+            code: string
+            status: string | null
+            requester_id: string | null
+            quotation_id: string | null
+          }>
+        ).filter((r) => isRequisitionAvailableForQuotation(r, userId))
+
+        if (linkable.length > 0) {
           await supabase
             .from("requisitions")
             .update({
               status: "in_quotation",
               quotation_id: id,
             })
-            .in("id", reqsToUpdate.map((r) => r.id))
+            .eq("company_id", companyId!)
+            .eq("status", "approved")
+            .is("quotation_id", null)
+            .in("id", linkable.map((r) => r.id))
 
-          for (const req of reqsToUpdate) {
+          for (const req of linkable) {
             void logAudit({
               eventType: "requisition.in_quotation",
               description: `Requisição ${req.code} vinculada à cotação ${quotationCode ?? id}`,
