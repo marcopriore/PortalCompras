@@ -19,6 +19,13 @@ import {
   type NegotiationPlanFormState,
 } from '@/components/comprador/quotation-negotiation-plan-form'
 import { SuggestSuppliersButton } from '@/components/comprador/suggest-suppliers-button'
+import {
+  findOwnRequisitionCodes,
+  isOwnRequisitionCreator,
+  isRequisitionAvailableForQuotation,
+  OWN_REQUISITION_ORDER_BLOCKED_MESSAGE,
+  REQUISITION_NOT_AVAILABLE_FOR_QUOTATION_MESSAGE,
+} from '@/lib/requisitions/own-requisition-guard'
 import { Button } from '@/components/ui/button'
 import { QuantityInput } from '@/components/ui/numeric-field-inputs'
 import { useNumericLimits } from '@/lib/hooks/use-numeric-limits'
@@ -209,21 +216,43 @@ function NovaCotacaoContent() {
     const fetchRequisition = async () => {
       const supabase = createClient()
       const [reqRes, itemsRes] = await Promise.all([
-        supabase.from('requisitions').select('*').eq('id', requisitionId).single(),
+        supabase
+          .from('requisitions')
+          .select('id, code, title, commodity_group, status, requester_id, quotation_id')
+          .eq('id', requisitionId)
+          .eq('company_id', companyId)
+          .maybeSingle(),
         supabase
           .from('requisition_items')
           .select('*')
           .eq('requisition_id', requisitionId),
       ])
 
-      if (reqRes.data) {
-        const reqAny = reqRes.data as any
-        setDescription(() => reqAny.title ?? '')
-        setCategory(reqAny.commodity_group ?? '')
+      if (!reqRes.data) return
+
+      const reqRow = reqRes.data as {
+        code?: string
+        title?: string
+        commodity_group?: string | null
+        status?: string | null
+        requester_id?: string | null
+        quotation_id?: string | null
       }
 
+      if (!isRequisitionAvailableForQuotation(reqRow, userId)) {
+        toast.error(
+          isOwnRequisitionCreator(userId, reqRow.requester_id)
+            ? OWN_REQUISITION_ORDER_BLOCKED_MESSAGE
+            : REQUISITION_NOT_AVAILABLE_FOR_QUOTATION_MESSAGE,
+        )
+        return
+      }
+
+      setDescription(() => reqRow.title ?? '')
+      setCategory(reqRow.commodity_group ?? '')
+
       if (itemsRes.data && itemsRes.data.length > 0) {
-        const reqCode = (reqRes.data as { code?: string } | null)?.code ?? null
+        const reqCode = reqRow.code ?? null
         setSelectedItems(
           itemsRes.data.map((ri: { material_code?: string; material_description?: string; long_description?: string | null; quantity?: number; unit_of_measure?: string; site_code?: string | null }) => ({
             code: ri.material_code ?? '',
@@ -239,7 +268,7 @@ function NovaCotacaoContent() {
     }
 
     fetchRequisition()
-  }, [requisitionId, companyId])
+  }, [requisitionId, companyId, userId])
 
   useEffect(() => {
     if (!companyId || debouncedItemSearch.trim().length < 2) {
@@ -344,13 +373,23 @@ function NovaCotacaoContent() {
       const supabase = createClient()
       const { data: reqs } = await supabase
         .from('requisitions')
-        .select('id, code, title, created_at')
+        .select('id, code, title, created_at, requester_id, status, quotation_id')
         .eq('company_id', companyId)
         .eq('status', 'approved')
         .is('quotation_id', null)
         .order('created_at', { ascending: false })
 
-      if (!reqs || reqs.length === 0) {
+      const visibleReqs = ((reqs ?? []) as Array<{
+        id: string
+        code: string
+        title: string
+        created_at: string
+        requester_id: string | null
+        status: string | null
+        quotation_id: string | null
+      }>).filter((r) => isRequisitionAvailableForQuotation(r, userId))
+
+      if (visibleReqs.length === 0) {
         setRequisitions([])
         return
       }
@@ -360,7 +399,7 @@ function NovaCotacaoContent() {
         .select('requisition_id, material_code, material_description, unit_of_measure, quantity, site_code')
         .in(
           'requisition_id',
-          reqs.map((r) => r.id),
+          visibleReqs.map((r) => r.id),
         )
 
       type ReqItemRow = {
@@ -379,7 +418,7 @@ function NovaCotacaoContent() {
       }
 
       setRequisitions(
-        reqs.map((r) => ({
+        visibleReqs.map((r) => ({
           id: r.id,
           code: r.code,
           title: r.title,
@@ -455,8 +494,59 @@ function NovaCotacaoContent() {
     options?: { startAiNegotiation?: boolean },
   ) => {
     const supabase = createClient()
+    if (!companyId) return
 
     try {
+      const codesToLink = [
+        ...new Set(
+          selectedItems
+            .map((item) => item.requisition_code?.trim())
+            .filter((code): code is string => Boolean(code)),
+        ),
+      ]
+
+      if (requisitionId) {
+        const { data: urlReq } = await supabase
+          .from('requisitions')
+          .select('id, code, status, requester_id, quotation_id')
+          .eq('id', requisitionId)
+          .eq('company_id', companyId)
+          .maybeSingle()
+
+        const urlRow = urlReq as {
+          code?: string | null
+          status?: string | null
+          requester_id?: string | null
+          quotation_id?: string | null
+        } | null
+
+        if (!urlRow || !isRequisitionAvailableForQuotation(urlRow, userId)) {
+          toast.error(
+            isOwnRequisitionCreator(userId, urlRow?.requester_id)
+              ? OWN_REQUISITION_ORDER_BLOCKED_MESSAGE
+              : REQUISITION_NOT_AVAILABLE_FOR_QUOTATION_MESSAGE,
+          )
+          return
+        }
+        const urlCode = urlRow.code?.trim()
+        if (urlCode && !codesToLink.includes(urlCode)) codesToLink.push(urlCode)
+      }
+
+      if (codesToLink.length > 0 && userId) {
+        const ownCodes = await findOwnRequisitionCodes(
+          supabase,
+          companyId,
+          userId,
+          codesToLink,
+        )
+        if (ownCodes.length > 0) {
+          toast.error(
+            `${OWN_REQUISITION_ORDER_BLOCKED_MESSAGE} (${ownCodes.join(', ')})`,
+          )
+          return
+        }
+      }
+
       const { data, error } = await supabase
         .from('quotations')
         .insert({
@@ -525,14 +615,38 @@ function NovaCotacaoContent() {
         }
       }
 
-      if (requisitionId) {
-        await supabase
+      if (codesToLink.length > 0) {
+        const { data: reqsToUpdate } = await supabase
           .from('requisitions')
-          .update({
-            status: 'in_quotation',
-            quotation_id: quotationId,
-          })
-          .eq('id', requisitionId)
+          .select('id, status, requester_id, quotation_id')
+          .eq('company_id', companyId)
+          .eq('status', 'approved')
+          .is('quotation_id', null)
+          .in('code', codesToLink)
+
+        const linkableIds = (
+          (reqsToUpdate ?? []) as Array<{
+            id: string
+            status: string | null
+            requester_id: string | null
+            quotation_id: string | null
+          }>
+        )
+          .filter((row) => isRequisitionAvailableForQuotation(row, userId))
+          .map((row) => row.id)
+
+        if (linkableIds.length > 0) {
+          await supabase
+            .from('requisitions')
+            .update({
+              status: 'in_quotation',
+              quotation_id: quotationId,
+            })
+            .eq('company_id', companyId)
+            .eq('status', 'approved')
+            .is('quotation_id', null)
+            .in('id', linkableIds)
+        }
       }
 
       if (status === 'waiting') {
