@@ -31,6 +31,7 @@ import { ChevronLeft, Paperclip, X } from "lucide-react"
 import { RequisitionLineItemsSection } from "@/components/requisitions/requisition-line-items-section"
 import type { RequisitionEditorLineItem } from "@/lib/requisitions/line-items-helpers"
 import { validateRequisitionLineSiteCodes } from "@/lib/requisitions/line-items-helpers"
+import { abandonFailedRequisitionCreate } from "@/lib/requisitions/rollback-create"
 import {
   validateAllAccountConfigsForSubmit,
   type ItemAccountConfigEdit,
@@ -216,6 +217,7 @@ export default function NovaRequisicaoPage() {
       const { error: itemsErr } = await supabase.from("requisition_items").insert(payloadItems)
 
       if (itemsErr) {
+        await abandonFailedRequisitionCreate(supabase, requisitionId)
         setError(itemsErr.message?.trim() || "Não foi possível salvar os itens da requisição.")
         return null
       }
@@ -265,6 +267,16 @@ export default function NovaRequisicaoPage() {
       return
     }
     setFormFieldErrors({})
+
+    if (items.length > 0) {
+      const branchValidation = validateRequisitionLineSiteCodes(items)
+      if (!branchValidation.ok) {
+        setSiteCodeFieldErrors(branchValidation.errors)
+        setError(branchValidation.message)
+        return
+      }
+      setSiteCodeFieldErrors({})
+    }
 
     setDrafting(true)
     try {

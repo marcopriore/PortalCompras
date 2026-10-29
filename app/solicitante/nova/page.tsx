@@ -30,6 +30,7 @@ import {
 import { RequisitionLineItemsSection } from "@/components/requisitions/requisition-line-items-section"
 import type { RequisitionEditorLineItem } from "@/lib/requisitions/line-items-helpers"
 import { validateRequisitionLineSiteCodes } from "@/lib/requisitions/line-items-helpers"
+import { abandonFailedRequisitionCreate } from "@/lib/requisitions/rollback-create"
 import {
   validateAllAccountConfigsForSubmit,
   type ItemAccountConfigEdit,
@@ -178,6 +179,7 @@ export default function SolicitanteNovaPage() {
         })),
       )
       if (itemsErr) {
+        await abandonFailedRequisitionCreate(supabase, reqData.id as string)
         setError(itemsErr.message?.trim() || "Não foi possível salvar os itens da requisição.")
         return null
       }
@@ -224,6 +226,15 @@ export default function SolicitanteNovaPage() {
     if (!costCenter.trim()) {
       setError("Centro de custo é obrigatório.")
       return
+    }
+    if (items.length > 0) {
+      const branchValidation = validateRequisitionLineSiteCodes(items)
+      if (!branchValidation.ok) {
+        setSiteCodeFieldErrors(branchValidation.errors)
+        setError(branchValidation.message)
+        return
+      }
+      setSiteCodeFieldErrors({})
     }
     if (!companyId || !userId) return
 
