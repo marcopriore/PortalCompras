@@ -79,7 +79,9 @@ import {
   canViewAllQuotations,
 } from "@/lib/quotations/ownership"
 import {
+  evaluateOwnRequisitionOrderGuard,
   findOwnRequisitionCodes,
+  formatOwnRequisitionBlockedMessage,
   OWN_REQUISITION_ORDER_BLOCKED_MESSAGE,
 } from "@/lib/requisitions/own-requisition-guard"
 import { ensureInitialQuotationRound } from "@/lib/quotations/round-lifecycle"
@@ -618,22 +620,33 @@ export default function EqualizacaoPage({
 
   const [ownSelectedRequisitionCodes, setOwnSelectedRequisitionCodes] =
     React.useState<string[]>([])
+  const [ownRequisitionCheckPending, setOwnRequisitionCheckPending] =
+    React.useState(false)
 
   React.useEffect(() => {
     if (!companyId || !userId || selectedSourceRequisitionCodes.length === 0) {
       setOwnSelectedRequisitionCodes([])
+      setOwnRequisitionCheckPending(false)
       return
     }
     let alive = true
+    setOwnRequisitionCheckPending(true)
     void (async () => {
-      const supabase = createClient()
-      const own = await findOwnRequisitionCodes(
-        supabase,
-        companyId,
-        userId,
-        selectedSourceRequisitionCodes,
-      )
-      if (alive) setOwnSelectedRequisitionCodes(own)
+      try {
+        const supabase = createClient()
+        const own = await findOwnRequisitionCodes(
+          supabase,
+          companyId,
+          userId,
+          selectedSourceRequisitionCodes,
+        )
+        if (alive) setOwnSelectedRequisitionCodes(own)
+      } catch {
+        // Fail closed: a lookup error must not enable Criar Pedido.
+        if (alive) setOwnSelectedRequisitionCodes(selectedSourceRequisitionCodes)
+      } finally {
+        if (alive) setOwnRequisitionCheckPending(false)
+      }
     })()
     return () => {
       alive = false
@@ -642,6 +655,28 @@ export default function EqualizacaoPage({
 
   const blocksOwnRequisitionOrderOrContract =
     ownSelectedRequisitionCodes.length > 0
+
+  const ownRequisitionOrderDisabled =
+    ownRequisitionCheckPending || blocksOwnRequisitionOrderOrContract
+
+  const assertCanCreateFromSelectedRequisitions =
+    React.useCallback(async (): Promise<boolean> => {
+      if (!companyId || !userId) return false
+      if (selectedSourceRequisitionCodes.length === 0) return true
+      const result = await evaluateOwnRequisitionOrderGuard(
+        createClient(),
+        companyId,
+        userId,
+        selectedSourceRequisitionCodes,
+      )
+      if (!result.blocked) {
+        setOwnSelectedRequisitionCodes([])
+        return true
+      }
+      setOwnSelectedRequisitionCodes(result.ownCodes)
+      toast.error(formatOwnRequisitionBlockedMessage(result.ownCodes))
+      return false
+    }, [companyId, userId, selectedSourceRequisitionCodes])
 
   React.useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
@@ -1659,17 +1694,19 @@ export default function EqualizacaoPage({
     return rows
   }, [itemSelections, quotationItems, proposals, orderedItems])
 
-  function handleGerarContrato() {
+  async function handleGerarContrato() {
     if (!hasPermission("contract.create")) {
       toast.error("Você não tem permissão para gerar contrato.")
       return
     }
-    if (blocksOwnRequisitionOrderOrContract) {
+    if (ownRequisitionOrderDisabled) {
       toast.error(
-        `${OWN_REQUISITION_ORDER_BLOCKED_MESSAGE} (${ownSelectedRequisitionCodes.join(", ")})`,
+        formatOwnRequisitionBlockedMessage(ownSelectedRequisitionCodes),
       )
       return
     }
+    const allowed = await assertCanCreateFromSelectedRequisitions()
+    if (!allowed) return
     if (!selectedRoundId) {
       toast.error("Selecione uma rodada.")
       return
@@ -1911,12 +1948,14 @@ export default function EqualizacaoPage({
     if (!selectedRoundId) return
     if (!hasSelection) return
     if (!hasPermission("order.create")) return
-    if (blocksOwnRequisitionOrderOrContract) {
+    if (ownRequisitionOrderDisabled) {
       toast.error(
-        `${OWN_REQUISITION_ORDER_BLOCKED_MESSAGE} (${ownSelectedRequisitionCodes.join(", ")})`,
+        formatOwnRequisitionBlockedMessage(ownSelectedRequisitionCodes),
       )
       return
     }
+    const allowed = await assertCanCreateFromSelectedRequisitions()
+    if (!allowed) return
 
     if (!hasFeature("contract_balance") || equalizacaoSelectionRows.length === 0) {
       await handleFinalize({})
@@ -1972,12 +2011,14 @@ export default function EqualizacaoPage({
     if (!selectedRoundId) return
     if (!hasSelection) return
     if (!hasPermission("order.create")) return
-    if (blocksOwnRequisitionOrderOrContract) {
+    if (ownRequisitionOrderDisabled) {
       toast.error(
-        `${OWN_REQUISITION_ORDER_BLOCKED_MESSAGE} (${ownSelectedRequisitionCodes.join(", ")})`,
+        formatOwnRequisitionBlockedMessage(ownSelectedRequisitionCodes),
       )
       return
     }
+    const allowed = await assertCanCreateFromSelectedRequisitions()
+    if (!allowed) return
 
     setFinalizing(true)
 
@@ -3152,8 +3193,7 @@ export default function EqualizacaoPage({
                               variant="outline"
                               onClick={handleGerarContrato}
                               disabled={
-                                !hasSelection ||
-                                blocksOwnRequisitionOrderOrContract
+                                !hasSelection || ownRequisitionOrderDisabled
                               }
                               className="gap-1.5"
                             >
@@ -3179,7 +3219,7 @@ export default function EqualizacaoPage({
                               </TooltipTrigger>
                               <TooltipContent>Você não tem permissão para esta ação</TooltipContent>
                             </Tooltip>
-                          ) : blocksOwnRequisitionOrderOrContract ? (
+                          ) : ownRequisitionOrderDisabled ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <span>
