@@ -7,10 +7,11 @@ import {
   applyPasswordChange,
   validateNewPasswordForTenant,
 } from "@/lib/auth/password-policy-server"
+import { accessTokenHasRecoveryAmr } from "@/lib/auth/recovery-session"
 
 /**
  * Define nova senha após clique no link de recuperação (sessão recovery).
- * Não exige senha atual.
+ * Não exige senha atual — por isso só aceita JWT com AMR `recovery`.
  */
 export async function POST(request: Request) {
   try {
@@ -23,6 +24,19 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Sessão de recuperação inválida ou expirada. Solicite um novo link." },
         { status: 401 },
+      )
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    if (!accessTokenHasRecoveryAmr(session?.access_token)) {
+      return NextResponse.json(
+        {
+          error:
+            "Sessão de recuperação inválida ou expirada. Solicite um novo link.",
+        },
+        { status: 403 },
       )
     }
 
