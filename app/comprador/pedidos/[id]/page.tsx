@@ -80,7 +80,7 @@ import {
 import { toast } from "sonner"
 import type { LucideIcon } from "lucide-react"
 import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
-import { matchOrderApprovalLevel } from "@/lib/approvals/order-approval"
+import { resolveOrderConfirmPlan } from "@/lib/approvals/order-approval"
 import { getBuyerOrderErrorCopy } from "@/lib/integrations/erp-errors"
 import { buildContractItemLineNumberMap } from "@/lib/contracts/contract-balance-helpers"
 import { PoItemAccountConfigTableCells } from "@/components/comprador/po-item-account-config-cells"
@@ -576,7 +576,7 @@ export default function PurchaseOrderDetailPage({
   const backHref =
     searchParams.get("from") === "aprovacoes" ? "/comprador/aprovacoes" : "/comprador/pedidos"
   const { companyId, userId, loading: userLoading } = useUser()
-  const { hasPermission, hasFeature } = usePermissions()
+  const { hasPermission } = usePermissions()
   const { id } = React.use(params)
   const { maxQuantity, priceDecimalPlaces } = useNumericLimits()
   const {
@@ -1284,39 +1284,27 @@ export default function PurchaseOrderDetailPage({
             0,
           ))
 
-      let nextStatus: "sent" | "awaiting_approval" = "sent"
-      if (hasFeature("approval_order")) {
-        const { data: levels, error: levelsErr } = await supabase
-          .from("approval_levels")
-          .select("id, approver_id, approver_name, min_value, max_value, created_at")
-          .eq("company_id", companyId)
-          .eq("flow", "order")
-        if (levelsErr) throw levelsErr
+      const confirmPlan = await resolveOrderConfirmPlan(
+        supabase,
+        companyId,
+        orderTotalForApproval,
+      )
+      if (!confirmPlan.ok) {
+        toast.error(confirmPlan.error)
+        return
+      }
 
-        const match = matchOrderApprovalLevel(
-          (levels ?? []) as Array<{
-            id: string
-            approver_id: string | null
-            approver_name: string | null
-            min_value: number | null
-            max_value: number | null
-            created_at?: string | null
-          }>,
-          orderTotalForApproval,
-        )
-
-        if (match) {
-          const { error: arErr } = await supabase.from("approval_requests").insert({
-            company_id: companyId,
-            flow: "order",
-            entity_id: order.id,
-            approver_id: match.approver_id,
-            approver_name: match.approver_name,
-            status: "pending",
-          })
-          if (arErr) throw arErr
-          nextStatus = "awaiting_approval"
-        }
+      let nextStatus: "sent" | "awaiting_approval" = confirmPlan.nextStatus
+      if (confirmPlan.nextStatus === "awaiting_approval") {
+        const { error: arErr } = await supabase.from("approval_requests").insert({
+          company_id: companyId,
+          flow: "order",
+          entity_id: order.id,
+          approver_id: confirmPlan.match.approver_id,
+          approver_name: confirmPlan.match.approver_name,
+          status: "pending",
+        })
+        if (arErr) throw arErr
       }
 
       const { error } = await supabase
