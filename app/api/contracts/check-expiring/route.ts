@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 import { notifyExpiringSoonContracts } from "@/lib/contracts/contract-notification-helpers"
+import { isContractMaintenanceAuthorized } from "@/lib/contracts/maintenance-auth"
 
-/** Disparo manual da verificação de contratos vencendo em 30 dias. */
-export async function GET() {
+/** Job — verificação de contratos vencendo. Exige CRON_SECRET ou x-maintenance-key. */
+export async function GET(request: Request) {
   try {
+    if (!isContractMaintenanceAuthorized(request)) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     const service = createServiceRoleClient()
     const { checked, notified } = await notifyExpiringSoonContracts(service)
     return NextResponse.json({ checked, notified })
