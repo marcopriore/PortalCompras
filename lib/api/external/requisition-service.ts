@@ -197,6 +197,18 @@ export async function updateRequisitionFromApi(
     return { ok: false as const, code: "INTERNAL_ERROR" as const, message: itemsError.message }
   }
 
+  if (nextStatus === "pending") {
+    const { enqueueRequisitionApprovalIfNeeded } = await import(
+      "@/lib/api/external/approval-service"
+    )
+    await enqueueRequisitionApprovalIfNeeded(
+      service,
+      companyId,
+      requisitionId,
+      input.cost_center ?? null,
+    )
+  }
+
   const requisition = await loadRequisitionWithItems(service, requisitionId)
   return { ok: true as const, requisition }
 }

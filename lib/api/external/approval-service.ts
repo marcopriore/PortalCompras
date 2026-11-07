@@ -435,6 +435,36 @@ const applyCatalogOrderApproval = (
   })
 
 
+export const AUTO_APPROVE_NO_REQUISITION_ALCADA_NAME =
+  "Aprovação automática (sem regra configurada para este CC)"
+
+export type RequisitionApprovalEnqueuePlan =
+  | { action: "skip_module_off" }
+  | { action: "rpc_error"; message: string }
+  | { action: "auto_approve" }
+  | { action: "queue"; approver_id: string; approver_name: string | null }
+
+/**
+ * Decide o destino da REQ na Loja de API (espelha o portal):
+ * módulo off → não mexe; RPC falhou → não auto-aprova; sem alçada de CC → auto-aprova;
+ * com aprovador → fila.
+ */
+export function planRequisitionApprovalEnqueue(input: {
+  moduleEnabled: boolean
+  rpcError: string | null
+  approverId: string | null | undefined
+  approverName: string | null | undefined
+}): RequisitionApprovalEnqueuePlan {
+  if (!input.moduleEnabled) return { action: "skip_module_off" }
+  if (input.rpcError) return { action: "rpc_error", message: input.rpcError }
+  if (!input.approverId) return { action: "auto_approve" }
+  return {
+    action: "queue",
+    approver_id: input.approverId,
+    approver_name: input.approverName ?? null,
+  }
+}
+
 /** Cria fila de aprovação ao criar REQ via API (espelha o portal). */
 export async function enqueueRequisitionApprovalIfNeeded(
   service: SupabaseClient,
@@ -445,20 +475,63 @@ export async function enqueueRequisitionApprovalIfNeeded(
   const enabled = await isTenantFeatureEnabled(companyId, "approval_requisition")
   if (!enabled) return
 
-  const { data: approverData } = await service.rpc("get_approver_for_requisition", {
-    p_company_id: companyId,
-    p_cost_center: costCenter ?? "*",
-  })
+  const { data: approverData, error: rpcError } = await service.rpc(
+    "get_approver_for_requisition",
+    {
+      p_company_id: companyId,
+      p_cost_center: costCenter ?? "*",
+    },
+  )
 
   const approver = Array.isArray(approverData) ? approverData[0] : approverData
-  if (!approver?.approver_id) return
+  const plan = planRequisitionApprovalEnqueue({
+    moduleEnabled: true,
+    rpcError: rpcError?.message ?? null,
+    approverId: (approver as { approver_id?: string | null } | null)?.approver_id,
+    approverName: (approver as { approver_name?: string | null } | null)?.approver_name,
+  })
+
+  if (plan.action === "skip_module_off" || plan.action === "rpc_error") {
+    return
+  }
+
+  await service
+    .from("approval_requests")
+    .delete()
+    .eq("company_id", companyId)
+    .eq("flow", "requisition")
+    .eq("entity_id", requisitionId)
+    .eq("status", "pending")
+
+  if (plan.action === "auto_approve") {
+    await service
+      .from("requisitions")
+      .update({
+        status: "approved",
+        approved_at: new Date().toISOString(),
+        approver_name: AUTO_APPROVE_NO_REQUISITION_ALCADA_NAME,
+      })
+      .eq("id", requisitionId)
+      .eq("company_id", companyId)
+    return
+  }
+
+  await service
+    .from("requisitions")
+    .update({
+      approver_id: plan.approver_id,
+      approver_name: plan.approver_name,
+      status: "pending",
+    })
+    .eq("id", requisitionId)
+    .eq("company_id", companyId)
 
   await service.from("approval_requests").insert({
     company_id: companyId,
     flow: "requisition",
     entity_id: requisitionId,
-    approver_id: approver.approver_id,
-    approver_name: approver.approver_name ?? null,
+    approver_id: plan.approver_id,
+    approver_name: plan.approver_name,
     status: "pending",
   })
 }
