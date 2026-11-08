@@ -15,6 +15,10 @@ import {
   isBuyerOrHigherProfile,
 } from '@/lib/quotations/ownership'
 import { ensureInitialQuotationRound } from '@/lib/quotations/round-lifecycle'
+import {
+  findOwnRequisitionCodes,
+  ownRequisitionBlockedMessage,
+} from '@/lib/requisitions/own-requisition-guard'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -367,6 +371,32 @@ export default function QuotationDetailsPage({
     setUpdatingStatus(newStatus)
     try {
       const supabase = createClient()
+
+      if (newStatus === 'waiting' && companyId && userId) {
+        const { data: quotationItemsForGuard } = await supabase
+          .from('quotation_items')
+          .select('source_requisition_code')
+          .eq('quotation_id', quotation.id)
+          .not('source_requisition_code', 'is', null)
+        const codesToCheck = [
+          ...new Set(
+            (quotationItemsForGuard ?? [])
+              .map((i) => i.source_requisition_code)
+              .filter((c): c is string => Boolean(c)),
+          ),
+        ]
+        const ownCodes = await findOwnRequisitionCodes(
+          supabase,
+          companyId,
+          userId,
+          codesToCheck,
+        )
+        if (ownCodes.length > 0) {
+          toast.error(ownRequisitionBlockedMessage(ownCodes))
+          return
+        }
+      }
+
       const { error: updateError } = await supabase
         .from('quotations')
         .update({ status: newStatus })

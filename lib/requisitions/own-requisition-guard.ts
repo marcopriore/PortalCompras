@@ -12,6 +12,20 @@ export function isOwnRequisitionCreator(
   return userId === requesterId
 }
 
+/** Drops rows whose requester is the current user (import dialogs, lists). */
+export function filterOutOwnRequisitions<T extends { requester_id?: string | null }>(
+  userId: string | null | undefined,
+  rows: T[],
+): T[] {
+  if (!userId) return rows
+  return rows.filter((row) => !isOwnRequisitionCreator(userId, row.requester_id))
+}
+
+export function ownRequisitionBlockedMessage(codes: string[] = []): string {
+  if (codes.length === 0) return OWN_REQUISITION_ORDER_BLOCKED_MESSAGE
+  return `${OWN_REQUISITION_ORDER_BLOCKED_MESSAGE} (${codes.join(", ")})`
+}
+
 /**
  * Returns requisition codes (among the given list) whose requester_id is the user.
  * Used in equalização where lines carry source_requisition_code.
