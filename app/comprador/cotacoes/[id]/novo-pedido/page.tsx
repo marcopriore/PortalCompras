@@ -11,6 +11,10 @@ import {
   canAccessQuotation,
   canViewAllQuotations,
 } from "@/lib/quotations/ownership"
+import {
+  findOwnRequisitionCodes,
+  ownRequisitionBlockedMessage,
+} from "@/lib/requisitions/own-requisition-guard"
 import { logAudit } from "@/lib/audit"
 import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
 import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
@@ -268,6 +272,19 @@ export default function NovoPedidoPage({
 
     try {
       const supabase = createClient()
+      const requisitionCode = form.requisitionCode.trim()
+      if (requisitionCode) {
+        const ownCodes = await findOwnRequisitionCodes(
+          supabase,
+          companyId,
+          userId,
+          [requisitionCode],
+        )
+        if (ownCodes.length > 0) {
+          toast.error(ownRequisitionBlockedMessage(ownCodes))
+          return
+        }
+      }
       const branchGroups = groupLinesBySiteCode(items)
       const createdCodes: string[] = []
 

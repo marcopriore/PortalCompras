@@ -19,6 +19,12 @@ import {
   type NegotiationPlanFormState,
 } from '@/components/comprador/quotation-negotiation-plan-form'
 import { SuggestSuppliersButton } from '@/components/comprador/suggest-suppliers-button'
+import {
+  filterOutOwnRequisitions,
+  findOwnRequisitionCodes,
+  isOwnRequisitionCreator,
+  ownRequisitionBlockedMessage,
+} from '@/lib/requisitions/own-requisition-guard'
 import { Button } from '@/components/ui/button'
 import { QuantityInput } from '@/components/ui/numeric-field-inputs'
 import { useNumericLimits } from '@/lib/hooks/use-numeric-limits'
@@ -74,6 +80,7 @@ type RequisitionOption = {
   code: string
   title: string
   created_at: string
+  requester_id?: string | null
   items: {
     material_code: string | null
     material_description: string
@@ -217,7 +224,12 @@ function NovaCotacaoContent() {
       ])
 
       if (reqRes.data) {
-        const reqAny = reqRes.data as any
+        const reqAny = reqRes.data as { title?: string; commodity_group?: string; requester_id?: string | null }
+        if (isOwnRequisitionCreator(userId, reqAny.requester_id)) {
+          toast.error(ownRequisitionBlockedMessage())
+          router.replace('/comprador/cotacoes/nova')
+          return
+        }
         setDescription(() => reqAny.title ?? '')
         setCategory(reqAny.commodity_group ?? '')
       }
@@ -239,7 +251,7 @@ function NovaCotacaoContent() {
     }
 
     fetchRequisition()
-  }, [requisitionId, companyId])
+  }, [requisitionId, companyId, userId, router])
 
   useEffect(() => {
     if (!companyId || debouncedItemSearch.trim().length < 2) {
@@ -344,13 +356,14 @@ function NovaCotacaoContent() {
       const supabase = createClient()
       const { data: reqs } = await supabase
         .from('requisitions')
-        .select('id, code, title, created_at')
+        .select('id, code, title, created_at, requester_id')
         .eq('company_id', companyId)
         .eq('status', 'approved')
         .is('quotation_id', null)
         .order('created_at', { ascending: false })
 
-      if (!reqs || reqs.length === 0) {
+      const visibleReqs = filterOutOwnRequisitions(userId, reqs ?? [])
+      if (visibleReqs.length === 0) {
         setRequisitions([])
         return
       }
@@ -360,7 +373,7 @@ function NovaCotacaoContent() {
         .select('requisition_id, material_code, material_description, unit_of_measure, quantity, site_code')
         .in(
           'requisition_id',
-          reqs.map((r) => r.id),
+          visibleReqs.map((r) => r.id),
         )
 
       type ReqItemRow = {
@@ -379,11 +392,12 @@ function NovaCotacaoContent() {
       }
 
       setRequisitions(
-        reqs.map((r) => ({
+        visibleReqs.map((r) => ({
           id: r.id,
           code: r.code,
           title: r.title,
           created_at: r.created_at,
+          requester_id: r.requester_id,
           items: (itemsByReq[r.id] ?? []).map((i) => ({
             material_code: i.material_code,
             material_description: i.material_description,
@@ -457,6 +471,33 @@ function NovaCotacaoContent() {
     const supabase = createClient()
 
     try {
+      if (companyId && userId) {
+        const itemCodes = selectedItems
+          .map((item) => item.requisition_code)
+          .filter((code): code is string => Boolean(code?.trim()))
+        const ownFromItems = await findOwnRequisitionCodes(
+          supabase,
+          companyId,
+          userId,
+          itemCodes,
+        )
+        if (ownFromItems.length > 0) {
+          toast.error(ownRequisitionBlockedMessage(ownFromItems))
+          return
+        }
+        if (requisitionId) {
+          const { data: linkedReq } = await supabase
+            .from('requisitions')
+            .select('requester_id, code')
+            .eq('id', requisitionId)
+            .maybeSingle()
+          if (isOwnRequisitionCreator(userId, linkedReq?.requester_id)) {
+            toast.error(ownRequisitionBlockedMessage(linkedReq?.code ? [linkedReq.code] : []))
+            return
+          }
+        }
+      }
+
       const { data, error } = await supabase
         .from('quotations')
         .insert({
