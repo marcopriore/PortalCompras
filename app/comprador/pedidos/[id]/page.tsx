@@ -81,6 +81,7 @@ import { toast } from "sonner"
 import type { LucideIcon } from "lucide-react"
 import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
 import { matchOrderApprovalLevel } from "@/lib/approvals/order-approval"
+import { cancelOrphanCatalogRequisitionAfterPoCancel } from "@/lib/requisitions/cancel-catalog-after-po"
 import { getBuyerOrderErrorCopy } from "@/lib/integrations/erp-errors"
 import { buildContractItemLineNumberMap } from "@/lib/contracts/contract-balance-helpers"
 import { PoItemAccountConfigTableCells } from "@/components/comprador/po-item-account-config-cells"
@@ -1367,6 +1368,11 @@ export default function PurchaseOrderDetailPage({
         .eq("id", order.id)
         .eq("company_id", companyId)
       if (error) throw error
+      await cancelOrphanCatalogRequisitionAfterPoCancel(supabase, {
+        companyId,
+        requisitionCode: order.requisition_code,
+        cancelledPurchaseOrderId: order.id,
+      })
       toast.success("Pedido cancelado.")
       await fetchOrderData({ silent: true })
     } catch (e) {
@@ -1388,6 +1394,11 @@ export default function PurchaseOrderDetailPage({
         .eq("id", order.id)
         .eq("company_id", companyId)
       if (error) throw error
+      await cancelOrphanCatalogRequisitionAfterPoCancel(supabase, {
+        companyId,
+        requisitionCode: order.requisition_code,
+        cancelledPurchaseOrderId: order.id,
+      })
       toast.success("Pedido cancelado.")
       setCancelRefusedOpen(false)
       await fetchOrderData({ silent: true })

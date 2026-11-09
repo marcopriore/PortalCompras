@@ -120,9 +120,23 @@ export function mapPoStatusToRequisitionStatus(
     case "completed":
       return "completed"
     case "cancelled":
-      // Cancelar pedido libera a REQ (espelha SQL 084); sync com irmãos fica no trigger.
+      // Default (REQ não-catálogo, sem cotação). O trigger SQL decide o caso
+      // completo via resolveRequisitionStatusWhenLastPoCancelled.
       return "approved"
     default:
       return null
   }
+}
+
+/**
+ * Status da REQ quando o último PO ativo é cancelado (espelha o trigger SQL).
+ * Catálogo nasce junto do PO: cancelar o pedido encerra a REQ, não a "aprova".
+ */
+export function resolveRequisitionStatusWhenLastPoCancelled(options: {
+  origin?: string | null
+  quotationId?: string | null
+}): RequisitionStatus {
+  if ((options.origin ?? "").trim() === "catalog") return "cancelled"
+  if (options.quotationId) return "in_quotation"
+  return "approved"
 }
