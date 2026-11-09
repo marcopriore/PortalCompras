@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   getRequisitionStatusMeta,
   mapPoStatusToRequisitionStatus,
+  resolveRequisitionStatusWhenLastPoCancelled,
 } from "@/lib/requisitions/status"
 import {
   buildCatalogRequisitionTimeline,
@@ -34,6 +35,28 @@ describe("mapPoStatusToRequisitionStatus", () => {
   it("mapeia completed; cancelled libera para approved", () => {
     expect(mapPoStatusToRequisitionStatus("completed")).toBe("completed")
     expect(mapPoStatusToRequisitionStatus("cancelled")).toBe("approved")
+  })
+
+  it("ao cancelar o último PO, REQ de catálogo é cancelada — não aprovada", () => {
+    expect(
+      resolveRequisitionStatusWhenLastPoCancelled({ origin: "catalog" }),
+    ).toBe("cancelled")
+    expect(
+      resolveRequisitionStatusWhenLastPoCancelled({
+        origin: "catalog",
+        quotationId: "q1",
+      }),
+    ).toBe("cancelled")
+  })
+
+  it("ao cancelar o último PO, REQ manual volta para approved ou in_quotation", () => {
+    expect(resolveRequisitionStatusWhenLastPoCancelled({})).toBe("approved")
+    expect(
+      resolveRequisitionStatusWhenLastPoCancelled({ origin: "manual" }),
+    ).toBe("approved")
+    expect(
+      resolveRequisitionStatusWhenLastPoCancelled({ quotationId: "q1" }),
+    ).toBe("in_quotation")
   })
 
   it("retorna null para status desconhecido", () => {
