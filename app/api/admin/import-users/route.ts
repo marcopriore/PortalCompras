@@ -1,5 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireTenantAdmin } from '@/lib/api/require-tenant-admin'
+import { createServiceRoleClient } from '@/lib/supabase/service-role'
 
 type ImportUserPayload = {
   email: string
@@ -30,6 +31,9 @@ function generatePassword(): string {
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireTenantAdmin()
+    if ('error' in auth) return auth.error
+
     const body = await request.json()
     const users = (body?.users ?? []) as ImportUserPayload[]
 
@@ -40,17 +44,15 @@ export async function POST(request: Request) {
       )
     }
 
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    )
+    const supabaseAdmin = createServiceRoleClient()
+    const companyId = auth.companyId
 
     let created = 0
     const errors: ImportError[] = []
 
     // Processar sequencialmente para facilitar rollback por usuário
     for (const user of users) {
-      const { email, fullName, role, roles, status, companyId } = user
+      const { email, fullName, role, roles, status } = user
       const rolesArray = Array.isArray(roles) ? roles : role ? [role] : []
 
       if (!email || !fullName || !status || !companyId) {

@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { createNotification } from '@/lib/notify'
+import { requireTenantAdmin } from '@/lib/api/require-tenant-admin'
 import { createServiceRoleClient } from '@/lib/supabase/service-role'
 import { loadPasswordPolicy } from '@/lib/settings/password-policy'
 import { validatePasswordAgainstPolicy } from '@/lib/settings/password-policy-registry'
@@ -16,8 +16,12 @@ function resolveProfileType(roles: string[]): string {
 
 export async function POST(request: Request) {
   try {
-    const { email, password, fullName, role, roles, companyId, profileType, costCenterId } =
+    const auth = await requireTenantAdmin()
+    if ('error' in auth) return auth.error
+
+    const { email, password, fullName, role, roles, profileType, costCenterId } =
       await request.json()
+    const companyId = auth.companyId
 
     const rolesArray = Array.isArray(roles) ? roles : role ? [role] : []
     const primaryRole = rolesArray[0] ?? role ?? ''
@@ -64,14 +68,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: passwordCheck.error }, { status: 400 })
     }
 
-    const supabaseAuthAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    )
-
     // 1. Criar usuário no Auth
     const { data: authData, error: authError } =
-      await supabaseAuthAdmin.auth.admin.createUser({
+      await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
