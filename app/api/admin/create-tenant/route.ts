@@ -14,9 +14,13 @@ import {
   assignPermissionGroupsByRoleCodes,
   seedSystemPermissionGroups,
 } from '@/lib/permissions/seed-tenant-permission-groups'
+import { requireSuperAdmin } from '@/lib/api/require-tenant-admin'
 
 export async function POST(request: Request) {
   try {
+    const auth = await requireSuperAdmin()
+    if ('error' in auth) return auth.error
+
     const { name, cnpj, adminName, adminEmail, adminPassword } =
       await request.json()
 

@@ -91,6 +91,32 @@ export async function requireTenantAdmin() {
   return requireAnyPermission(["settings.manage"])
 }
 
+/** Superadmin da plataforma (criação de tenant, etc.). */
+export async function requireSuperAdmin(): Promise<
+  { user: { id: string } } | { error: NextResponse }
+> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) }
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_superadmin")
+    .eq("id", user.id)
+    .single()
+
+  if (!profile?.is_superadmin) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
+  }
+
+  return { user: { id: user.id } }
+}
+
 /** Monitor e APIs de integração: integration.monitor + feature */
 export async function requireIntegrationsAdmin() {
   const auth = await requireAnyPermission(["integration.monitor"])
