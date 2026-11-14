@@ -9,6 +9,7 @@ type ProfileRow = {
   company_id?: string | null
   supplier_id?: string | null
   is_superadmin?: boolean
+  is_supplier_admin?: boolean
   role?: string | null
   roles?: string[] | null
   profile_type?: string | null
@@ -27,6 +28,7 @@ export function useUser() {
   const [fullName, setFullName] = useState<string | null>(null)
   const [roles, setRoles] = useState<string[]>([])
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [isSupplierAdmin, setIsSupplierAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -42,13 +44,14 @@ export function useUser() {
       setFullName(null)
       setRoles([])
       setIsSuperAdmin(false)
+      setIsSupplierAdmin(false)
     }
 
     const loadProfile = async (userId: string) => {
       const { data: profile } = await supabase
         .from('profiles')
         .select(
-          'company_id, supplier_id, is_superadmin, role, roles, profile_type, full_name, companies(name)',
+          'company_id, supplier_id, is_superadmin, is_supplier_admin, role, roles, profile_type, full_name, companies(name)',
         )
         .eq('id', userId)
         .single()
@@ -76,6 +79,7 @@ export function useUser() {
       }
       setCompanyName(embeddedName)
       setIsSuperAdmin(Boolean(p?.is_superadmin))
+      setIsSupplierAdmin(Boolean(p?.is_supplier_admin))
       const rolesFromArray = Array.isArray(p?.roles)
         ? p.roles.filter((r): r is string => typeof r === 'string' && r.length > 0)
         : []
@@ -180,6 +184,7 @@ export function useUser() {
     roles: effectiveRoles,
     hasRole: effectiveHasRole,
     isSuperAdmin: effectiveIsSuperAdmin,
+    isSupplierAdmin,
     isImpersonating,
     loading,
   }

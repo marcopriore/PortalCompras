@@ -21,7 +21,7 @@ export async function GET() {
       users,
       total,
       limit: MAX_SUPPLIER_PORTAL_USERS,
-      canAdd: total < MAX_SUPPLIER_PORTAL_USERS,
+      canAdd: ctx.isSupplierAdmin && total < MAX_SUPPLIER_PORTAL_USERS,
     })
   } catch {
     return NextResponse.json({ error: "Erro interno do servidor." }, { status: 500 })
@@ -33,6 +33,12 @@ export async function POST(request: Request) {
   try {
     const ctx = await getSupplierContext()
     if ("error" in ctx) return ctx.error
+    if (!ctx.isSupplierAdmin) {
+      return NextResponse.json(
+        { error: "Apenas o administrador do fornecedor pode adicionar usuários." },
+        { status: 403 },
+      )
+    }
 
     const body = (await request.json()) as {
       email?: string
