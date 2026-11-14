@@ -23,6 +23,12 @@ export async function PATCH(request: Request, context: RouteCtx) {
   try {
     const ctx = await getSupplierContext()
     if ("error" in ctx) return ctx.error
+    if (!ctx.isSupplierAdmin) {
+      return NextResponse.json(
+        { error: "Apenas o administrador do fornecedor pode gerenciar usuários." },
+        { status: 403 },
+      )
+    }
 
     const { id } = await context.params
     const body = (await request.json()) as PatchBody

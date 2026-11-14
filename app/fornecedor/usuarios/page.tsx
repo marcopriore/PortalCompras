@@ -59,7 +59,7 @@ const DEFAULT_POLICY: PasswordPolicy = {
 }
 
 export default function FornecedorUsuariosPage() {
-  const { userId, loading: userLoading } = useUser()
+  const { userId, isSupplierAdmin, loading: userLoading } = useUser()
 
   const [users, setUsers] = React.useState<PortalUser[]>([])
   const [limit, setLimit] = React.useState(5)
@@ -206,6 +206,24 @@ export default function FornecedorUsuariosPage() {
     toast.success(labels[action])
     setConfirmCancel(null)
     await loadUsers()
+  }
+
+  if (userLoading) {
+    return <p className="text-sm text-muted-foreground">Carregando...</p>
+  }
+
+  if (!isSupplierAdmin) {
+    return (
+      <div className="rounded-xl border bg-card p-6 space-y-2">
+        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+          <Users className="h-7 w-7 text-primary" />
+          Usuários
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Apenas o administrador do fornecedor pode gerenciar usuários do portal.
+        </p>
+      </div>
+    )
   }
 
   return (
