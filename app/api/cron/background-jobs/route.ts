@@ -9,30 +9,11 @@ import {
 } from "@/lib/contracts/contract-notification-helpers"
 import { processNegotiationBackgroundTicks } from "@/lib/negotiation/background-tick"
 import { processOutboundAutoRetries } from "@/lib/integrations/process-outbound-auto-retries"
+import { isCronAuthorized } from "@/lib/jobs/cron-auth"
 
 const EXPIRING_JOB_KEY = "contract_expiring_soon"
 const LOW_BALANCE_JOB_KEY = "contract_low_balance"
 const EXPIRING_INTERVAL_HOURS = 24
-
-function isAuthorized(request: Request): boolean {
-  const cronSecret = process.env.CRON_SECRET
-  const maintenanceSecret = process.env.CONTRACT_MAINTENANCE_SECRET
-
-  const auth = request.headers.get("authorization")
-  if (cronSecret && auth === `Bearer ${cronSecret}`) return true
-  if (maintenanceSecret && request.headers.get("x-maintenance-key") === maintenanceSecret) {
-    return true
-  }
-
-  // Vercel Cron (produção) — ver https://vercel.com/docs/cron-jobs
-  if (request.headers.get("x-vercel-cron") === "1" && process.env.VERCEL === "1") {
-    return true
-  }
-
-  if (!cronSecret && !maintenanceSecret) return true
-
-  return false
-}
 
 async function runBackgroundJobs(): Promise<Record<string, unknown>> {
   const service = createServiceRoleClient()
@@ -99,7 +80,7 @@ async function runBackgroundJobs(): Promise<Record<string, unknown>> {
 /** Cron / job externo — negociação IA, rodadas vencidas, contratos, retry ERP. */
 export async function GET(request: Request) {
   try {
-    if (!isAuthorized(request)) {
+    if (!isCronAuthorized(request)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     const result = await runBackgroundJobs()
