@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
+import { canLookupUserEmail } from "@/lib/email/can-lookup-user-email"
 
 export async function POST(request: Request) {
   try {
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
 
     const { data: me, error: meErr } = await supabase
       .from("profiles")
-      .select("company_id")
+      .select("company_id, profile_type")
       .eq("id", user.id)
       .single()
     const { data: target, error: targetErr } = await supabase
@@ -29,7 +30,15 @@ export async function POST(request: Request) {
       .eq("id", userId)
       .single()
 
-    if (meErr || targetErr || !me?.company_id || me.company_id !== target?.company_id) {
+    if (
+      meErr ||
+      targetErr ||
+      !canLookupUserEmail({
+        callerProfileType: me?.profile_type,
+        callerCompanyId: me?.company_id,
+        targetCompanyId: target?.company_id,
+      })
+    ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
