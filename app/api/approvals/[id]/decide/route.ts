@@ -6,6 +6,9 @@ import {
   approveApprovalRequest,
   rejectApprovalRequest,
 } from "@/lib/api/external/approval-service"
+import { canDecideApprovalRequest } from "@/lib/approvals/can-decide-approval"
+import { loadUserPermissionKeys } from "@/lib/permissions/resolve-user-permissions"
+import type { PermissionKey } from "@/lib/hooks/usePermissions"
 
 export const runtime = "nodejs"
 
@@ -21,8 +24,9 @@ async function resolveBuyerCompany(userId: string) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
   }
 
+  const isSuperAdmin = Boolean(profile.is_superadmin)
   let companyId = profile.company_id as string | null
-  if (profile.is_superadmin) {
+  if (isSuperAdmin) {
     const cookieStore = await cookies()
     const selected = cookieStore.get("selected_company_id")?.value
     if (selected) companyId = decodeURIComponent(selected)
@@ -35,6 +39,7 @@ async function resolveBuyerCompany(userId: string) {
     companyId,
     userId,
     fullName: profile.full_name ?? "",
+    isSuperAdmin,
   }
 }
 
@@ -64,6 +69,34 @@ export async function POST(
 
     const action = body.action === "reject" ? "reject" : "approve"
     const service = createServiceRoleClient()
+
+    const { data: pending } = await service
+      .from("approval_requests")
+      .select("id, flow, approver_id")
+      .eq("company_id", ctx.companyId)
+      .eq("id", id)
+      .maybeSingle()
+
+    if (!pending) {
+      return NextResponse.json({ error: "Solicitação não encontrada." }, { status: 404 })
+    }
+
+    const permissions: Set<PermissionKey> = ctx.isSuperAdmin
+      ? new Set()
+      : await loadUserPermissionKeys(service, ctx.userId, ctx.companyId)
+
+    if (
+      !canDecideApprovalRequest({
+        actorUserId: ctx.userId,
+        isSuperAdmin: ctx.isSuperAdmin,
+        permissions,
+        flow: String(pending.flow ?? ""),
+        approverId:
+          typeof pending.approver_id === "string" ? pending.approver_id : null,
+      })
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
 
     if (action === "approve") {
       const result = await approveApprovalRequest(service, ctx.companyId, id, {
