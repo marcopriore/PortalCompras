@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { createNotification } from "@/lib/notify"
 import { templateNewRound } from "@/lib/email/templates"
 import { sendEmail } from "@/lib/email/send-email"
+import { isTerminalQuotationStatus } from "@/lib/quotations/quotation-status"
 
 type ProposalRow = {
   supplier_id: string | null
@@ -69,6 +70,7 @@ export async function closeQuotationRound(
       .update({ status: "analysis" })
       .eq("id", params.quotationId)
       .eq("company_id", params.companyId)
+      .in("status", ["draft", "waiting", "analysis", "rejected"])
     if (qErr) return { ok: false, message: qErr.message }
   }
 
@@ -82,6 +84,22 @@ export async function openQuotationRound(
   const minD = tomorrowDeadlineMin()
   if (!params.responseDeadlineYmd || params.responseDeadlineYmd < minD) {
     return { ok: false, message: "Prazo de resposta deve ser a partir de amanhã." }
+  }
+
+  const { data: quotationRow, error: quotationErr } = await db
+    .from("quotations")
+    .select("status")
+    .eq("id", params.quotationId)
+    .eq("company_id", params.companyId)
+    .maybeSingle()
+
+  if (quotationErr) return { ok: false, message: quotationErr.message }
+  if (!quotationRow) return { ok: false, message: "Cotação não encontrada." }
+  if (isTerminalQuotationStatus(quotationRow.status as string | null)) {
+    return {
+      ok: false,
+      message: "Cotação encerrada. Não é possível abrir uma nova rodada.",
+    }
   }
 
   const { data: rounds, error: roundsErr } = await db
@@ -161,6 +179,7 @@ export async function openQuotationRound(
     .update({ status: "waiting" })
     .eq("id", params.quotationId)
     .eq("company_id", params.companyId)
+    .in("status", ["draft", "waiting", "analysis", "rejected"])
 
   if (waitErr) return { ok: false, message: waitErr.message }
 

@@ -21,6 +21,7 @@ import {
   isRoundDeadlinePassed,
   openQuotationRound,
 } from "@/lib/quotations/round-lifecycle"
+import { negotiationActionForQuotationStatus } from "@/lib/quotations/quotation-status"
 
 type TickResult =
   | { ok: true; run: NegotiationRun; message: string }
@@ -155,6 +156,48 @@ async function executeNegotiationTick(
 
   const quotationCode = String(quotation.code ?? "")
   const now = new Date().toISOString()
+  const quotationHalt = negotiationActionForQuotationStatus(
+    quotation.status as string | null,
+  )
+  if (quotationHalt !== "continue") {
+    const stopReason =
+      quotationHalt === "cancel_run"
+        ? "Cotação cancelada. Negociação assistida encerrada."
+        : "Cotação concluída. Negociação assistida encerrada."
+    if (quotationHalt === "cancel_run") {
+      const stopped = await updateRun(db, run.id, companyId, {
+        status: "cancelled",
+        completed_at: now,
+        last_tick_at: now,
+      })
+      await db
+        .from("quotation_negotiation_plans")
+        .update({ status: "cancelled", completed_at: now, updated_at: now })
+        .eq("id", plan.id)
+        .eq("company_id", companyId)
+        .in("status", ["draft", "active", "paused"])
+      await logNegotiationDecision(db, {
+        companyId,
+        planId: plan.id,
+        runId: run.id,
+        roundId: run.current_round_id,
+        decisionType: "system",
+        action: "cancel",
+        reason: stopReason,
+        createdBy: options?.actorUserId ?? null,
+      })
+      return { ok: true, run: stopped, message: stopReason }
+    }
+    const completed = await completeRun(
+      db,
+      companyId,
+      plan,
+      run,
+      stopReason,
+      options?.actorUserId,
+    )
+    return { ok: true, run: completed, message: stopReason }
+  }
 
   if (run.status === "awaiting_approval" && !options?.forceApprove) {
     return {
