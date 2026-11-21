@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 import {
   getRequisitionStatusMeta,
   mapPoStatusToRequisitionStatus,
+  pickMostAdvancedPoStatus,
+  resolveRequisitionStatusFromSiblingPos,
 } from "@/lib/requisitions/status"
 import {
   buildCatalogRequisitionTimeline,
@@ -38,6 +40,74 @@ describe("mapPoStatusToRequisitionStatus", () => {
 
   it("retorna null para status desconhecido", () => {
     expect(mapPoStatusToRequisitionStatus("unknown")).toBeNull()
+  })
+})
+
+describe("resolveRequisitionStatusFromSiblingPos", () => {
+  it("não rebaixa REQ completed quando um irmão ainda está processing/sent", () => {
+    expect(pickMostAdvancedPoStatus(["completed", "processing"])).toBe(
+      "completed",
+    )
+    expect(
+      resolveRequisitionStatusFromSiblingPos({
+        poStatuses: ["completed", "processing"],
+      }),
+    ).toBe("completed")
+    expect(
+      resolveRequisitionStatusFromSiblingPos({
+        poStatuses: ["completed", "sent"],
+      }),
+    ).toBe("completed")
+  })
+
+  it("não rebaixa awaiting_supplier quando um irmão é recusado", () => {
+    expect(
+      resolveRequisitionStatusFromSiblingPos({
+        poStatuses: ["sent", "refused"],
+      }),
+    ).toBe("awaiting_supplier")
+  })
+
+  it("ignora cancelled e usa o irmão ativo mais avançado", () => {
+    expect(
+      resolveRequisitionStatusFromSiblingPos({
+        poStatuses: ["cancelled", "sent", "draft"],
+      }),
+    ).toBe("awaiting_supplier")
+  })
+
+  it("sem PO ativo: approved, ou in_quotation se ainda houver cotação", () => {
+    expect(
+      resolveRequisitionStatusFromSiblingPos({
+        poStatuses: ["cancelled"],
+      }),
+    ).toBe("approved")
+    expect(
+      resolveRequisitionStatusFromSiblingPos({
+        poStatuses: ["cancelled", "cancelled"],
+        quotationId: "q1",
+      }),
+    ).toBe("in_quotation")
+  })
+
+  it("catálogo em rascunho com alçada de CC fica awaiting_approval", () => {
+    expect(
+      resolveRequisitionStatusFromSiblingPos({
+        poStatuses: ["draft", "draft"],
+        origin: "catalog",
+        catalogPostCheckoutMode: "cost_center_approval",
+      }),
+    ).toBe("awaiting_approval")
+  })
+
+  it("catálogo com um PO já sent não volta para awaiting_approval pelo irmão draft", () => {
+    expect(
+      resolveRequisitionStatusFromSiblingPos({
+        poStatuses: ["sent", "draft"],
+        origin: "catalog",
+        catalogPostCheckoutMode: "cost_center_approval",
+      }),
+    ).toBe("awaiting_supplier")
   })
 })
 

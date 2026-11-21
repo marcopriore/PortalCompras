@@ -126,3 +126,59 @@ export function mapPoStatusToRequisitionStatus(
       return null
   }
 }
+
+/**
+ * Rank used by trg_sync_requisition_from_po: lower = more advanced.
+ * Mirrors the ORDER BY in sync_requisition_status_from_purchase_order.
+ */
+const PO_STATUS_SYNC_RANK: Record<string, number> = {
+  completed: 1,
+  processing: 2,
+  sent: 3,
+  awaiting_approval: 4,
+  draft: 5,
+  error: 6,
+  refused: 6,
+  integration_error: 6,
+}
+
+/** Most advanced non-cancelled PO status (same ORDER BY as the SQL trigger). */
+export function pickMostAdvancedPoStatus(
+  poStatuses: readonly string[],
+): string | null {
+  const active = poStatuses.filter((status) => status !== "cancelled")
+  if (active.length === 0) return null
+  return [...active].sort((a, b) => {
+    const rankA = PO_STATUS_SYNC_RANK[a] ?? 9
+    const rankB = PO_STATUS_SYNC_RANK[b] ?? 9
+    return rankA - rankB
+  })[0]
+}
+
+/**
+ * Status da REQ a partir de todos os POs da mesma `requisition_code`
+ * (espelha migration 085). Não usa só o PO que disparou o trigger.
+ */
+export function resolveRequisitionStatusFromSiblingPos(input: {
+  poStatuses: readonly string[]
+  origin?: string | null
+  quotationId?: string | null
+  catalogPostCheckoutMode?: string | null
+}): RequisitionStatus | null {
+  const winning = pickMostAdvancedPoStatus(input.poStatuses)
+  if (!winning) {
+    if (input.quotationId) return "in_quotation"
+    return "approved"
+  }
+
+  if (
+    (input.origin ?? "").trim() === "catalog" &&
+    winning === "draft" &&
+    (input.catalogPostCheckoutMode ?? "").trim().toLowerCase() ===
+      "cost_center_approval"
+  ) {
+    return "awaiting_approval"
+  }
+
+  return mapPoStatusToRequisitionStatus(winning)
+}
