@@ -10,6 +10,10 @@ import { useUser } from '@/lib/hooks/useUser'
 import { usePermissions } from '@/lib/hooks/usePermissions'
 import { logAudit } from '@/lib/audit'
 import { ensureInitialQuotationRound } from '@/lib/quotations/round-lifecycle'
+import {
+  collectSourceRequisitionCodes,
+  linkRequisitionsToQuotation,
+} from '@/lib/quotations/link-requisitions'
 import { createAndStartNegotiationPlan } from '@/lib/negotiation/client-start'
 import { useAiNegotiationUiAccess } from '@/lib/hooks/use-tenant-feature-flags'
 import {
@@ -525,15 +529,14 @@ function NovaCotacaoContent() {
         }
       }
 
-      if (requisitionId) {
-        await supabase
-          .from('requisitions')
-          .update({
-            status: 'in_quotation',
-            quotation_id: quotationId,
-          })
-          .eq('id', requisitionId)
-      }
+      const reqCodes = collectSourceRequisitionCodes(selectedItems)
+      await linkRequisitionsToQuotation(supabase, {
+        companyId: companyId!,
+        quotationId,
+        quotationCode: typeof data.code === 'string' ? data.code : null,
+        requisitionCodes: reqCodes,
+        userId: userId ?? null,
+      })
 
       if (status === 'waiting') {
         const boot = await ensureInitialQuotationRound(supabase, {
