@@ -52,7 +52,7 @@ Nas listagens, o padrão é:
 | **Equalização (negociação IA)** | Com painel autônomo aberto — `useAutoRefresh` → `negotiation-runs/[id]/tick` |
 | **Cron externo** | ⚠️ **Desativado** — ver `docs/BACKLOG-PRODUCAO.md` |
 
-O endpoint `POST /api/cron/background-jobs` continua disponível para **GitHub Actions** ou **Vercel Pro**, mas **não** é chamado pelo proxy nem pelo Vercel Cron no Hobby.
+O endpoint `POST /api/cron/background-jobs` continua disponível para **GitHub Actions** (só `workflow_dispatch` — schedule **desligado**) ou **Vercel Pro**, mas **não** é chamado pelo proxy nem por schedule automático. Ver `docs/BACKLOG-PRODUCAO.md`.
 
 ### Variáveis de ambiente (produção)
 

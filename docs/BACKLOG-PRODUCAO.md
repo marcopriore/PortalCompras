@@ -4,22 +4,23 @@
 
 ## ⚠️ Negociação IA autônoma — background real
 
-**Situação atual (Hobby Vercel):**
+**Situação atual (Hobby Vercel + cron desligado):**
 
 - Motor avança **somente** com a equalização aberta (`QuotationNegotiationPlanPanel` → `useAutoRefresh` → `POST /api/negotiation-runs/[id]/tick`).
-- Se o comprador fechar a aba, o evento **pausa de fato** até alguém reabrir a equalização (ou um job externo rodar).
+- Se o comprador fechar a aba, o evento **pausa de fato** até alguém reabrir a equalização.
+- **Cron externo / GitHub Actions em schedule: DESLIGADO** (2026-11-24) — parar e-mails de falha; reativar só com decisão explícita + licença adequada.
 
-**Para produção / cliente:**
+**Para reativar em produção / cliente:**
 
 | Opção | Prós | Contras |
 |-------|------|---------|
-| **Vercel Pro** + `vercel.json` cron | Integrado, 1 cron/dia no Hobby; Pro permite mais | Custo |
-| **GitHub Actions** (`.github/workflows/background-jobs-cron.yml`) | Grátis, ~5 min | Secrets `APP_URL` + `CRON_SECRET` em PRD |
-| **cron-job.org** / similar | Grátis, intervalo curto | URL + secret fora do repo |
+| **Vercel Pro** + `vercel.json` cron | Integrado | Custo Pro |
+| **GitHub Actions** — restaurar `schedule` em `.github/workflows/background-jobs-cron.yml` | Grátis, ~5 min | Secrets `APP_URL` + `CRON_SECRET` |
+| **cron-job.org** / similar | Intervalo curto | URL + secret fora do repo |
 
 Endpoint: `POST /api/cron/background-jobs` com `Authorization: Bearer $CRON_SECRET` ou `x-maintenance-key`.
 
-**Ao reativar:** restaurar bloco `crons` em `vercel.json` (só com plano Pro) **ou** manter só GitHub Actions — não depender dos dois sem necessidade.
+**Ao reativar:** escolher **uma** opção (não Vercel Cron + Actions ao mesmo tempo sem necessidade). Workflow hoje só aceita `workflow_dispatch` (manual).
 
 ---
 
@@ -29,12 +30,22 @@ Endpoint: `POST /api/cron/background-jobs` com `Authorization: Bearer $CRON_SECR
 
 **Removido:** `vercel.json` (único conteúdo era o cron).
 
-**Mantido sem cron:**
+**Se ainda chegar e-mail da Vercel:** conferir no dashboard do projeto → **Cron Jobs** se sobrou job diário residual e apagar.
+
+**Mantido sem cron de plataforma:**
 
 - `close_expired_rounds` / `expire_overdue_contracts` no `proxy.ts` (cooldown por tenant)
 - Contratos: `POST /api/contracts/scheduled-maintenance` via proxy
 - Retry ERP: `POST /api/integrations/auto-retry` via proxy
 - Negociação IA: **apenas** painel na equalização (ver acima)
+
+---
+
+## GitHub Actions cron desativado (2026-11-24)
+
+**Motivo:** e-mails diários de falha (secrets/APP_URL ou endpoint); Hobby sem Pro; decisão de não manter job automático por enquanto.
+
+**Alteração:** removido `on.schedule` de `.github/workflows/background-jobs-cron.yml` — resta só `workflow_dispatch`.
 
 ---
 

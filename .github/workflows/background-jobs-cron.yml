@@ -1,16 +1,15 @@
-# Dispara jobs em background (negociação IA, rodadas vencidas, contratos).
-# Alternativa ao Vercel Cron Pro — GitHub Actions gratuito (mín. ~5 min entre runs).
+# DESABILITADO (2026-11-24) — não roda em schedule.
+# Motivo: Hobby Vercel sem cron Pro; e-mails diários de falha no Actions.
+# Reativar: ver docs/BACKLOG-PRODUCAO.md (Vercel Pro, schedule abaixo, ou cron externo).
 #
-# Secrets em: Repo → Settings → Secrets and variables → Actions
+# Secrets (quando reativar): Repo → Settings → Secrets → Actions
 #   APP_URL              ex. https://portal.seudominio.com.br
-#   CRON_SECRET          ou CONTRACT_MAINTENANCE_SECRET (mesmo valor do .env de PRD)
+#   CRON_SECRET          ou CONTRACT_MAINTENANCE_SECRET
 
 name: Background jobs (cron)
 
 on:
-  schedule:
-    # GitHub: intervalo mínimo prático ~5 min
-    - cron: "*/5 * * * *"
+  # schedule removido de propósito — só disparo manual até nova decisão
   workflow_dispatch:
 
 concurrency:
