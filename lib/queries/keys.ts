@@ -128,4 +128,65 @@ export const queryKeys = {
 
   contractFormSuppliers: (companyId: string) =>
     ["contracts", "formSuppliers", companyId] as const,
+
+  supplierDashboardActivity: (companyId: string, supplierId: string) =>
+    ["supplier", "dashboard", "activity", companyId, supplierId] as const,
+
+  supplierDashboardCharts: (
+    companyId: string,
+    supplierId: string,
+    period: string,
+  ) => ["supplier", "dashboard", "charts", companyId, supplierId, period] as const,
+
+  supplierActivities: (companyId: string, supplierId: string) =>
+    ["supplier", "activities", companyId, supplierId] as const,
+
+  supplierQuotationsList: (companyId: string, supplierId: string) =>
+    ["supplier", "quotations", "list", companyId, supplierId] as const,
+
+  supplierQuotationDetail: (
+    companyId: string,
+    supplierId: string,
+    quotationId: string,
+  ) =>
+    ["supplier", "quotations", "detail", companyId, supplierId, quotationId] as const,
+
+  supplierNegotiationCounterOffers: (
+    companyId: string,
+    supplierId: string,
+    roundId: string,
+  ) =>
+    [
+      "supplier",
+      "negotiationCounterOffers",
+      companyId,
+      supplierId,
+      roundId,
+    ] as const,
+
+  supplierPurchaseOrdersList: (companyId: string, supplierId: string) =>
+    ["supplier", "purchaseOrders", "list", companyId, supplierId] as const,
+
+  supplierPurchaseOrderDetail: (
+    companyId: string,
+    supplierId: string,
+    orderId: string,
+  ) =>
+    ["supplier", "purchaseOrders", "detail", companyId, supplierId, orderId] as const,
+
+  supplierContractsList: (companyId: string, supplierId: string) =>
+    ["supplier", "contracts", "list", companyId, supplierId] as const,
+
+  supplierContractDetail: (
+    companyId: string,
+    supplierId: string,
+    contractId: string,
+  ) =>
+    ["supplier", "contracts", "detail", companyId, supplierId, contractId] as const,
+
+  supplierProfile: (companyId: string, supplierId: string) =>
+    ["supplier", "profile", companyId, supplierId] as const,
+
+  supplierPortalUsers: (companyId: string, supplierId: string) =>
+    ["supplier", "portalUsers", companyId, supplierId] as const,
 } as const

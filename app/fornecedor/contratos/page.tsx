@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useQuery } from "@tanstack/react-query"
 import { formatDateBR } from "@/lib/formato-data"
 import {
   CheckCircle,
@@ -11,6 +12,7 @@ import {
   Eye,
 } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
+import { supplierContractsListQueryOptions } from "@/lib/queries/supplier-contracts-list"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -70,43 +72,17 @@ function statusDisplay(c: Contract): { label: string; className: string } {
 }
 
 export default function FornecedorContratosPage() {
-  const { loading: userLoading, supplierId } = useUser()
+  const { companyId, loading: userLoading, supplierId } = useUser()
 
-  const [contracts, setContracts] = React.useState<Contract[]>([])
-  const [loading, setLoading] = React.useState(true)
   const [search, setSearch] = React.useState("")
 
-  const loadContracts = React.useCallback(
-    async (silent = false) => {
-      if (userLoading) return
-      if (!supplierId) {
-        setContracts([])
-        if (!silent) setLoading(false)
-        return
-      }
+  const contractsQuery = useQuery({
+    ...supplierContractsListQueryOptions(companyId ?? "", supplierId ?? ""),
+    enabled: Boolean(companyId && supplierId) && !userLoading,
+  })
 
-      if (!silent) setLoading(true)
-      try {
-        const res = await fetch("/api/contracts/supplier")
-        const data = (await res.json()) as {
-          contracts?: Contract[]
-          error?: string
-        }
-        if (res.ok && Array.isArray(data.contracts)) {
-          setContracts(data.contracts)
-        } else if (!res.ok) {
-          setContracts([])
-        }
-      } finally {
-        if (!silent) setLoading(false)
-      }
-    },
-    [userLoading, supplierId],
-  )
-
-  React.useEffect(() => {
-    void loadContracts(false)
-  }, [loadContracts])
+  const contracts = contractsQuery.data ?? []
+  const loading = contractsQuery.isLoading
 
   const metrics = React.useMemo(() => {
     const total = contracts.length

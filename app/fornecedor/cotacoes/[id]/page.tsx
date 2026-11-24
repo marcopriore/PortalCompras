@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { useCallback } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import {
   AlertCircle,
@@ -16,6 +18,9 @@ import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
+import { supplierQuotationDetailQueryOptions } from "@/lib/queries/supplier-quotation-detail"
+import { supplierNegotiationCounterOffersQueryOptions } from "@/lib/queries/supplier-negotiation-counter-offers"
+import { invalidateSupplierAfterProposalMutation } from "@/lib/queries/supplier-invalidation"
 import { cn } from "@/lib/utils"
 import { formatDateBR, formatDateTimeBR } from "@/lib/formato-data"
 import { isExpiredDate, isUrgentDate } from "@/lib/utils/date-helpers"
@@ -268,11 +273,25 @@ export default function FornecedorCotacaoPropostaPage({
   params: Promise<{ id: string }>
 }) {
   const { id: quotationId } = React.use(params)
-  const { userId, supplierId, loading: userLoading } = useUser()
+  const { companyId, userId, supplierId, loading: userLoading } = useUser()
+  const queryClient = useQueryClient()
+  const supabaseFactory = useCallback(() => createClient(), [])
   const { maxQuantity, priceDecimalPlaces, percentDecimalPlaces } = useNumericLimits()
 
-  const [loading, setLoading] = React.useState(true)
-  const [loadError, setLoadError] = React.useState<string | null>(null)
+  const detailQuery = useQuery({
+    ...supplierQuotationDetailQueryOptions(
+      companyId ?? "",
+      supplierId ?? "",
+      quotationId,
+      supabaseFactory,
+    ),
+    enabled: Boolean(companyId && supplierId && quotationId) && !userLoading,
+  })
+
+  const loading = detailQuery.isLoading
+  const loadError = detailQuery.isError
+    ? "Não foi possível carregar a cotação."
+    : null
 
   const [quotation, setQuotation] = React.useState<QuotationDetail | null>(null)
   const [rounds, setRounds] = React.useState<RoundRow[]>([])
@@ -316,9 +335,6 @@ export default function FornecedorCotacaoPropostaPage({
   )
   const [globalDiscount, setGlobalDiscount] = React.useState(0)
   const [importWizardOpen, setImportWizardOpen] = React.useState(false)
-  const [counterOffersByItemId, setCounterOffersByItemId] = React.useState<
-    Record<string, { target_unit_price: number; rationale: string | null }>
-  >({})
 
   const refreshProposalForRound = React.useCallback(
     (roundId: string, row: QuotationProposalRow) => {
@@ -327,12 +343,19 @@ export default function FornecedorCotacaoPropostaPage({
     [],
   )
 
+  const invalidateQuotationQueries = React.useCallback(async () => {
+    if (!companyId || !supplierId) return
+    await invalidateSupplierAfterProposalMutation(
+      queryClient,
+      companyId,
+      supplierId,
+      quotationId,
+    )
+  }, [companyId, queryClient, quotationId, supplierId])
+
   React.useEffect(() => {
     if (userLoading) return
-
     if (!supplierId) {
-      setLoading(false)
-      setLoadError(null)
       setQuotation(null)
       setRounds([])
       setQuotationItems([])
@@ -344,187 +367,64 @@ export default function FornecedorCotacaoPropostaPage({
       setPaymentOptions([])
       return
     }
+    const dto = detailQuery.data
+    if (!dto) return
 
-    let cancelled = false
-    const supabase = createClient()
+    const qRow = dto.quotation as QuotationDetail
+    const roundsLocal = dto.rounds as RoundRow[]
+    const itemsLocal = dto.quotationItems as QuotationItemRow[]
+    const active = dto.activeRound as RoundRow | null
+    const previous = dto.previousRound as RoundRow | null
+    const proposalsByRoundMap = dto.proposalsByRoundId as Record<string, QuotationProposalRow>
 
-    const run = async () => {
-      setLoading(true)
-      setLoadError(null)
+    const activeProposal = active ? (proposalsByRoundMap[active.id] ?? null) : null
+    const previousProposal = previous ? (proposalsByRoundMap[previous.id] ?? null) : null
 
-      let qRow: QuotationDetail | null = null
-      let roundsLocal: RoundRow[] = []
-      let itemsLocal: QuotationItemRow[] = []
-      let active: RoundRow | null = null
-      let previous: RoundRow | null = null
-      let activeProposal: QuotationProposalRow | null = null
-      let previousProposal: QuotationProposalRow | null = null
-      let supplierLocal: { name: string; cnpj: string | null } | null = null
-      let proposalsByRoundMap: Record<string, QuotationProposalRow> = {}
+    setQuotation(qRow)
+    setRounds(roundsLocal)
+    setQuotationItems(itemsLocal)
+    setActiveRound(active)
+    setPreviousRound(previous)
+    setSupplierInfo(dto.supplierInfo)
+    setProposalsByRoundId(proposalsByRoundMap)
+    setPaymentOptions(dto.paymentOptions as PaymentOptionRow[])
 
-      const [supplierResult, quotationResult] = await Promise.all([
-        supabase.from("suppliers").select("id, name, cnpj").eq("id", supplierId).single(),
-        supabase
-          .from("quotations")
-          .select("id, code, description, status, company_id, companies(name, cnpj)")
-          .eq("id", quotationId)
-          .single(),
-      ])
+    const defaultSelected = active?.id ?? roundsLocal[roundsLocal.length - 1]?.id ?? null
+    setSelectedRoundId(defaultSelected)
 
-      if (supplierResult.error) {
-        console.error(supplierResult.error)
-        if (!cancelled) setLoadError("Não foi possível carregar os dados do fornecedor.")
-      } else {
-        supplierLocal = {
-          name: supplierResult.data?.name ?? "",
-          cnpj: supplierResult.data?.cnpj ?? null,
-        }
-      }
-
-      if (quotationResult.error) {
-        console.error(quotationResult.error)
-        if (!cancelled) {
-          setLoadError("Não foi possível carregar a cotação.")
-          setQuotation(null)
-          setPaymentOptions([])
-          setLoading(false)
-        }
-        return
-      }
-
-      qRow = quotationResult.data as QuotationDetail
-
-      const companyId = qRow.company_id
-      const [roundsResult, itemsResult, paymentResult, allProposalsResult] = await Promise.all([
-        supabase
-          .from("quotation_rounds")
-          .select(
-            "id, quotation_id, company_id, round_number, status, response_deadline, created_at, closed_at",
-          )
-          .eq("quotation_id", quotationId)
-          .order("round_number", { ascending: true }),
-        supabase
-          .from("quotation_items")
-          .select(
-            "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity",
-          )
-          .eq("quotation_id", quotationId)
-          .order("material_description", { ascending: true }),
-        supabase
-          .from("payment_conditions")
-          .select("id, code, description")
-          .eq("company_id", companyId)
-          .eq("active", true)
-          .order("code", { ascending: true }),
-        supabase
-          .from("quotation_proposals")
-          .select("*, proposal_items(*)")
-          .eq("quotation_id", quotationId)
-          .eq("supplier_id", supplierId),
-      ])
-
-      if (!cancelled) {
-        if (paymentResult.error) {
-          console.error(paymentResult.error)
-          setPaymentOptions([])
-        } else {
-          setPaymentOptions((paymentResult.data ?? []) as PaymentOptionRow[])
-        }
-      }
-
-      if (roundsResult.error) {
-        console.error(roundsResult.error)
-        if (!cancelled) setLoadError("Não foi possível carregar as rodadas.")
-      } else {
-        roundsLocal = (roundsResult.data ?? []) as RoundRow[]
-        active = roundsLocal.find((r) => r.status === "active") ?? null
-        if (active != null) {
-          const activeRoundRef = active
-          previous =
-            roundsLocal.find(
-              (r) => r.round_number === activeRoundRef.round_number - 1,
-            ) ?? null
-        } else {
-          previous = null
-        }
-      }
-
-      if (itemsResult.error) {
-        console.error(itemsResult.error)
-        if (!cancelled) setLoadError("Não foi possível carregar os itens da cotação.")
-      } else {
-        itemsLocal = (itemsResult.data ?? []) as QuotationItemRow[]
-      }
-
-      if (allProposalsResult.error) {
-        console.error(allProposalsResult.error)
-      } else {
-        const list = (allProposalsResult.data ?? []) as QuotationProposalRow[]
-        const map: Record<string, QuotationProposalRow> = {}
-        for (const p of list) {
-          if (p.round_id) map[p.round_id] = p
-        }
-        proposalsByRoundMap = map
-        activeProposal = active ? (map[active.id] ?? null) : null
-        previousProposal = previous ? (map[previous.id] ?? null) : null
-      }
-
-      if (cancelled) return
-
-      setQuotation(qRow)
-      setRounds(roundsLocal)
-      setQuotationItems(itemsLocal)
-      setActiveRound(active)
-      setPreviousRound(previous)
-      setSupplierInfo(supplierLocal)
-      setProposalsByRoundId(proposalsByRoundMap)
-
-      const defaultSelected = active?.id ?? roundsLocal[roundsLocal.length - 1]?.id ?? null
-      setSelectedRoundId(defaultSelected)
-
-      if (activeProposal) {
-        setPrefillFromRoundNumber(null)
-        setProposalId(activeProposal.id)
-        setProposalStatus(activeProposal.status ?? "invited")
-        setPaymentCondition(activeProposal.payment_condition ?? "")
-        setValidityDate(activeProposal.validity_date ? String(activeProposal.validity_date) : "")
-        setObservations(activeProposal.observations ?? "")
-        setPreviousActiveProposal(previousProposal)
-        setItemRows(buildItemFormRows(itemsLocal, activeProposal, previousProposal))
-      } else if (previousProposal) {
-        const prevMeta =
-          previous ??
-          roundsLocal.find((r) => r.id === previousProposal.round_id) ??
-          null
-        setPrefillFromRoundNumber(prevMeta?.round_number ?? null)
-        setProposalId(null)
-        setProposalStatus("invited")
-        setPaymentCondition(previousProposal.payment_condition ?? "")
-        setValidityDate(
-          previousProposal.validity_date ? String(previousProposal.validity_date) : "",
-        )
-        setObservations(previousProposal.observations ?? "")
-        setPreviousActiveProposal(previousProposal)
-        setItemRows(buildItemFormRows(itemsLocal, previousProposal, null, true))
-      } else {
-        setPrefillFromRoundNumber(null)
-        setProposalId(null)
-        setProposalStatus("invited")
-        setPaymentCondition("")
-        setValidityDate("")
-        setObservations("")
-        setPreviousActiveProposal(null)
-        setItemRows(buildItemFormRows(itemsLocal, null, null))
-      }
-
-      setLoading(false)
+    if (activeProposal) {
+      setPrefillFromRoundNumber(null)
+      setProposalId(activeProposal.id)
+      setProposalStatus(activeProposal.status ?? "invited")
+      setPaymentCondition(activeProposal.payment_condition ?? "")
+      setValidityDate(activeProposal.validity_date ? String(activeProposal.validity_date) : "")
+      setObservations(activeProposal.observations ?? "")
+      setPreviousActiveProposal(previousProposal)
+      setItemRows(buildItemFormRows(itemsLocal, activeProposal, previousProposal))
+    } else if (previousProposal) {
+      const prevMeta =
+        previous ?? roundsLocal.find((r) => r.id === previousProposal.round_id) ?? null
+      setPrefillFromRoundNumber(prevMeta?.round_number ?? null)
+      setProposalId(null)
+      setProposalStatus("invited")
+      setPaymentCondition(previousProposal.payment_condition ?? "")
+      setValidityDate(
+        previousProposal.validity_date ? String(previousProposal.validity_date) : "",
+      )
+      setObservations(previousProposal.observations ?? "")
+      setPreviousActiveProposal(previousProposal)
+      setItemRows(buildItemFormRows(itemsLocal, previousProposal, null, true))
+    } else {
+      setPrefillFromRoundNumber(null)
+      setProposalId(null)
+      setProposalStatus("invited")
+      setPaymentCondition("")
+      setValidityDate("")
+      setObservations("")
+      setPreviousActiveProposal(null)
+      setItemRows(buildItemFormRows(itemsLocal, null, null))
     }
-
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [quotationId, supplierId, userLoading])
+  }, [detailQuery.data, supplierId, userLoading])
 
   React.useEffect(() => {
     setItemPage(1)
@@ -534,45 +434,17 @@ export default function FornecedorCotacaoPropostaPage({
     setSubmitWarningCount(0)
   }, [selectedRoundId])
 
-  React.useEffect(() => {
-    if (!supplierId || !selectedRoundId) {
-      setCounterOffersByItemId({})
-      return
-    }
+  const counterOffersQuery = useQuery({
+    ...supplierNegotiationCounterOffersQueryOptions(
+      companyId ?? "",
+      supplierId ?? "",
+      selectedRoundId ?? "",
+      supabaseFactory,
+    ),
+    enabled: Boolean(companyId && supplierId && selectedRoundId),
+  })
 
-    let cancelled = false
-    const supabase = createClient()
-
-    void (async () => {
-      const { data, error } = await supabase
-        .from("negotiation_counter_offers")
-        .select("quotation_item_id, target_unit_price, rationale, supplier_id")
-        .eq("round_id", selectedRoundId)
-
-      if (cancelled) return
-
-      if (error) {
-        console.error("Erro ao carregar preços solicitados:", error)
-        setCounterOffersByItemId({})
-        return
-      }
-
-      const map: Record<string, { target_unit_price: number; rationale: string | null }> = {}
-      for (const row of data ?? []) {
-        const rowSupplierId = row.supplier_id as string | null
-        if (rowSupplierId != null && rowSupplierId !== supplierId) continue
-        map[String(row.quotation_item_id)] = {
-          target_unit_price: Number(row.target_unit_price),
-          rationale: (row.rationale as string | null) ?? null,
-        }
-      }
-      setCounterOffersByItemId(map)
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [supplierId, selectedRoundId])
+  const counterOffersByItemId = counterOffersQuery.data ?? {}
 
   const buyerCompanyId = quotation?.company_id ?? null
 
@@ -950,9 +822,9 @@ export default function FornecedorCotacaoPropostaPage({
           setProposalStatus(full.status)
         }
       }
+      await invalidateQuotationQueries()
       return true
-    } catch (e) {
-      console.error(e)
+    } catch {
       toast.error("Não foi possível salvar a proposta.")
       return false
     } finally {

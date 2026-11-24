@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { formatDateBR, formatDateQueryBR } from "@/lib/formato-data"
 import { CheckCircle, ChevronLeft, Clock, Download, Package, XCircle } from "lucide-react"
 import { toast } from "sonner"
@@ -9,6 +11,12 @@ import { createClient } from "@/lib/supabase/client"
 import { notifyPurchaseOrderBuyer } from "@/lib/notify-purchase-order-buyer"
 import { logAudit } from "@/lib/audit"
 import { useUser } from "@/lib/hooks/useUser"
+import {
+  supplierPurchaseOrderDetailQueryOptions,
+  type SupplierPurchaseOrderDetail,
+  type SupplierPurchaseOrderItem,
+} from "@/lib/queries/supplier-purchase-order-detail"
+import { invalidateSupplierAfterPurchaseOrderMutation } from "@/lib/queries/supplier-invalidation"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -44,44 +52,9 @@ function companyBlock(embed: CompanyEmbed): { name: string; cnpj: string | null 
   return { name: embed.name ?? "—", cnpj: embed.cnpj ?? null }
 }
 
-type PurchaseOrderDetail = {
-  id: string
-  code: string
-  quotation_code: string | null
-  requisition_code: string | null
-  external_code: string | null
-  supplier_name: string
-  supplier_cnpj: string | null
-  payment_condition: string | null
-  delivery_address: string | null
-  total_price: number | null
-  status: string
-  observations: string | null
-  created_at: string
-  created_by: string | null
-  quotation_id: string | null
-  accepted_at: string | null
-  estimated_delivery_date: string | null
-  delivery_days: number | null
-  accepted_by_supplier: boolean | null
-  cancellation_reason: string | null
-  updated_at: string | null
-  company_id: string
-  companies: CompanyEmbed
-}
+type PurchaseOrderDetail = SupplierPurchaseOrderDetail
 
-type POItem = {
-  id: string
-  material_code: string
-  material_description: string
-  site_code: string | null
-  unit_of_measure: string | null
-  quantity: number
-  unit_price: number | null
-  tax_percent: number | null
-  total_price: number | null
-  delivery_days: number | null
-}
+type POItem = SupplierPurchaseOrderItem
 
 type Term = {
   id: string
@@ -118,12 +91,24 @@ export default function FornecedorPedidoDetalhePage({
 }) {
   const { id: orderId } = React.use(params)
   const router = useRouter()
-  const { userId, supplierId } = useUser()
+  const { companyId, userId, supplierId } = useUser()
+  const queryClient = useQueryClient()
+  const supabaseFactory = useCallback(() => createClient(), [])
 
-  const [order, setOrder] = React.useState<PurchaseOrderDetail | null>(null)
-  const [items, setItems] = React.useState<POItem[]>([])
-  const [loading, setLoading] = React.useState(true)
-  const [notFound, setNotFound] = React.useState(false)
+  const detailQuery = useQuery({
+    ...supplierPurchaseOrderDetailQueryOptions(
+      companyId ?? "",
+      supplierId ?? "",
+      orderId,
+      supabaseFactory,
+    ),
+    enabled: Boolean(companyId && supplierId && orderId),
+  })
+
+  const order = detailQuery.data?.order ?? null
+  const items = detailQuery.data?.items ?? []
+  const loading = detailQuery.isLoading
+  const notFound = detailQuery.data?.notFound === true
 
   const [estimatedDate, setEstimatedDate] = React.useState("")
 
@@ -177,60 +162,33 @@ export default function FornecedorPedidoDetalhePage({
     }
   }
 
-  const fetchAll = React.useCallback(async () => {
-    if (!supplierId || !orderId) return
-    const supabase = createClient()
-    const [orderResult, itemsResult] = await Promise.all([
-      supabase
-        .from("purchase_orders")
-        .select(
-          `
-          id, code, quotation_code, requisition_code, external_code,
-          supplier_name, supplier_cnpj, payment_condition,
-          delivery_address, total_price, status, observations,
-          created_at, created_by, quotation_id,
-          accepted_at, estimated_delivery_date, delivery_days,
-          accepted_by_supplier, cancellation_reason, updated_at,
-          company_id, companies(name, cnpj)
-        `,
-        )
-        .eq("id", orderId)
-        .eq("supplier_id", supplierId)
-        .single(),
-      supabase
-        .from("purchase_order_items")
-        .select("*")
-        .eq("purchase_order_id", orderId)
-        .order("material_code", { ascending: true }),
-    ])
+  const invalidatePoDetail = React.useCallback(async () => {
+    if (!companyId || !supplierId) return
+    await invalidateSupplierAfterPurchaseOrderMutation(
+      queryClient,
+      companyId,
+      supplierId,
+      orderId,
+    )
+  }, [companyId, orderId, queryClient, supplierId])
 
-    if (orderResult.error || !orderResult.data) {
-      setNotFound(true)
-      setOrder(null)
-      setItems([])
-      return
-    }
-
-    const o = orderResult.data as PurchaseOrderDetail
-    setNotFound(false)
-    setOrder(o)
-
-    if (itemsResult.error) {
-      console.error("purchase_order_items error:", itemsResult.error)
-    }
-    const rows = (itemsResult.data as POItem[]) ?? []
-    setItems(rows)
-
+  React.useEffect(() => {
+    if (!order) return
+    const rows = items
     const maxDaysFromItems = rows.reduce((max, item) => {
       const dd = item.delivery_days
       return dd != null && dd > max ? dd : max
     }, 0)
     const suggestedDays =
-      maxDaysFromItems > 0 ? maxDaysFromItems : (o.delivery_days ?? 0)
+      maxDaysFromItems > 0 ? maxDaysFromItems : (order.delivery_days ?? 0)
 
-    if (o.estimated_delivery_date) {
-      const raw = String(o.estimated_delivery_date).trim()
-      setEstimatedDate(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : toDateInputValue(o.estimated_delivery_date))
+    if (order.estimated_delivery_date) {
+      const raw = String(order.estimated_delivery_date).trim()
+      setEstimatedDate(
+        /^\d{4}-\d{2}-\d{2}$/.test(raw)
+          ? raw
+          : toDateInputValue(order.estimated_delivery_date),
+      )
     } else if (suggestedDays > 0) {
       const suggested = new Date()
       suggested.setDate(suggested.getDate() + suggestedDays)
@@ -241,23 +199,7 @@ export default function FornecedorPedidoDetalhePage({
     } else {
       setEstimatedDate("")
     }
-  }, [orderId, supplierId])
-
-  React.useEffect(() => {
-    if (!supplierId) {
-      setLoading(false)
-      return
-    }
-    let alive = true
-    ;(async () => {
-      setLoading(true)
-      await fetchAll()
-      if (alive) setLoading(false)
-    })()
-    return () => {
-      alive = false
-    }
-  }, [fetchAll, supplierId])
+  }, [order, items])
 
   const co = order ? companyBlock(order.companies) : { name: "—", cnpj: null }
   const statusMeta = order ? getPOStatusForSupplier(order.status) : null
@@ -383,9 +325,8 @@ export default function FornecedorPedidoDetalhePage({
 
       setTermsDialogOpen(false)
       setActiveTerm(null)
-      await fetchAll()
+      await invalidatePoDetail()
     } catch (e) {
-      console.error(e)
       toast.error("Não foi possível aceitar o pedido.")
     } finally {
       setSaving(false)
@@ -438,9 +379,8 @@ export default function FornecedorPedidoDetalhePage({
       toast.success("Pedido recusado.")
       setRejectOpen(false)
       setRejectReason("")
-      await fetchAll()
+      await invalidatePoDetail()
     } catch (e) {
-      console.error(e)
       toast.error("Não foi possível recusar o pedido.")
     } finally {
       setSaving(false)
@@ -498,9 +438,8 @@ export default function FornecedorPedidoDetalhePage({
       toast.success("Data de entrega atualizada.")
       setDateChangeDialog(false)
       setDateChangeReason("")
-      await fetchAll()
+      await invalidatePoDetail()
     } catch (e) {
-      console.error(e)
       toast.error("Não foi possível atualizar a data.")
     } finally {
       setSaving(false)

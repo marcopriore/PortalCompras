@@ -1,30 +1,18 @@
 "use client"
 
 import * as React from "react"
+import { useCallback } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Building2, Mail, MapPin, Phone, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { supplierProfileQueryOptions } from "@/lib/queries/supplier-profile"
+import { queryKeys } from "@/lib/queries/keys"
 import { formatCnpj } from "@/lib/utils/cnpj"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-
-type SupplierProfile = {
-  id: string
-  code: string
-  name: string
-  cnpj: string | null
-  email: string | null
-  phone: string | null
-  category: string | null
-  city: string | null
-  state: string | null
-  status: string | null
-  created_at: string | null
-}
-
-type CategoryRow = { category: string }
 
 function Field({
   label,
@@ -44,59 +32,35 @@ function Field({
 }
 
 export default function FornecedorPerfilPage() {
-  const { supplierId, loading: userLoading } = useUser()
-  const [loading, setLoading] = React.useState(true)
-  const [supplier, setSupplier] = React.useState<SupplierProfile | null>(null)
-  const [categories, setCategories] = React.useState<string[]>([])
+  const { companyId, supplierId, loading: userLoading } = useUser()
+  const queryClient = useQueryClient()
+  const supabaseFactory = useCallback(() => createClient(), [])
 
-  const load = React.useCallback(async () => {
-    if (userLoading) return
-    if (!supplierId) {
-      setSupplier(null)
-      setCategories([])
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    try {
-      const supabase = createClient()
-      const [supRes, catRes] = await Promise.all([
-        supabase
-          .from("suppliers")
-          .select(
-            "id, code, name, cnpj, email, phone, category, city, state, status, created_at",
-          )
-          .eq("id", supplierId)
-          .maybeSingle(),
-        supabase
-          .from("supplier_categories")
-          .select("category")
-          .eq("supplier_id", supplierId),
-      ])
-
-      if (supRes.error) {
-        toast.error(supRes.error.message || "Erro ao carregar perfil.")
-        setSupplier(null)
-        return
-      }
-      setSupplier((supRes.data as SupplierProfile | null) ?? null)
-      setCategories(
-        ((catRes.data ?? []) as CategoryRow[])
-          .map((c) => c.category)
-          .filter(Boolean),
-      )
-    } catch {
-      toast.error("Erro inesperado ao carregar perfil.")
-      setSupplier(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [supplierId, userLoading])
+  const profileQuery = useQuery({
+    ...supplierProfileQueryOptions(
+      companyId ?? "",
+      supplierId ?? "",
+      supabaseFactory,
+    ),
+    enabled: Boolean(companyId && supplierId) && !userLoading,
+  })
 
   React.useEffect(() => {
-    void load()
-  }, [load])
+    if (profileQuery.isError) {
+      toast.error("Erro ao carregar perfil.")
+    }
+  }, [profileQuery.isError])
+
+  const loading = profileQuery.isLoading || profileQuery.isFetching
+  const supplier = profileQuery.data?.supplier ?? null
+  const categories = profileQuery.data?.categories ?? []
+
+  const load = () => {
+    if (!companyId || !supplierId) return
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.supplierProfile(companyId, supplierId),
+    })
+  }
 
   const statusLabel =
     supplier?.status === "active"
@@ -120,7 +84,7 @@ export default function FornecedorPerfilPage() {
           type="button"
           variant="ghost"
           size="icon"
-          onClick={() => void load()}
+          onClick={load}
           disabled={loading}
         >
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />

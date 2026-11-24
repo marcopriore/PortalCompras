@@ -27,9 +27,9 @@ Ordem sugerida de lotes pós Fase 5. Cada lote = 1 commit (ou poucos).
 
 ## Lote B — Portal fornecedor
 
-- [ ] Dashboard, cotações lista/detalhe, pedidos lista/detalhe
-- [ ] Contratos, usuários, perfil, atividades
-- [ ] Shell / seletor de cliente (se ainda refetch desnecessário)
+- [x] Dashboard, cotações lista/detalhe, pedidos lista/detalhe
+- [x] Contratos, usuários, perfil, atividades
+- [ ] Shell / seletor de cliente (se ainda refetch desnecessário) — sem fetch de dados; selector só POST activate-tenant
 
 ## Lote C — Solicitante + suporte + admin
 

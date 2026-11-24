@@ -1,10 +1,13 @@
 "use client"
 
 import * as React from "react"
+import { useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { ChevronLeft, Search, X } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { supplierActivitiesQueryOptions } from "@/lib/queries/supplier-activities"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -26,14 +29,6 @@ import {
 } from "@/components/ui/table"
 import { formatDateTimeBR } from "@/lib/utils/date-helpers"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
-import {
-  mapOrderRowsToActivityItems,
-  mapProposalRowsToActivityItems,
-  mergeActivityByUpdatedAt,
-  type ActivityItem,
-  type OrderActivityRow,
-  type ProposalActivityRow,
-} from "@/lib/utils/activity-helpers"
 
 const PAGE_SIZE = TABLE_PAGE_SIZE
 
@@ -42,81 +37,32 @@ type PeriodFilter = "all" | "today" | "7" | "30" | "90"
 
 export default function FornecedorAtividadesPage() {
   const router = useRouter()
-  const { supplierId, loading: userLoading } = useUser()
-
-  const [combined, setCombined] = React.useState<ActivityItem[]>([])
-  const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState(false)
+  const { companyId, supplierId, loading: userLoading } = useUser()
 
   const [search, setSearch] = React.useState("")
   const [moduleFilter, setModuleFilter] = React.useState<ModuleFilter>("all")
   const [periodFilter, setPeriodFilter] = React.useState<PeriodFilter>("all")
   const [page, setPage] = React.useState(1)
 
+  const supabaseFactory = useCallback(() => createClient(), [])
+
+  const activitiesQuery = useQuery({
+    ...supplierActivitiesQueryOptions(
+      companyId ?? "",
+      supplierId ?? "",
+      supabaseFactory,
+      200,
+    ),
+    enabled: Boolean(companyId && supplierId) && !userLoading,
+  })
+
+  const combined = activitiesQuery.data ?? []
+  const loading = activitiesQuery.isLoading
+  const error = activitiesQuery.isError
+
   React.useEffect(() => {
     setPage(1)
   }, [search, moduleFilter, periodFilter])
-
-  React.useEffect(() => {
-    if (userLoading) return
-    if (!supplierId) {
-      setCombined([])
-      setLoading(false)
-      return
-    }
-
-    let cancelled = false
-    const supabase = createClient()
-
-    const run = async () => {
-      setLoading(true)
-      setError(false)
-      try {
-        const [proposalsRes, ordersRes] = await Promise.all([
-          supabase
-            .from("quotation_proposals")
-            .select("status, updated_at, quotation_id, quotations!inner(code)")
-            .eq("supplier_id", supplierId)
-            .order("updated_at", { ascending: false })
-            .limit(200),
-          supabase
-            .from("purchase_orders")
-            .select("id, code, status, updated_at")
-            .eq("supplier_id", supplierId)
-            .neq("status", "draft")
-            .neq("status", "awaiting_approval")
-            .order("updated_at", { ascending: false })
-            .limit(200),
-        ])
-
-        if (proposalsRes.error) throw proposalsRes.error
-        if (ordersRes.error) throw ordersRes.error
-
-        const mappedProposals = mapProposalRowsToActivityItems(
-          (proposalsRes.data as ProposalActivityRow[]) ?? [],
-        )
-        const mappedOrders = mapOrderRowsToActivityItems(
-          (ordersRes.data as OrderActivityRow[]) ?? [],
-        )
-        const merged = mergeActivityByUpdatedAt(mappedProposals, mappedOrders)
-
-        if (!cancelled) setCombined(merged)
-      } catch (e) {
-        console.error("Erro ao carregar histórico de atividades:", e)
-        if (!cancelled) {
-          setError(true)
-          setCombined([])
-        }
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [supplierId, userLoading])
 
   const filtered = React.useMemo(() => {
     return combined.filter((item) => {

@@ -1,10 +1,15 @@
 "use client"
 
 import * as React from "react"
+import { useCallback } from "react"
+import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
-import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
+import {
+  supplierQuotationsListQueryOptions,
+  type SupplierQuotationsListRow,
+} from "@/lib/queries/supplier-quotations-list"
 import { LastUpdated } from "@/components/ui/last-updated"
 import {
   formatDateBR,
@@ -38,42 +43,7 @@ import {
   Eye,
 } from "lucide-react"
 
-type QuotationRow = {
-  id: string
-  code: string
-  description: string
-  status: string
-  created_at: string
-  company_id: string | null
-}
-
-type RoundRow = {
-  id: string
-  quotation_id: string
-  round_number: number
-  response_deadline: string | null
-  status: string
-}
-
-type CompanyMapValue = { name: string; cnpj: string | null }
-
-type ProposalRow = {
-  quotation_id: string
-  round_id: string | null
-  status: string
-}
-
-type QuotationsTableRow = {
-  id: string
-  code: string
-  description: string
-  status: string
-  createdAt: string
-  companies: { name: string; cnpj: string | null } | null
-  roundNumber: number | null
-  responseDeadline: string | null
-  proposalStatus: string | null
-}
+type QuotationsTableRow = SupplierQuotationsListRow
 
 const statusBadgeBase =
   "inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full"
@@ -147,18 +117,34 @@ const statusOptions = [
 ]
 
 export default function FornecedorCotacoesPage() {
-  const { supplierId, loading: userLoading } = useUser()
+  const { companyId, supplierId, loading: userLoading } = useUser()
 
-  const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState(false)
+  const supabaseFactory = useCallback(() => createClient(), [])
+  const listEnabled = Boolean(companyId && supplierId) && !userLoading
+  const pollingIntervalMs = usePollingIntervalMs()
 
-  const [mAwaiting, setMAwaiting] = React.useState(0)
-  const [mInAnalysis, setMInAnalysis] = React.useState(0)
-  const [mWinners, setMWinners] = React.useState(0)
-  const [mClosed, setMClosed] = React.useState(0)
+  const listQuery = useQuery({
+    ...supplierQuotationsListQueryOptions(
+      companyId ?? "",
+      supplierId ?? "",
+      supabaseFactory,
+    ),
+    enabled: listEnabled,
+    placeholderData: keepPreviousData,
+    refetchInterval: listEnabled ? pollingIntervalMs : false,
+  })
 
-  const [hasInvites, setHasInvites] = React.useState(false)
-  const [tableRows, setTableRows] = React.useState<QuotationsTableRow[]>([])
+  const loading = listQuery.isLoading
+  const error = listQuery.isError
+  const mAwaiting = listQuery.data?.metrics.awaiting ?? 0
+  const mInAnalysis = listQuery.data?.metrics.inAnalysis ?? 0
+  const mWinners = listQuery.data?.metrics.winners ?? 0
+  const mClosed = listQuery.data?.metrics.closed ?? 0
+  const hasInvites = listQuery.data?.hasInvites ?? false
+  const tableRows = listQuery.data?.rows ?? []
+  const lastUpdated =
+    listQuery.dataUpdatedAt > 0 ? new Date(listQuery.dataUpdatedAt) : null
+  const isRefreshing = listQuery.isFetching && !listQuery.isLoading
 
   const [filterSearch, setFilterSearch] = React.useState("")
   const [filterStatuses, setFilterStatuses] = React.useState<string[]>([])
@@ -166,10 +152,6 @@ export default function FornecedorCotacoesPage() {
 
   const [page, setPage] = React.useState(1)
   const pageSize = TABLE_PAGE_SIZE
-  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
-  const [isRefreshing, setIsRefreshing] = React.useState(false)
-  const supplierIdRef = React.useRef(supplierId)
-  supplierIdRef.current = supplierId
 
   const filteredQuotations = React.useMemo(() => {
     let rows = tableRows
@@ -226,323 +208,6 @@ export default function FornecedorCotacoesPage() {
   React.useEffect(() => {
     setPage(1)
   }, [filterSearch, filterStatuses, filterPeriod])
-
-  const loadCotacoesData = React.useCallback(
-    async (silent = false) => {
-      const startedSupplierId = supplierId
-      const stillHere = () => supplierIdRef.current === startedSupplierId
-
-      if (userLoading) return
-
-      if (!supplierId) {
-        setLoading(false)
-        setError(false)
-        setMAwaiting(0)
-        setMInAnalysis(0)
-        setMWinners(0)
-        setMClosed(0)
-        setHasInvites(false)
-        setTableRows([])
-        if (!silent) {
-          setFilterSearch("")
-          setFilterStatuses([])
-          setFilterPeriod("all")
-          setPage(1)
-        }
-        return
-      }
-
-      const supabase = createClient()
-
-      if (!silent) {
-        setLoading(true)
-      }
-      setError(false)
-
-      let quotationIds: string[] = []
-
-      try {
-        const invitesRes = await supabase
-          .from("quotation_suppliers")
-          .select("quotation_id")
-          .eq("supplier_id", supplierId)
-
-        if (invitesRes.error) throw invitesRes.error
-        quotationIds = [
-          ...new Set((invitesRes.data ?? []).map((r) => r.quotation_id)),
-        ]
-        if (stillHere()) setHasInvites(quotationIds.length > 0)
-      } catch (err) {
-        console.error("Erro ao carregar cotações fornecedor:", err)
-        if (stillHere()) {
-          setError(true)
-          setHasInvites(false)
-          setTableRows([])
-        }
-        quotationIds = []
-      }
-
-      try {
-        if (quotationIds.length === 0) {
-          if (stillHere()) {
-            setMAwaiting(0)
-            setMInAnalysis(0)
-            setMClosed(0)
-            setMWinners(0)
-          }
-        } else {
-          const [roundsRes, selectedCountRes, submittedRowsRes, completedCountRes] =
-            await Promise.all([
-              supabase
-                .from("quotation_rounds")
-                .select(
-                  "id, quotation_id, round_number, response_deadline, status",
-                )
-                .in("quotation_id", quotationIds)
-                .eq("status", "active"),
-              supabase
-                .from("quotation_proposals")
-                .select("id", { count: "exact", head: true })
-                .eq("supplier_id", supplierId)
-                .eq("status", "selected"),
-              supabase
-                .from("quotation_proposals")
-                .select("quotation_id")
-                .eq("supplier_id", supplierId)
-                .eq("status", "submitted"),
-              supabase
-                .from("quotations")
-                .select("id", { count: "exact", head: true })
-                .in("id", quotationIds)
-                .eq("status", "completed"),
-            ])
-
-          if (
-            roundsRes.error ||
-            selectedCountRes.error ||
-            submittedRowsRes.error ||
-            completedCountRes.error
-          ) {
-            throw (
-              roundsRes.error ||
-              selectedCountRes.error ||
-              submittedRowsRes.error ||
-              completedCountRes.error
-            )
-          }
-
-          if (stillHere()) {
-            setMWinners(selectedCountRes.count ?? 0)
-            setMClosed(completedCountRes.count ?? 0)
-          }
-
-          const activeRounds = (roundsRes.data ?? []) as RoundRow[]
-          const activeRoundIds = activeRounds.map((r) => r.id)
-
-          let awaiting = 0
-          if (activeRoundIds.length > 0) {
-            const invitedCountRes = await supabase
-              .from("quotation_proposals")
-              .select("id", { count: "exact", head: true })
-              .eq("supplier_id", supplierId)
-              .eq("status", "invited")
-              .in("round_id", activeRoundIds)
-            if (invitedCountRes.error) throw invitedCountRes.error
-            awaiting = invitedCountRes.count ?? 0
-          }
-          if (stillHere()) setMAwaiting(awaiting)
-
-          const submittedRows =
-            (submittedRowsRes.data ?? []) as { quotation_id: string }[]
-          const submittedQids = [...new Set(submittedRows.map((r) => r.quotation_id))]
-
-          let inAnalysis = 0
-          if (submittedQids.length > 0) {
-            const { data: qaRows, error: qaErr } = await supabase
-              .from("quotations")
-              .select("id")
-              .in("id", submittedQids)
-              .in("status", ["waiting", "analysis"])
-            if (qaErr) throw qaErr
-            const allowed = new Set((qaRows ?? []).map((q) => q.id))
-            inAnalysis = submittedRows.filter((r) => allowed.has(r.quotation_id)).length
-          }
-          if (stillHere()) setMInAnalysis(inAnalysis)
-        }
-      } catch (err) {
-        console.error("Erro ao carregar métricas fornecedor:", err)
-        if (stillHere()) {
-          setError(true)
-          setMAwaiting(0)
-          setMInAnalysis(0)
-          setMWinners(0)
-          setMClosed(0)
-        }
-      }
-
-      try {
-        if (quotationIds.length === 0) {
-          if (stillHere()) setTableRows([])
-        } else {
-          const quotationsRes = await supabase
-            .from("quotations")
-            .select("id, code, description, status, created_at, company_id")
-            .in("id", quotationIds)
-
-          if (quotationsRes.error) throw quotationsRes.error
-
-          const quotationRows =
-            (quotationsRes.data ?? []) as QuotationRow[]
-
-          const companyIds = [
-            ...new Set(quotationRows.map((q) => q.company_id).filter(Boolean)),
-          ] as string[]
-
-          let companyMap: Record<string, CompanyMapValue> = {}
-          if (companyIds.length > 0) {
-            const { data: companiesData, error: companiesErr } = await supabase
-              .from("companies")
-              .select("id, name, cnpj")
-              .in("id", companyIds)
-            // RLS do fornecedor pode negar companies sem PO — não bloquear a lista
-            if (companiesErr) {
-              console.warn("Empresas (cliente) não disponíveis via RLS:", companiesErr.message)
-            } else {
-              companyMap = Object.fromEntries(
-                (companiesData ?? []).map((c) => [
-                  c.id,
-                  { name: c.name, cnpj: c.cnpj ?? null },
-                ]),
-              )
-            }
-          }
-
-          const roundsRes = await supabase
-            .from("quotation_rounds")
-            .select(
-              "id, quotation_id, round_number, response_deadline, status",
-            )
-            .in("quotation_id", quotationIds)
-            .eq("status", "active")
-          if (roundsRes.error) throw roundsRes.error
-
-          const activeRounds = (roundsRes.data ?? []) as RoundRow[]
-          const roundByQuotation = new Map<string, RoundRow>()
-          for (const r of activeRounds) {
-            roundByQuotation.set(r.quotation_id, r)
-          }
-
-          const baseRows: QuotationsTableRow[] = quotationRows.map((q) => {
-            const ar = roundByQuotation.get(q.id) ?? null
-            const coRaw = q.company_id ? companyMap[q.company_id] : undefined
-            const companies = coRaw
-              ? { name: coRaw.name, cnpj: coRaw.cnpj }
-              : null
-            return {
-              id: q.id,
-              code: q.code,
-              description: q.description,
-              status: q.status,
-              createdAt: q.created_at,
-              companies,
-              roundNumber: ar?.round_number ?? null,
-              responseDeadline: ar?.response_deadline ?? null,
-              proposalStatus: null,
-            }
-          })
-
-          baseRows.sort((a, b) => {
-            const da = a.responseDeadline
-              ? new Date(`${a.responseDeadline}T00:00:00`).getTime()
-              : Number.POSITIVE_INFINITY
-            const db = b.responseDeadline
-              ? new Date(`${b.responseDeadline}T00:00:00`).getTime()
-              : Number.POSITIVE_INFINITY
-            return da - db
-          })
-
-          if (stillHere()) setTableRows(baseRows)
-        }
-      } catch (err) {
-        console.error("Erro ao carregar cotações fornecedor:", err)
-        if (stillHere()) {
-          setError(true)
-          setTableRows([])
-        }
-      }
-
-      try {
-        if (quotationIds.length > 0) {
-          const myProposalsRes = await supabase
-            .from("quotation_proposals")
-            .select("quotation_id, round_id, status")
-            .eq("supplier_id", supplierId)
-            .in("quotation_id", quotationIds)
-
-          if (myProposalsRes.error) throw myProposalsRes.error
-          const myProposalsRows = (myProposalsRes.data ?? []) as ProposalRow[]
-
-          const priority: Record<string, number> = {
-            selected: 4,
-            submitted: 3,
-            invited: 2,
-            rejected: 1,
-          }
-
-          const proposalStatusByQuotation = new Map<string, string>()
-          const proposalRankByQuotation = new Map<string, number>()
-
-          for (const p of myProposalsRows) {
-            const cur = proposalRankByQuotation.get(p.quotation_id) ?? 0
-            const next = priority[p.status] ?? 0
-            if (next > cur) {
-              proposalRankByQuotation.set(p.quotation_id, next)
-              proposalStatusByQuotation.set(p.quotation_id, p.status)
-            }
-          }
-
-          if (stillHere()) {
-            setTableRows((prev) =>
-              prev.map((r) => ({
-                ...r,
-                proposalStatus: proposalStatusByQuotation.get(r.id) ?? null,
-              })),
-            )
-          }
-        }
-      } catch (err) {
-        console.error("Erro ao carregar propostas fornecedor:", err)
-        if (stillHere()) setError(true)
-      } finally {
-        if (stillHere()) {
-          setLastUpdated(new Date())
-          if (!silent) setLoading(false)
-        }
-      }
-    },
-    [supplierId, userLoading],
-  )
-
-  React.useEffect(() => {
-    void loadCotacoesData(false)
-  }, [loadCotacoesData])
-
-  const refreshCotacoes = React.useCallback(async () => {
-    setIsRefreshing(true)
-    try {
-      await loadCotacoesData(true)
-    } finally {
-      setIsRefreshing(false)
-    }
-  }, [loadCotacoesData])
-
-  const pollingIntervalMs = usePollingIntervalMs()
-
-  useAutoRefresh({
-    intervalMs: pollingIntervalMs,
-    onRefresh: refreshCotacoes,
-    enabled: Boolean(supplierId) && !userLoading,
-  })
 
   return (
     <div className="space-y-10">

@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { formatDateBR, formatDateTimeBR } from "@/lib/formato-data"
 import { toast } from "sonner"
 import {
@@ -12,6 +13,8 @@ import {
   XCircle,
 } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
+import { supplierContractDetailQueryOptions } from "@/lib/queries/supplier-contract-detail"
+import { invalidateSupplierAfterContractMutation } from "@/lib/queries/supplier-invalidation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -100,16 +103,24 @@ export default function FornecedorContratoDetalhePage({
 }) {
   const { id } = React.use(params)
   const router = useRouter()
-  const { loading: userLoading, supplierId } = useUser()
+  const { companyId, loading: userLoading, supplierId } = useUser()
+  const queryClient = useQueryClient()
 
-  const [contract, setContract] = React.useState<Contract | null>(null)
-  const [acceptances, setAcceptances] = React.useState<ContractAcceptance[]>([])
-  const [supplierTerms, setSupplierTerms] = React.useState<SupplierTerms | null>(
-    null,
-  )
-  const [companyName, setCompanyName] = React.useState("")
-  const [loading, setLoading] = React.useState(true)
-  const [notFound, setNotFound] = React.useState(false)
+  const detailQuery = useQuery({
+    ...supplierContractDetailQueryOptions(
+      companyId ?? "",
+      supplierId ?? "",
+      id,
+    ),
+    enabled: Boolean(companyId && supplierId && id) && !userLoading,
+  })
+
+  const contract = detailQuery.data?.contract ?? null
+  const acceptances = detailQuery.data?.acceptances ?? []
+  const supplierTerms = detailQuery.data?.supplierTerms ?? null
+  const companyName = detailQuery.data?.companyName ?? ""
+  const loading = detailQuery.isLoading
+  const notFound = detailQuery.data?.notFound === true
   const [acting, setActing] = React.useState(false)
   const [refuseReason, setRefuseReason] = React.useState("")
   const [showRefuseForm, setShowRefuseForm] = React.useState(false)
@@ -117,57 +128,21 @@ export default function FornecedorContratoDetalhePage({
   const [termsDialogOpen, setTermsDialogOpen] = React.useState(false)
   const [generatingPdf, setGeneratingPdf] = React.useState(false)
 
-  const load = React.useCallback(async (silent = false) => {
-    if (!silent) {
-      setLoading(true)
-      setNotFound(false)
-    }
-    try {
-      const res = await fetch(`/api/contracts/${id}/supplier-view`)
-      const data = (await res.json()) as {
-        contract?: Contract
-        acceptances?: ContractAcceptance[]
-        supplierTerms?: SupplierTerms | null
-        companyName?: string
-        error?: string
-      }
-      if (res.status === 404) {
-        if (!silent) {
-          setContract(null)
-          setNotFound(true)
-          setAcceptances([])
-          setSupplierTerms(null)
-          setCompanyName("")
-        }
-        return
-      }
-      if (!res.ok || !data.contract) {
-        if (!silent) {
-          toast.error(data.error ?? "Não foi possível carregar o contrato.")
-          setContract(null)
-          setAcceptances([])
-          setSupplierTerms(null)
-          setCompanyName("")
-        }
-        return
-      }
-      setContract(data.contract)
-      setAcceptances(Array.isArray(data.acceptances) ? data.acceptances : [])
-      setSupplierTerms(data.supplierTerms ?? null)
-      setCompanyName(data.companyName?.trim() ?? "")
-    } finally {
-      if (!silent) setLoading(false)
-    }
-  }, [id])
-
   React.useEffect(() => {
-    if (userLoading) return
-    if (!supplierId) {
-      setLoading(false)
-      return
+    if (detailQuery.isError && !notFound) {
+      toast.error("Não foi possível carregar o contrato.")
     }
-    void load(false)
-  }, [userLoading, supplierId, load])
+  }, [detailQuery.isError, notFound])
+
+  const reloadContract = React.useCallback(async () => {
+    if (!companyId || !supplierId) return
+    await invalidateSupplierAfterContractMutation(
+      queryClient,
+      companyId,
+      supplierId,
+      id,
+    )
+  }, [companyId, id, queryClient, supplierId])
 
   const handleDownloadPDF = async () => {
     if (!contract) return
@@ -210,7 +185,7 @@ export default function FornecedorContratoDetalhePage({
       setRefuseReason("")
       setTermsDialogOpen(false)
       setTermsAccepted(false)
-      await load()
+      await reloadContract()
     } finally {
       setActing(false)
     }
@@ -237,7 +212,7 @@ export default function FornecedorContratoDetalhePage({
       toast.success("Contrato recusado")
       setShowRefuseForm(false)
       setRefuseReason("")
-      await load()
+      await reloadContract()
     } finally {
       setActing(false)
     }

@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+import { useCallback } from "react"
+import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import { formatDateBR } from "@/lib/formato-data"
 import {
   CheckCircle,
@@ -12,8 +14,11 @@ import {
 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
-import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
+import {
+  supplierPurchaseOrdersListQueryOptions,
+  type SupplierPurchaseOrderListRow,
+} from "@/lib/queries/supplier-purchase-orders-list"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -49,21 +54,7 @@ const money = new Intl.NumberFormat("pt-BR", {
 
 type CompanyEmbed = { name: string } | { name: string }[] | null
 
-type PurchaseOrderRow = {
-  id: string
-  code: string
-  quotation_code: string | null
-  supplier_name: string
-  status: string
-  total_price: number | null
-  payment_condition: string | null
-  estimated_delivery_date: string | null
-  accepted_at: string | null
-  created_at: string
-  accepted_by_supplier: boolean | null
-  company_id: string
-  companies: CompanyEmbed
-}
+type PurchaseOrderRow = SupplierPurchaseOrderListRow
 
 function companyName(embed: CompanyEmbed): string {
   if (!embed) return "—"
@@ -82,79 +73,35 @@ function getPeriodStartDays(period: string): string | null {
 const PAGE_SIZE = TABLE_PAGE_SIZE
 
 export default function FornecedorPedidosPage() {
-  const { supplierId, loading: userLoading } = useUser()
-
-  const [rows, setRows] = React.useState<PurchaseOrderRow[]>([])
-  const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState(false)
+  const { companyId, supplierId, loading: userLoading } = useUser()
 
   const [search, setSearch] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState<string>("all")
   const [period, setPeriod] = React.useState<string>("all")
   const [page, setPage] = React.useState(1)
   const searchInputRef = React.useRef<HTMLDivElement>(null)
-  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
-  const [isRefreshing, setIsRefreshing] = React.useState(false)
 
-  const loadPedidos = React.useCallback(
-    async (silent = false) => {
-      if (userLoading) return
-      if (!supplierId) {
-        setRows([])
-        setLoading(false)
-        return
-      }
-
-      if (!silent) {
-        setLoading(true)
-      }
-      setError(false)
-      const supabase = createClient()
-      try {
-        const { data, error: qErr } = await supabase
-          .from("purchase_orders")
-          .select(
-            `
-            id, code, quotation_code, supplier_name, status,
-            total_price, payment_condition, estimated_delivery_date,
-            accepted_at, created_at, accepted_by_supplier,
-            company_id, companies(name)
-          `,
-          )
-          .eq("supplier_id", supplierId)
-          .neq("status", "draft")
-          .neq("status", "awaiting_approval")
-          .order("created_at", { ascending: false })
-
-        if (qErr) throw qErr
-        setRows((data as PurchaseOrderRow[]) ?? [])
-        setLastUpdated(new Date())
-      } catch (e) {
-        console.error(e)
-        setError(true)
-        setRows([])
-      } finally {
-        if (!silent) setLoading(false)
-      }
-    },
-    [supplierId, userLoading],
-  )
-
-  React.useEffect(() => {
-    void loadPedidos(false)
-  }, [loadPedidos])
-
-  const refresh = React.useCallback(async () => {
-    setIsRefreshing(true)
-    try {
-      await loadPedidos(true)
-    } finally {
-      setIsRefreshing(false)
-    }
-  }, [loadPedidos])
-
+  const supabaseFactory = useCallback(() => createClient(), [])
+  const listEnabled = Boolean(companyId && supplierId) && !userLoading
   const pollingIntervalMs = usePollingIntervalMs()
-  useAutoRefresh({ intervalMs: pollingIntervalMs, onRefresh: refresh, enabled: Boolean(supplierId) && !userLoading })
+
+  const ordersQuery = useQuery({
+    ...supplierPurchaseOrdersListQueryOptions(
+      companyId ?? "",
+      supplierId ?? "",
+      supabaseFactory,
+    ),
+    enabled: listEnabled,
+    placeholderData: keepPreviousData,
+    refetchInterval: listEnabled ? pollingIntervalMs : false,
+  })
+
+  const rows = ordersQuery.data ?? []
+  const loading = ordersQuery.isLoading
+  const error = ordersQuery.isError
+  const lastUpdated =
+    ordersQuery.dataUpdatedAt > 0 ? new Date(ordersQuery.dataUpdatedAt) : null
+  const isRefreshing = ordersQuery.isFetching && !ordersQuery.isLoading
 
   const metrics = React.useMemo(() => {
     return {

@@ -15,16 +15,16 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts"
+import { useCallback } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { supplierDashboardActivityQueryOptions } from "@/lib/queries/supplier-activities"
 import {
-  mapOrderRowsToActivityItems,
-  mapProposalRowsToActivityItems,
-  mergeActivityByUpdatedAt,
-  type ActivityItem,
-  type OrderActivityRow,
-  type ProposalActivityRow,
-} from "@/lib/utils/activity-helpers"
+  supplierDashboardChartsQueryOptions,
+  type SupplierDashboardPeriod,
+} from "@/lib/queries/supplier-dashboard"
+import type { ActivityItem } from "@/lib/utils/activity-helpers"
 
 function relativeListDay(iso: string): string {
   const t = new Date(iso)
@@ -38,28 +38,11 @@ function relativeListDay(iso: string): string {
   return `há ${diff} dias`
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  invited: "Aguardando Resposta",
-  submitted: "Proposta Enviada",
-  selected: "Vencedor",
-  rejected: "Encerrada",
-}
-
 const COLORS: Record<string, string> = {
   "Aguardando Resposta": "#F59E0B",
   "Proposta Enviada": "#3B82F6",
   Vencedor: "#10B981",
   Encerrada: "#94A3B8",
-}
-
-type PeriodKey = "30" | "90" | "365" | "all"
-
-function getPeriodStart(period: string): string | null {
-  if (period === "all") return null
-  const days = parseInt(period, 10)
-  const date = new Date()
-  date.setDate(date.getDate() - days)
-  return date.toISOString()
 }
 
 function renderCustomLabel({
@@ -100,176 +83,37 @@ function renderCustomLabel({
 }
 
 export default function FornecedorDashboardPage() {
-  const { supplierId, loading: userLoading } = useUser()
-  const [error, setError] = React.useState(false)
+  const { companyId, supplierId, loading: userLoading } = useUser()
+  const [period, setPeriod] = React.useState<SupplierDashboardPeriod>("90")
 
-  const [period, setPeriod] = React.useState<PeriodKey>("90")
-  const [donutData, setDonutData] = React.useState<{ name: string; value: number }[]>([])
-  const [topClientsData, setTopClientsData] = React.useState<{ name: string; count: number }[]>([])
-  const [chartsLoading, setChartsLoading] = React.useState(false)
+  const supabaseFactory = useCallback(() => createClient(), [])
+  const listEnabled = Boolean(companyId && supplierId) && !userLoading
 
-  const [activity, setActivity] = React.useState<ActivityItem[]>([])
-  const [activityLoading, setActivityLoading] = React.useState(true)
+  const activityQuery = useQuery({
+    ...supplierDashboardActivityQueryOptions(
+      companyId ?? "",
+      supplierId ?? "",
+      supabaseFactory,
+    ),
+    enabled: listEnabled,
+  })
 
-  React.useEffect(() => {
-    if (userLoading) return
+  const chartsQuery = useQuery({
+    ...supplierDashboardChartsQueryOptions(
+      companyId ?? "",
+      supplierId ?? "",
+      period,
+      supabaseFactory,
+    ),
+    enabled: listEnabled,
+  })
 
-    if (!supplierId) {
-      setActivity([])
-      setActivityLoading(false)
-      return
-    }
-
-    let cancelled = false
-    const supabase = createClient()
-
-    const run = async () => {
-      setActivityLoading(true)
-      setError(false)
-      try {
-        const [proposalsRes, ordersRes] = await Promise.all([
-          supabase
-            .from("quotation_proposals")
-            .select("status, updated_at, quotation_id, quotations!inner(code)")
-            .eq("supplier_id", supplierId)
-            .order("updated_at", { ascending: false })
-            .limit(8),
-          supabase
-            .from("purchase_orders")
-            .select(
-              "id, code, status, updated_at, accepted_at, estimated_delivery_date, cancellation_reason",
-            )
-            .eq("supplier_id", supplierId)
-            .neq("status", "draft")
-            .neq("status", "awaiting_approval")
-            .order("updated_at", { ascending: false })
-            .limit(8),
-        ])
-
-        if (proposalsRes.error) throw proposalsRes.error
-        if (ordersRes.error) throw ordersRes.error
-
-        const mappedProposals = mapProposalRowsToActivityItems(
-          (proposalsRes.data as ProposalActivityRow[]) ?? [],
-        )
-        const mappedOrders = mapOrderRowsToActivityItems(
-          (ordersRes.data as OrderActivityRow[]) ?? [],
-        )
-        const combined = mergeActivityByUpdatedAt(mappedProposals, mappedOrders).slice(0, 8)
-
-        if (!cancelled) setActivity(combined)
-      } catch (err) {
-        console.error("Erro ao carregar atividade fornecedor:", err)
-        if (!cancelled) {
-          setError(true)
-          setActivity([])
-        }
-      } finally {
-        if (!cancelled) setActivityLoading(false)
-      }
-    }
-
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [supplierId, userLoading])
-
-  React.useEffect(() => {
-    if (userLoading) return
-
-    if (!supplierId) {
-      setDonutData([])
-      setTopClientsData([])
-      setChartsLoading(false)
-      return
-    }
-
-    let cancelled = false
-    const supabase = createClient()
-    const start = getPeriodStart(period)
-
-    const run = async () => {
-      setChartsLoading(true)
-      setError(false)
-      try {
-        let proposalsQuery = supabase
-          .from("quotation_proposals")
-          .select("status, created_at")
-          .eq("supplier_id", supplierId)
-        if (start) proposalsQuery = proposalsQuery.gte("created_at", start)
-        const { data: proposalsData, error: proposalsErr } = await proposalsQuery
-        if (proposalsErr) throw proposalsErr
-
-        const counts: Record<string, number> = {}
-        for (const p of proposalsData ?? []) {
-          const raw = (p as { status: string }).status
-          const label = STATUS_LABELS[raw] ?? raw
-          counts[label] = (counts[label] ?? 0) + 1
-        }
-        const donut = Object.entries(counts).map(([name, value]) => ({ name, value }))
-        if (!cancelled) setDonutData(donut)
-
-        const invitesRes = await supabase
-          .from("quotation_suppliers")
-          .select("quotation_id")
-          .eq("supplier_id", supplierId)
-        if (invitesRes.error) throw invitesRes.error
-        const quotationIds = [...new Set((invitesRes.data ?? []).map((r) => r.quotation_id))]
-
-        if (quotationIds.length === 0) {
-          if (!cancelled) setTopClientsData([])
-        } else {
-          let qQuery = supabase
-            .from("quotations")
-            .select("id, company_id, created_at, companies(name)")
-            .in("id", quotationIds)
-          if (start) qQuery = qQuery.gte("created_at", start)
-          const { data: quotationsData, error: qErr } = await qQuery
-          if (qErr) throw qErr
-
-          const companyCounts: Record<string, { name: string; count: number }> = {}
-          for (const q of quotationsData ?? []) {
-            const row = q as {
-              company_id: string
-              companies: { name: string } | { name: string }[] | null
-            }
-            const embed = row.companies
-            const name =
-              embed == null
-                ? "Desconhecido"
-                : Array.isArray(embed)
-                  ? embed[0]?.name ?? "Desconhecido"
-                  : embed.name ?? "Desconhecido"
-            if (!companyCounts[row.company_id]) {
-              companyCounts[row.company_id] = { name, count: 0 }
-            }
-            companyCounts[row.company_id].count++
-          }
-
-          const top = Object.values(companyCounts)
-            .sort((a, b) => b.count - a.count)
-            .slice(0, 5)
-            .map((c) => ({ name: c.name, count: c.count }))
-          if (!cancelled) setTopClientsData(top)
-        }
-      } catch (err) {
-        console.error("Erro ao carregar gráficos fornecedor:", err)
-        if (!cancelled) {
-          setError(true)
-          setDonutData([])
-          setTopClientsData([])
-        }
-      } finally {
-        if (!cancelled) setChartsLoading(false)
-      }
-    }
-
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [supplierId, userLoading, period])
+  const activity: ActivityItem[] = activityQuery.data ?? []
+  const activityLoading = activityQuery.isLoading
+  const donutData = chartsQuery.data?.donutData ?? []
+  const topClientsData = chartsQuery.data?.topClientsData ?? []
+  const chartsLoading = chartsQuery.isLoading
+  const error = activityQuery.isError || chartsQuery.isError
 
   const donutTotal = donutData.reduce((s, d) => s + d.value, 0)
 

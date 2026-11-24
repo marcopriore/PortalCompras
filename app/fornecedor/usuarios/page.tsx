@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { formatDateBR } from "@/lib/formato-data"
 import { toast } from "sonner"
 import {
@@ -14,6 +15,11 @@ import {
   Users,
 } from "lucide-react"
 import { useUser } from "@/lib/hooks/useUser"
+import {
+  supplierPortalUsersQueryOptions,
+  type SupplierPortalUser,
+} from "@/lib/queries/supplier-portal-users"
+import { invalidateSupplierPortalUsers } from "@/lib/queries/supplier-invalidation"
 import { formatCnpj } from "@/lib/utils/cnpj"
 import { generatePasswordForPolicy } from "@/lib/auth/generate-password"
 import type { PasswordPolicy } from "@/lib/settings/password-policy-registry"
@@ -38,15 +44,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-type PortalUser = {
-  id: string
-  full_name: string | null
-  email: string | null
-  status: string
-  is_supplier_admin: boolean
-  login_cnpj: string | null
-  created_at: string
-}
+type PortalUser = SupplierPortalUser
 
 const DEFAULT_POLICY: PasswordPolicy = {
   minLength: 10,
@@ -59,12 +57,18 @@ const DEFAULT_POLICY: PasswordPolicy = {
 }
 
 export default function FornecedorUsuariosPage() {
-  const { userId, loading: userLoading } = useUser()
+  const { companyId, supplierId, userId, loading: userLoading } = useUser()
+  const queryClient = useQueryClient()
 
-  const [users, setUsers] = React.useState<PortalUser[]>([])
-  const [limit, setLimit] = React.useState(5)
-  const [canAdd, setCanAdd] = React.useState(false)
-  const [loading, setLoading] = React.useState(true)
+  const usersQuery = useQuery({
+    ...supplierPortalUsersQueryOptions(companyId ?? "", supplierId ?? ""),
+    enabled: Boolean(companyId && supplierId) && !userLoading,
+  })
+
+  const users = usersQuery.data?.users ?? []
+  const limit = usersQuery.data?.limit ?? 5
+  const canAdd = usersQuery.data?.canAdd ?? false
+  const loading = usersQuery.isLoading
 
   const [addOpen, setAddOpen] = React.useState(false)
   const [editOpen, setEditOpen] = React.useState(false)
@@ -79,26 +83,16 @@ export default function FornecedorUsuariosPage() {
   })
   const [saving, setSaving] = React.useState(false)
 
-  const loadUsers = React.useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await fetch("/api/supplier-portal/users")
-      const data = await res.json()
-      if (!res.ok) {
-        toast.error(data.error ?? "Erro ao carregar usuários.")
-        return
-      }
-      setUsers(data.users ?? [])
-      setLimit(data.limit ?? 5)
-      setCanAdd(Boolean(data.canAdd))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
   React.useEffect(() => {
-    if (!userLoading) void loadUsers()
-  }, [userLoading, loadUsers])
+    if (usersQuery.isError) {
+      toast.error("Erro ao carregar usuários.")
+    }
+  }, [usersQuery.isError])
+
+  const loadUsers = React.useCallback(async () => {
+    if (!companyId || !supplierId) return
+    await invalidateSupplierPortalUsers(queryClient, companyId, supplierId)
+  }, [companyId, queryClient, supplierId])
 
   function suggestPassword() {
     setForm((f) => ({ ...f, password: generatePasswordForPolicy(DEFAULT_POLICY) }))
