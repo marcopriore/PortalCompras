@@ -270,7 +270,9 @@ export function QuotationNegotiationPlanPanel({
   }, [activeRun?.id, load])
 
   const silentAdvanceRef = React.useRef(silentAdvance)
-  silentAdvanceRef.current = silentAdvance
+  React.useEffect(() => {
+    silentAdvanceRef.current = silentAdvance
+  }, [silentAdvance])
 
   React.useEffect(() => {
 // eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md

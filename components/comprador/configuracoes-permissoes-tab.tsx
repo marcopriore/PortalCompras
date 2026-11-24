@@ -70,7 +70,9 @@ export function ConfiguracoesPermissoesTab() {
   const [formDescription, setFormDescription] = React.useState("")
   const [selectedKeys, setSelectedKeys] = React.useState<Set<string>>(new Set())
   const selectedKeysRef = React.useRef(selectedKeys)
-  selectedKeysRef.current = selectedKeys
+  React.useEffect(() => {
+    selectedKeysRef.current = selectedKeys
+  }, [selectedKeys])
 
   const canManage = React.useMemo(() => {
     if (isSuperAdmin) return true

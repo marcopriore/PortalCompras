@@ -118,8 +118,6 @@ export function SupportPage({ portal }: SupportPageProps) {
   const { userId } = useUser()
   const sessionUser = useSessionUserInitial()
   const userEmail = sessionUser?.email ?? null
-  const companyIdRef = React.useRef(companyId)
-  companyIdRef.current = companyId
   const detailBase =
     portal === "comprador" ? "/comprador/suporte" : "/solicitante/suporte"
 
@@ -179,7 +177,9 @@ export function SupportPage({ portal }: SupportPageProps) {
   )
 
   const replaceFiltersRef = React.useRef(replaceFilters)
-  replaceFiltersRef.current = replaceFilters
+  React.useEffect(() => {
+    replaceFiltersRef.current = replaceFilters
+  }, [replaceFilters])
 
   React.useEffect(() => {
     const timer = window.setTimeout(() => {

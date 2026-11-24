@@ -7,7 +7,10 @@ import { formatDateBR, formatDateTimeBR, formatTodayStampDDMMYYYY } from "@/lib/
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { queryKeys } from "@/lib/queries/keys"
-import { purchaseOrderDetailQueryOptions } from "@/lib/queries/purchase-order-detail"
+import {
+  purchaseOrderDetailQueryOptions,
+  type PurchaseOrderDetailDto,
+} from "@/lib/queries/purchase-order-detail"
 import { catalogSupplierSearchQueryOptions } from "@/lib/queries/catalog-search"
 import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
@@ -603,11 +606,6 @@ export default function PurchaseOrderDetailPage({
     [linePor],
   )
 
-  const [order, setOrder] = React.useState<PurchaseOrder | null>(null)
-  const [orderLogs, setOrderLogs] = React.useState<AuditLog[]>([])
-  const [items, setItems] = React.useState<PurchaseOrderItem[]>([])
-  const [pendingCatalogApproval, setPendingCatalogApproval] = React.useState(false)
-  const [paymentOptions, setPaymentOptions] = React.useState<PaymentConditionOption[]>([])
   const [exporting, setExporting] = React.useState(false)
   const [generatingPdf, setGeneratingPdf] = React.useState(false)
   const [confirmingPedido, setConfirmingPedido] = React.useState(false)
@@ -620,7 +618,7 @@ export default function PurchaseOrderDetailPage({
   const [cancelIntegratedOpen, setCancelIntegratedOpen] = React.useState(false)
   const [cancellingIntegrated, setCancellingIntegrated] = React.useState(false)
 
-  const [isEditing, setIsEditing] = React.useState(false)
+  const [editingRequested, setIsEditing] = React.useState(false)
   const [editForm, setEditForm] = React.useState({
     payment_condition: "",
     delivery_days: "",
@@ -634,7 +632,6 @@ export default function PurchaseOrderDetailPage({
   } | null>(null)
   const [savingEdit, setSavingEdit] = React.useState(false)
   const [savingDraft, setSavingDraft] = React.useState(false)
-  const [responsibleName, setResponsibleName] = React.useState("—")
   const [delegateOpen, setDelegateOpen] = React.useState(false)
   const [delegateTargetId, setDelegateTargetId] = React.useState("")
   const [delegateBuyers, setDelegateBuyers] = React.useState<
@@ -694,6 +691,14 @@ export default function PurchaseOrderDetailPage({
 
   const loading = detailQuery.isLoading
 
+  const detail = detailQuery.data
+  const order = detail?.order ?? null
+  const orderLogs = detail?.orderLogs ?? []
+  const paymentOptions = detail?.paymentOptions ?? []
+  const responsibleName = detail?.responsibleName ?? "—"
+  const pendingCatalogApproval = detail?.pendingCatalogApproval ?? false
+  const items = detail?.items ?? []
+
   const refreshPurchaseOrderDetail = React.useCallback(
     async (options?: { invalidateList?: boolean }) => {
       if (!companyId || !id) return
@@ -709,56 +714,60 @@ export default function PurchaseOrderDetailPage({
     [companyId, id, queryClient],
   )
 
-  /* eslint-disable react-hooks/set-state-in-effect -- sync espelho local a partir do DTO (docs/PADRAO-CARGA-DADOS.md) */
+  const isEditing =
+    editingRequested &&
+    order != null &&
+    !["cancelled", "sent"].includes(order.status)
+
+  /* eslint-disable react-hooks/set-state-in-effect -- hidratação de rascunho/form a partir do DTO da query (docs/PADRAO-CARGA-DADOS.md) */
   React.useEffect(() => {
-    const dto = detailQuery.data
-    if (!dto) return
+    if (!detail || isEditing) return
+    setAccountConfigs(detail.accountConfigs)
+  }, [
+    detail?.accountConfigs,
+    detail?.order?.id,
+    detail?.order?.updated_at,
+    isEditing,
+  ])
 
-    const loadedOrder = dto.order
-    setOrder(loadedOrder)
-    setResponsibleName(dto.responsibleName)
-    setItems(dto.items)
-    setAccountConfigs(dto.accountConfigs)
-    setPaymentOptions(dto.paymentOptions)
-    setOrderLogs(dto.orderLogs)
-    setPendingCatalogApproval(dto.pendingCatalogApproval)
+  React.useEffect(() => {
+    const loadedOrder = detail?.order
+    if (!loadedOrder) return
 
-    if (loadedOrder?.status === "draft" || loadedOrder?.status === "awaiting_approval") {
-      if (loadedOrder.status === "draft") {
-        setEditItems(dto.editItems)
-        setDraftSupplier(dto.draftSupplier)
-        setRequisitionIdByCode(dto.requisitionIdByCode)
+    if (loadedOrder.status === "draft" || loadedOrder.status === "awaiting_approval") {
+      if (loadedOrder.status === "draft" && detail) {
+        setEditItems(detail.editItems)
+        setDraftSupplier(detail.draftSupplier)
+        setRequisitionIdByCode(detail.requisitionIdByCode)
       } else {
         setEditItems([])
         setDraftSupplier(null)
         setRequisitionIdByCode({})
       }
     }
-  }, [detailQuery.data])
 
-  React.useEffect(() => {
-    if (!order) return
-    setEditForm({
-      payment_condition: order.payment_condition ?? "",
-      delivery_days: order.delivery_days != null ? String(order.delivery_days) : "",
-      delivery_address: order.delivery_address ?? "",
-      observations: order.observations ?? "",
-    })
-  }, [
-    order?.id,
-    order?.payment_condition,
-    order?.delivery_days,
-    order?.delivery_address,
-    order?.observations,
-  ])
-
-  React.useEffect(() => {
-    if (!order) return
-    if (["cancelled", "sent"].includes(order.status)) {
-      setIsEditing(false)
+    if (!isEditing) {
+      setEditForm({
+        payment_condition: loadedOrder.payment_condition ?? "",
+        delivery_days:
+          loadedOrder.delivery_days != null ? String(loadedOrder.delivery_days) : "",
+        delivery_address: loadedOrder.delivery_address ?? "",
+        observations: loadedOrder.observations ?? "",
+      })
     }
-  }, [order?.status])
-
+  }, [
+    detail?.order?.id,
+    detail?.order?.updated_at,
+    detail?.order?.status,
+    detail?.editItems,
+    detail?.draftSupplier,
+    detail?.requisitionIdByCode,
+    detail?.order?.payment_condition,
+    detail?.order?.delivery_days,
+    detail?.order?.delivery_address,
+    detail?.order?.observations,
+    isEditing,
+  ])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   React.useEffect(() => {
@@ -838,8 +847,18 @@ export default function PurchaseOrderDetailPage({
 
       const nextName =
         delegateBuyers.find((b) => b.id === delegateTargetId)?.full_name ?? null
-      setOrder({ ...order, created_by: delegateTargetId })
-      setResponsibleName(formatResponsibleName(nextName))
+      const nextResponsibleName = formatResponsibleName(nextName)
+      queryClient.setQueryData<PurchaseOrderDetailDto>(
+        queryKeys.purchaseOrderDetail(companyId, order.id),
+        (prev) => {
+          if (!prev?.order) return prev
+          return {
+            ...prev,
+            order: { ...prev.order, created_by: delegateTargetId },
+            responsibleName: nextResponsibleName,
+          }
+        },
+      )
 
       void createNotification({
         userId: delegateTargetId,
@@ -1467,30 +1486,6 @@ export default function PurchaseOrderDetailPage({
     }))
 
     setEditItems((prev) => [...prev, ...insertedLines])
-    setItems((prev) => [
-      ...prev,
-      ...insertedLines.map((line) => ({
-        id: line.id,
-        material_code: line.material_code,
-        material_description: line.material_description,
-        quantity: line.quantity,
-        unit_of_measure: line.unit_of_measure,
-        unit_price: line.unit_price,
-        price_unit: line.price_unit,
-        tax_percent: line.tax_percent,
-        total_price: computePoLineTotal(line.quantity, line.unit_price, line.price_unit),
-        contract_id: null,
-        contract_item_id: null,
-        contract_code: null,
-        contract_item_line: null,
-        requisition_item_id: line.requisition_item_id,
-        source_requisition_code: line.source_requisition_code,
-        site_code: null,
-        account_assignment_category: null,
-        account_assignment_distribution: "",
-        account_assignments: [],
-      })),
-    ])
 
     const reqCodes = new Set<string>()
     for (const line of [...editItems, ...insertedLines]) {
@@ -1536,7 +1531,7 @@ export default function PurchaseOrderDetailPage({
       return
     }
     setEditItems((prev) => prev.filter((line) => line.id !== lineId))
-    setItems((prev) => prev.filter((line) => line.id !== lineId))
+    await refreshPurchaseOrderDetail()
   }
 
   const persistDraftData = async (): Promise<boolean> => {

@@ -22,8 +22,13 @@ Layouts: `app/comprador/layout.tsx`, `app/solicitante/layout.tsx`, `app/forneced
 | `lib/queries/keys.ts` | Chaves tipadas por domínio |
 | `lib/queries/*.ts` | `fetch*` + `*QueryOptions` |
 | `lib/query/make-query-client.ts` | Factory do `QueryClient` |
+| `lib/query/prefetch-and-dehydrate.ts` | Prefetch SSR + dehydrate |
 | `lib/auth/session-user.ts` | Tipo `SessionUser` (server) |
 | `contexts/session-user-context.tsx` | Hidratação client |
+
+## Prefetch SSR
+
+Listas críticas (`/comprador`, requisicoes, cotacoes, pedidos): Server Component em `page.tsx` + client em `page-client.tsx`, envolvido por `HydrationBoundary`. Scope de prefetch: superadmin → `all`, senão → `userId` (com `view_all` o client pode refetch).
 
 ## SessionUser e useUser
 

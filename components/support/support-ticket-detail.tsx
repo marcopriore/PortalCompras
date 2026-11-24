@@ -84,9 +84,6 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
   const queryClient = useQueryClient()
   const listHref = portal === "comprador" ? "/comprador/suporte" : "/solicitante/suporte"
   const { companyId } = useTenant()
-  const companyIdRef = React.useRef(companyId)
-  companyIdRef.current = companyId
-
   const detailQuery = useQuery({
     ...supportTicketDetailQueryOptions(companyId ?? "", ticketId),
     enabled: Boolean(companyId),

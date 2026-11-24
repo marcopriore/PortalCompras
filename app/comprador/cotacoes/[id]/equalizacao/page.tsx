@@ -551,7 +551,6 @@ export default function EqualizacaoPage({
   const [closingRound, setClosingRound] = React.useState(false)
   const [creatingRound, setCreatingRound] = React.useState(false)
   const [novaRoundDeadline, setNovaRoundDeadline] = React.useState("")
-  const [countdownTick, setCountdownTick] = React.useState(0)
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
   const [linkContractDialogOpen, setLinkContractDialogOpen] = React.useState(false)
@@ -589,6 +588,9 @@ export default function EqualizacaoPage({
     null as null | ((options?: EqualizationRefreshOptions) => Promise<void>),
   )
   const permissionDeniedRef = React.useRef(false)
+  const [contractMatchLoadGeneration, setContractMatchLoadGeneration] =
+    React.useState(0)
+  const prevContractMatchRoundRef = React.useRef<string | null>(null)
 
   React.useEffect(() => {
     permissionDeniedRef.current = false
@@ -867,7 +869,9 @@ export default function EqualizacaoPage({
     enabled: Boolean(companyId && id) && !userLoading && !permLoading,
   })
 
-  refreshEqualizationDataRef.current = refreshEqualizationData
+  React.useEffect(() => {
+    refreshEqualizationDataRef.current = refreshEqualizationData
+  }, [refreshEqualizationData])
 
   const paymentConditionsQuery = useQuery({
     ...paymentConditionsQueryOptions(companyId ?? "", () => supabase),
@@ -899,12 +903,11 @@ export default function EqualizacaoPage({
     [selectedRound?.response_deadline],
   )
 
-  const remainingMs = React.useMemo(() => {
-    if (selectedRound?.status !== "active") return null
-    if (!deadlineEnd) return null
-    void countdownTick
-    return deadlineEnd.getTime() - Date.now()
-  }, [deadlineEnd, countdownTick, selectedRound?.status])
+  const [nowMs, setNowMs] = React.useState(() => Date.now())
+  const remainingMs =
+    selectedRound?.status === "active" && deadlineEnd
+      ? deadlineEnd.getTime() - nowMs
+      : null
 
   React.useEffect(() => {
     deadlineExpireFetchedRef.current = false
@@ -915,17 +918,19 @@ export default function EqualizacaoPage({
       clearInterval(countdownIntervalRef.current)
       countdownIntervalRef.current = null
     }
-    if (selectedRound?.status !== "active") return
+    if (selectedRound?.status !== "active" || !deadlineEnd) return
+    const kick = window.setTimeout(() => setNowMs(Date.now()), 0)
     countdownIntervalRef.current = setInterval(() => {
-      setCountdownTick((n) => n + 1)
+      setNowMs(Date.now())
     }, 1000)
     return () => {
+      window.clearTimeout(kick)
       if (countdownIntervalRef.current != null) {
         clearInterval(countdownIntervalRef.current)
         countdownIntervalRef.current = null
       }
     }
-  }, [selectedRoundId, selectedRound?.status])
+  }, [selectedRoundId, selectedRound?.status, deadlineEnd])
 
   React.useEffect(() => {
     if (selectedRound?.status !== "active") return
@@ -1296,9 +1301,6 @@ export default function EqualizacaoPage({
     allProposalsCatalog,
     getItemRoundId,
   ])
-
-  const [contractMatchLoadGeneration, setContractMatchLoadGeneration] = React.useState(0)
-  const prevContractMatchRoundRef = React.useRef<string | null>(null)
 
   React.useEffect(() => {
     if (!selectedRoundId) return
