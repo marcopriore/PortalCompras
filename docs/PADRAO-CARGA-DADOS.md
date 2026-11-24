@@ -43,6 +43,7 @@ Exceções permitidas (sempre com comentário na linha):
 
 - Sync Auth em `useUser`.
 - Sync intencional de formulário a partir do DTO da query no detalhe de pedido (`app/comprador/pedidos/[id]/page.tsx`), quando o espelho local é necessário para edição.
+- Equalização (`app/comprador/cotacoes/[id]/equalizacao/page-client.tsx`): cotação, itens, propostas e rodadas vêm de `equalizationQuery.data`; estado local só para seleções de item, preço-alvo editável, rodada ativa na UI e painéis/modais.
 
 ## Ignorados no lint
 

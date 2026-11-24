@@ -15,8 +15,8 @@
 
 - [ ] `pedidos/novo` → `useMutation` (só redirect)
 - [ ] `configuracoes-usuarios-tab` — refino se ainda houver load legado
-- [ ] Prefetch em mais rotas (contratos, fornecedores, equalização)
-- [ ] Reduzir ainda mais `eslint-disable` de form sync na equalização
+- [ ] Prefetch em mais rotas (contratos, fornecedores)
+- [x] Equalização: display via `equalizationQuery.data`, prefetch SSR, sync UI documentado (`docs/PADRAO-CARGA-DADOS.md`)
 
 ## Critério de encerramento
 
