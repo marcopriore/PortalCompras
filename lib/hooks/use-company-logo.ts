@@ -1,8 +1,11 @@
 "use client"
 
 import * as React from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { companyLogoQueryOptions } from "@/lib/queries/company-logo"
+import { queryKeys } from "@/lib/queries/keys"
 
 export const COMPANY_LOGO_UPDATED_EVENT = "valore:company-logo-updated"
 
@@ -27,42 +30,30 @@ export function notifyCompanyLogoUpdated(companyId: string, logoUrl: string | nu
  */
 export function useCompanyLogo(): string | null {
   const { companyId } = useUser()
-  const [logoUrl, setLogoUrl] = React.useState<string | null>(null)
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+
+  const query = useQuery({
+    ...companyLogoQueryOptions(companyId ?? "", () => supabase),
+    enabled: Boolean(companyId),
+  })
 
   React.useEffect(() => {
-    if (!companyId) {
-      setLogoUrl(null)
-      return
-    }
-
-    let cancelled = false
-    const supabase = createClient()
-
-    void (async () => {
-      const { data } = await supabase
-        .from("companies")
-        .select("logo_url")
-        .eq("id", companyId)
-        .maybeSingle()
-
-      if (cancelled) return
-      const url = typeof data?.logo_url === "string" ? data.logo_url.trim() : ""
-      setLogoUrl(url.length > 0 ? url : null)
-    })()
+    if (!companyId) return
 
     const onUpdated = (event: Event) => {
       const detail = (event as CustomEvent<CompanyLogoUpdatedDetail>).detail
       if (!detail || detail.companyId !== companyId) return
       const next = detail.logoUrl?.trim() ?? ""
-      setLogoUrl(next.length > 0 ? next : null)
+      const logoUrl = next.length > 0 ? next : null
+      queryClient.setQueryData(queryKeys.companyLogo(companyId), logoUrl)
     }
 
     window.addEventListener(COMPANY_LOGO_UPDATED_EVENT, onUpdated)
     return () => {
-      cancelled = true
       window.removeEventListener(COMPANY_LOGO_UPDATED_EVENT, onUpdated)
     }
-  }, [companyId])
+  }, [companyId, queryClient])
 
-  return logoUrl
+  return query.data ?? null
 }

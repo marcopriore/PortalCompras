@@ -13,12 +13,16 @@ Ordem sugerida de lotes pós Fase 5. Cada lote = 1 commit (ou poucos).
 
 ## Lote A — Comprador restante (forms + secundários)
 
-- [ ] `app/comprador/cotacoes/nova`, `editar`, `[id]/page`, `novo-pedido`
-- [ ] `app/comprador/requisicoes/nova`, `[id]`, `[id]/editar`
-- [ ] `app/comprador/pedidos/novo`
-- [ ] `app/comprador/contratos/novo`, `[id]`
+- [x] `app/comprador/cotacoes/nova`, `[id]/editar` (busca catálogo, payment_conditions, import REQ, prefill REQ → `lib/queries/*`)
+- [ ] `app/comprador/cotacoes/novo-pedido` (se existir rota separada)
+- [x] `app/comprador/cotacoes/[id]/page` (detalhe → `lib/queries/quotation-detail.ts`)
+- [x] `app/comprador/requisicoes/nova` (centro custo default → `user-default-cost-center`), `[id]/editar` → `requisition-edit-form`
+- [x] `app/comprador/requisicoes/[id]` (detalhe + anexos → `lib/queries/requisition-detail.ts`)
+- [ ] `app/comprador/pedidos/novo` (só mutação `createDraftFromRequisition` — defer useMutation)
+- [x] `app/comprador/contratos/novo` (fornecedores, payment_conditions, busca itens; sessionStorage prefill mantido)
+- [x] `app/comprador/contratos/[id]` (detalhe + payment_conditions query)
 - [ ] `app/comprador/configuracoes/**` (abas com fetch)
-- [ ] Equalização: efeitos secundários (payment_conditions, contract match, own-REQ)
+- [x] Equalização: payment_conditions, contract_po_link_prompt, contract-matches (`useQuery`)
 - [ ] PO detalhe: reduzir sync DTO→state (ou documentar disables restantes)
 
 ## Lote B — Portal fornecedor
@@ -36,7 +40,8 @@ Ordem sugerida de lotes pós Fase 5. Cada lote = 1 commit (ou poucos).
 
 ## Lote D — Hooks / componentes compartilhados
 
-- [ ] `use-notifications`, `use-company-logo`, `use-supplier-score`, `use-tenant-feature-flags`
+- [x] `use-notifications` → `lib/queries/notifications.ts`
+- [x] `use-company-logo`, `use-supplier-score`, `use-tenant-feature-flags` → `lib/queries/*`
 - [ ] Selects com fetch (`branch-select`, `cost-center-select`)
 - [ ] Dialogs com load (import Excel, create-PO-from-contract, etc.)
 

@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { useRef } from "react"
 import { useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -27,13 +29,9 @@ import {
 
 import { ChevronLeft, Paperclip, Send, AlertTriangle, X } from "lucide-react"
 import { RequisitionLineItemsSection } from "@/components/requisitions/requisition-line-items-section"
-import {
-  buildAccountConfigsFromRequisitionItems,
-  REQUISITION_ITEM_ACCOUNT_SELECT,
-  validateRequisitionLineSiteCodes,
-  type RequisitionEditorLineItem,
-  type LoadedRequisitionItemRow,
-} from "@/lib/requisitions/line-items-helpers"
+import { validateRequisitionLineSiteCodes } from "@/lib/requisitions/line-items-helpers"
+import type { RequisitionEditorLineItem } from "@/lib/requisitions/line-items-helpers"
+import { requisitionEditFormQueryOptions } from "@/lib/queries/requisition-edit-form"
 import {
   validateAllAccountConfigsForSubmit,
   type ItemAccountConfigEdit,
@@ -43,15 +41,6 @@ import { saveRequisitionAccountConfigs } from "@/lib/requisition-account-assignm
 import { useImplantationConfig } from "@/lib/hooks/use-implantation-config"
 
 type Priority = "normal" | "urgent" | "critical"
-
-type CatalogItem = {
-  id: string
-  code: string
-  short_description: string
-  long_description: string | null
-  unit_of_measure: string | null
-  commodity_group: string | null
-}
 
 type RequisitionDraftForm = {
   title: string
@@ -66,29 +55,12 @@ type AttachedFile = {
   file: File
 }
 
-type RequisitionItemRow = {
-  id: string
-  material_code: string | null
-  material_description: string
-  quantity: number
-  unit_of_measure: string | null
-  commodity_group: string | null
-  observations: string | null
-}
-
 const ACCEPTED_FILE_TYPES = ".pdf,.xlsx,.xls,.png,.jpg,.jpeg"
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function formatDateForInput(iso: string | null | undefined): string {
-  if (!iso) return ""
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ""
-  return d.toISOString().slice(0, 10)
 }
 
 export default function EditarRequisicaoPage({
@@ -102,7 +74,9 @@ export default function EditarRequisicaoPage({
   const { hasPermission, loading: permissionsLoading } = usePermissions()
   const { accountAssignmentEnabled } = useImplantationConfig()
 
-  const [loading, setLoading] = React.useState(true)
+  const [formReady, setFormReady] = React.useState(false)
+  const editFormHydratedRef = useRef(false)
+  const supabase = React.useMemo(() => createClient(), [])
   const [saving, setSaving] = React.useState(false)
   const [drafting, setDrafting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -132,107 +106,36 @@ export default function EditarRequisicaoPage({
 
   const canCreate = hasPermission("requisition.create.buyer")
 
+  const editFormQuery = useQuery({
+    ...requisitionEditFormQueryOptions(companyId ?? "", id, () => supabase),
+    enabled: Boolean(companyId && id && !userLoading),
+  })
+
+  const loading = userLoading || editFormQuery.isLoading || !formReady
+
   React.useEffect(() => {
-    if (userLoading || !companyId || !id) return
-    const supabase = createClient()
-    let alive = true
+    if (userLoading || editFormQuery.isLoading) return
 
-    const run = async () => {
-      setLoading(true)
-      const [rRes, iRes] = await Promise.all([
-        supabase.from("requisitions").select("*").eq("id", id).single(),
-        supabase
-          .from("requisition_items")
-          .select(REQUISITION_ITEM_ACCOUNT_SELECT)
-          .eq("requisition_id", id)
-          .order("created_at"),
-      ])
-
-      if (!alive) return
-
-      const reqData = rRes.data as {
-        id: string
-        code: string
-        title: string
-        description: string | null
-        cost_center: string | null
-        needed_by: string | null
-        priority: Priority
-        status: string
-        rejection_reason: string | null
-        origin: string | null
-      } | null
-
-      if (!reqData) {
+    if (!editFormQuery.data) {
+      if (!editFormQuery.isLoading) {
         router.push(`/comprador/requisicoes/${id}`)
-        return
+        setFormReady(true)
       }
-
-      if (reqData.status !== "rejected" && reqData.status !== "draft") {
-        router.push(`/comprador/requisicoes/${id}`)
-        return
-      }
-
-      setCurrentStatus(reqData.status === "draft" ? "draft" : "rejected")
-      setRequisitionCode(reqData.code)
-      setRejectionReason(reqData.rejection_reason ?? null)
-      setForm({
-        title: reqData.title ?? "",
-        description: reqData.description ?? "",
-        costCenter: reqData.cost_center ?? "",
-        neededBy: formatDateForInput(reqData.needed_by),
-        priority: (reqData.priority as Priority) ?? "normal",
-      })
-
-      const reqItems = (iRes.data ?? []) as Array<
-        RequisitionItemRow & LoadedRequisitionItemRow
-      >
-      let itemsData: CatalogItem[] = []
-      if (reqItems.length > 0 && companyId) {
-        const materialCodes = [...new Set(reqItems.map((r) => r.material_code).filter((c): c is string => Boolean(c)))]
-        if (materialCodes.length > 0) {
-          const { data } = await supabase
-            .from("items")
-            .select("id, code, short_description, long_description, unit_of_measure, commodity_group")
-            .eq("company_id", companyId)
-            .in("code", materialCodes)
-          itemsData = (data ?? []) as CatalogItem[]
-        }
-
-        const itemMap = new Map<string, CatalogItem>()
-        itemsData.forEach((item) => {
-          itemMap.set(item.code, item)
-        })
-
-        const lineItems: RequisitionEditorLineItem[] = reqItems.map((ri) => {
-          const catalogItem = ri.material_code ? itemMap.get(ri.material_code) : null
-          return {
-            id: ri.id,
-            itemId: catalogItem?.id ?? `legacy-${ri.id}`,
-            materialCode: ri.material_code ?? "",
-            materialDescription: ri.material_description ?? "",
-            unitOfMeasure: catalogItem?.unit_of_measure ?? ri.unit_of_measure ?? "",
-            commodityGroup: catalogItem?.commodity_group ?? ri.commodity_group ?? "",
-            quantity: ri.quantity ?? 1,
-            observations: ri.observations ?? "",
-            siteCode: ri.site_code ?? "",
-          }
-        })
-        setItems(lineItems)
-        setAccountConfigs(buildAccountConfigsFromRequisitionItems(reqItems))
-      } else {
-        setItems([])
-        setAccountConfigs({})
-      }
-
-      setLoading(false)
+      return
     }
 
-    run()
-    return () => {
-      alive = false
-    }
-  }, [companyId, id, router, userLoading])
+    if (editFormHydratedRef.current) return
+    editFormHydratedRef.current = true
+
+    const dto = editFormQuery.data
+    setCurrentStatus(dto.status)
+    setRequisitionCode(dto.code)
+    setRejectionReason(dto.rejection_reason)
+    setForm(dto.form)
+    setItems(dto.items)
+    setAccountConfigs(dto.accountConfigs)
+    setFormReady(true)
+  }, [editFormQuery.data, editFormQuery.isLoading, id, router, userLoading])
 
   const handleAccountConfigChange = (_itemId: string, _config: ItemAccountConfigEdit) => {
     setAccountConfigErrors((prev) => {

@@ -62,4 +62,70 @@ export const queryKeys = {
 
   equalization: (companyId: string, quotationId: string) =>
     ["equalization", companyId, quotationId] as const,
+
+  quotationDetail: (companyId: string, id: string) =>
+    ["quotations", "detail", companyId, id] as const,
+
+  requisitionDetail: (companyId: string, id: string) =>
+    ["requisitions", "detail", companyId, id] as const,
+
+  requisitionAttachments: (requisitionId: string) =>
+    ["requisitions", "attachments", requisitionId] as const,
+
+  contractDetail: (companyId: string, id: string) =>
+    ["contracts", "detail", companyId, id] as const,
+
+  paymentConditions: (companyId: string) =>
+    ["paymentConditions", companyId] as const,
+
+  contractPoLinkPrompt: (companyId: string) =>
+    ["companySettings", companyId, "contract_po_link_prompt_enabled"] as const,
+
+  quotationContractMatches: (
+    quotationId: string,
+    loadGeneration: number,
+    selectionsKey: string,
+  ) =>
+    [
+      "quotations",
+      "contractMatches",
+      quotationId,
+      loadGeneration,
+      selectionsKey,
+    ] as const,
+
+  supplierScores: (
+    companyId: string,
+    supplierIdsKey: string,
+    priceWeight: number,
+  ) => ["supplierScores", companyId, supplierIdsKey, priceWeight] as const,
+
+  tenantFeatureFlags: (companyId: string, keysKey: string) =>
+    ["tenantFeatureFlags", companyId, keysKey] as const,
+
+  companyLogo: (companyId: string) => ["companyLogo", companyId] as const,
+
+  catalogItemSearch: (companyId: string, term: string, variant: string) =>
+    ["catalog", "itemSearch", companyId, term, variant] as const,
+
+  catalogSupplierSearch: (companyId: string, term: string) =>
+    ["catalog", "supplierSearch", companyId, term] as const,
+
+  approvedRequisitionsImport: (companyId: string) =>
+    ["requisitions", "approvedForQuotation", companyId] as const,
+
+  quotationRequisitionPrefill: (companyId: string, requisitionId: string) =>
+    ["quotations", "requisitionPrefill", companyId, requisitionId] as const,
+
+  quotationEditForm: (companyId: string, quotationId: string) =>
+    ["quotations", "editForm", companyId, quotationId] as const,
+
+  requisitionEditForm: (companyId: string, requisitionId: string) =>
+    ["requisitions", "editForm", companyId, requisitionId] as const,
+
+  userDefaultCostCenter: (userId: string) =>
+    ["profiles", "defaultCostCenter", userId] as const,
+
+  contractFormSuppliers: (companyId: string) =>
+    ["contracts", "formSuppliers", companyId] as const,
 } as const

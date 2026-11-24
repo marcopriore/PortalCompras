@@ -1,6 +1,7 @@
 'use client'
 
-import { use, useEffect, useState, useCallback } from 'react'
+import { use, useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
@@ -54,36 +55,20 @@ import {
 } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 import { createNotification } from '@/lib/notify'
+import { queryKeys } from '@/lib/queries/keys'
+import {
+  quotationDetailQueryOptions,
+  type QuotationDetailDto,
+  type QuotationDetailItem,
+  type QuotationDetailQuotation,
+  type QuotationDetailStatus,
+  type QuotationDetailSupplier,
+} from '@/lib/queries/quotation-detail'
 
-type QuotationStatus = 'draft' | 'waiting' | 'analysis' | 'completed' | 'cancelled' | 'rejected'
-
-interface Quotation {
-  id: string
-  code: string
-  description: string
-  status: QuotationStatus
-  category: string | null
-  payment_condition: string | null
-  response_deadline: string | null
-  created_at: string
-  created_by: string | null
-}
-
-interface QuotationItem {
-  id: string
-  material_code: string
-  material_description: string
-  long_description?: string | null
-  unit_of_measure: string | null
-  quantity: number
-  source_requisition_code?: string | null
-}
-
-interface QuotationSupplier {
-  id: string
-  supplier_name: string
-  supplier_cnpj: string | null
-}
+type QuotationStatus = QuotationDetailStatus
+type Quotation = QuotationDetailQuotation
+type QuotationItem = QuotationDetailItem
+type QuotationSupplier = QuotationDetailSupplier
 
 const statusConfig: Record<
   QuotationStatus,
@@ -201,6 +186,8 @@ export default function QuotationDetailsPage({
   const { id } = use(params)
   const from = searchParams.get('from')
   const requisicaoId = searchParams.get('requisicaoId')
+  const supabase = createClient()
+  const queryClient = useQueryClient()
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
   const { hasFeature, hasPermission, loading: permLoading } = usePermissions()
   void hasFeature
@@ -210,12 +197,6 @@ export default function QuotationDetailsPage({
     hasPermission,
   })
 
-  const [quotation, setQuotation] = useState<Quotation | null>(null)
-  const [responsibleName, setResponsibleName] = useState<string>("")
-  const [items, setItems] = useState<QuotationItem[]>([])
-  const [suppliers, setSuppliers] = useState<QuotationSupplier[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState<Record<SectionKey, boolean>>({
     general: true,
     items: true,
@@ -223,7 +204,6 @@ export default function QuotationDetailsPage({
   })
   const [updatingStatus, setUpdatingStatus] = useState<QuotationStatus | null>(null)
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
-  const [requisitionIdByCode, setRequisitionIdByCode] = useState<Record<string, string>>({})
   const [delegateOpen, setDelegateOpen] = useState(false)
   const [delegateTargetId, setDelegateTargetId] = useState<string>('')
   const [delegateBuyers, setDelegateBuyers] = useState<{ id: string; full_name: string | null }[]>([])
@@ -233,123 +213,47 @@ export default function QuotationDetailsPage({
     setOpen((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const reloadQuotation = useCallback(async () => {
-    if (!companyId) return
-    const supabase = createClient()
-    const { data } = await supabase
-      .from('quotations')
-      .select(
-        'id, code, description, status, category, payment_condition, response_deadline, created_at, created_by',
-      )
-      .eq('id', id)
-      .eq('company_id', companyId)
-      .maybeSingle()
-    if (data) setQuotation(data as Quotation)
-  }, [companyId, id])
+  const detailEnabled = !userLoading && !permLoading && Boolean(companyId && id)
+
+  const detailQuery = useQuery({
+    ...quotationDetailQueryOptions(companyId ?? '', id, () => supabase),
+    enabled: detailEnabled,
+  })
+
+  const loading = detailQuery.isLoading
+  const error = detailQuery.isError
+    ? 'Ocorreu um erro ao carregar a cotação.'
+    : detailQuery.isSuccess && !detailQuery.data
+      ? 'Não foi possível carregar a cotação.'
+      : null
+
+  const quotation = detailQuery.data?.quotation ?? null
+  const responsibleName = detailQuery.data?.responsibleName ?? ''
+  const items = detailQuery.data?.items ?? []
+  const suppliers = detailQuery.data?.suppliers ?? []
+  const requisitionIdByCode = detailQuery.data?.requisitionIdByCode ?? {}
 
   useEffect(() => {
-    if (userLoading || permLoading || !companyId) return
-
-    const fetchData = async () => {
-      setLoading(true)
-      setError(null)
-
-      try {
-        const supabase = createClient()
-
-        const { data: quotationData, error: quotationError } = await supabase
-          .from('quotations')
-          .select(
-            'id, code, description, status, category, payment_condition, response_deadline, created_at, created_by',
-          )
-          .eq('id', id)
-          .eq('company_id', companyId!)
-          .single()
-
-        if (quotationError || !quotationData) {
-          setError('Não foi possível carregar a cotação.')
-          setLoading(false)
-          return
-        }
-
-        const q = quotationData as Quotation
-        if (
-          !canAccessQuotation({
-            createdBy: q.created_by,
-            userId,
-            canViewAll: viewAllQuotations,
-          })
-        ) {
-          toast.error('Você não tem permissão para acessar esta cotação.')
-          router.replace('/comprador/cotacoes')
-          return
-        }
-
-        setQuotation(q)
-
-        if (q.created_by) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('id', q.created_by)
-            .maybeSingle()
-          setResponsibleName(
-            formatResponsibleName(
-              (profile as { full_name?: string | null } | null)?.full_name,
-            ),
-          )
-        } else {
-          setResponsibleName('—')
-        }
-
-        const [{ data: itemsData }, { data: suppliersData }] = await Promise.all([
-          supabase
-            .from('quotation_items')
-            .select(
-              'id, material_code, material_description, long_description, unit_of_measure, quantity, source_requisition_code',
-            )
-            .eq('quotation_id', id),
-          supabase
-            .from('quotation_suppliers')
-            .select('id, supplier_name, supplier_cnpj')
-            .eq('quotation_id', id),
-        ])
-
-        const loadedItems = (itemsData as QuotationItem[]) ?? []
-        setItems(loadedItems)
-        setSuppliers((suppliersData as QuotationSupplier[]) ?? [])
-
-        const reqCodes = [
-          ...new Set(
-            loadedItems
-              .map((item) => item.source_requisition_code?.trim())
-              .filter((code): code is string => Boolean(code)),
-          ),
-        ]
-        if (reqCodes.length > 0) {
-          const { data: reqs } = await supabase
-            .from('requisitions')
-            .select('id, code')
-            .eq('company_id', companyId!)
-            .in('code', reqCodes)
-          const map: Record<string, string> = {}
-          ;((reqs ?? []) as { id: string; code: string }[]).forEach((req) => {
-            if (req.code) map[req.code] = req.id
-          })
-          setRequisitionIdByCode(map)
-        } else {
-          setRequisitionIdByCode({})
-        }
-      } catch (err) {
-        console.error('Erro ao carregar detalhes da cotação:', err)
-        setError('Ocorreu um erro ao carregar a cotação.')
-      } finally {
-        setLoading(false)
-      }
+    const q = detailQuery.data?.quotation
+    if (!q || userLoading || permLoading) return
+    if (
+      !canAccessQuotation({
+        createdBy: q.created_by,
+        userId,
+        canViewAll: viewAllQuotations,
+      })
+    ) {
+      toast.error('Você não tem permissão para acessar esta cotação.')
+      router.replace('/comprador/cotacoes')
     }
-
-    fetchData()
-  }, [id, companyId, userId, userLoading, permLoading, viewAllQuotations, router])
+  }, [
+    detailQuery.data?.quotation,
+    userId,
+    userLoading,
+    permLoading,
+    viewAllQuotations,
+    router,
+  ])
 
   const handleStatusUpdate = async (newStatus: QuotationStatus) => {
     if (!quotation) return
@@ -378,7 +282,18 @@ export default function QuotationDetailsPage({
         return
       }
 
-      setQuotation({ ...quotation, status: newStatus })
+      if (companyId) {
+        queryClient.setQueryData<QuotationDetailDto | undefined>(
+          queryKeys.quotationDetail(companyId, id),
+          (prev) =>
+            prev
+              ? {
+                  ...prev,
+                  quotation: { ...prev.quotation, status: newStatus },
+                }
+              : prev,
+        )
+      }
 
       if (newStatus === 'waiting') {
         const boot = await ensureInitialQuotationRound(supabase, {
@@ -578,8 +493,20 @@ export default function QuotationDetailsPage({
 
       const nextName =
         delegateBuyers.find((b) => b.id === delegateTargetId)?.full_name ?? null
-      setQuotation({ ...quotation, created_by: delegateTargetId })
-      setResponsibleName(formatResponsibleName(nextName))
+      const nextResponsibleName = formatResponsibleName(nextName)
+      if (companyId) {
+        queryClient.setQueryData<QuotationDetailDto | undefined>(
+          queryKeys.quotationDetail(companyId, id),
+          (prev) =>
+            prev
+              ? {
+                  ...prev,
+                  responsibleName: nextResponsibleName,
+                  quotation: { ...prev.quotation, created_by: delegateTargetId },
+                }
+              : prev,
+        )
+      }
 
       void createNotification({
         userId: delegateTargetId,

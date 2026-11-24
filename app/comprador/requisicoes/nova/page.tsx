@@ -9,10 +9,9 @@ import { usePermissions } from "@/lib/hooks/usePermissions"
 import { logAudit } from "@/lib/audit"
 import { notifyRequisitionOutboundClient } from "@/lib/integrations/notify-requisition-outbound-client"
 import { toast } from "sonner"
-import {
-  CostCenterSelect,
-  loadUserDefaultCostCenterCode,
-} from "@/components/ui/cost-center-select"
+import { CostCenterSelect } from "@/components/ui/cost-center-select"
+import { useQuery } from "@tanstack/react-query"
+import { userDefaultCostCenterQueryOptions } from "@/lib/queries/user-default-cost-center"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -99,15 +98,18 @@ export default function NovaRequisicaoPage() {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   const canCreate = hasPermission("requisition.create.buyer")
+  const supabase = React.useMemo(() => createClient(), [])
+
+  const defaultCostCenterQuery = useQuery({
+    ...userDefaultCostCenterQueryOptions(userId ?? "", () => supabase),
+    enabled: Boolean(userId),
+  })
 
   React.useEffect(() => {
-    if (!userId) return
-    void loadUserDefaultCostCenterCode(userId).then((code) => {
-      if (code) {
-        setForm((f) => (f.costCenter ? f : { ...f, costCenter: code }))
-      }
-    })
-  }, [userId])
+    const code = defaultCostCenterQuery.data?.trim() ?? ""
+    if (!code) return
+    setForm((f) => (f.costCenter ? f : { ...f, costCenter: code }))
+  }, [defaultCostCenterQuery.data])
 
   const handleAccountConfigChange = (itemId: string, _config: ItemAccountConfigEdit) => {
     setAccountConfigErrors((prev) => {

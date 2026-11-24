@@ -1,67 +1,61 @@
 import { createClient } from "@/lib/supabase/client"
-import { useState, useEffect, useCallback } from "react"
+import { useCallback } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  notificationsQueryOptions,
+  type NotificationRow,
+} from "@/lib/queries/notifications"
+import { queryKeys } from "@/lib/queries/keys"
+import { useUser } from "@/lib/hooks/useUser"
 
-export type Notification = {
-  id: string
-  type: string
-  title: string
-  body: string | null
-  entity: string | null
-  entity_id: string | null
-  read: boolean
-  created_at: string
-}
+export type Notification = NotificationRow
 
 export function useNotifications(activeCompanyId?: string | null) {
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [loading, setLoading] = useState(true)
+  const supabase = createClient()
+  const queryClient = useQueryClient()
+  const { userId } = useUser()
+
+  const notificationsQuery = useQuery({
+    ...notificationsQueryOptions(activeCompanyId, userId ?? "", () => supabase),
+    enabled: Boolean(userId),
+  })
+
+  const notifications = notificationsQuery.data ?? []
+  const loading = notificationsQuery.isLoading
 
   const fetchNotifications = useCallback(async () => {
-    const supabase = createClient()
-    let query = supabase
-      .from("notifications")
-      .select("id, type, title, body, entity, entity_id, read, created_at")
-      .order("created_at", { ascending: false })
-      .limit(20)
+    if (!userId) return
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.notifications(activeCompanyId ?? "", userId),
+    })
+  }, [activeCompanyId, queryClient, userId])
 
-    if (activeCompanyId) {
-      query = query.eq("company_id", activeCompanyId)
-    }
-
-    const { data } = await query
-
-    setNotifications(data ?? [])
-    setLoading(false)
-  }, [activeCompanyId])
-
-  const markAsRead = useCallback(async (id: string) => {
-    const supabase = createClient()
-    const { error } = await supabase
-      .from("notifications")
-      .update({ read: true })
-      .eq("id", id)
-    if (error) console.error("markAsRead:", error)
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-    )
-  }, [])
+  const markAsRead = useCallback(
+    async (id: string) => {
+      const { error } = await supabase.from("notifications").update({ read: true }).eq("id", id)
+      if (error) return
+      if (!userId) return
+      queryClient.setQueryData<NotificationRow[]>(
+        queryKeys.notifications(activeCompanyId ?? "", userId),
+        (prev) => prev?.map((n) => (n.id === id ? { ...n, read: true } : n)) ?? [],
+      )
+    },
+    [activeCompanyId, queryClient, supabase, userId],
+  )
 
   const markAllAsRead = useCallback(async () => {
-    const supabase = createClient()
     let query = supabase.from("notifications").update({ read: true }).eq("read", false)
     if (activeCompanyId) {
       query = query.eq("company_id", activeCompanyId)
     }
     const { error } = await query
-    if (error) console.error("markAllAsRead:", error)
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-  }, [activeCompanyId])
-
-  useEffect(() => {
-    void fetchNotifications()
-    const timer = setInterval(() => void fetchNotifications(), 60000)
-    return () => clearInterval(timer)
-  }, [fetchNotifications])
+    if (error) return
+    if (!userId) return
+    queryClient.setQueryData<NotificationRow[]>(
+      queryKeys.notifications(activeCompanyId ?? "", userId),
+      (prev) => prev?.map((n) => ({ ...n, read: true })) ?? [],
+    )
+  }, [activeCompanyId, queryClient, supabase, userId])
 
   const unreadCount = notifications.filter((n) => !n.read).length
 

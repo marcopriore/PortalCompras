@@ -1,9 +1,11 @@
 "use client"
 
 import * as React from "react"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import type { FeatureKey } from "@/lib/hooks/usePermissions"
+import { tenantFeatureFlagsQueryOptions } from "@/lib/queries/tenant-feature-flags"
 
 const AI_NEGOTIATION_FEATURE_KEYS: FeatureKey[] = [
   "ai_negotiation",
@@ -12,64 +14,21 @@ const AI_NEGOTIATION_FEATURE_KEYS: FeatureKey[] = [
 
 export function useTenantFeatureFlags(keys: FeatureKey[]) {
   const { companyId, loading: userLoading } = useUser()
-  const [loading, setLoading] = React.useState(true)
-  const [flags, setFlags] = React.useState<Partial<Record<FeatureKey, boolean>>>({})
+  const supabase = createClient()
 
-  const keysKey = keys.join(",")
+  const query = useQuery({
+    ...tenantFeatureFlagsQueryOptions(companyId ?? "", keys, () => supabase),
+    enabled: !userLoading && Boolean(companyId),
+  })
 
-  React.useEffect(() => {
-    let alive = true
-
-    const load = async () => {
-      if (userLoading) return
-      if (!companyId) {
-        if (alive) {
-          setFlags({})
-          setLoading(false)
-        }
-        return
-      }
-
-      setLoading(true)
-      try {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from("tenant_features")
-          .select("feature_key, enabled")
-          .eq("company_id", companyId)
-          .in("feature_key", keys)
-
-        if (!alive) return
-
-        const next: Partial<Record<FeatureKey, boolean>> = {}
-        for (const key of keys) {
-          next[key] = false
-        }
-        if (!error) {
-          for (const row of (data ?? []) as { feature_key: FeatureKey; enabled: boolean }[]) {
-            if (row.feature_key) {
-              next[row.feature_key] = Boolean(row.enabled)
-            }
-          }
-        }
-        setFlags(next)
-      } finally {
-        if (alive) setLoading(false)
-      }
-    }
-
-    void load()
-    return () => {
-      alive = false
-    }
-  }, [companyId, userLoading, keysKey])
+  const flags = query.data ?? {}
 
   const has = React.useCallback(
     (key: FeatureKey) => Boolean(flags[key]),
     [flags],
   )
 
-  return { loading: userLoading || loading, flags, has }
+  return { loading: userLoading || query.isLoading, flags, has }
 }
 
 /** Gate de UI: respeita tenant_features (não bypass de superadmin). */

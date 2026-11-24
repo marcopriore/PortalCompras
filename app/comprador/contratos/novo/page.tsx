@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { isBefore, parseISO, startOfDay } from "date-fns"
 import { toast } from "sonner"
 import { createClient } from "@/lib/supabase/client"
@@ -43,6 +44,9 @@ import {
   type ContractItemForm,
   type ContractStatus,
 } from "@/types/contracts"
+import { paymentConditionsQueryOptions } from "@/lib/queries/payment-conditions"
+import { catalogItemSearchQueryOptions } from "@/lib/queries/catalog-search"
+import { contractFormSuppliersQueryOptions } from "@/lib/queries/contract-form"
 
 type FormState = {
   supplier_id: string
@@ -245,22 +249,12 @@ export default function NovoContratoPage() {
   const { maxQuantity, priceDecimalPlaces } = useNumericLimits()
 
   const [form, setForm] = React.useState<FormState>(emptyForm)
-  const [suppliers, setSuppliers] = React.useState<
-    Array<{ id: string; name: string; code: string }>
-  >([])
-  const [paymentConditions, setPaymentConditions] = React.useState<
-    Array<{ id: string; code: string; description: string }>
-  >([])
   const [contractItems, setContractItems] = React.useState<ContractItemForm[]>(
     [],
   )
   const [itemSearch, setItemSearch] = React.useState("")
   const [debouncedItemSearch, setDebouncedItemSearch] = React.useState("")
-  const [itemSearchResults, setItemSearchResults] = React.useState<
-    CatalogItemRow[]
-  >([])
-  const [itemSearchLoading, setItemSearchLoading] = React.useState(false)
-  const [loading, setLoading] = React.useState(true)
+  const supabase = React.useMemo(() => createClient(), [])
   const [saving, setSaving] = React.useState(false)
   const [savedContractId, setRascunhoId] = React.useState<string | null>(null)
   const [savedDraftMeta, setSavedDraftMeta] = React.useState<{
@@ -282,73 +276,46 @@ export default function NovoContratoPage() {
     return () => window.clearTimeout(id)
   }, [itemSearch])
 
-  React.useEffect(() => {
-    if (userLoading || permissionsLoading || !companyId || !canAccess) {
-      if (!userLoading && !permissionsLoading && !canAccess) setLoading(false)
-      return
-    }
+  const listQueriesEnabled =
+    !userLoading && !permissionsLoading && Boolean(companyId) && canAccess
 
-    let cancelled = false
-    ;(async () => {
-      setLoading(true)
-      try {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from("suppliers")
-          .select("id, name, code")
-          .eq("company_id", companyId)
-          .eq("status", "active")
-          .order("name")
-        if (error || cancelled) return
-        setSuppliers(
-          (data ?? []) as Array<{ id: string; name: string; code: string }>,
-        )
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
+  const suppliersQuery = useQuery({
+    ...contractFormSuppliersQueryOptions(companyId ?? "", () => supabase),
+    enabled: listQueriesEnabled,
+  })
+  const suppliers = suppliersQuery.data ?? []
 
-    return () => {
-      cancelled = true
-    }
-  }, [userLoading, permissionsLoading, companyId, canAccess])
+  const paymentConditionsQuery = useQuery({
+    ...paymentConditionsQueryOptions(companyId ?? "", () => supabase),
+    enabled: listQueriesEnabled,
+  })
+  const paymentConditions = paymentConditionsQuery.data ?? []
+  const paymentConditionsLoaded = paymentConditionsQuery.isSuccess
 
-  const [paymentConditionsLoaded, setPaymentConditionsLoaded] =
-    React.useState(false)
+  const itemSearchQuery = useQuery({
+    ...catalogItemSearchQueryOptions(
+      companyId ?? "",
+      debouncedItemSearch,
+      "contract",
+      () => supabase,
+    ),
+    enabled: listQueriesEnabled,
+  })
+  const itemSearchResults: CatalogItemRow[] = (itemSearchQuery.data ?? [])
+    .filter((row) => row.id != null)
+    .map((row) => ({
+      id: row.id as string,
+      code: row.code,
+      short_description: row.description,
+      unit_of_measure: row.unit_of_measure,
+      target_price: row.target_price ?? null,
+    }))
+  const itemSearchLoading = itemSearchQuery.isFetching
 
-  React.useEffect(() => {
-    if (userLoading || permissionsLoading || !companyId || !canAccess) return
-
-    setPaymentConditionsLoaded(false)
-    let cancelled = false
-    ;(async () => {
-      try {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from("payment_conditions")
-          .select("id, code, description")
-          .eq("company_id", companyId)
-          .eq("active", true)
-          .order("code")
-        if (cancelled || error) return
-        setPaymentConditions(
-          (data ?? []) as Array<{
-            id: string
-            code: string
-            description: string
-          }>,
-        )
-      } catch {
-        /* ignore */
-      } finally {
-        if (!cancelled) setPaymentConditionsLoaded(true)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [userLoading, companyId, canAccess])
+  const loading =
+    userLoading ||
+    permissionsLoading ||
+    (canAccess && listQueriesEnabled && suppliersQuery.isLoading)
 
   React.useEffect(() => {
     if (typeof window === "undefined") return
@@ -407,62 +374,6 @@ export default function NovoContratoPage() {
     paymentConditionsLoaded,
   ])
 
-  React.useEffect(() => {
-    if (userLoading || permissionsLoading || !companyId || !canAccess) return
-
-    const q = debouncedItemSearch.trim()
-    if (q.length < 2) {
-      setItemSearchResults([])
-      setItemSearchLoading(false)
-      return
-    }
-
-    let cancelled = false
-    ;(async () => {
-      setItemSearchLoading(true)
-      try {
-        const supabase = createClient()
-        const term = `%${q}%`
-        const { data, error } = await supabase
-          .from("items")
-          .select("id, code, short_description, unit_of_measure, target_price")
-          .eq("company_id", companyId)
-          .eq("status", "active")
-          .or(`code.ilike.${term},short_description.ilike.${term}`)
-          .limit(10)
-        if (cancelled) return
-        if (error) {
-          setItemSearchResults([])
-          return
-        }
-        const rows = (data ?? []) as Array<{
-          id: string
-          code: string
-          short_description: string
-          unit_of_measure: string | null
-          target_price: number | null
-        }>
-        setItemSearchResults(
-          rows.map((r) => ({
-            id: r.id,
-            code: r.code,
-            short_description: r.short_description,
-            unit_of_measure: r.unit_of_measure ?? "",
-            target_price:
-              r.target_price != null && !Number.isNaN(Number(r.target_price))
-                ? Number(r.target_price)
-                : null,
-          })),
-        )
-      } finally {
-        if (!cancelled) setItemSearchLoading(false)
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [debouncedItemSearch, companyId, canAccess, userLoading, permissionsLoading])
 
 
   function addItemFromCatalog(item: CatalogItemRow) {
@@ -483,7 +394,6 @@ export default function NovoContratoPage() {
     ])
     setItemSearch("")
     setDebouncedItemSearch("")
-    setItemSearchResults([])
   }
 
   function updateItem(

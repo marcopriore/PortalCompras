@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { use } from "react"
+import { use, useRef } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import { formatDateBR, formatDateQueryBR, formatNowBR } from "@/lib/formato-data"
 import { ptBR } from "date-fns/locale"
@@ -15,6 +16,15 @@ import {
   canViewAllQuotations,
   formatResponsibleName,
 } from "@/lib/quotations/ownership"
+import { paymentConditionsQueryOptions } from "@/lib/queries/payment-conditions"
+import {
+  catalogItemSearchQueryOptions,
+  catalogSupplierSearchQueryOptions,
+} from "@/lib/queries/catalog-search"
+import {
+  approvedRequisitionsImportQueryOptions,
+  quotationEditFormQueryOptions,
+} from "@/lib/queries/quotation-form"
 import { SuggestSuppliersButton } from "@/components/comprador/suggest-suppliers-button"
 import { Button } from "@/components/ui/button"
 import { QuantityInput } from "@/components/ui/numeric-field-inputs"
@@ -82,8 +92,6 @@ type RequisitionOption = {
   }[]
 }
 
-type PaymentConditionRow = { id: string; code: string; description: string }
-
 const PAYMENT_NONE = "__none__"
 
 const SEARCH_DEBOUNCE_MS = 300
@@ -148,7 +156,7 @@ export default function EditarCotacaoPage({
   })
   const { maxQuantity } = useNumericLimits()
 
-  const [loading, setLoading] = React.useState(true)
+  const [formReady, setFormReady] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [description, setDescription] = React.useState("")
   const [deadline, setDeadline] = React.useState<Date | undefined>()
@@ -157,251 +165,149 @@ export default function EditarCotacaoPage({
   const [paymentCondition, setPaymentCondition] = React.useState("")
   const [responsibleId, setResponsibleId] = React.useState<string>("")
   const [buyers, setBuyers] = React.useState<{ id: string; full_name: string | null }[]>([])
-  const [paymentConditions, setPaymentConditions] = React.useState<
-    PaymentConditionRow[]
-  >([])
   const [itemSearch, setItemSearch] = React.useState("")
-  const [itemResults, setItemResults] = React.useState<QuotationItem[]>([])
-  const [itemSearchLoading, setItemSearchLoading] = React.useState(false)
   const [selectedItems, setSelectedItems] = React.useState<SelectedItem[]>([])
   const [supplierSearch, setSupplierSearch] = React.useState("")
-  const [supplierResults, setSupplierResults] = React.useState<Supplier[]>([])
-  const [supplierSearchLoading, setSupplierSearchLoading] = React.useState(false)
   const [selectedSuppliers, setSelectedSuppliers] = React.useState<Supplier[]>([])
   const [errors, setErrors] = React.useState<Record<string, boolean>>({})
   const [open, setOpen] = React.useState({ general: true, items: true, suppliers: true })
   const [quotationCode, setQuotationCode] = React.useState<string | null>(null)
   const [reqDialogOpen, setReqDialogOpen] = React.useState(false)
-  const [requisitions, setRequisitions] = React.useState<RequisitionOption[]>([])
-  const [requisitionsLoading, setRequisitionsLoading] = React.useState(false)
   const [selectedReqIds, setSelectedReqIds] = React.useState<string[]>([])
+  const editFormHydratedRef = useRef(false)
 
+  const supabase = React.useMemo(() => createClient(), [])
   const today = React.useMemo(() => formatNowBR(), [])
 
   const debouncedItemSearch = useDebounce(itemSearch, SEARCH_DEBOUNCE_MS)
   const debouncedSupplierSearch = useDebounce(supplierSearch, SEARCH_DEBOUNCE_MS)
 
-  React.useEffect(() => {
-    if (!companyId) return
-    let cancelled = false
-    ;(async () => {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from("payment_conditions")
-        .select("id, code, description")
-        .eq("company_id", companyId)
-        .eq("active", true)
-        .order("code")
-      if (cancelled || error) return
-      setPaymentConditions((data ?? []) as PaymentConditionRow[])
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [companyId])
+  const paymentConditionsQuery = useQuery({
+    ...paymentConditionsQueryOptions(companyId ?? "", () => supabase),
+    enabled: Boolean(companyId),
+  })
+  const paymentConditions = paymentConditionsQuery.data ?? []
+
+  const itemSearchQuery = useQuery({
+    ...catalogItemSearchQueryOptions(
+      companyId ?? "",
+      debouncedItemSearch,
+      "quotation",
+      () => supabase,
+    ),
+  })
+  const itemResults: QuotationItem[] = (itemSearchQuery.data ?? []).map((i) => ({
+    code: i.code,
+    description: i.description,
+    unit_of_measure: i.unit_of_measure,
+    long_description: i.long_description ?? null,
+  }))
+  const itemSearchLoading = itemSearchQuery.isFetching
+
+  const supplierSearchQuery = useQuery({
+    ...catalogSupplierSearchQueryOptions(companyId ?? "", debouncedSupplierSearch, () => supabase),
+  })
+  const supplierResults = (supplierSearchQuery.data ?? []) as Supplier[]
+  const supplierSearchLoading = supplierSearchQuery.isFetching
+
+  const editFormQuery = useQuery({
+    ...quotationEditFormQueryOptions(companyId ?? "", id, () => supabase),
+    enabled: Boolean(id && companyId && !userLoading && !permLoading),
+  })
+
+  const loading =
+    userLoading || permLoading || editFormQuery.isLoading || !formReady
 
   React.useEffect(() => {
-    if (!companyId || debouncedItemSearch.trim().length < 2) {
-      setItemResults([])
-      setItemSearchLoading(false)
+    if (userLoading || permLoading) return
+    if (editFormQuery.isLoading) return
+
+    if (editFormQuery.isError || !editFormQuery.data) {
+      if (!editFormQuery.isLoading) {
+        toast.error("Não foi possível carregar a cotação.")
+        setFormReady(true)
+      }
       return
     }
-    const run = async () => {
-      setItemSearchLoading(true)
-      const supabase = createClient()
-      const term = `%${debouncedItemSearch.trim()}%`
-      try {
-        const { data, error } = await supabase
-          .from("items")
-          .select("id, code, short_description, unit_of_measure, long_description")
-          .eq("company_id", companyId)
-          .eq("status", "active")
-          .or(`code.ilike.${term},short_description.ilike.${term}`)
-          .limit(20)
-        if (error) {
-          setItemResults([])
-          return
-        }
-        setItemResults(
-          (data ?? []).map(
-            (i: {
-              code: string
-              short_description: string
-              unit_of_measure: string | null
-              long_description: string | null
-            }) => ({
-              code: i.code,
-              description: i.short_description,
-              unit_of_measure: i.unit_of_measure ?? "",
-              long_description: i.long_description ?? null,
-            }),
-          ),
-        )
-      } finally {
-        setItemSearchLoading(false)
-      }
-    }
-    void run()
-  }, [companyId, debouncedItemSearch])
 
-  React.useEffect(() => {
-    if (!companyId || debouncedSupplierSearch.trim().length < 2) {
-      setSupplierResults([])
-      setSupplierSearchLoading(false)
+    const dto = editFormQuery.data
+    const createdBy = dto.quotation.created_by
+
+    if (
+      !canAccessQuotation({
+        createdBy,
+        userId,
+        canViewAll: viewAllQuotations,
+      })
+    ) {
+      toast.error("Você não tem permissão para editar esta cotação.")
+      router.replace("/comprador/cotacoes")
       return
     }
-    const run = async () => {
-      setSupplierSearchLoading(true)
-      const supabase = createClient()
-      const term = `%${debouncedSupplierSearch.trim()}%`
-      try {
-        const { data, error } = await supabase
-          .from("suppliers")
-          .select("id, name, cnpj, category")
-          .eq("company_id", companyId)
-          .eq("status", "active")
-          .or(`name.ilike.${term},cnpj.ilike.${term}`)
-          .limit(20)
-        if (error) {
-          setSupplierResults([])
-          return
-        }
-        setSupplierResults((data as Supplier[]) ?? [])
-      } finally {
-        setSupplierSearchLoading(false)
-      }
-    }
-    void run()
-  }, [companyId, debouncedSupplierSearch])
 
-  React.useEffect(() => {
-    if (!id || !companyId || userLoading || permLoading) return
-
-    const fetchData = async () => {
-      setLoading(true)
-      try {
-        const supabase = createClient()
-
-        const [{ data: quotationData, error: quotationError }, buyersRes] =
-          await Promise.all([
-            supabase
-              .from("quotations")
-              .select(
-                "id, code, description, status, category, response_deadline, payment_condition, created_by",
-              )
-              .eq("id", id)
-              .eq("company_id", companyId)
-              .single(),
-            supabase
-              .from("profiles")
-              .select("id, full_name")
-              .eq("company_id", companyId)
-              .neq("profile_type", "supplier")
-              .order("full_name", { ascending: true }),
-          ])
-
-        if (quotationError || !quotationData) {
-          toast.error("Não foi possível carregar a cotação.")
-          setLoading(false)
-          return
-        }
-
-        const createdBy = (quotationData.created_by as string | null) ?? null
-        if (
-          !canAccessQuotation({
-            createdBy,
-            userId,
-            canViewAll: viewAllQuotations,
-          })
-        ) {
-          toast.error("Você não tem permissão para editar esta cotação.")
-          router.replace("/comprador/cotacoes")
-          return
-        }
-
-        const status = quotationData.status as QuotationStatus
-        if (status !== "draft" && status !== "rejected") {
-          router.replace(`/comprador/cotacoes/${id}`)
-          return
-        }
-
-        setQuotationCode(quotationData.code as string)
-        setDescription((quotationData.description as string) ?? "")
-        setCategory((quotationData.category as string) ?? undefined)
-        setPaymentCondition(
-          (quotationData.payment_condition as string | null) ?? "",
-        )
-        setResponsibleId(createdBy ?? userId ?? "")
-        setBuyers(
-          ((buyersRes.data ?? []) as { id: string; full_name: string | null }[]) ??
-            [],
-        )
-        if (quotationData.response_deadline) {
-          setDeadline(new Date(quotationData.response_deadline as string))
-        }
-
-        const [{ data: itemsData }, { data: suppliersData }] = await Promise.all([
-          supabase
-            .from("quotation_items")
-            .select(
-              "material_code, material_description, long_description, unit_of_measure, quantity, complementary_spec, source_requisition_code, site_code",
-            )
-            .eq("quotation_id", id),
-          supabase
-            .from("quotation_suppliers")
-            .select("supplier_id, supplier_name, supplier_cnpj, position")
-            .eq("quotation_id", id)
-            .order("position", { ascending: true, nullsFirst: false }),
-        ])
-
-        if (itemsData && itemsData.length > 0) {
-          setSelectedItems(
-            (itemsData as Array<{
-              material_code: string
-              material_description: string
-              long_description: string | null
-              unit_of_measure: string | null
-              quantity: number
-              complementary_spec: string | null
-              source_requisition_code: string | null
-              site_code: string | null
-            }>).map((ri) => ({
-              code: ri.material_code ?? "",
-              description: ri.material_description ?? "",
-              long_description: ri.long_description ?? null,
-              unit_of_measure: ri.unit_of_measure ?? "",
-              quantity: ri.quantity ?? 1,
-              complementary_spec: ri.complementary_spec ?? null,
-              requisition_code: ri.source_requisition_code ?? null,
-              site_code: ri.site_code ?? null,
-            })),
-          )
-        }
-
-        if (suppliersData && suppliersData.length > 0) {
-          setSelectedSuppliers(
-            (suppliersData as Array<{
-              supplier_id: string
-              supplier_name: string
-              supplier_cnpj: string | null
-              position: number | null
-            }>).map((s) => ({
-              id: s.supplier_id,
-              name: s.supplier_name,
-              cnpj: s.supplier_cnpj ?? "",
-              category: "",
-            })),
-          )
-        }
-      } catch {
-        toast.error("Erro ao carregar a cotação.")
-      } finally {
-        setLoading(false)
-      }
+    const status = dto.quotation.status as QuotationStatus
+    if (status !== "draft" && status !== "rejected") {
+      router.replace(`/comprador/cotacoes/${id}`)
+      return
     }
 
-    fetchData()
-  }, [id, companyId, userId, userLoading, permLoading, viewAllQuotations, router])
+    if (editFormHydratedRef.current) return
+    editFormHydratedRef.current = true
+
+    setQuotationCode(dto.quotation.code)
+    setDescription(dto.quotation.description)
+    setCategory(dto.quotation.category ?? undefined)
+    setPaymentCondition(dto.quotation.payment_condition ?? "")
+    setResponsibleId(createdBy ?? userId ?? "")
+    setBuyers(dto.buyers)
+    if (dto.quotation.response_deadline) {
+      setDeadline(new Date(dto.quotation.response_deadline))
+    }
+
+    if (dto.items.length > 0) {
+      setSelectedItems(
+        dto.items.map((ri) => ({
+          code: ri.material_code ?? "",
+          description: ri.material_description ?? "",
+          long_description: ri.long_description ?? null,
+          unit_of_measure: ri.unit_of_measure ?? "",
+          quantity: ri.quantity ?? 1,
+          complementary_spec: ri.complementary_spec ?? null,
+          requisition_code: ri.source_requisition_code ?? null,
+          site_code: ri.site_code ?? null,
+        })),
+      )
+    }
+
+    if (dto.suppliers.length > 0) {
+      setSelectedSuppliers(
+        dto.suppliers.map((s) => ({
+          id: s.supplier_id,
+          name: s.supplier_name,
+          cnpj: s.supplier_cnpj ?? "",
+          category: "",
+        })),
+      )
+    }
+
+    setFormReady(true)
+  }, [
+    editFormQuery.data,
+    editFormQuery.isError,
+    editFormQuery.isLoading,
+    id,
+    permLoading,
+    router,
+    userId,
+    userLoading,
+    viewAllQuotations,
+  ])
+
+  const requisitionsImportQuery = useQuery({
+    ...approvedRequisitionsImportQueryOptions(companyId ?? "", reqDialogOpen, () => supabase),
+  })
+  const requisitions = (requisitionsImportQuery.data ?? []) as RequisitionOption[]
+  const requisitionsLoading = requisitionsImportQuery.isFetching
 
   const toggle = (key: string) =>
     setOpen((prev) => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))
@@ -431,65 +337,9 @@ export default function EditarCotacaoPage({
     setSupplierSearch("")
   }
 
-  async function loadAvailableRequisitions() {
+  function openRequisitionsImportDialog() {
     if (!companyId) return
-    setRequisitionsLoading(true)
-    try {
-      const supabase = createClient()
-      const { data: reqs } = await supabase
-        .from("requisitions")
-        .select("id, code, title, created_at")
-        .eq("company_id", companyId)
-        .eq("status", "approved")
-        .is("quotation_id", null)
-        .order("created_at", { ascending: false })
-
-      if (!reqs || reqs.length === 0) {
-        setRequisitions([])
-        return
-      }
-
-      const { data: allItems } = await supabase
-        .from("requisition_items")
-        .select("requisition_id, material_code, material_description, unit_of_measure, quantity, site_code")
-        .in(
-          "requisition_id",
-          reqs.map((r) => r.id),
-        )
-
-      type ReqItemRow = {
-        requisition_id: string
-        material_code: string | null
-        material_description: string
-        unit_of_measure: string | null
-        quantity: number
-        site_code: string | null
-      }
-
-      const itemsByReq: Record<string, ReqItemRow[]> = {}
-      for (const row of (allItems ?? []) as ReqItemRow[]) {
-        if (!itemsByReq[row.requisition_id]) itemsByReq[row.requisition_id] = []
-        itemsByReq[row.requisition_id].push(row)
-      }
-
-      setRequisitions(
-        reqs.map((r) => ({
-          id: r.id,
-          code: r.code,
-          title: r.title,
-          created_at: r.created_at,
-          items: (itemsByReq[r.id] ?? []).map((i) => ({
-            material_code: i.material_code,
-            material_description: i.material_description,
-            unit_of_measure: i.unit_of_measure,
-            quantity: i.quantity,
-            site_code: i.site_code,
-          })),
-        })),
-      )
-    } finally {
-      setRequisitionsLoading(false)
-    }
+    setReqDialogOpen(true)
   }
 
   function handleImportRequisitions() {
@@ -922,8 +772,7 @@ export default function EditarCotacaoPage({
               size="sm"
               onClick={() => {
                 setSelectedReqIds([])
-                setReqDialogOpen(true)
-                void loadAvailableRequisitions()
+                openRequisitionsImportDialog()
               }}
             >
               <ClipboardList className="h-4 w-4 mr-2" />

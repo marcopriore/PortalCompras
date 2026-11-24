@@ -10,7 +10,11 @@ import {
 } from "date-fns"
 import { formatDateBR, formatDateTimeBR } from "@/lib/formato-data"
 import { toast } from "sonner"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import { contractDetailQueryOptions } from "@/lib/queries/contract-detail"
+import { paymentConditionsQueryOptions } from "@/lib/queries/payment-conditions"
+import { queryKeys } from "@/lib/queries/keys"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { useTenant } from "@/contexts/tenant-context"
@@ -82,8 +86,6 @@ import type {
   ContractItemForm,
 } from "@/types/contracts"
 import { CONTRACT_KINDS, CONTRACT_STATUSES } from "@/types/contracts"
-import { formatResponsibleName } from "@/lib/quotations/ownership"
-
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
@@ -259,6 +261,8 @@ export default function ContratoPage({
   const { id } = React.use(params)
   const router = useRouter()
   const searchParams = useSearchParams()
+  const supabase = createClient()
+  const queryClient = useQueryClient()
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { companyId } = useTenant()
   const { hasFeature, hasPermission, canWrite, loading: permissionsLoading } = usePermissions()
@@ -267,8 +271,6 @@ export default function ContratoPage({
 
   const [contract, setContract] = React.useState<Contract | null>(null)
   const [responsibleName, setResponsibleName] = React.useState("—")
-  const [loadError, setLoadError] = React.useState(false)
-  const [loading, setLoading] = React.useState(true)
   const [editing, setEditing] = React.useState(false)
   const [form, setForm] = React.useState<FormState | null>(null)
   const [saving, setSaving] = React.useState(false)
@@ -279,9 +281,6 @@ export default function ContratoPage({
   const [generatingPdf, setGeneratingPdf] = React.useState(false)
   const [acceptances, setAcceptances] = React.useState<ContractAcceptance[]>([])
   const editQueryHandled = React.useRef(false)
-  const [paymentConditions, setPaymentConditions] = React.useState<
-    Array<{ id: string; code: string; description: string }>
-  >([])
   const [suppliers, setSuppliers] = React.useState<
     Array<{ id: string; name: string; code: string }>
   >([])
@@ -345,42 +344,54 @@ export default function ContratoPage({
     setConfirmDialog({ open: true, title, description, onConfirm })
   }
 
-  React.useEffect(() => {
-    if (!userLoading && !permissionsLoading && !canAccess) {
-      setLoading(false)
-    }
-  }, [userLoading, permissionsLoading, canAccess])
+  const detailEnabled =
+    !userLoading && !permissionsLoading && canAccess && Boolean(companyId)
+
+  const detailQuery = useQuery({
+    ...contractDetailQueryOptions(companyId ?? "", id, () => supabase),
+    enabled: detailEnabled,
+  })
+
+  const paymentConditionsQuery = useQuery({
+    ...paymentConditionsQueryOptions(companyId ?? "", () => supabase),
+    enabled: !userLoading && Boolean(companyId) && canAccess,
+  })
+
+  const paymentConditions = paymentConditionsQuery.data ?? []
+  const loadError = detailQuery.isSuccess && !detailQuery.data
+  const loading =
+    (!canAccess && !userLoading && !permissionsLoading
+      ? false
+      : detailQuery.isLoading) ||
+    (detailEnabled && detailQuery.isPending && !detailQuery.data)
+
+  const refreshContract = React.useCallback(
+    async (_silent = false) => {
+      if (!companyId) return
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.contractDetail(companyId, id),
+      })
+    },
+    [companyId, id, queryClient],
+  )
 
   React.useEffect(() => {
-    if (userLoading || !companyId || !canAccess) return
-
-    let cancelled = false
-    ;(async () => {
-      try {
-        const supabase = createClient()
-        const { data, error } = await supabase
-          .from("payment_conditions")
-          .select("id, code, description")
-          .eq("company_id", companyId)
-          .eq("active", true)
-          .order("code")
-        if (cancelled || error) return
-        setPaymentConditions(
-          (data ?? []) as Array<{
-            id: string
-            code: string
-            description: string
-          }>,
-        )
-      } catch {
-        /* ignore */
+    const dto = detailQuery.data
+    if (!dto) {
+      if (detailQuery.isSuccess && !dto) {
+        setContract(null)
+        setForm(null)
+        setAcceptances([])
       }
-    })()
-
-    return () => {
-      cancelled = true
+      return
     }
-  }, [userLoading, companyId, canAccess])
+    setContract(dto.contract)
+    setResponsibleName(dto.responsibleName)
+    setAcceptances(dto.acceptances)
+    if (!editing) {
+      setForm(contractToForm(dto.contract))
+    }
+  }, [detailQuery.data, detailQuery.isSuccess, editing])
 
   React.useEffect(() => {
     if (!editing || !companyId || contract?.status !== "draft") return
@@ -464,64 +475,6 @@ export default function ContratoPage({
     }
   }, [editing, companyId, contract?.status, debouncedItemSearch])
 
-  const loadContract = React.useCallback(async (silent = false) => {
-    if (!silent) {
-      setLoading(true)
-      setLoadError(false)
-    }
-    try {
-      const [contractRes, accRes] = await Promise.all([
-        fetch(`/api/contracts/${id}`),
-        fetch(`/api/contracts/${id}/acceptances`),
-      ])
-      const data = (await contractRes.json()) as {
-        contract?: Contract
-        error?: string
-      }
-      if (!contractRes.ok || !data.contract) {
-        if (!silent) {
-          setLoadError(true)
-          setContract(null)
-          setForm(null)
-          setAcceptances([])
-        }
-        return
-      }
-      const c = data.contract
-      setContract(c)
-      if (c.created_by) {
-        const supabase = createClient()
-        const { data: ownerProfile } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", c.created_by)
-          .maybeSingle()
-        setResponsibleName(
-          formatResponsibleName(
-            (ownerProfile as { full_name?: string | null } | null)?.full_name,
-          ),
-        )
-      } else {
-        setResponsibleName("—")
-      }
-      if (!editing) {
-        setForm(contractToForm(c))
-      }
-      if (accRes.ok) {
-        const accData = (await accRes.json()) as {
-          acceptances?: ContractAcceptance[]
-        }
-        setAcceptances(
-          Array.isArray(accData.acceptances) ? accData.acceptances : [],
-        )
-      } else if (!silent) {
-        setAcceptances([])
-      }
-    } finally {
-      if (!silent) setLoading(false)
-    }
-  }, [id, editing])
-
   React.useEffect(() => {
     editQueryHandled.current = false
   }, [id])
@@ -546,11 +499,6 @@ export default function ContratoPage({
     setEditing(true)
   }, [contract, searchParams, canEditContract, id, router])
 
-  React.useEffect(() => {
-    if (userLoading || permissionsLoading || !canAccess || !companyId) return
-    void loadContract(false)
-  }, [userLoading, permissionsLoading, canAccess, companyId, loadContract])
-
   function openFilePicker() {
     fileInputRef.current?.click()
   }
@@ -574,7 +522,7 @@ export default function ContratoPage({
             return
           }
           toast.success("Contrato enviado para aceite!")
-          await loadContract()
+          await refreshContract()
         } finally {
           setSendingForAcceptance(false)
         }
@@ -611,7 +559,7 @@ export default function ContratoPage({
         if (data.contract) {
           setContract(data.contract)
         } else {
-          await loadContract()
+          await refreshContract()
         }
         toast.success(
           available
@@ -902,7 +850,7 @@ export default function ContratoPage({
       }
 
       if (!isRestricted && mode === "save") {
-        await loadContract()
+        await refreshContract()
         toast.success("Rascunho salvo!")
         return
       }
@@ -924,11 +872,11 @@ export default function ContratoPage({
         if (searchParams.get("edit") === "true") {
           router.replace(`/comprador/contratos/${id}`)
         }
-        await loadContract()
+        await refreshContract()
         return
       }
 
-      await loadContract()
+      await refreshContract()
       setEditing(false)
       setEditItems([])
       setItemSearch("")

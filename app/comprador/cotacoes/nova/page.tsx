@@ -1,6 +1,7 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { formatDateBR, formatDateQueryBR, formatNowBR } from '@/lib/formato-data'
 import { ptBR } from 'date-fns/locale'
@@ -12,6 +13,15 @@ import { logAudit } from '@/lib/audit'
 import { ensureInitialQuotationRound } from '@/lib/quotations/round-lifecycle'
 import { createAndStartNegotiationPlan } from '@/lib/negotiation/client-start'
 import { useAiNegotiationUiAccess } from '@/lib/hooks/use-tenant-feature-flags'
+import { paymentConditionsQueryOptions } from '@/lib/queries/payment-conditions'
+import {
+  catalogItemSearchQueryOptions,
+  catalogSupplierSearchQueryOptions,
+} from '@/lib/queries/catalog-search'
+import {
+  approvedRequisitionsImportQueryOptions,
+  quotationRequisitionPrefillQueryOptions,
+} from '@/lib/queries/quotation-form'
 import {
   createNovaCotacaoNegotiationFormState,
   negotiationFormToInput,
@@ -83,8 +93,6 @@ type RequisitionOption = {
   }[]
 }
 
-type PaymentConditionRow = { id: string; code: string; description: string }
-
 const PAYMENT_NONE = '__none__'
 
 const SUPPLIER_SEARCH_DEBOUNCE_MS = 300
@@ -142,22 +150,16 @@ function NovaCotacaoContent() {
 
   const searchParams = useSearchParams()
   const requisitionId = searchParams.get('requisition_id')
-  const quotationId = searchParams.get('quotation_id')
 
   const [description, setDescription] = useState('')
   const [deadline, setDeadline] = useState<Date | undefined>()
   const [deadlineOpen, setDeadlineOpen] = useState(false)
   const [category, setCategory] = useState<string | undefined>()
   const [paymentCondition, setPaymentCondition] = useState('')
-  const [paymentConditions, setPaymentConditions] = useState<PaymentConditionRow[]>([])
   const [file, setFile] = useState<File | null>(null)
   const [itemSearch, setItemSearch] = useState('')
-  const [itemResults, setItemResults] = useState<QuotationItem[]>([])
-  const [itemSearchLoading, setItemSearchLoading] = useState(false)
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
   const [supplierSearch, setSupplierSearch] = useState('')
-  const [supplierResults, setSupplierResults] = useState<Supplier[]>([])
-  const [supplierSearchLoading, setSupplierSearchLoading] = useState(false)
   const [selectedSuppliers, setSelectedSuppliers] = useState<Supplier[]>([])
   const [errors, setErrors] = useState<Record<string, boolean>>({})
   const [open, setOpen] = useState({
@@ -173,11 +175,11 @@ function NovaCotacaoContent() {
     createNovaCotacaoNegotiationFormState(),
   )
   const [reqDialogOpen, setReqDialogOpen] = useState(false)
-  const [requisitions, setRequisitions] = useState<RequisitionOption[]>([])
-  const [requisitionsLoading, setRequisitionsLoading] = useState(false)
   const [selectedReqIds, setSelectedReqIds] = useState<string[]>([])
+  const requisitionPrefillAppliedRef = useRef(false)
 
   const { userId, companyId, fullName, loading: userLoading } = useUser()
+  const supabase = useMemo(() => createClient(), [])
   const { showAutonomousAi, loading: aiAccessLoading } = useAiNegotiationUiAccess()
 
   const debouncedItemSearch = useDebounce(itemSearch, ITEM_SEARCH_DEBOUNCE_MS)
@@ -185,135 +187,69 @@ function NovaCotacaoContent() {
 
   const today = useMemo(() => formatNowBR(), [])
 
-  useEffect(() => {
-    if (!companyId) return
-    let cancelled = false
-    ;(async () => {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('payment_conditions')
-        .select('id, code, description')
-        .eq('company_id', companyId)
-        .eq('active', true)
-        .order('code')
-      if (cancelled || error) return
-      setPaymentConditions((data ?? []) as PaymentConditionRow[])
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [companyId])
+  const paymentConditionsQuery = useQuery({
+    ...paymentConditionsQueryOptions(companyId ?? '', () => supabase),
+    enabled: Boolean(companyId),
+  })
+  const paymentConditions = paymentConditionsQuery.data ?? []
+
+  const itemSearchQuery = useQuery({
+    ...catalogItemSearchQueryOptions(
+      companyId ?? '',
+      debouncedItemSearch,
+      'quotation',
+      () => supabase,
+    ),
+  })
+  const itemResults: QuotationItem[] = (itemSearchQuery.data ?? []).map((i) => ({
+    code: i.code,
+    description: i.description,
+    unit_of_measure: i.unit_of_measure,
+    long_description: i.long_description ?? null,
+  }))
+  const itemSearchLoading = itemSearchQuery.isFetching
+
+  const supplierSearchQuery = useQuery({
+    ...catalogSupplierSearchQueryOptions(companyId ?? '', debouncedSupplierSearch, () => supabase),
+  })
+  const supplierResults = (supplierSearchQuery.data ?? []) as Supplier[]
+  const supplierSearchLoading = supplierSearchQuery.isFetching
+
+  const requisitionPrefillQuery = useQuery({
+    ...quotationRequisitionPrefillQueryOptions(
+      companyId ?? '',
+      requisitionId ?? '',
+      () => supabase,
+    ),
+    enabled: Boolean(companyId && requisitionId),
+  })
 
   useEffect(() => {
-    if (!requisitionId || !companyId) return
-    const fetchRequisition = async () => {
-      const supabase = createClient()
-      const [reqRes, itemsRes] = await Promise.all([
-        supabase.from('requisitions').select('*').eq('id', requisitionId).single(),
-        supabase
-          .from('requisition_items')
-          .select('*')
-          .eq('requisition_id', requisitionId),
-      ])
-
-      if (reqRes.data) {
-        const reqAny = reqRes.data as any
-        setDescription(() => reqAny.title ?? '')
-        setCategory(reqAny.commodity_group ?? '')
-      }
-
-      if (itemsRes.data && itemsRes.data.length > 0) {
-        const reqCode = (reqRes.data as { code?: string } | null)?.code ?? null
-        setSelectedItems(
-          itemsRes.data.map((ri: { material_code?: string; material_description?: string; long_description?: string | null; quantity?: number; unit_of_measure?: string; site_code?: string | null }) => ({
-            code: ri.material_code ?? '',
-            description: ri.material_description ?? '',
-            long_description: ri.long_description ?? null,
-            quantity: ri.quantity ?? 1,
-            unit_of_measure: ri.unit_of_measure ?? '',
-            requisition_code: reqCode,
-            site_code: ri.site_code ?? null,
-          })),
-        )
-      }
+    if (!requisitionPrefillQuery.data || requisitionPrefillAppliedRef.current) return
+    requisitionPrefillAppliedRef.current = true
+    const prefill = requisitionPrefillQuery.data
+    setDescription(prefill.title)
+    setCategory(prefill.category || undefined)
+    if (prefill.items.length > 0) {
+      setSelectedItems(
+        prefill.items.map((item) => ({
+          code: item.code,
+          description: item.description,
+          long_description: item.long_description,
+          quantity: item.quantity,
+          unit_of_measure: item.unit_of_measure,
+          requisition_code: item.requisition_code,
+          site_code: item.site_code,
+        })),
+      )
     }
+  }, [requisitionPrefillQuery.data])
 
-    fetchRequisition()
-  }, [requisitionId, companyId])
-
-  useEffect(() => {
-    if (!companyId || debouncedItemSearch.trim().length < 2) {
-      setItemResults([])
-      setItemSearchLoading(false)
-      return
-    }
-    const run = async () => {
-      setItemSearchLoading(true)
-      const supabase = createClient()
-      const term = `%${debouncedItemSearch.trim()}%`
-      try {
-        const { data, error } = await supabase
-          .from('items')
-          .select('id, code, short_description, unit_of_measure, long_description')
-          .eq('company_id', companyId)
-          .eq('status', 'active')
-          .or(`code.ilike.${term},short_description.ilike.${term}`)
-          .limit(20)
-        if (error) {
-          setItemResults([])
-          return
-        }
-        setItemResults(
-          (data ?? []).map(
-            (i: {
-              code: string
-              short_description: string
-              unit_of_measure: string | null
-              long_description: string | null
-            }) => ({
-              code: i.code,
-              description: i.short_description,
-              unit_of_measure: i.unit_of_measure ?? '',
-              long_description: i.long_description ?? null,
-            }),
-          ),
-        )
-      } finally {
-        setItemSearchLoading(false)
-      }
-    }
-    void run()
-  }, [companyId, debouncedItemSearch])
-
-  useEffect(() => {
-    if (!companyId || debouncedSupplierSearch.trim().length < 2) {
-      setSupplierResults([])
-      setSupplierSearchLoading(false)
-      return
-    }
-    const run = async () => {
-      setSupplierSearchLoading(true)
-      const supabase = createClient()
-      const term = `%${debouncedSupplierSearch.trim()}%`
-      try {
-        const { data, error } = await supabase
-          .from('suppliers')
-          .select('id, name, cnpj, category')
-          .eq('company_id', companyId)
-          .eq('status', 'active')
-          .or(`name.ilike.${term},cnpj.ilike.${term}`)
-          .limit(20)
-        if (error) {
-          setSupplierResults([])
-          return
-        }
-        setSupplierResults((data as Supplier[]) ?? [])
-      } finally {
-        setSupplierSearchLoading(false)
-      }
-    }
-    void run()
-  }, [companyId, debouncedSupplierSearch])
+  const requisitionsImportQuery = useQuery({
+    ...approvedRequisitionsImportQueryOptions(companyId ?? '', reqDialogOpen, () => supabase),
+  })
+  const requisitions = (requisitionsImportQuery.data ?? []) as RequisitionOption[]
+  const requisitionsLoading = requisitionsImportQuery.isFetching
 
   const toggle = (key: string) => setOpen(prev => ({ ...prev, [key]: !prev[key as keyof typeof prev] }))
 
@@ -337,65 +273,9 @@ function NovaCotacaoContent() {
     setSupplierSearch('')
   }
 
-  async function loadAvailableRequisitions() {
+  function openRequisitionsImportDialog() {
     if (!companyId) return
-    setRequisitionsLoading(true)
-    try {
-      const supabase = createClient()
-      const { data: reqs } = await supabase
-        .from('requisitions')
-        .select('id, code, title, created_at')
-        .eq('company_id', companyId)
-        .eq('status', 'approved')
-        .is('quotation_id', null)
-        .order('created_at', { ascending: false })
-
-      if (!reqs || reqs.length === 0) {
-        setRequisitions([])
-        return
-      }
-
-      const { data: allItems } = await supabase
-        .from('requisition_items')
-        .select('requisition_id, material_code, material_description, unit_of_measure, quantity, site_code')
-        .in(
-          'requisition_id',
-          reqs.map((r) => r.id),
-        )
-
-      type ReqItemRow = {
-        requisition_id: string
-        material_code: string | null
-        material_description: string
-        unit_of_measure: string | null
-        quantity: number
-        site_code: string | null
-      }
-
-      const itemsByReq: Record<string, ReqItemRow[]> = {}
-      for (const row of (allItems ?? []) as ReqItemRow[]) {
-        if (!itemsByReq[row.requisition_id]) itemsByReq[row.requisition_id] = []
-        itemsByReq[row.requisition_id].push(row)
-      }
-
-      setRequisitions(
-        reqs.map((r) => ({
-          id: r.id,
-          code: r.code,
-          title: r.title,
-          created_at: r.created_at,
-          items: (itemsByReq[r.id] ?? []).map((i) => ({
-            material_code: i.material_code,
-            material_description: i.material_description,
-            unit_of_measure: i.unit_of_measure,
-            quantity: i.quantity,
-            site_code: i.site_code,
-          })),
-        })),
-      )
-    } finally {
-      setRequisitionsLoading(false)
-    }
+    setReqDialogOpen(true)
   }
 
   function handleImportRequisitions() {
@@ -810,7 +690,7 @@ function NovaCotacaoContent() {
               onClick={() => {
                 setSelectedReqIds([])
                 setReqDialogOpen(true)
-                void loadAvailableRequisitions()
+                openRequisitionsImportDialog()
               }}
             >
               <ClipboardList className="h-4 w-4 mr-2" />

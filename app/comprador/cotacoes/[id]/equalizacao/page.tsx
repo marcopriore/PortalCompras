@@ -72,6 +72,12 @@ import {
   type EqualizationBundleDto,
 } from "@/lib/queries/equalization"
 import { queryKeys } from "@/lib/queries/keys"
+import {
+  paymentConditionsQueryOptions,
+  type PaymentConditionRow,
+} from "@/lib/queries/payment-conditions"
+import { contractPoLinkPromptQueryOptions } from "@/lib/queries/contract-po-link-prompt"
+import { quotationContractMatchesQueryOptions } from "@/lib/queries/quotation-contract-matches"
 import { createNotification } from "@/lib/notify"
 import { getUserEmail } from "@/lib/email/get-user-email"
 import { templateNewRound } from "@/lib/email/templates"
@@ -107,10 +113,6 @@ import type {
   ContractMatchCandidate,
   EqualizacaoContractLink,
 } from "@/lib/contracts/match-contract-items"
-import {
-  CONTRACT_PO_LINK_PROMPT_KEY,
-  parseContractPoLinkPrompt,
-} from "@/lib/contracts/contract-balance-settings"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSupplierScores } from "@/lib/hooks/use-supplier-score"
 import { toast } from "sonner"
@@ -247,8 +249,6 @@ type Quotation = {
   created_at?: string | null
   created_by?: string | null
 }
-
-type PaymentConditionRow = { id: string; code: string; description: string }
 
 /** Convites na cotação — ordem das colunas na equalização segue o array retornado pelo banco. */
 type QuotationSupplier = {
@@ -568,12 +568,8 @@ export default function EqualizacaoPage({
   const [countdownTick, setCountdownTick] = React.useState(0)
   const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
-  const [paymentConditions, setPaymentConditions] = React.useState<
-    PaymentConditionRow[]
-  >([])
   const [linkContractDialogOpen, setLinkContractDialogOpen] = React.useState(false)
   const [checkingContracts, setCheckingContracts] = React.useState(false)
-  const [contractPoLinkPrompt, setContractPoLinkPrompt] = React.useState(true)
 
   const equalizacaoSupplierIds = React.useMemo(
     () =>
@@ -898,45 +894,17 @@ export default function EqualizacaoPage({
 
   refreshEqualizationDataRef.current = refreshEqualizationData
 
-  React.useEffect(() => {
-    if (!companyId) return
-    let cancelled = false
-    ;(async () => {
-      const supabase = createClient()
-      const { data: pcData } = await supabase
-        .from("payment_conditions")
-        .select("id, code, description")
-        .eq("company_id", companyId)
-        .eq("active", true)
-        .order("code")
-      if (cancelled) return
-      setPaymentConditions((pcData ?? []) as PaymentConditionRow[])
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [companyId])
+  const paymentConditionsQuery = useQuery({
+    ...paymentConditionsQueryOptions(companyId ?? "", () => supabase),
+    enabled: Boolean(companyId),
+  })
+  const paymentConditions: PaymentConditionRow[] = paymentConditionsQuery.data ?? []
 
-  React.useEffect(() => {
-    if (!companyId || !contractBalanceEnabled) return
-    let cancelled = false
-    ;(async () => {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("company_settings")
-        .select("value")
-        .eq("company_id", companyId)
-        .eq("key", CONTRACT_PO_LINK_PROMPT_KEY)
-        .maybeSingle()
-      if (cancelled) return
-      setContractPoLinkPrompt(
-        parseContractPoLinkPrompt(data?.value as string | null | undefined),
-      )
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [companyId, contractBalanceEnabled])
+  const contractPoLinkPromptQuery = useQuery({
+    ...contractPoLinkPromptQueryOptions(companyId ?? "", () => supabase),
+    enabled: Boolean(companyId) && contractBalanceEnabled,
+  })
+  const contractPoLinkPrompt = contractPoLinkPromptQuery.data ?? true
 
   const supplierRespondStats = React.useMemo(() => {
     const totalSuppliers = proposals.length
@@ -1354,13 +1322,7 @@ export default function EqualizacaoPage({
     getItemRoundId,
   ])
 
-  const [contractMatchMap, setContractMatchMap] = React.useState<
-    Map<string, ContractMatchCandidate>
-  >(new Map())
-  const contractMatchFetchRef = React.useRef(0)
   const [contractMatchLoadGeneration, setContractMatchLoadGeneration] = React.useState(0)
-  const contractMatchSelectionsRef = React.useRef(contractMatchSelections)
-  contractMatchSelectionsRef.current = contractMatchSelections
   const prevContractMatchRoundRef = React.useRef<string | null>(null)
 
   React.useEffect(() => {
@@ -1378,53 +1340,26 @@ export default function EqualizacaoPage({
     }
   }, [selectedRoundId, allProposalsCatalog])
 
-  React.useEffect(() => {
-    if (!contractBalanceEnabled) {
-      setContractMatchMap(new Map())
-      return
+  const contractMatchesQuery = useQuery({
+    ...quotationContractMatchesQueryOptions(
+      id,
+      contractMatchLoadGeneration,
+      contractMatchSelections,
+    ),
+    enabled: contractBalanceEnabled && contractMatchSelections.length > 0,
+  })
+
+  const contractMatchMap = React.useMemo(() => {
+    if (!contractBalanceEnabled || contractMatchSelections.length === 0) {
+      return new Map<string, ContractMatchCandidate>()
     }
-
-    const selections = contractMatchSelectionsRef.current
-    if (selections.length === 0) {
-      setContractMatchMap(new Map())
-      return
-    }
-
-    const fetchId = ++contractMatchFetchRef.current
-    let cancelled = false
-
-    ;(async () => {
-      try {
-        const res = await fetch(`/api/quotations/${id}/contract-matches`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ selections }),
-        })
-        const data = (await res.json()) as {
-          items?: Array<{
-            quotationItemId: string
-            supplierId: string
-            candidates?: ContractMatchCandidate[]
-          }>
-        }
-        if (!res.ok || cancelled || fetchId !== contractMatchFetchRef.current) return
-
-        const next = new Map<string, ContractMatchCandidate>()
-        for (const row of data.items ?? []) {
-          const best = row.candidates?.[0]
-          if (!best) continue
-          next.set(contractMatchCellKey(row.quotationItemId, row.supplierId), best)
-        }
-        setContractMatchMap(next)
-      } catch {
-        // preview silencioso — não bloquear equalização
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [contractMatchLoadGeneration, contractBalanceEnabled, id])
+    const record = contractMatchesQuery.data ?? {}
+    return new Map(Object.entries(record))
+  }, [
+    contractBalanceEnabled,
+    contractMatchSelections.length,
+    contractMatchesQuery.data,
+  ])
 
   const splitSuggestion = React.useMemo(() => {
     const suggestion: Record<

@@ -9,8 +9,20 @@ import {
 } from "@/lib/formato-data"
 
 import { toast } from "sonner"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { queryKeys } from "@/lib/queries/keys"
+import {
+  requisitionAttachmentsQueryOptions,
+  requisitionDetailQueryOptions,
+  type RequisitionAttachmentDto,
+  type RequisitionDetailAuditLog,
+  type RequisitionDetailApprovalHistory,
+  type RequisitionDetailPurchaseOrder,
+  type RequisitionDetailQuotationInfo,
+  type RequisitionDetailRequisition,
+} from "@/lib/queries/requisition-detail"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { createDraftFromRequisition } from "@/lib/purchase-orders/create-draft-from-requisition"
 import {
@@ -54,81 +66,27 @@ import {
   buildCatalogRequisitionTimeline,
   buildStandardRequisitionTimeline,
 } from "@/lib/requisitions/timeline"
-import { REQUISITION_ITEM_ACCOUNT_SELECT } from "@/lib/requisitions/line-items-helpers"
 import {
   RequisitionLineItemsDetailSection,
   type RequisitionDetailLineItem,
 } from "@/components/requisitions/requisition-line-items-detail-section"
 import { EntityApprovalActions } from "@/components/comprador/entity-approval-actions"
 
-type Priority = "normal" | "urgent" | "critical"
-
 type RequisitionItem = RequisitionDetailLineItem
 
-type Requisition = {
-  id: string
-  code: string
-  title: string
-  requester_id: string | null
-  requester_name: string | null
-  cost_center: string | null
-  needed_by: string | null
-  origin: string | null
-  created_at: string
-  status: RequisitionStatus
-  priority: Priority
-  rejection_reason?: string | null
-  approver_name?: string | null
-  approved_at?: string | null
-  erp_code?: string | null
-  quotation_id?: string | null
+type Requisition = RequisitionDetailRequisition & {
   requisition_items?: RequisitionItem[]
 }
 
-type QuotationInfo = {
-  id: string
-  code: string
-  status: string
-  created_at: string
-}
+type QuotationInfo = RequisitionDetailQuotationInfo
 
-type PurchaseOrderInfo = {
-  id: string
-  code: string
-  status: string
-  supplier_name: string
-  total_price: number | null
-  created_at: string
-  accepted_at?: string | null
-  estimated_delivery_date: string | null
-}
+type PurchaseOrderInfo = RequisitionDetailPurchaseOrder
 
-type ApprovalHistory = {
-  id: string
-  status: string
-  approver_name: string | null
-  rejection_reason: string | null
-  decided_at: string | null
-  created_at: string
-}
+type ApprovalHistory = RequisitionDetailApprovalHistory
 
-type RequisitionAttachment = {
-  id: string
-  file_name: string
-  file_size: number | null
-  content_type: string | null
-  created_at: string
-  download_url: string | null
-}
+type RequisitionAttachment = RequisitionAttachmentDto
 
-type AuditLog = {
-  id: string
-  event_type: string
-  description: string
-  created_at: string
-  user_name: string | null
-  metadata: Record<string, unknown> | null
-}
+type AuditLog = RequisitionDetailAuditLog
 
 function HorizontalTimeline({
   req,
@@ -338,118 +296,44 @@ export default function RequisicaoDetailPage({
   const { hasFeature, hasPermission } = usePermissions()
   const { companyId, userId } = useUser()
   const { id } = React.use(params)
+  const supabase = createClient()
+  const queryClient = useQueryClient()
 
   const backHref = searchParams.get("from") === "aprovacoes" ? "/comprador/aprovacoes" : "/comprador/requisicoes"
 
-  const [requisition, setRequisition] = React.useState<Requisition | null>(null)
-  const [items, setItems] = React.useState<RequisitionItem[]>([])
-  const [loading, setLoading] = React.useState(true)
-
   const [quotationOpen, setQuotationOpen] = React.useState(false)
-  const [linkedQuotation, setLinkedQuotation] = React.useState<{ id: string; code: string } | null>(null)
-  const [quotationData, setQuotationData] = React.useState<QuotationInfo | null>(null)
-  const [orders, setOrders] = React.useState<PurchaseOrderInfo[]>([])
-  const [history, setHistory] = React.useState<ApprovalHistory[]>([])
-  const [auditLogs, setAuditLogs] = React.useState<AuditLog[]>([])
-  const [attachments, setAttachments] = React.useState<RequisitionAttachment[]>([])
-  const [attachmentsLoading, setAttachmentsLoading] = React.useState(true)
   const [creatingPo, setCreatingPo] = React.useState(false)
 
-  const loadRequisitionDetail = React.useCallback(async () => {
-    if (!id || !companyId) return
-    const supabase = createClient()
-    setLoading(true)
+  const detailQuery = useQuery({
+    ...requisitionDetailQueryOptions(companyId ?? "", id, () => supabase),
+    enabled: Boolean(companyId && id),
+  })
 
-    const [rRes, iRes] = await Promise.all([
-      supabase.from("requisitions").select("*").eq("id", id).eq("company_id", companyId).single(),
-      supabase
-        .from("requisition_items")
-        .select(REQUISITION_ITEM_ACCOUNT_SELECT)
-        .eq("requisition_id", id)
-        .eq("company_id", companyId)
-        .order("created_at"),
-    ])
+  const attachmentsQuery = useQuery({
+    ...requisitionAttachmentsQueryOptions(id),
+    enabled: Boolean(id),
+  })
 
-    const reqData = ((rRes.data as Requisition | null) ?? null) as Requisition | null
+  const loading = detailQuery.isLoading
+  const requisition = detailQuery.data?.requisition ?? null
+  const items = detailQuery.data?.items ?? []
+  const linkedQuotation = detailQuery.data?.linkedQuotation ?? null
+  const quotationData = detailQuery.data?.quotation ?? null
+  const orders = detailQuery.data?.orders ?? []
+  const history = detailQuery.data?.history ?? []
+  const auditLogs = detailQuery.data?.auditLogs ?? []
+  const attachments = attachmentsQuery.data ?? []
+  const attachmentsLoading = attachmentsQuery.isLoading
 
-    let linked: { id: string; code: string } | null = null
-    let quotationInfo: QuotationInfo | null = null
-    const quotationId = reqData?.quotation_id
-    if (quotationId) {
-      const { data: qFull } = await supabase
-        .from("quotations")
-        .select("id, code, status, created_at")
-        .eq("id", quotationId)
-        .single()
-
-      if (qFull?.id && qFull?.code) {
-        linked = { id: qFull.id as string, code: qFull.code as string }
-        quotationInfo = qFull as QuotationInfo
-      }
-    }
-
-    setLinkedQuotation(linked)
-    setQuotationData(quotationInfo)
-
-    if (reqData?.code) {
-      const { data: ordersData } = await supabase
-        .from("purchase_orders")
-        .select(
-          "id, code, status, supplier_name, total_price, created_at, accepted_at, estimated_delivery_date",
-        )
-        .eq("requisition_code", reqData.code)
-        .order("created_at")
-      setOrders((ordersData as PurchaseOrderInfo[]) ?? [])
-    } else {
-      setOrders([])
-    }
-
-    const { data: historyData } = await supabase
-      .from("approval_requests")
-      .select("id, status, approver_name, rejection_reason, decided_at, created_at")
-      .eq("entity_id", id)
-      .eq("flow", "requisition")
-      .order("created_at", { ascending: true })
-
-    const { data: auditData } = await supabase
-      .from("audit_logs")
-      .select("id, event_type, description, created_at, user_name, metadata")
-      .eq("entity", "requisitions")
-      .eq("entity_id", id)
-      .order("created_at", { ascending: true })
-
-    setHistory((historyData as ApprovalHistory[]) ?? [])
-    setAuditLogs((auditData ?? []) as AuditLog[])
-    setRequisition(reqData)
-    setItems(((iRes.data as unknown) as RequisitionItem[]) ?? [])
-    setLoading(false)
-  }, [id, companyId])
-
-  React.useEffect(() => {
-    void loadRequisitionDetail()
-  }, [loadRequisitionDetail])
-
-  React.useEffect(() => {
-    if (!id) return
-    let alive = true
-    const loadAttachments = async () => {
-      setAttachmentsLoading(true)
-      try {
-        const res = await fetch(`/api/requisitions/${id}/attachments`)
-        const data = (await res.json()) as { attachments?: RequisitionAttachment[] }
-        if (!alive) return
-        setAttachments(Array.isArray(data.attachments) ? data.attachments : [])
-      } catch {
-        if (alive) setAttachments([])
-      } finally {
-        if (alive) setAttachmentsLoading(false)
-      }
-    }
-    void loadAttachments()
-    return () => {
-      alive = false
-    }
-  }, [id])
+  const invalidateRequisitionDetail = React.useCallback(async () => {
+    if (!companyId || !id) return
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.requisitionDetail(companyId, id),
+    })
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.requisitionAttachments(id),
+    })
+  }, [companyId, id, queryClient])
 
   const statusMeta = requisition ? getStatusMeta(requisition.status) : null
 
@@ -568,7 +452,7 @@ export default function RequisicaoDetailPage({
             flow="requisition"
             entityId={id}
             companyId={companyId}
-            onDecided={loadRequisitionDetail}
+            onDecided={() => void invalidateRequisitionDetail()}
           />
           {linkedQuotation && hasFeature("quotations") && (
             <button
