@@ -356,6 +356,7 @@ export default function FornecedorCotacaoPropostaPage({
   React.useEffect(() => {
     if (userLoading) return
     if (!supplierId) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       setQuotation(null)
       setRounds([])
       setQuotationItems([])
@@ -427,6 +428,7 @@ export default function FornecedorCotacaoPropostaPage({
   }, [detailQuery.data, supplierId, userLoading])
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setItemPage(1)
     setSelectedItemIds(new Set())
     setGlobalDiscount(0)

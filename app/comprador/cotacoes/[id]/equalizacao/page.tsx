@@ -69,6 +69,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import {
   equalizationQueryOptions,
+  ownRequisitionCodesQueryOptions,
   type EqualizationBundleDto,
 } from "@/lib/queries/equalization"
 import { queryKeys } from "@/lib/queries/keys"
@@ -90,10 +91,7 @@ import {
   canAccessQuotation,
   canViewAllQuotations,
 } from "@/lib/quotations/ownership"
-import {
-  findOwnRequisitionCodes,
-  OWN_REQUISITION_ORDER_BLOCKED_MESSAGE,
-} from "@/lib/requisitions/own-requisition-guard"
+import { OWN_REQUISITION_ORDER_BLOCKED_MESSAGE } from "@/lib/requisitions/own-requisition-guard"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
@@ -515,18 +513,6 @@ export default function EqualizacaoPage({
     return defaultColumnVisibility
   })
 
-  React.useLayoutEffect(() => {
-    try {
-      const stored = localStorage.getItem(COLUMN_VISIBILITY_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored) as Record<string, boolean>
-        setColumnVisibilityRaw({ ...defaultColumnVisibility, ...parsed })
-      }
-    } catch {
-      // ignorar erros de parse
-    }
-  }, [])
-
   const setColumnVisibility = React.useCallback(
     (
       updater:
@@ -634,29 +620,18 @@ export default function EqualizacaoPage({
     return [...codes]
   }, [itemSelections, quotationItems])
 
-  const [ownSelectedRequisitionCodes, setOwnSelectedRequisitionCodes] =
-    React.useState<string[]>([])
-
-  React.useEffect(() => {
-    if (!companyId || !userId || selectedSourceRequisitionCodes.length === 0) {
-      setOwnSelectedRequisitionCodes([])
-      return
-    }
-    let alive = true
-    void (async () => {
-      const supabase = createClient()
-      const own = await findOwnRequisitionCodes(
-        supabase,
-        companyId,
-        userId,
-        selectedSourceRequisitionCodes,
-      )
-      if (alive) setOwnSelectedRequisitionCodes(own)
-    })()
-    return () => {
-      alive = false
-    }
-  }, [companyId, userId, selectedSourceRequisitionCodes])
+  const ownCodesQuery = useQuery({
+    ...ownRequisitionCodesQueryOptions(
+      companyId ?? "",
+      userId ?? "",
+      selectedSourceRequisitionCodes,
+      () => supabase,
+    ),
+    enabled: Boolean(
+      companyId && userId && selectedSourceRequisitionCodes.length > 0,
+    ),
+  })
+  const ownSelectedRequisitionCodes = ownCodesQuery.data ?? []
 
   const blocksOwnRequisitionOrderOrContract =
     ownSelectedRequisitionCodes.length > 0

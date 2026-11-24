@@ -60,9 +60,20 @@ export default function FornecedorAtividadesPage() {
   const loading = activitiesQuery.isLoading
   const error = activitiesQuery.isError
 
-  React.useEffect(() => {
+  const setSearchAndPage = React.useCallback((value: string) => {
     setPage(1)
-  }, [search, moduleFilter, periodFilter])
+    setSearch(value)
+  }, [])
+
+  const setModuleFilterAndPage = React.useCallback((value: typeof moduleFilter) => {
+    setPage(1)
+    setModuleFilter(value)
+  }, [])
+
+  const setPeriodFilterAndPage = React.useCallback((value: typeof periodFilter) => {
+    setPage(1)
+    setPeriodFilter(value)
+  }, [])
 
   const filtered = React.useMemo(() => {
     return combined.filter((item) => {
@@ -91,11 +102,8 @@ export default function FornecedorAtividadesPage() {
   const safePage = Math.min(page, totalPages)
   const pageSlice = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
-  React.useEffect(() => {
-    if (page > totalPages) setPage(totalPages)
-  }, [page, totalPages])
-
   const clearFilters = () => {
+    setPage(1)
     setSearch("")
     setModuleFilter("all")
     setPeriodFilter("all")
@@ -148,7 +156,7 @@ export default function FornecedorAtividadesPage() {
                   <Input
                     id="atividade-busca"
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => setSearchAndPage(e.target.value)}
                     placeholder="Código da cotação ou pedido…"
                     className="pl-9 pr-9"
                   />
@@ -169,7 +177,7 @@ export default function FornecedorAtividadesPage() {
                 <Label>Tipo / módulo</Label>
                 <Select
                   value={moduleFilter}
-                  onValueChange={(v) => setModuleFilter(v as ModuleFilter)}
+                  onValueChange={(v) => setModuleFilterAndPage(v as ModuleFilter)}
                 >
                   <SelectTrigger className="w-full md:w-44">
                     <SelectValue placeholder="Tipo" />
@@ -186,7 +194,7 @@ export default function FornecedorAtividadesPage() {
                 <Label>Período</Label>
                 <Select
                   value={periodFilter}
-                  onValueChange={(v) => setPeriodFilter(v as PeriodFilter)}
+                  onValueChange={(v) => setPeriodFilterAndPage(v as PeriodFilter)}
                 >
                   <SelectTrigger className="w-full md:w-44">
                     <SelectValue placeholder="Período" />

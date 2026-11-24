@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { LogOut, Building2, ScrollText, Radio, Truck } from "lucide-react"
@@ -18,18 +17,9 @@ export default function AdminShell({
   const pathname = usePathname()
   const router = useRouter()
   const { userId, fullName, loading: userLoading } = useUser()
-  const [adminName, setAdminName] = useState<string>("")
-
-  useEffect(() => {
-    if (fullName?.trim()) {
-      setAdminName(fullName.trim())
-    }
-  }, [fullName])
-
-  useEffect(() => {
-    if (userLoading || !userId || fullName?.trim()) return
-    setAdminName("Admin")
-  }, [userId, userLoading, fullName])
+  const adminName =
+    fullName?.trim() ||
+    (userLoading || !userId ? "" : "Admin")
 
   const handleLogout = async () => {
     try {

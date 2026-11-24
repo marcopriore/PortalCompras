@@ -102,9 +102,30 @@ export default function RequisicoesPage() {
   const [dateTo, setDateTo] = React.useState<string>("")
   const [page, setPage] = React.useState(1)
 
-  React.useEffect(() => {
+  const setSearchWithPage = React.useCallback((value: string) => {
     setPage(1)
-  }, [search, status, priority, dateFrom, dateTo])
+    setSearch(value)
+  }, [])
+
+  const setStatusWithPage = React.useCallback((value: string[]) => {
+    setPage(1)
+    setStatus(value)
+  }, [])
+
+  const setPriorityWithPage = React.useCallback((value: string[]) => {
+    setPage(1)
+    setPriority(value)
+  }, [])
+
+  const setDateFromWithPage = React.useCallback((value: string) => {
+    setPage(1)
+    setDateFrom(value)
+  }, [])
+
+  const setDateToWithPage = React.useCallback((value: string) => {
+    setPage(1)
+    setDateTo(value)
+  }, [])
 
   const invalidateRequisitionsList = React.useCallback(() => {
     if (!companyId) return
@@ -240,7 +261,7 @@ export default function RequisicoesPage() {
                 <Input
                   placeholder="Buscar por título ou código..."
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => setSearchWithPage(e.target.value)}
                   className="pl-9 pr-8 w-full"
                 />
                 {search.length > 0 && (
@@ -268,7 +289,7 @@ export default function RequisicoesPage() {
                   { value: "buyer_review", label: "Revisão Comprador" },
                 ]}
                 selected={status}
-                onChange={setStatus}
+                onChange={setStatusWithPage}
                 width="w-44"
               />
             </div>
@@ -283,18 +304,18 @@ export default function RequisicoesPage() {
                   { value: "critical", label: "Crítica" },
                 ]}
                 selected={priority}
-                onChange={setPriority}
+                onChange={setPriorityWithPage}
                 width="w-40"
               />
             </div>
 
             <div className="flex flex-col w-40 shrink-0">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Data De</p>
-              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full" />
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFromWithPage(e.target.value)} className="w-full" />
             </div>
             <div className="flex flex-col w-40 shrink-0">
               <p className="text-xs font-medium text-muted-foreground mb-1 block">Data Até</p>
-              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full" />
+              <Input type="date" value={dateTo} onChange={(e) => setDateToWithPage(e.target.value)} className="w-full" />
             </div>
           </div>
 

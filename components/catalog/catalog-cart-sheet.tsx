@@ -71,6 +71,7 @@ function CartQuantityInput({
   const [focused, setFocused] = React.useState(false)
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     if (!focused) setDraft(String(quantity))
   }, [quantity, focused])
 

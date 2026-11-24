@@ -178,6 +178,7 @@ export function RequisicoesImportExcelDialog({
 
   React.useEffect(() => {
     if (!open) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       setImportStep("upload")
       setImportPreview([])
       setImportErrors([])

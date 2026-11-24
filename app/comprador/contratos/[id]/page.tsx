@@ -379,6 +379,7 @@ export default function ContratoPage({
     const dto = detailQuery.data
     if (!dto) {
       if (detailQuery.isSuccess && !dto) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
         setContract(null)
         setForm(null)
         setAcceptances([])
@@ -425,6 +426,7 @@ export default function ContratoPage({
       contract?.status !== "draft" ||
       debouncedItemSearch.trim().length < 2
     ) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       setItemResults([])
       setItemSearchLoading(false)
       return

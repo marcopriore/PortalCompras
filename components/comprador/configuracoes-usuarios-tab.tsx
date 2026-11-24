@@ -387,6 +387,7 @@ export function ConfiguracoesUsuariosTab({
 
   useEffect(() => {
     if (!companyId) return
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     void loadProfiles()
   }, [companyId, loadProfiles])
 

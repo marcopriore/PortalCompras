@@ -154,6 +154,7 @@ export default function SolicitanteEditarRequisicaoPage({
     if (!editFormQuery.data) {
       if (!editFormQuery.isLoading) {
         router.push("/solicitante")
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
         setFormReady(true)
       }
       return

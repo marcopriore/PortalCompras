@@ -163,6 +163,7 @@ export default function NovoPedidoPage({
     }
 
     loadHydratedRef.current = true
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setQuotation(q)
     setProposal(dto.proposal)
     setQuotationItems(dto.quotationItems)

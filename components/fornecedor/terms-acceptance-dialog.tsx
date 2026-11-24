@@ -43,6 +43,7 @@ export function TermsAcceptanceDialog({
   const [accepted, setAccepted] = React.useState(false)
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     if (open) setAccepted(false)
   }, [open])
 

@@ -127,13 +127,22 @@ export default function PedidosPage() {
   })
   const searchInputRef = React.useRef<HTMLDivElement>(null)
 
+  const patchFilters = React.useCallback(
+    (updater: React.SetStateAction<Filters>) => {
+      setPage(1)
+      setFilters(updater)
+    },
+    [],
+  )
+
   const handleFilterChange =
     (field: keyof Filters) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      setFilters((prev) => ({ ...prev, [field]: e.target.value }))
+      patchFilters((prev) => ({ ...prev, [field]: e.target.value }))
     }
 
   const clearFilters = () => {
+    setPage(1)
     setFilters({
       search: "",
       status: DEFAULT_STATUS,
@@ -171,10 +180,6 @@ export default function PedidosPage() {
       return matchesSearch && matchesStatus && matchesDate && matchesResponsible
     })
   }, [orders, filters])
-
-  React.useEffect(() => {
-    setPage(1)
-  }, [filters])
 
   const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE))
   const pageClamped = Math.min(page, totalPages)
@@ -409,7 +414,7 @@ export default function PedidosPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setFilters((prev) => ({ ...prev, search: "" }))
+                    patchFilters((prev) => ({ ...prev, search: "" }))
                     ;(searchInputRef.current?.querySelector("input") as HTMLInputElement)?.focus()
                   }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0 border-0 bg-transparent"
@@ -427,7 +432,7 @@ export default function PedidosPage() {
               label="Status"
               options={STATUS_OPTIONS}
               selected={filters.status}
-              onChange={(values) => setFilters((prev) => ({ ...prev, status: values }))}
+              onChange={(values) => patchFilters((prev) => ({ ...prev, status: values }))}
               width="w-44"
             />
           </div>
@@ -466,7 +471,7 @@ export default function PedidosPage() {
                     options={responsibleOptions}
                     selected={filters.responsible}
                     onChange={(values) =>
-                      setFilters((prev) => ({ ...prev, responsible: values }))
+                      patchFilters((prev) => ({ ...prev, responsible: values }))
                     }
                     width="w-52"
                   />

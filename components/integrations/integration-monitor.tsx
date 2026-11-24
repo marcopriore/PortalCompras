@@ -138,15 +138,6 @@ export function IntegrationMonitor({
   const [detail, setDetail] = React.useState<Record<string, unknown> | null>(null)
   const [retryingLogId, setRetryingLogId] = React.useState<string | null>(null)
   const [onlyEnabledActions, setOnlyEnabledActions] = React.useState(true)
-  const [enabledOutboundActions, setEnabledOutboundActions] = React.useState<
-    string[] | null
-  >(null)
-
-  React.useEffect(() => {
-    if (fixedCompanyId) {
-      setTenantFilter(fixedCompanyId)
-    }
-  }, [fixedCompanyId])
 
   const effectiveTenantFilter = fixedCompanyId ?? tenantFilter
 
@@ -173,14 +164,9 @@ export function IntegrationMonitor({
       ? logsQuery.error.message
       : "Falha ao carregar logs"
     : null
+  const enabledOutboundActions = data?.enabled_outbound_actions ?? null
 
-  React.useEffect(() => {
-    setEnabledOutboundActions(data?.enabled_outbound_actions ?? null)
-  }, [data?.enabled_outbound_actions])
-
-  React.useEffect(() => {
-    setPage(1)
-  }, [direction, search, dateFrom, dateTo, successFilter, effectiveTenantFilter])
+  const resetPage = React.useCallback(() => setPage(1), [])
 
   const openDetail = async (logId: string) => {
     setDetailOpen(true)
@@ -291,7 +277,10 @@ export function IntegrationMonitor({
 
       <Tabs
         value={direction}
-        onValueChange={(v) => setDirection(v as IntegrationLogDirection)}
+        onValueChange={(v) => {
+          resetPage()
+          setDirection(v as IntegrationLogDirection)
+        }}
       >
         <TabsList>
           <TabsTrigger value="inbound" className="gap-2">
@@ -307,7 +296,13 @@ export function IntegrationMonitor({
 
       <div className="flex flex-wrap gap-3">
         {mode === "admin" && tenants.length > 0 && !fixedCompanyId && (
-          <Select value={tenantFilter} onValueChange={setTenantFilter}>
+          <Select
+            value={tenantFilter}
+            onValueChange={(v) => {
+              resetPage()
+              setTenantFilter(v)
+            }}
+          >
             <SelectTrigger className="w-[220px]">
               <SelectValue placeholder="Tenant" />
             </SelectTrigger>
@@ -330,7 +325,10 @@ export function IntegrationMonitor({
               direction === "inbound" ? "Buscar path ou método…" : "Buscar action ou código…"
             }
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              resetPage()
+              setSearch(e.target.value)
+            }}
           />
         </div>
 
@@ -338,17 +336,29 @@ export function IntegrationMonitor({
           type="date"
           className="w-[150px]"
           value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
+          onChange={(e) => {
+            resetPage()
+            setDateFrom(e.target.value)
+          }}
         />
         <Input
           type="date"
           className="w-[150px]"
           value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
+          onChange={(e) => {
+            resetPage()
+            setDateTo(e.target.value)
+          }}
         />
 
         {direction === "outbound" && (
-          <Select value={successFilter} onValueChange={setSuccessFilter}>
+          <Select
+            value={successFilter}
+            onValueChange={(v) => {
+              resetPage()
+              setSuccessFilter(v)
+            }}
+          >
             <SelectTrigger className="w-[140px]">
               <SelectValue />
             </SelectTrigger>

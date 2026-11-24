@@ -231,6 +231,7 @@ function NovaCotacaoContent() {
     setDescription(prefill.title)
     setCategory(prefill.category || undefined)
     if (prefill.items.length > 0) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       setSelectedItems(
         prefill.items.map((item) => ({
           code: item.code,

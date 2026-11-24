@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { queryKeys } from "@/lib/queries/keys"
 import { purchaseOrderDetailQueryOptions } from "@/lib/queries/purchase-order-detail"
+import { catalogSupplierSearchQueryOptions } from "@/lib/queries/catalog-search"
 import { notifyWithEmail } from "@/lib/notify-with-email"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -253,6 +254,7 @@ function formatPersistError(error: unknown, fallback: string): string {
 function useViewOnceBanner(storageKey: string, active: boolean) {
   const [visible, setVisible] = React.useState(false)
 
+  /* eslint-disable react-hooks/set-state-in-effect -- sync localStorage view-once banner */
   React.useEffect(() => {
     if (!active) {
       setVisible(false)
@@ -266,6 +268,7 @@ function useViewOnceBanner(storageKey: string, active: boolean) {
     setVisible(true)
     localStorage.setItem(storageKey, "1")
   }, [active, storageKey])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return visible
 }
@@ -651,9 +654,21 @@ export default function PurchaseOrderDetailPage({
 
   const [draftSupplier, setDraftSupplier] = React.useState<DraftSupplier | null>(null)
   const [supplierSearch, setSupplierSearch] = React.useState("")
-  const [supplierResults, setSupplierResults] = React.useState<DraftSupplier[]>([])
-  const [supplierSearchLoading, setSupplierSearchLoading] = React.useState(false)
   const debouncedSupplierSearch = useDebounce(supplierSearch, 300)
+  const supplierSearchQuery = useQuery({
+    ...catalogSupplierSearchQueryOptions(
+      companyId ?? "",
+      debouncedSupplierSearch,
+      () => supabase,
+    ),
+  })
+  const supplierResults = (supplierSearchQuery.data ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    cnpj: s.cnpj ?? "",
+    code: s.code ?? "",
+  })) satisfies DraftSupplier[]
+  const supplierSearchLoading = supplierSearchQuery.isFetching
 
   const [reqDialogOpen, setReqDialogOpen] = React.useState(false)
   const [requisitions, setRequisitions] = React.useState<RequisitionOption[]>([])
@@ -694,6 +709,7 @@ export default function PurchaseOrderDetailPage({
     [companyId, id, queryClient],
   )
 
+  /* eslint-disable react-hooks/set-state-in-effect -- sync espelho local a partir do DTO (docs/PADRAO-CARGA-DADOS.md) */
   React.useEffect(() => {
     const dto = detailQuery.data
     if (!dto) return
@@ -743,35 +759,7 @@ export default function PurchaseOrderDetailPage({
     }
   }, [order?.status])
 
-  React.useEffect(() => {
-    if (!companyId || debouncedSupplierSearch.trim().length < 2) {
-      setSupplierResults([])
-      return
-    }
-
-    let alive = true
-    const run = async () => {
-      setSupplierSearchLoading(true)
-      const supabase = createClient()
-      const term = `%${debouncedSupplierSearch.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`
-      const { data } = await supabase
-        .from("suppliers")
-        .select("id, name, cnpj, code")
-        .eq("company_id", companyId)
-        .eq("status", "active")
-        .or(`name.ilike.${term},code.ilike.${term},cnpj.ilike.${term}`)
-        .limit(20)
-
-      if (!alive) return
-      setSupplierResults((data as DraftSupplier[]) ?? [])
-      setSupplierSearchLoading(false)
-    }
-
-    void run()
-    return () => {
-      alive = false
-    }
-  }, [companyId, debouncedSupplierSearch])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   React.useEffect(() => {
     if (!order || order.status !== "processing" || !id || !companyId) return
@@ -2706,7 +2694,6 @@ export default function PurchaseOrderDetailPage({
                               onClick={() => {
                                 setDraftSupplier(s)
                                 setSupplierSearch("")
-                                setSupplierResults([])
                                 setHeaderFieldErrors((prev) => {
                                   if (!prev.supplier) return prev
                                   const next = { ...prev }

@@ -97,6 +97,7 @@ export function EntityApprovalActions({
   }, [companyId, entityId, flow, isAdmin, userId])
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     void loadPending()
   }, [loadPending])
 

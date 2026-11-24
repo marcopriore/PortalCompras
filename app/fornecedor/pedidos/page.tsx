@@ -130,9 +130,7 @@ export default function FornecedorPedidosPage() {
     })
   }, [rows, search, statusFilter, period])
 
-  React.useEffect(() => {
-    setPage(1)
-  }, [search, statusFilter, period, rows.length])
+  const bumpPage = React.useCallback(() => setPage(1), [])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageClamped = Math.min(page, totalPages)
@@ -222,7 +220,10 @@ export default function FornecedorPedidosPage() {
                 id="po-search"
                 placeholder="Código do pedido ou cotação"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  bumpPage()
+                  setSearch(e.target.value)
+                }}
                 className="pl-9 pr-8 w-full md:max-w-xs"
               />
               {search ? (
@@ -244,7 +245,13 @@ export default function FornecedorPedidosPage() {
           </div>
           <div className="flex flex-col gap-1.5 w-44">
             <Label>Status</Label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                bumpPage()
+                setStatusFilter(v)
+              }}
+            >
               <SelectTrigger className="w-44">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -259,7 +266,13 @@ export default function FornecedorPedidosPage() {
           </div>
           <div className="flex flex-col gap-1.5 w-44">
             <Label>Período</Label>
-            <Select value={period} onValueChange={setPeriod}>
+            <Select
+              value={period}
+              onValueChange={(v) => {
+                bumpPage()
+                setPeriod(v)
+              }}
+            >
               <SelectTrigger className="w-44">
                 <SelectValue />
               </SelectTrigger>
@@ -281,6 +294,7 @@ export default function FornecedorPedidosPage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
+                  bumpPage()
                   setSearch("")
                   setStatusFilter("all")
                   setPeriod("all")

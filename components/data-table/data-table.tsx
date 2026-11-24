@@ -70,6 +70,7 @@ export function DataTable<T extends { id: string | number }>({
   const paginatedData = filteredData.slice(startIndex, startIndex + pageSize)
 
   useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setCurrentPage(1)
   }, [data, search, filter])
 

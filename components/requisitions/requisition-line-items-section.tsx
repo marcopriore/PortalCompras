@@ -1,7 +1,10 @@
 "use client"
 
 import * as React from "react"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import { catalogItemSearchQueryOptions } from "@/lib/queries/catalog-search"
+import { queryKeys } from "@/lib/queries/keys"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -88,36 +91,47 @@ export function RequisitionLineItemsSection({
   const { accountAssignmentEnabled } = useImplantationConfig()
   const [itemPage, setItemPage] = React.useState(1)
   const [searchTerm, setSearchTerm] = React.useState("")
-  const [searchResults, setSearchResults] = React.useState<CatalogItem[]>([])
-  const [searchLoading, setSearchLoading] = React.useState(false)
   const [searchOpen, setSearchOpen] = React.useState(false)
   const [importExcelOpen, setImportExcelOpen] = React.useState(false)
-  const [defaultSiteCode, setDefaultSiteCode] = React.useState("")
-
-  React.useEffect(() => {
-    if (!companyId) {
-      setDefaultSiteCode("")
-      return
-    }
-    let alive = true
-    void (async () => {
-      const supabase = createClient()
+  const supabase = React.useMemo(() => createClient(), [])
+  const matrizBranchQuery = useQuery({
+    queryKey: [...queryKeys.companyBranchesOptions(companyId ?? "", ""), "matriz-default"],
+    queryFn: async () => {
       const { data } = await supabase
         .from("company_branches")
         .select("code")
-        .eq("company_id", companyId)
+        .eq("company_id", companyId!)
         .eq("code", "MATRIZ")
         .eq("active", true)
         .maybeSingle()
-      if (!alive) return
-      setDefaultSiteCode((data as { code?: string } | null)?.code ?? "")
-    })()
-    return () => {
-      alive = false
-    }
-  }, [companyId])
+      return (data as { code?: string } | null)?.code ?? ""
+    },
+    enabled: Boolean(companyId),
+  })
+  const defaultSiteCode = matrizBranchQuery.data ?? ""
   const searchContainerRef = React.useRef<HTMLDivElement>(null)
   const debouncedSearch = useDebounce(searchTerm, DEBOUNCE_MS)
+  const catalogSearchQuery = useQuery({
+    ...catalogItemSearchQueryOptions(
+      companyId ?? "",
+      debouncedSearch,
+      "quotation",
+      () => supabase,
+    ),
+  })
+  const searchResults = React.useMemo<CatalogItem[]>(
+    () =>
+      (catalogSearchQuery.data ?? []).map((row) => ({
+        id: row.id ?? "",
+        code: row.code,
+        short_description: row.description,
+        long_description: row.long_description ?? null,
+        unit_of_measure: row.unit_of_measure,
+        commodity_group: null,
+      })),
+    [catalogSearchQuery.data],
+  )
+  const searchLoading = catalogSearchQuery.isFetching
 
   const totalItemPages = Math.max(1, Math.ceil(items.length / REQ_ITEMS_PAGE_SIZE))
   const itemPageClamped = Math.min(Math.max(itemPage, 1), totalItemPages)
@@ -131,12 +145,6 @@ export function RequisitionLineItemsSection({
   )
 
   React.useEffect(() => {
-    if (itemPage > totalItemPages) {
-      setItemPage(totalItemPages)
-    }
-  }, [itemPage, totalItemPages])
-
-  React.useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
       if (!searchContainerRef.current?.contains(event.target as Node)) {
         setSearchOpen(false)
@@ -145,32 +153,6 @@ export function RequisitionLineItemsSection({
     document.addEventListener("mousedown", onPointerDown)
     return () => document.removeEventListener("mousedown", onPointerDown)
   }, [])
-
-  React.useEffect(() => {
-    if (!companyId || debouncedSearch.length < 2) {
-      setSearchResults([])
-      return
-    }
-    const run = async () => {
-      setSearchLoading(true)
-      const supabase = createClient()
-      const term = `%${debouncedSearch.replace(/%/g, "\\%").replace(/_/g, "\\_")}%`
-      const { data, error } = await supabase
-        .from("items")
-        .select("id, code, short_description, long_description, unit_of_measure, commodity_group")
-        .eq("company_id", companyId)
-        .or(`code.ilike.${term},short_description.ilike.${term}`)
-        .limit(20)
-
-      setSearchLoading(false)
-      if (error) {
-        setSearchResults([])
-        return
-      }
-      setSearchResults((data as CatalogItem[]) ?? [])
-    }
-    void run()
-  }, [companyId, debouncedSearch])
 
   const addItem = (item: CatalogItem) => {
     if (items.some((i) => i.itemId === item.id)) return
@@ -269,7 +251,6 @@ export function RequisitionLineItemsSection({
                 className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-8"
                 onClick={() => {
                   setSearchTerm("")
-                  setSearchResults([])
                   setSearchOpen(false)
                 }}
                 aria-label="Limpar busca"

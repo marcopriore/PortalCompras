@@ -23,6 +23,7 @@ export function TenantSelector({
   const [mounted, setMounted] = React.useState(false)
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setMounted(true)
   }, [])
 

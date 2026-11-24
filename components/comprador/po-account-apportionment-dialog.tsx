@@ -70,6 +70,7 @@ export function PoAccountApportionmentDialog({
     const source = initialConfig.assignments.length
       ? initialConfig.assignments
       : [createEmptyAssignmentRow(1, 100)]
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setRows(source.map((row, index) => ({ ...row, sequence: index + 1 })))
   }, [open, initialConfig])
 

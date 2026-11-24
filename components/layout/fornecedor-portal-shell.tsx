@@ -81,6 +81,7 @@ export default function FornecedorPortalShell({
       : pathname === href || pathname.startsWith(`${href}/`)
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setMounted(true)
   }, [])
 

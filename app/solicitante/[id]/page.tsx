@@ -359,6 +359,7 @@ export default function SolicitanteDetailPage({
       router.push("/solicitante")
       return
     }
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setRequisition(req as unknown as Requisition)
     setQuotation(dto.quotation)
     setOrders((dto.orders ?? []) as PurchaseOrderInfo[])

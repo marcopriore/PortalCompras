@@ -70,6 +70,7 @@ export function CreatePoFromContractDialog({ contract, open, onOpenChange }: Pro
         quantity: available > 0 ? String(available) : "0",
       }
     }
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setLines(initial)
     setObservations("")
   }, [open, items])

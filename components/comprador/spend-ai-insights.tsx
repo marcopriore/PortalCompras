@@ -110,6 +110,7 @@ export function SpendAIInsights() {
 
     const stored = loadStoredInsights(companyId)
     if (!stored) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       setCache(null)
       setCooldownRemaining(0)
       return

@@ -60,6 +60,12 @@ export const queryKeys = {
   notifications: (companyId: string, userId: string) =>
     ["notifications", companyId, userId] as const,
 
+  ownRequisitionCodes: (
+    companyId: string,
+    userId: string,
+    codesKey: string,
+  ) => ["requisitions", "ownCodes", companyId, userId, codesKey] as const,
+
   equalization: (companyId: string, quotationId: string) =>
     ["equalization", companyId, quotationId] as const,
 

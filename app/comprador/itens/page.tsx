@@ -156,6 +156,7 @@ export default function ItensPage() {
 
   useEffect(() => {
     if (userLoading || !companyId) return
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     void loadMasterCategories()
   }, [userLoading, companyId, loadMasterCategories])
 

@@ -163,7 +163,6 @@ function SolicitanteConfigInner() {
     }
   }, [sessionUserId, settingsQuery.error, settingsQuery.isError, userLoading])
 
-  /* eslint-disable react-hooks/set-state-in-effect -- sync formulário a partir do DTO da query */
   React.useEffect(() => {
     if (settingsQuery.isLoading || !settingsQuery.data) return
     if (settingsHydratedRef.current) return
@@ -179,7 +178,6 @@ function SolicitanteConfigInner() {
     setMfaFactorId(dto.mfaFactorId)
     setSettingsReady(true)
   }, [settingsQuery.data, settingsQuery.isLoading])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSaveProfile = async () => {
     if (!userId) return

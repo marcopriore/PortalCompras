@@ -188,10 +188,13 @@ export default function FornecedorCotacoesPage() {
     return rows
   }, [tableRows, filterSearch, filterStatuses, filterPeriod])
 
+  const bumpPage = React.useCallback(() => setPage(1), [])
+
   const filtersActive =
     filterSearch.trim() !== "" || filterStatuses.length > 0 || filterPeriod !== "all"
 
   const clearFilters = () => {
+    bumpPage()
     setFilterSearch("")
     setFilterStatuses([])
     setFilterPeriod("all")
@@ -204,10 +207,6 @@ export default function FornecedorCotacoesPage() {
     const end = start + pageSize
     return filteredQuotations.slice(start, end)
   }, [filteredQuotations, pageClamped])
-
-  React.useEffect(() => {
-    setPage(1)
-  }, [filterSearch, filterStatuses, filterPeriod])
 
   return (
     <div className="space-y-10">
@@ -336,7 +335,10 @@ export default function FornecedorCotacoesPage() {
                   <Input
                     id="cotacoes-busca"
                     value={filterSearch}
-                    onChange={(e) => setFilterSearch(e.target.value)}
+                    onChange={(e) => {
+                      bumpPage()
+                      setFilterSearch(e.target.value)
+                    }}
                     placeholder="Código ou descrição"
                     className="pl-9 pr-9"
                     autoComplete="off"
@@ -362,7 +364,10 @@ export default function FornecedorCotacoesPage() {
                   label="Status"
                   options={statusOptions}
                   selected={filterStatuses}
-                  onChange={setFilterStatuses}
+                  onChange={(v) => {
+                    bumpPage()
+                    setFilterStatuses(v)
+                  }}
                   width="w-full"
                 />
               </div>
@@ -374,7 +379,13 @@ export default function FornecedorCotacoesPage() {
                 >
                   Período
                 </Label>
-                <Select value={filterPeriod} onValueChange={setFilterPeriod}>
+                <Select
+                  value={filterPeriod}
+                  onValueChange={(v) => {
+                    bumpPage()
+                    setFilterPeriod(v)
+                  }}
+                >
                   <SelectTrigger
                     id="cotacoes-periodo"
                     className="w-full"

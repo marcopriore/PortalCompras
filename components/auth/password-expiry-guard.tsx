@@ -40,6 +40,7 @@ export function PasswordExpiryGuard({ portal, children }: PasswordExpiryGuardPro
     const base = `/${portal}`
     const isExempt = EXEMPT_SUFFIXES.some((suffix) => pathname.endsWith(suffix))
     if (isExempt) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       setChecked(true)
       return
     }

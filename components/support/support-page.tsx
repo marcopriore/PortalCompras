@@ -142,9 +142,6 @@ export function SupportPage({ portal }: SupportPageProps) {
     React.useState<CreateFormState>(INITIAL_CREATE_FORM)
   const [creating, setCreating] = React.useState(false)
 
-  const [createCategorias, setCreateCategorias] = React.useState<AxisDeskCategoria[]>([])
-  const [createCategoriasLoading, setCreateCategoriasLoading] =
-    React.useState(false)
   const filterCategoriasQuery = useQuery({
     ...supportCategoriasQueryOptions(companyId ?? "", "all"),
     enabled: Boolean(companyId),
@@ -153,6 +150,7 @@ export function SupportPage({ portal }: SupportPageProps) {
 
   const [qDraft, setQDraft] = React.useState(filters.q)
 
+  /* eslint-disable react-hooks/set-state-in-effect -- sync URL/draft e reset ao trocar tenant (docs/PADRAO-CARGA-DADOS.md) */
   React.useEffect(() => {
     setQDraft(filters.q)
   }, [filters.q])
@@ -208,15 +206,8 @@ export function SupportPage({ portal }: SupportPageProps) {
     enabled: createOpen && Boolean(companyId),
   })
 
-  React.useEffect(() => {
-    if (createCategoriasQuery.data) {
-      setCreateCategorias(createCategoriasQuery.data)
-    }
-  }, [createCategoriasQuery.data])
-
-  React.useEffect(() => {
-    setCreateCategoriasLoading(createCategoriasQuery.isLoading)
-  }, [createCategoriasQuery.isLoading])
+  const createCategorias = createCategoriasQuery.data ?? []
+  const createCategoriasLoading = createCategoriasQuery.isLoading
 
   React.useEffect(() => {
     if (createCategoriasQuery.isError) {
@@ -228,6 +219,7 @@ export function SupportPage({ portal }: SupportPageProps) {
     setCreateOpen(false)
     setCreateForm(INITIAL_CREATE_FORM)
   }, [companyId])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const filteredTickets = React.useMemo(
     () =>
@@ -278,7 +270,6 @@ export function SupportPage({ portal }: SupportPageProps) {
 
   const resetCreateForm = () => {
     setCreateForm(INITIAL_CREATE_FORM)
-    setCreateCategorias([])
   }
 
   const handleTipoChange = (tipo: AxisDeskChamadoTipo) => {

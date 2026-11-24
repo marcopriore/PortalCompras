@@ -99,6 +99,7 @@ export function QuotationAIAnalysis({
     if (!companyId) return
     const stored = loadStoredQuotationAnalysis(localStorage, quotationId, roundId)
     if (!stored) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       setAnalysis(null)
       setGeneratedAt(null)
       setQuotationCode(null)

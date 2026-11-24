@@ -52,6 +52,7 @@ function CadastroContent() {
   useEffect(() => {
     if (!sessionCleared || !token) {
       if (!token) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
         setInviteError("Link de convite inválido. Solicite um novo convite ao comprador.")
         setLoadingInvite(false)
       }

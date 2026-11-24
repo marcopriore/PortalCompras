@@ -16,6 +16,7 @@ export type CatalogSupplierSearchRow = {
   id: string
   name: string
   cnpj: string | null
+  code: string | null
   category: string | null
 }
 
@@ -81,7 +82,7 @@ export async function fetchCatalogSupplierSearch(
   const ilike = `%${trimmed}%`
   const { data, error } = await supabase
     .from("suppliers")
-    .select("id, name, cnpj, category")
+    .select("id, name, cnpj, code, category")
     .eq("company_id", companyId)
     .eq("status", "active")
     .or(`name.ilike.${ilike},cnpj.ilike.${ilike}`)

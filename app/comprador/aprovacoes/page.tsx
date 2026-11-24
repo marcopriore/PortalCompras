@@ -402,6 +402,7 @@ export default function AprovacoesPage() {
   React.useEffect(() => {
     if (userLoading || permissionsLoading) return
     if (hasPermission("approval.requisition") || hasPermission("approval.view_all")) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       setActiveTab("requisitions")
       return
     }

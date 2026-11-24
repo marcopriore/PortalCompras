@@ -118,10 +118,12 @@ export function SupplierPortalUsers({
   }, [supplierId])
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     void loadPortalData()
   }, [loadPortalData])
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setInviteEmail(normalizeImportedEmail(supplierEmail) ?? "")
   }, [supplierEmail, supplierId])
 

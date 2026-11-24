@@ -28,6 +28,7 @@ export function SupplierClientSelector({
   const [switching, setSwitching] = React.useState(false)
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setMounted(true)
   }, [])
 

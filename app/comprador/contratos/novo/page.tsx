@@ -340,6 +340,7 @@ export default function NovoContratoPage() {
       }
       sessionStorage.removeItem("valore:novo-contrato-prefill")
 
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       setForm((prev) => ({
         ...prev,
         supplier_id: prefill.supplier_id ?? prev.supplier_id,

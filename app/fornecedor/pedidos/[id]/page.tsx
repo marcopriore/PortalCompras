@@ -184,6 +184,7 @@ export default function FornecedorPedidoDetalhePage({
 
     if (order.estimated_delivery_date) {
       const raw = String(order.estimated_delivery_date).trim()
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       setEstimatedDate(
         /^\d{4}-\d{2}-\d{2}$/.test(raw)
           ? raw

@@ -153,6 +153,7 @@ export function ImportProposalWizard({
 
   React.useEffect(() => {
     if (!open) return
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setStep(1)
     setTemplateDownloaded(false)
     setFileName(null)

@@ -688,7 +688,6 @@ export default function ConfiguracoesPage() {
     error: string | null
   }>({ success: null, error: null })
 
-  /* eslint-disable react-hooks/set-state-in-effect -- reset espelhos ao trocar tenant/usuário */
   React.useEffect(() => {
     settingsHydratedRef.current = false
     setSettingsReady(false)
@@ -696,7 +695,6 @@ export default function ConfiguracoesPage() {
     termsHydratedRef.current = false
     setContractPoLinkPromptOverride(null)
   }, [companyId, userId])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   React.useEffect(() => {
     if (paymentConditionsQuery.error) {
@@ -704,7 +702,6 @@ export default function ConfiguracoesPage() {
     }
   }, [paymentConditionsQuery.error])
 
-  /* eslint-disable react-hooks/set-state-in-effect -- sync formulário a partir do DTO da query */
   React.useEffect(() => {
     if (settingsInitialQuery.isLoading || !settingsInitialQuery.data) return
     if (settingsHydratedRef.current) return
@@ -774,7 +771,6 @@ export default function ConfiguracoesPage() {
       }))
     }
   }, [activeTab, supplierTermsQuery.data, supplierTermsQuery.isLoading])
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleContractPoLinkPromptChange = async (enabled: boolean) => {
     if (!companyId || !canManageCompany) return

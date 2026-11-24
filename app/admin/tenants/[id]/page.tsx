@@ -361,13 +361,13 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
   })
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [metrics, setMetrics] = useState<Metrics>({
+  const emptyMetrics: Metrics = {
     quotations: 0,
     suppliers: 0,
     items: 0,
     purchaseOrders: 0,
     requisitions: 0,
-  })
+  }
   const loading = detailQuery.isLoading
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'settings' | 'security'>('overview')
   const [editOpen, setEditOpen] = useState(false)
@@ -387,7 +387,6 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
   const [featuresState, setFeaturesState] = useState<Record<string, boolean>>(
     buildDefaultFeaturesState,
   )
-  const [featuresLoading, setFeaturesLoading] = useState(false)
   const [usersPage, setUsersPage] = useState(1)
 
   const totalUsers = profiles.length
@@ -474,13 +473,11 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     URL.revokeObjectURL(url)
   }
 
-  useEffect(() => {
-    setUsersPage(1)
-  }, [profiles])
-
+  /* eslint-disable react-hooks/set-state-in-effect -- sync espelho local a partir do DTO (docs/PADRAO-CARGA-DADOS.md) */
   useEffect(() => {
     if (!detailQuery.data) return
     const dto = detailQuery.data
+    setUsersPage(1)
     if (dto.tenant) {
       setTenant(dto.tenant as Tenant)
       setEditForm({
@@ -492,6 +489,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     setProfiles(dto.profiles as Profile[])
     setDeleteEligible(dto.deleteEligible)
   }, [detailQuery.data])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const periodKey = `${period}|${customFrom}|${customTo}`
   const periodStart = useMemo(() => getPeriodStart(period, customFrom), [period, customFrom])
@@ -503,11 +501,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
   const metricsQuery = useQuery({
     ...adminTenantMetricsQueryOptions(id, periodKey, periodStart, periodEnd, () => supabase),
   })
-
-  useEffect(() => {
-    if (!metricsQuery.data) return
-    setMetrics(metricsQuery.data)
-  }, [metricsQuery.data])
+  const metrics = metricsQuery.data ?? emptyMetrics
 
   const featureKeys = useMemo(() => FEATURES.map((f) => f.key), [])
   const featuresQuery = useQuery({
@@ -518,13 +512,15 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
       isSuperAdmin && !userLoading,
     ),
   })
+  const featuresLoading = featuresQuery.isLoading
 
+  /* eslint-disable react-hooks/set-state-in-effect -- espelho de features para toggle otimista (docs/PADRAO-CARGA-DADOS.md) */
   useEffect(() => {
-    setFeaturesLoading(featuresQuery.isLoading)
     if (featuresQuery.data) {
       setFeaturesState(featuresQuery.data)
     }
-  }, [featuresQuery.data, featuresQuery.isLoading])
+  }, [featuresQuery.data])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleToggle = async (key: FeatureKey, enabled: boolean) => {
     if (!id || !tenant) return

@@ -225,6 +225,7 @@ export default function EditarCotacaoPage({
     if (editFormQuery.isError || !editFormQuery.data) {
       if (!editFormQuery.isLoading) {
         toast.error("Não foi possível carregar a cotação.")
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
         setFormReady(true)
       }
       return

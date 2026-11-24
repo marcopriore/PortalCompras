@@ -111,6 +111,7 @@ export function LinkContractEqualizacaoDialog({
 
   React.useEffect(() => {
     if (!open || !matchesQuery.data) {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
       if (!open) setRows([])
       return
     }

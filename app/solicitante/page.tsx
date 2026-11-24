@@ -116,9 +116,7 @@ function SolicitantePageInner() {
   const [page, setPage] = React.useState(1)
   const PAGE_SIZE = TABLE_PAGE_SIZE
 
-  React.useEffect(() => {
-    setPage(1)
-  }, [search, statusFilter, responsibleFilter, dateFrom, dateTo])
+  const bumpPage = React.useCallback(() => setPage(1), [])
 
   const responsibleOptions = React.useMemo(() => {
     const seen = new Map<string, string>()
@@ -206,6 +204,7 @@ function SolicitantePageInner() {
   })
 
   const clearFilters = () => {
+    bumpPage()
     setSearch("")
     setStatusFilter([...DEFAULT_STATUS])
     setResponsibleFilter([])
@@ -302,7 +301,10 @@ function SolicitantePageInner() {
                 <Input
                   placeholder="Código, título ou responsável..."
                   value={search}
-                  onChange={(e) => setSearch(e.target.value)}
+                  onChange={(e) => {
+                    bumpPage()
+                    setSearch(e.target.value)
+                  }}
                   className="pl-9"
                 />
               </div>
@@ -314,7 +316,10 @@ function SolicitantePageInner() {
                 label="Status"
                 options={STATUS_OPTIONS}
                 selected={statusFilter}
-                onChange={setStatusFilter}
+                onChange={(v) => {
+                  bumpPage()
+                  setStatusFilter(v)
+                }}
                 width="w-44"
               />
             </div>
@@ -326,7 +331,10 @@ function SolicitantePageInner() {
               <Input
                 type="date"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                onChange={(e) => {
+                  bumpPage()
+                  setDateFrom(e.target.value)
+                }}
               />
             </div>
 
@@ -337,7 +345,10 @@ function SolicitantePageInner() {
               <Input
                 type="date"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                onChange={(e) => {
+                  bumpPage()
+                  setDateTo(e.target.value)
+                }}
               />
             </div>
 
@@ -350,7 +361,10 @@ function SolicitantePageInner() {
                   label="Responsável"
                   options={responsibleOptions}
                   selected={responsibleFilter}
-                  onChange={setResponsibleFilter}
+                  onChange={(v) => {
+                    bumpPage()
+                    setResponsibleFilter(v)
+                  }}
                   width="w-52"
                 />
               </div>

@@ -54,6 +54,7 @@ export function SupplierCategories({
   }, [supplierId, companyId])
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     void loadData()
   }, [loadData])
 

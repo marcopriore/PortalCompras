@@ -292,9 +292,7 @@ export default function AdminLogsPage() {
   })
   const tenants = tenantsQuery.data ?? []
 
-  useEffect(() => {
-    setPage(1)
-  }, [search, userFilter, tenantFilter, eventTypeFilter, dateFrom, dateTo])
+  const bumpPage = () => setPage(1)
 
   async function handleViewAiLog(logId: string) {
     setAiLogDialog({
@@ -339,7 +337,10 @@ export default function AdminLogsPage() {
           <Input
             placeholder="Buscar na descrição..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              bumpPage()
+              setSearch(e.target.value)
+            }}
           />
         </div>
 
@@ -348,7 +349,10 @@ export default function AdminLogsPage() {
           <Input
             placeholder="Nome do usuário..."
             value={userFilter}
-            onChange={(e) => setUserFilter(e.target.value)}
+            onChange={(e) => {
+              bumpPage()
+              setUserFilter(e.target.value)
+            }}
           />
         </div>
 
@@ -356,7 +360,10 @@ export default function AdminLogsPage() {
           <label className="text-xs text-muted-foreground">Tenant</label>
           <select
             value={tenantFilter}
-            onChange={(e) => setTenantFilter(e.target.value)}
+            onChange={(e) => {
+              bumpPage()
+              setTenantFilter(e.target.value)
+            }}
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="">Todos os tenants</option>
@@ -372,7 +379,10 @@ export default function AdminLogsPage() {
           <label className="text-xs text-muted-foreground">Tipo de Evento</label>
           <select
             value={eventTypeFilter}
-            onChange={(e) => setEventTypeFilter(e.target.value)}
+            onChange={(e) => {
+              bumpPage()
+              setEventTypeFilter(e.target.value)
+            }}
             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           >
             <option value="">Todos os tipos</option>
@@ -386,12 +396,26 @@ export default function AdminLogsPage() {
 
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">De</label>
-          <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => {
+              bumpPage()
+              setDateFrom(e.target.value)
+            }}
+          />
         </div>
 
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">Até</label>
-          <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => {
+              bumpPage()
+              setDateTo(e.target.value)
+            }}
+          />
         </div>
       </div>
 

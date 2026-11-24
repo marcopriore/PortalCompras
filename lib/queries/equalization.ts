@@ -1,6 +1,7 @@
 import { queryOptions } from "@tanstack/react-query"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { ensureInitialQuotationRound } from "@/lib/quotations/round-lifecycle"
+import { findOwnRequisitionCodes } from "@/lib/requisitions/own-requisition-guard"
 import { queryKeys } from "@/lib/queries/keys"
 
 /** Pedidos nestes status não bloqueiam o item na equalização para novo pedido. */
@@ -303,5 +304,25 @@ export function equalizationQueryOptions(
     queryFn: () =>
       fetchEqualizationBundle(supabaseFactory(), companyId, quotationId),
     enabled: Boolean(companyId && quotationId),
+  })
+}
+
+export function ownRequisitionCodesQueryOptions(
+  companyId: string,
+  userId: string,
+  requisitionCodes: string[],
+  supabaseFactory: SupabaseClientFactory,
+) {
+  const codesKey = [...requisitionCodes].sort().join("\0")
+  return queryOptions({
+    queryKey: queryKeys.ownRequisitionCodes(companyId, userId, codesKey),
+    queryFn: () =>
+      findOwnRequisitionCodes(
+        supabaseFactory(),
+        companyId,
+        userId,
+        requisitionCodes,
+      ),
+    enabled: Boolean(companyId && userId && requisitionCodes.length > 0),
   })
 }

@@ -103,6 +103,7 @@ export function UserPermissionsDialog({
   }, [userId])
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     if (open) void load()
   }, [open, load])
 

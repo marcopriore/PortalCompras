@@ -113,6 +113,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
       router.replace(listHref)
     }
     prevCompanyIdRef.current = companyId
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     setActionMessage("")
     setActionAnexos([])
   }, [companyId, listHref, router])

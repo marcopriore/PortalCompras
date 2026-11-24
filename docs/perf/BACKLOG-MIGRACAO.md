@@ -25,8 +25,8 @@ Ordem sugerida de lotes pós Fase 5. Cada lote = 1 commit (ou poucos).
 ## Deferidos (não bloqueiam operação)
 
 - [ ] `app/comprador/pedidos/novo` — só mutação `createDraftFromRequisition` (defer `useMutation`)
-- [ ] PO detalhe: reduzir sync DTO→state restante (equalização/pedido — exceções em `LINT-DEBT.md`)
-- [ ] Dialogs: import Excel REQ (catálogo on-demand), `create-po-from-contract` (init local)
+- [ ] PO detalhe: reduzir sync DTO→state restante (bloco documentado em `pedidos/[id]` — opcional refino)
+- [ ] Dialogs: import Excel REQ (catálogo on-demand), `create-po-from-contract` (init local — supressão pontual)
 - [ ] Shell fornecedor / seletor cliente — sem fetch de dados; só POST `activate-tenant`
 - [ ] `components/comprador/configuracoes-usuarios-tab.tsx` — ainda `useEffect` + loadProfiles
 
@@ -35,7 +35,7 @@ Ordem sugerida de lotes pós Fase 5. Cada lote = 1 commit (ou poucos).
 ## Lote E — residual (único bloco pendente)
 
 - [ ] Prefetch + `HydrationBoundary` nas listas críticas
-- [ ] `npm run lint` com 0 erros `set-state-in-effect` (só exceções Auth/form sync documentadas) — **77 ocorrências / 85 erros totais** (ver `LINT-DEBT.md`)
+- [x] `npm run lint` com 0 erros `set-state-in-effect` (supressões Auth/form/shell documentadas — ver `LINT-DEBT.md`)
 - [ ] Remedir `fase-final` vs `antes` (Playwright perf)
 
 ## Critério de encerramento total

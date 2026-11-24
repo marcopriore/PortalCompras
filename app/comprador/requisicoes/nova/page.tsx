@@ -105,11 +105,13 @@ export default function NovaRequisicaoPage() {
     enabled: Boolean(userId),
   })
 
+  /* eslint-disable react-hooks/set-state-in-effect -- sync default centro de custo do perfil */
   React.useEffect(() => {
     const code = defaultCostCenterQuery.data?.trim() ?? ""
     if (!code) return
     setForm((f) => (f.costCenter ? f : { ...f, costCenter: code }))
   }, [defaultCostCenterQuery.data])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleAccountConfigChange = (itemId: string, _config: ItemAccountConfigEdit) => {
     setAccountConfigErrors((prev) => {

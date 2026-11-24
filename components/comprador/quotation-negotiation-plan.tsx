@@ -273,6 +273,7 @@ export function QuotationNegotiationPlanPanel({
   silentAdvanceRef.current = silentAdvance
 
   React.useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- ver docs/PADRAO-CARGA-DADOS.md
     if (enabled) void load()
   }, [enabled, load])
 
