@@ -1,9 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { formatExportFileTimestamp } from '@/lib/formato-data'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import {
+  suppliersListQueryOptions,
+  type SupplierListRow,
+} from '@/lib/queries/suppliers-list'
+import { queryKeys } from '@/lib/queries/keys'
 import { useUser } from '@/lib/hooks/useUser'
 import { usePermissions } from '@/lib/hooks/usePermissions'
 import { useTenantSetting } from '@/lib/hooks/use-tenant-settings'
@@ -46,21 +52,7 @@ import {
   X,
 } from 'lucide-react'
 
-type SupplierStatus = 'active' | 'inactive'
-
-type Supplier = {
-  id: string
-  code: string
-  name: string
-  cnpj: string | null
-  email: string | null
-  phone: string | null
-  category: string | null
-  city: string | null
-  state: string | null
-  status: SupplierStatus
-  created_at: string
-}
+type Supplier = SupplierListRow
 
 type ImportPreviewRow = {
   code: string
@@ -100,15 +92,22 @@ function getAvatarColor(name: string): string {
 }
 
 export default function FornecedoresPage() {
+  const queryClient = useQueryClient()
+  const supabase = useMemo(() => createClient(), [])
   const { companyId, loading: userLoading, hasRole, isSuperAdmin } = useUser()
   const { hasPermission } = usePermissions()
 
   const isMasterAdmin = isSuperAdmin || hasRole('admin')
   const canSyncErp = isSuperAdmin || hasPermission('erp.sync')
 
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [orderCounts, setOrderCounts] = useState<Record<string, number>>({})
-  const [loading, setLoading] = useState(true)
+  const suppliersQuery = useQuery({
+    ...suppliersListQueryOptions(supabase, companyId ?? ''),
+    enabled: !userLoading && !!companyId,
+  })
+
+  const suppliers: Supplier[] = suppliersQuery.data?.suppliers ?? []
+  const orderCounts = suppliersQuery.data?.orderCounts ?? {}
+  const loading = suppliersQuery.isLoading
   const [search, setSearch] = useState('')
   const searchInputRef = useRef<HTMLDivElement>(null)
   const [categoryFilter, setCategoryFilter] = useState<string[]>([])
@@ -125,55 +124,18 @@ export default function FornecedoresPage() {
   const [importing, setImporting] = useState(false)
   const [importStep, setImportStep] = useState<'upload' | 'preview' | 'done'>('upload')
 
-  const loadSuppliers = useCallback(async () => {
+  const invalidateSuppliers = useCallback(() => {
     if (!companyId) return
-
-    setLoading(true)
-    try {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('suppliers')
-        .select(
-          'id, code, name, cnpj, email, phone, category, city, state, status, created_at',
-        )
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Erro ao buscar fornecedores:', error)
-        toast.error('Erro ao carregar fornecedores.')
-        return
-      }
-
-      const list = (data as Supplier[]) ?? []
-      setSuppliers(list)
-
-      const supplierIds = list.map((s) => s.id)
-      let orderCountMap: Record<string, number> = {}
-      if (supplierIds.length > 0) {
-        const { data: orderCountsData } = await supabase
-          .from('purchase_orders')
-          .select('supplier_id')
-          .eq('company_id', companyId)
-          .in('supplier_id', supplierIds)
-
-        orderCountMap = (orderCountsData ?? []).reduce(
-          (acc, o: { supplier_id: string | null }) => {
-            if (o.supplier_id) acc[o.supplier_id] = (acc[o.supplier_id] ?? 0) + 1
-            return acc
-          },
-          {} as Record<string, number>,
-        )
-      }
-      setOrderCounts(orderCountMap)
-    } finally {
-      setLoading(false)
-    }
-  }, [companyId])
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.suppliersList(companyId),
+    })
+  }, [queryClient, companyId])
 
   useEffect(() => {
-    void loadSuppliers()
-  }, [loadSuppliers])
+    if (suppliersQuery.isError) {
+      toast.error('Erro ao carregar fornecedores.')
+    }
+  }, [suppliersQuery.isError])
 
   const supplierIds = useMemo(() => suppliers.map((s) => s.id), [suppliers])
 
@@ -412,7 +374,7 @@ export default function FornecedoresPage() {
         setImportStep('done')
       }
 
-      await loadSuppliers()
+      invalidateSuppliers()
     } finally {
       setImporting(false)
     }

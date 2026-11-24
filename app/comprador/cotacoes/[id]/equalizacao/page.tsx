@@ -65,7 +65,13 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import {
+  equalizationQueryOptions,
+  type EqualizationBundleDto,
+} from "@/lib/queries/equalization"
+import { queryKeys } from "@/lib/queries/keys"
 import { createNotification } from "@/lib/notify"
 import { getUserEmail } from "@/lib/email/get-user-email"
 import { templateNewRound } from "@/lib/email/templates"
@@ -82,7 +88,6 @@ import {
   findOwnRequisitionCodes,
   OWN_REQUISITION_ORDER_BLOCKED_MESSAGE,
 } from "@/lib/requisitions/own-requisition-guard"
-import { ensureInitialQuotationRound } from "@/lib/quotations/round-lifecycle"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { useTenantSetting } from "@/lib/hooks/use-tenant-settings"
@@ -479,7 +484,18 @@ export default function EqualizacaoPage({
   const [quotationItems, setQuotationItems] = React.useState<QuotationItem[]>([])
   const [proposals, setProposals] = React.useState<Proposal[]>([])
   const [allProposalsCatalog, setAllProposalsCatalog] = React.useState<Proposal[]>([])
-  const [loading, setLoading] = React.useState(true)
+
+  const supabase = React.useMemo(() => createClient(), [])
+  const queryClient = useQueryClient()
+  const equalizationEnabled =
+    !userLoading && !permLoading && Boolean(companyId && id)
+
+  const equalizationQuery = useQuery({
+    ...equalizationQueryOptions(companyId ?? "", id, () => supabase),
+    enabled: equalizationEnabled,
+  })
+
+  const loading = equalizationEnabled && equalizationQuery.isPending
   const [itemSelections, setItemSelections] = React.useState<Record<string, string | null>>({})
   const [finalizing, setFinalizing] = React.useState(false)
   const [finishingQuotation, setFinishingQuotation] = React.useState(false)
@@ -581,13 +597,19 @@ export default function EqualizacaoPage({
 
   const countdownIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
   const deadlineExpireFetchedRef = React.useRef(false)
-  const fetchEqualizationDataRef = React.useRef(
-    null as null | ((options?: { showLoading?: boolean; forceRoundId?: string | null }) => Promise<void>),
+  type EqualizationRefreshOptions = {
+    forceRoundId?: string | null
+    preferActiveRound?: boolean
+  }
+
+  const applyAfterLoadRef = React.useRef<EqualizationRefreshOptions>({})
+  const refreshEqualizationDataRef = React.useRef(
+    null as null | ((options?: EqualizationRefreshOptions) => Promise<void>),
   )
-  const isFirstLoadRef = React.useRef(true)
+  const permissionDeniedRef = React.useRef(false)
 
   React.useEffect(() => {
-    isFirstLoadRef.current = true
+    permissionDeniedRef.current = false
   }, [id])
 
   React.useEffect(() => {
@@ -670,261 +692,143 @@ export default function EqualizacaoPage({
     return () => ro.disconnect()
   }, [syncTheadSpacer, quotationItems, proposals, columnVisibility])
 
-  const fetchEqualizationData = React.useCallback(
-    async (options?: {
-      showLoading?: boolean
-      forceRoundId?: string | null
-      preferActiveRound?: boolean
-    }) => {
-      const showLoadingUI = options?.showLoading === true
+  const applyEqualizationBundle = React.useCallback(
+    (dto: EqualizationBundleDto, options?: EqualizationRefreshOptions) => {
       const forceRoundId = options?.forceRoundId
-      if (!id) return
-      const supabase = createClient()
-      if (showLoadingUI) setLoading(true)
+      const preferActiveRound = options?.preferActiveRound === true
+      const roundsList = dto.rounds as Round[]
 
-      try {
-        const { data: roundsData, error: roundsError } = await supabase
-          .from("quotation_rounds")
-          .select(
-            "id, quotation_id, company_id, round_number, status, created_at, closed_at, response_deadline",
-          )
-          .eq("quotation_id", id)
-          .order("round_number", { ascending: true })
+      setRounds(roundsList)
 
-        if (roundsError) throw roundsError
+      const activeRound = roundsList.find((r) => r.status === "active") ?? null
+      const currentRoundId = selectedRoundIdRef.current
 
-        let roundsList = ((roundsData ?? []) as Round[]).map((r) => ({
-          ...r,
-          response_deadline: r.response_deadline ?? null,
-        }))
+      const resolvedRoundId =
+        forceRoundId != null && roundsList.some((r) => r.id === forceRoundId)
+          ? forceRoundId
+          : preferActiveRound && activeRound
+            ? activeRound.id
+            : currentRoundId && roundsList.some((r) => r.id === currentRoundId)
+              ? currentRoundId
+              : roundsList.length > 0
+                ? roundsList[roundsList.length - 1].id
+                : null
 
-        if (roundsList.length === 0 && companyId) {
-          const { data: qBoot } = await supabase
-            .from("quotations")
-            .select("status, response_deadline")
-            .eq("id", id)
-            .eq("company_id", companyId)
-            .maybeSingle()
-
-          if (
-            qBoot &&
-            (qBoot.status === "waiting" || qBoot.status === "analysis")
-          ) {
-            const boot = await ensureInitialQuotationRound(supabase, {
-              companyId,
-              quotationId: id,
-              responseDeadlineYmd: qBoot.response_deadline ?? null,
-            })
-            if (boot.ok && boot.created) {
-              const { data: roundsData2, error: roundsError2 } = await supabase
-                .from("quotation_rounds")
-                .select(
-                  "id, quotation_id, company_id, round_number, status, created_at, closed_at, response_deadline",
-                )
-                .eq("quotation_id", id)
-                .order("round_number", { ascending: true })
-              if (roundsError2) throw roundsError2
-              roundsList = ((roundsData2 ?? []) as Round[]).map((r) => ({
-                ...r,
-                response_deadline: r.response_deadline ?? null,
-              }))
-            }
-          }
-        }
-
-        setRounds(roundsList)
-
-        const preferActiveRound = options?.preferActiveRound === true
-        const activeRound = roundsList.find((r) => r.status === "active") ?? null
-
-        const resolvedRoundId =
-          forceRoundId != null && roundsList.some((r) => r.id === forceRoundId)
-            ? forceRoundId
-            : preferActiveRound && activeRound
-              ? activeRound.id
-              : selectedRoundId && roundsList.some((r) => r.id === selectedRoundId)
-                ? selectedRoundId
-                : roundsList.length > 0
-                  ? roundsList[roundsList.length - 1].id
-                  : null
-
-        if (resolvedRoundId !== selectedRoundId) {
-          setSelectedRoundId(resolvedRoundId)
-        }
-
-        setSelectedRound(
-          resolvedRoundId ? (roundsList.find((r) => r.id === resolvedRoundId) ?? null) : null,
-        )
-
-        const [qRes, itemsRes, qsRes, allProposalsRawRes] = await Promise.all([
-          supabase
-            .from("quotations")
-            .select(
-              "id, code, description, status, category, payment_condition, response_deadline, created_at, created_by",
-            )
-            .eq("id", id)
-            .eq("company_id", companyId)
-            .single(),
-          supabase
-            .from("quotation_items")
-            .select(
-              "id, quotation_id, company_id, material_code, material_description, long_description, unit_of_measure, quantity, target_price, last_purchase_price, average_price, source_requisition_code, site_code, created_at",
-            )
-            .eq("quotation_id", id)
-            .order("material_description", { ascending: true }),
-          supabase
-            .from("quotation_suppliers")
-            .select("*, suppliers(name, cnpj)")
-            .eq("quotation_id", id)
-            .order("position", { ascending: true, nullsFirst: false }),
-          supabase
-            .from("quotation_proposals")
-            .select("*, proposal_items(*)")
-            .eq("quotation_id", id),
-        ])
-
-        if (qRes.error) throw qRes.error
-        if (itemsRes.error) throw itemsRes.error
-        if (qsRes.error) throw qsRes.error
-        if (allProposalsRawRes.error) throw allProposalsRawRes.error
-
-        const q = (qRes.data as Quotation) ?? null
-        if (
-          q &&
-          !canAccessQuotation({
-            createdBy: q.created_by,
-            userId,
-            canViewAll: viewAllQuotations,
-          })
-        ) {
-          toast.error("Você não tem permissão para acessar esta cotação.")
-          router.replace("/comprador/cotacoes")
-          return
-        }
-        const items = (
-          ((itemsRes.data as unknown) as QuotationItem[] | null | undefined) ?? []
-        ).map((i) => ({
-          ...i,
-          target_price: i.target_price != null ? Number(i.target_price) : null,
-          last_purchase_price: i.last_purchase_price != null ? Number(i.last_purchase_price) : null,
-          average_price: i.average_price != null ? Number(i.average_price) : null,
-        }))
-        const quotationSuppliersOrdered = (qsRes.data ?? []) as QuotationSupplier[]
-
-        structureSnapshotRef.current = {
-          items: items.length,
-          suppliers: quotationSuppliersOrdered.length,
-        }
-        quotationSuppliersSnapshotRef.current = quotationSuppliersOrdered
-
-        const allProposalsRaw = allProposalsRawRes.data
-
-        const allCatalog = ((allProposalsRaw ?? []) as unknown as Proposal[]).map((p) => ({
-          ...p,
-          proposal_items: (p.proposal_items ?? []).filter(
-            (pi) =>
-              p.round_id != null && (pi.round_id === p.round_id || pi.round_id == null),
-          ),
-        }))
-        setAllProposalsCatalog(allCatalog)
-
-        let probs: Proposal[] = []
-        if (resolvedRoundId) {
-          const roundProposals = allCatalog.filter((p) => p.round_id === resolvedRoundId)
-          probs = orderProposalsByQuotationSupplierColumnOrder(
-            roundProposals,
-            quotationSuppliersOrdered,
-          )
-        }
-
-        const quotationItemIds = items.map((i) => i.id)
-        const orderedMap = new Map<string, OrderedItemInfo>()
-        if (quotationItemIds.length > 0) {
-          const { data: poItemsData } = await supabase
-            .from("purchase_order_items")
-            .select(
-              "quotation_item_id, purchase_order_id, round_id, purchase_orders(code, proposal_id, status), quotation_rounds(round_number)",
-            )
-            .in("quotation_item_id", quotationItemIds)
-
-          ;((poItemsData ?? []) as Array<{
-            quotation_item_id: string
-            purchase_order_id: string
-            round_id: string | null
-            purchase_orders:
-              | { code: string; proposal_id: string | null; status?: string }
-              | { code: string; proposal_id: string | null; status?: string }[]
-              | null
-            quotation_rounds:
-              | { round_number: number }
-              | { round_number: number }[]
-              | null
-          }>).forEach((row) => {
-            const po = Array.isArray(row.purchase_orders)
-              ? row.purchase_orders[0]
-              : row.purchase_orders
-            const poStatus = po?.status ?? ""
-            if (PO_STATUSES_RELEASING_QUOTATION_ITEM.has(poStatus)) return
-            const orderCode = po?.code ?? "—"
-            const proposalId = po?.proposal_id ?? ""
-            const roundNumber = pickNestedRoundNumber(row.quotation_rounds)
-            if (!orderedMap.has(row.quotation_item_id)) {
-              orderedMap.set(row.quotation_item_id, {
-                orderId: row.purchase_order_id,
-                orderCode,
-                proposalId,
-                roundId: row.round_id ?? null,
-                roundNumber,
-              })
-            }
-          })
-        }
-
-        setQuotation(q)
-        setQuotationItems(items)
-        setTargetPrices(
-          Object.fromEntries(
-            items.map((i) => [
-              i.id,
-              i.target_price != null ? Number(i.target_price) : null,
-            ]),
-          ),
-        )
-        setProposals(probs)
-        setOrderedItems(orderedMap)
-
-        if (q?.status === "completed") {
-          const initial: Record<string, string | null> = {}
-          items.forEach((qi) => {
-            initial[qi.id] = null
-          })
-          probs.forEach((p) => {
-            p.proposal_items.forEach((pi) => {
-              if (pi.item_status === "accepted") {
-                initial[pi.quotation_item_id] = p.id
-              }
-            })
-          })
-          setItemSelections(initial)
-        } else {
-          const initial: Record<string, string | null> = {}
-          items.forEach((qi) => {
-            initial[qi.id] = null
-          })
-          setItemSelections(initial)
-        }
-        setLastUpdated(new Date())
-        setContractMatchLoadGeneration((g) => g + 1)
-      } finally {
-        if (showLoadingUI) setLoading(false)
+      if (resolvedRoundId !== selectedRoundIdRef.current) {
+        setSelectedRoundId(resolvedRoundId)
       }
+
+      setSelectedRound(
+        resolvedRoundId ? (roundsList.find((r) => r.id === resolvedRoundId) ?? null) : null,
+      )
+
+      const quotationSuppliersOrdered = dto.quotationSuppliers as QuotationSupplier[]
+      structureSnapshotRef.current = dto.structureSnapshot
+      quotationSuppliersSnapshotRef.current = quotationSuppliersOrdered
+
+      const allCatalog = dto.allProposalsCatalog as Proposal[]
+      setAllProposalsCatalog(allCatalog)
+
+      let probs: Proposal[] = []
+      if (resolvedRoundId) {
+        const roundProposals = allCatalog.filter((p) => p.round_id === resolvedRoundId)
+        probs = orderProposalsByQuotationSupplierColumnOrder(
+          roundProposals,
+          quotationSuppliersOrdered,
+        )
+      }
+
+      const orderedMap = new Map<string, OrderedItemInfo>(
+        Object.entries(dto.orderedItems),
+      )
+
+      const q = dto.quotation as Quotation | null
+      const items = dto.quotationItems as QuotationItem[]
+
+      setQuotation(q)
+      setQuotationItems(items)
+      setTargetPrices(
+        Object.fromEntries(
+          items.map((i) => [
+            i.id,
+            i.target_price != null ? Number(i.target_price) : null,
+          ]),
+        ),
+      )
+      setProposals(probs)
+      setOrderedItems(orderedMap)
+
+      if (q?.status === "completed") {
+        const initial: Record<string, string | null> = {}
+        items.forEach((qi) => {
+          initial[qi.id] = null
+        })
+        probs.forEach((p) => {
+          p.proposal_items.forEach((pi) => {
+            if (pi.item_status === "accepted") {
+              initial[pi.quotation_item_id] = p.id
+            }
+          })
+        })
+        setItemSelections(initial)
+      } else {
+        const initial: Record<string, string | null> = {}
+        items.forEach((qi) => {
+          initial[qi.id] = null
+        })
+        setItemSelections(initial)
+      }
+      setLastUpdated(new Date())
+      setContractMatchLoadGeneration((g) => g + 1)
     },
-    [id, selectedRoundId, userId, viewAllQuotations, router, companyId],
+    [],
   )
+
+  const refreshEqualizationData = React.useCallback(
+    async (options?: EqualizationRefreshOptions) => {
+      if (!companyId || !id) return
+      if (options) {
+        applyAfterLoadRef.current = options
+      }
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.equalization(companyId, id),
+      })
+    },
+    [companyId, id, queryClient],
+  )
+
+  React.useEffect(() => {
+    const dto = equalizationQuery.data
+    if (!dto?.quotation || !userId) return
+    if (permissionDeniedRef.current) return
+
+    const q = dto.quotation
+    if (
+      !canAccessQuotation({
+        createdBy: q.created_by,
+        userId,
+        canViewAll: viewAllQuotations,
+      })
+    ) {
+      permissionDeniedRef.current = true
+      toast.error("Você não tem permissão para acessar esta cotação.")
+      router.replace("/comprador/cotacoes")
+      return
+    }
+
+    const pending = applyAfterLoadRef.current
+    applyAfterLoadRef.current = {}
+    applyEqualizationBundle(dto, pending)
+  }, [
+    equalizationQuery.data,
+    userId,
+    viewAllQuotations,
+    router,
+    applyEqualizationBundle,
+  ])
 
   const refreshProposalsLight = React.useCallback(async () => {
     if (!id) return
-    const supabase = createClient()
     const snap = structureSnapshotRef.current
 
     const [itemsCountRes, suppliersCountRes, proposalsRes] = await Promise.all([
@@ -949,7 +853,7 @@ export default function EqualizacaoPage({
     const itemsCount = itemsCountRes.count ?? 0
     const suppliersCount = suppliersCountRes.count ?? 0
     if (itemsCount !== snap.items || suppliersCount !== snap.suppliers) {
-      await fetchEqualizationDataRef.current?.({ showLoading: false })
+      await refreshEqualizationDataRef.current?.()
       return
     }
 
@@ -972,7 +876,7 @@ export default function EqualizacaoPage({
       )
       setProposals(probs)
     }
-  }, [id])
+  }, [id, supabase])
 
   const refreshEqualizacao = React.useCallback(async () => {
     setIsRefreshing(true)
@@ -992,16 +896,7 @@ export default function EqualizacaoPage({
     enabled: Boolean(companyId && id) && !userLoading && !permLoading,
   })
 
-  fetchEqualizationDataRef.current = fetchEqualizationData
-
-  React.useEffect(() => {
-    if (userLoading || permLoading || !companyId) return
-    const showLoading = isFirstLoadRef.current
-    if (isFirstLoadRef.current) {
-      isFirstLoadRef.current = false
-    }
-    void fetchEqualizationData({ showLoading })
-  }, [fetchEqualizationData, userLoading, permLoading, companyId])
+  refreshEqualizationDataRef.current = refreshEqualizationData
 
   React.useEffect(() => {
     if (!companyId) return
@@ -1095,7 +990,7 @@ export default function EqualizacaoPage({
     if (remainingMs > 0) return
     if (deadlineExpireFetchedRef.current) return
     deadlineExpireFetchedRef.current = true
-    void fetchEqualizationDataRef.current?.({ showLoading: false })
+    void refreshEqualizationDataRef.current?.()
   }, [remainingMs, selectedRound?.status])
 
   const hasActiveRoundGlobally = rounds.some((r) => r.status === "active")
@@ -1129,7 +1024,7 @@ export default function EqualizacaoPage({
       if (qErr) throw qErr
       toast.success("Rodada finalizada. Cotação em análise.")
       setFinalizeRoundOpen(false)
-      await fetchEqualizationData({ showLoading: false })
+      await refreshEqualizationData()
     } catch (e) {
       console.error(e)
       toast.error("Não foi possível finalizar a rodada.")
@@ -1275,7 +1170,7 @@ export default function EqualizacaoPage({
 
       toast.success("Nova rodada criada. Cotação aguardando respostas.")
       setNovaRoundOpen(false)
-      await fetchEqualizationData({ showLoading: false, forceRoundId: newRoundId })
+      await refreshEqualizationData({ forceRoundId: newRoundId })
     } catch (e) {
       console.error(e)
       toast.error("Não foi possível criar a nova rodada.")
@@ -2940,7 +2835,7 @@ export default function EqualizacaoPage({
             enabled={showAutonomousAi}
             quotationStatus={quotation?.status}
             onChanged={() =>
-              void fetchEqualizationData({ showLoading: false, preferActiveRound: true })
+              void refreshEqualizationData({ preferActiveRound: true })
             }
           />
         </div>
@@ -3972,7 +3867,7 @@ export default function EqualizacaoPage({
               className="min-w-24"
               onClick={() => {
                 setOrderSuccessDialog((s) => ({ ...s, open: false }))
-                void fetchEqualizationData({ showLoading: false })
+                void refreshEqualizationData()
               }}
             >
               OK

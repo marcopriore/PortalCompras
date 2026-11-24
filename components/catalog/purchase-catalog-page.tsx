@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2, Search, ShoppingCart, X } from "lucide-react"
@@ -40,6 +41,12 @@ import {
   CostCenterSelect,
   loadUserDefaultCostCenterCode,
 } from "@/components/ui/cost-center-select"
+import {
+  catalogOffersInfiniteQueryOptions,
+  type CatalogOffersFilters,
+} from "@/lib/queries/catalog-offers"
+import { catalogCartQueryOptions } from "@/lib/queries/catalog-cart"
+import { queryKeys } from "@/lib/queries/keys"
 
 type PurchaseCatalogPageProps = {
   portal: "comprador" | "solicitante"
@@ -62,38 +69,19 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced
 }
 
-const CATALOG_PAGE_SIZE = 18
-
-function buildOffersQueryParams(
-  offset: number,
-  includeFacets: boolean,
-  debouncedSearch: string,
-  debouncedContractSearch: string,
-  groupFilter: string[],
-  supplierFilter: string[],
-) {
-  const params = new URLSearchParams()
-  params.set("offset", String(offset))
-  params.set("limit", String(CATALOG_PAGE_SIZE))
-  if (includeFacets) params.set("include_facets", "1")
-  if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim())
-  if (debouncedContractSearch.trim()) {
-    params.set("contract_search", debouncedContractSearch.trim())
-  }
-  for (const group of groupFilter) {
-    if (group.trim()) params.append("commodity_group", group)
-  }
-  for (const supplierId of supplierFilter) {
-    if (supplierId.trim()) params.append("supplier_id", supplierId)
-  }
-  return params
-}
+const emptyCatalogCart = (): CatalogCart => ({
+  id: "",
+  items: [],
+  itemCount: 0,
+  totalAmount: 0,
+})
 
 export function PurchaseCatalogPage({
   portal,
   requisitionDetailBasePath,
 }: PurchaseCatalogPageProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { companyId, userId, loading: userLoading } = useUser()
   const {
     hasFeature,
@@ -102,30 +90,14 @@ export function PurchaseCatalogPage({
     loading: permissionsLoading,
   } = usePermissions()
 
-  const [offers, setOffers] = React.useState<CatalogOffer[]>([])
-  const [commodityGroups, setCommodityGroups] = React.useState<string[]>([])
-  const [suppliers, setSuppliers] = React.useState<
-    Array<{ id: string; name: string; code: string }>
-  >([])
-  const [cart, setCart] = React.useState<CatalogCart>({
-    id: "",
-    items: [],
-    itemCount: 0,
-    totalAmount: 0,
-  })
-  const serverCartRef = React.useRef<CatalogCart>(cart)
+  const [cartOverlay, setCartOverlay] = React.useState<CatalogCart | null>(null)
+  const serverCartRef = React.useRef<CatalogCart>(emptyCatalogCart())
   const qtyTimersRef = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   )
   const pendingQtyRef = React.useRef<Map<string, number>>(new Map())
 
-  const [loadingOffers, setLoadingOffers] = React.useState(true)
-  const [loadingMore, setLoadingMore] = React.useState(false)
-  const [totalOffers, setTotalOffers] = React.useState(0)
-  const [hasMoreOffers, setHasMoreOffers] = React.useState(false)
   const loadMoreRef = React.useRef<HTMLDivElement>(null)
-  const offersRequestRef = React.useRef(0)
-  const [initialCartLoaded, setInitialCartLoaded] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const debouncedSearch = useDebouncedValue(search, 350)
   const [contractSearch, setContractSearch] = React.useState("")
@@ -151,85 +123,86 @@ export function PurchaseCatalogPage({
   const moduleEnabled = hasFeature("purchase_catalog")
   const canBrowse = moduleEnabled && hasCatalogViewAccess(hasPermission)
   const clientCanOrder = canWrite("catalog.order")
-  const [serverCanOrder, setServerCanOrder] = React.useState<boolean | null>(null)
-  const canOrder = serverCanOrder ?? clientCanOrder
 
-  React.useEffect(() => {
-    setServerCanOrder(null)
-  }, [clientCanOrder])
-
-  const applyServerCart = React.useCallback((next: CatalogCart) => {
-    serverCartRef.current = next
-    setCart(next)
-  }, [])
-
-  const fetchOffersPage = React.useCallback(
-    async (offset: number, mode: "replace" | "append") => {
-      if (!companyId || !canBrowse) return
-
-      const requestId = ++offersRequestRef.current
-      if (mode === "replace") setLoadingOffers(true)
-      else setLoadingMore(true)
-
-      try {
-        const params = buildOffersQueryParams(
-          offset,
-          mode === "replace",
-          debouncedSearch,
-          debouncedContractSearch,
-          groupFilter,
-          supplierFilter,
-        )
-        const res = await fetch(`/api/catalog/offers?${params.toString()}`)
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { error?: string }
-          throw new Error(body.error ?? "Erro ao carregar ofertas")
-        }
-        const data = (await res.json()) as {
-          offers: CatalogOffer[]
-          total: number
-          hasMore: boolean
-          can_order?: boolean
-          commodityGroups?: string[]
-          suppliers?: Array<{ id: string; name: string; code: string }>
-        }
-
-        if (requestId !== offersRequestRef.current) return
-
-        if (typeof data.can_order === "boolean") {
-          setServerCanOrder(data.can_order)
-        }
-        setTotalOffers(data.total)
-        setHasMoreOffers(data.hasMore)
-        setOffers((prev) =>
-          mode === "append" ? [...prev, ...data.offers] : data.offers,
-        )
-        if (mode === "replace") {
-          if (data.commodityGroups) setCommodityGroups(data.commodityGroups)
-          if (data.suppliers) setSuppliers(data.suppliers)
-        }
-      } catch (err) {
-        if (requestId !== offersRequestRef.current) return
-        toast.error(err instanceof Error ? err.message : "Erro ao carregar catálogo")
-        if (mode === "replace") {
-          setOffers([])
-          setTotalOffers(0)
-          setHasMoreOffers(false)
-        }
-      } finally {
-        if (requestId === offersRequestRef.current) {
-          setLoadingOffers(false)
-          setLoadingMore(false)
-        }
-      }
-    },
-    [companyId, canBrowse, debouncedSearch, debouncedContractSearch, groupFilter, supplierFilter],
+  const offerFilters = React.useMemo<CatalogOffersFilters>(
+    () => ({
+      search: debouncedSearch,
+      contractSearch: debouncedContractSearch,
+      commodityGroups: groupFilter,
+      supplierIds: supplierFilter,
+    }),
+    [debouncedSearch, debouncedContractSearch, groupFilter, supplierFilter],
   )
 
+  const offersQuery = useInfiniteQuery({
+    ...catalogOffersInfiniteQueryOptions(companyId ?? "", offerFilters),
+    enabled:
+      !userLoading && !permissionsLoading && Boolean(companyId) && canBrowse,
+  })
+
   React.useEffect(() => {
-    if (userLoading || permissionsLoading) return
-    void fetchOffersPage(0, "replace")
-  }, [userLoading, permissionsLoading, fetchOffersPage])
+    if (offersQuery.isError) {
+      toast.error(
+        offersQuery.error instanceof Error
+          ? offersQuery.error.message
+          : "Erro ao carregar catálogo",
+      )
+    }
+  }, [offersQuery.isError, offersQuery.error])
+
+  const firstOffersPage = offersQuery.data?.pages[0]
+  const offers = React.useMemo(
+    () => offersQuery.data?.pages.flatMap((page) => page.offers) ?? [],
+    [offersQuery.data],
+  )
+  const commodityGroups = firstOffersPage?.commodityGroups ?? []
+  const suppliers = firstOffersPage?.suppliers ?? []
+  const totalOffers = firstOffersPage?.total ?? 0
+  const hasMoreOffers = offersQuery.hasNextPage ?? false
+  const loadingOffers = offersQuery.isLoading
+  const loadingMore = offersQuery.isFetchingNextPage
+
+  const serverCanOrder = firstOffersPage?.can_order
+  const canOrder =
+    typeof serverCanOrder === "boolean" ? serverCanOrder : clientCanOrder
+
+  const cartQuery = useQuery({
+    ...catalogCartQueryOptions(companyId ?? ""),
+    enabled:
+      canOrder && !userLoading && !permissionsLoading && Boolean(companyId),
+  })
+  const initialCartLoaded = cartQuery.isFetched
+  const cart = cartOverlay ?? cartQuery.data ?? emptyCatalogCart()
+
+  const applyServerCart = React.useCallback(
+    (next: CatalogCart) => {
+      serverCartRef.current = next
+      setCartOverlay(next)
+      if (companyId) {
+        queryClient.setQueryData(
+          [...queryKeys.catalogOffers(companyId), "cart"],
+          next,
+        )
+      }
+    },
+    [companyId, queryClient],
+  )
+
+  const setCart = React.useCallback(
+    (updater: CatalogCart | ((prev: CatalogCart) => CatalogCart)) => {
+      setCartOverlay((prevOverlay) => {
+        const base = prevOverlay ?? cartQuery.data ?? emptyCatalogCart()
+        const next =
+          typeof updater === "function" ? updater(base) : updater
+        serverCartRef.current = next
+        return next
+      })
+    },
+    [cartQuery.data],
+  )
+
+  const fetchNextOffersPage = offersQuery.fetchNextPage
+  const hasNextOffersPage = offersQuery.hasNextPage
 
   React.useEffect(() => {
     if (!hasMoreOffers || loadingOffers || loadingMore) return
@@ -239,8 +212,8 @@ export function PurchaseCatalogPage({
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting) {
-          void fetchOffersPage(offers.length, "append")
+        if (entries[0]?.isIntersecting && hasNextOffersPage) {
+          void fetchNextOffersPage()
         }
       },
       { rootMargin: "240px" },
@@ -248,25 +221,13 @@ export function PurchaseCatalogPage({
 
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMoreOffers, loadingOffers, loadingMore, offers.length, fetchOffersPage])
-
-  React.useEffect(() => {
-    if (!canOrder || userLoading || permissionsLoading) return
-    let alive = true
-    void (async () => {
-      try {
-        const res = await fetch("/api/catalog/cart")
-        if (!res.ok || !alive) return
-        const data = (await res.json()) as { cart: CatalogCart }
-        applyServerCart(data.cart)
-      } finally {
-        if (alive) setInitialCartLoaded(true)
-      }
-    })()
-    return () => {
-      alive = false
-    }
-  }, [canOrder, userLoading, permissionsLoading, applyServerCart])
+  }, [
+    hasMoreOffers,
+    loadingOffers,
+    loadingMore,
+    hasNextOffersPage,
+    fetchNextOffersPage,
+  ])
 
   React.useEffect(() => {
     if (!companyId || !userId || !checkoutOpen) return

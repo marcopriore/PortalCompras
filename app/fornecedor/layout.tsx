@@ -2,6 +2,10 @@ import { Suspense } from "react"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
+import { loadSessionUser } from "@/lib/auth/session-user"
+import { TenantProvider } from "@/contexts/tenant-context"
+import { SessionUserProvider } from "@/contexts/session-user-context"
+import { ScopedQueryBridge } from "@/components/providers/scoped-query-bridge"
 import FornecedorPortalShell from "@/components/layout/fornecedor-portal-shell"
 import { PasswordExpiryGuard } from "@/components/auth/password-expiry-guard"
 import { listActiveSupplierClients } from "@/lib/supplier-portal/memberships"
@@ -25,33 +29,22 @@ export default async function FornecedorLayout({
   }
 
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const sessionUser = await loadSessionUser(supabase)
 
-  if (!user) {
+  if (!sessionUser) {
     redirect("/fornecedor/login")
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, company_id, supplier_id")
-    .eq("id", user.id)
-    .single()
-
-  const profileRow = profile as {
-    full_name?: string | null
-    company_id?: string | null
-    supplier_id?: string | null
-  } | null
-
   const fullName =
-    profileRow?.full_name?.trim() ||
-    user.email ||
+    sessionUser.fullName?.trim() ||
+    sessionUser.email ||
     "Fornecedor"
 
-  const supplierClients = await listActiveSupplierClients(user.id)
-  const userEmail = user.email ?? ""
+  const activeCompanyId = sessionUser.profileCompanyId
+  const activeSupplierId = sessionUser.supplierId
+
+  const supplierClients = await listActiveSupplierClients(sessionUser.userId)
+  const userEmail = sessionUser.email ?? ""
   const initials =
     fullName
       .split(" ")
@@ -61,23 +54,31 @@ export default async function FornecedorLayout({
       .join("") || "FO"
 
   return (
-    <Suspense
-      fallback={
-        <div className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">
-          Carregando…
-        </div>
-      }
-    >
-      <FornecedorPortalShell
-        userName={fullName}
-        userEmail={userEmail}
-        userInitials={initials}
-        supplierClients={supplierClients}
-        activeCompanyId={profileRow?.company_id ?? null}
-        activeSupplierId={profileRow?.supplier_id ?? null}
+    <TenantProvider initialCompanyId={activeCompanyId}>
+      <Suspense
+        fallback={
+          <div className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+            Carregando…
+          </div>
+        }
       >
-        <PasswordExpiryGuard portal="fornecedor">{children}</PasswordExpiryGuard>
-      </FornecedorPortalShell>
-    </Suspense>
+        <FornecedorPortalShell
+          userName={fullName}
+          userEmail={userEmail}
+          userInitials={initials}
+          supplierClients={supplierClients}
+          activeCompanyId={activeCompanyId}
+          activeSupplierId={activeSupplierId}
+        >
+          <SessionUserProvider initialUser={sessionUser}>
+            <ScopedQueryBridge userId={sessionUser.userId}>
+              <PasswordExpiryGuard portal="fornecedor">
+                {children}
+              </PasswordExpiryGuard>
+            </ScopedQueryBridge>
+          </SessionUserProvider>
+        </FornecedorPortalShell>
+      </Suspense>
+    </TenantProvider>
   )
 }

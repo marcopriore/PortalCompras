@@ -30,5 +30,12 @@ export default defineConfig({
         actionTimeout: 15000,
       },
     },
+    {
+      name: "perf",
+      testDir: "./tests/perf",
+      testMatch: "**/*.spec.ts",
+      timeout: 600_000,
+      use: { ...devices["Desktop Chrome"] },
+    },
   ],
 })

@@ -1,37 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
 import type { TenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
 import { parseTenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
+import { tenantFeatureConfigQueryOptions } from "@/lib/queries/tenant-feature-config-fetch"
+import { useUser } from "@/lib/hooks/useUser"
 
 const DEFAULT_CONFIG: TenantFeatureConfig = parseTenantFeatureConfig({})
 
 export function useTenantFeatureConfig() {
-  const [config, setConfig] = useState<TenantFeatureConfig>(DEFAULT_CONFIG)
-  const [loading, setLoading] = useState(true)
+  const { companyId, loading: userLoading } = useUser()
 
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
+  const query = useQuery({
+    ...tenantFeatureConfigQueryOptions(companyId ?? ""),
+    enabled: !userLoading && Boolean(companyId),
+  })
 
-    void fetch("/api/tenant-feature-config")
-      .then(async (res) => {
-        if (!res.ok) return null
-        return (await res.json()) as { config?: TenantFeatureConfig }
-      })
-      .then((data) => {
-        if (cancelled) return
-        if (data?.config) setConfig(data.config)
-      })
-      .catch(() => {
-        if (!cancelled) setConfig(DEFAULT_CONFIG)
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const config = query.data ?? DEFAULT_CONFIG
+  const loading = userLoading || query.isLoading
 
   const get = useCallback(
     <K extends keyof TenantFeatureConfig>(key: K): TenantFeatureConfig[K] =>

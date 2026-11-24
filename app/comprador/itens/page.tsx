@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   formatDateTimeBR,
   formatDateTimeLongBR,
@@ -8,6 +9,11 @@ import {
 } from '@/lib/formato-data'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import {
+  itemsListQueryOptions,
+  type ItemListRow,
+} from '@/lib/queries/items-list'
+import { queryKeys } from '@/lib/queries/keys'
 import { useUser } from '@/lib/hooks/useUser'
 import { usePermissions } from '@/lib/hooks/usePermissions'
 import { Badge } from '@/components/ui/badge'
@@ -32,23 +38,7 @@ import {
   X,
 } from 'lucide-react'
 
-type Item = {
-  id: string
-  company_id?: string
-  code: string
-  short_description: string
-  long_description: string | null
-  status: 'active' | 'inactive'
-  unit_of_measure: string | null
-  ncm: string | null
-  commodity_group: string | null
-  target_price: number | null
-  last_purchase_price: number | null
-  average_price: number | null
-  created_at: string
-  source?: string | null
-  sync_at?: string | null
-}
+type Item = ItemListRow
 
 type ImportPreviewRow = {
   code: string
@@ -62,11 +52,18 @@ type ImportPreviewRow = {
 }
 
 export default function ItensPage() {
+  const queryClient = useQueryClient()
+  const supabase = useMemo(() => createClient(), [])
   const { companyId, loading: userLoading, hasRole, isSuperAdmin } = useUser()
   const { hasPermission } = usePermissions()
 
-  const [items, setItems] = useState<Item[]>([])
-  const [loading, setLoading] = useState(true)
+  const itemsQuery = useQuery({
+    ...itemsListQueryOptions(supabase, companyId ?? ''),
+    enabled: !userLoading && !!companyId,
+  })
+
+  const items: Item[] = itemsQuery.data ?? []
+  const loading = itemsQuery.isLoading
   const [masterCategories, setMasterCategories] = useState<string[]>([])
 
   const [search, setSearch] = useState('')
@@ -144,37 +141,23 @@ export default function ItensPage() {
     }
   }, [companyId])
 
-  const loadItems = useCallback(async () => {
+  const invalidateItems = useCallback(() => {
     if (!companyId) return
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.itemsList(companyId),
+    })
+  }, [queryClient, companyId])
 
-    setLoading(true)
-    try {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('items')
-        .select(
-          'id, company_id, code, short_description, long_description, status, unit_of_measure, ncm, commodity_group, target_price, last_purchase_price, average_price, source, sync_at, created_at',
-        )
-        .eq('company_id', companyId)
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Erro ao buscar itens:', error)
-        toast.error('Erro ao carregar itens.')
-        return
-      }
-
-      setItems((data as Item[]) ?? [])
-    } finally {
-      setLoading(false)
+  useEffect(() => {
+    if (itemsQuery.isError) {
+      toast.error('Erro ao carregar itens.')
     }
-  }, [companyId])
+  }, [itemsQuery.isError])
 
   useEffect(() => {
     if (userLoading || !companyId) return
-    void loadItems()
     void loadMasterCategories()
-  }, [userLoading, companyId, loadItems, loadMasterCategories])
+  }, [userLoading, companyId, loadMasterCategories])
 
   async function handleDownloadTemplate() {
     const ExcelJS = (await import('exceljs')).default
@@ -452,7 +435,7 @@ export default function ItensPage() {
 
     setImporting(false)
     setImportStep('done')
-    await loadItems()
+    invalidateItems()
   }
 
   return (

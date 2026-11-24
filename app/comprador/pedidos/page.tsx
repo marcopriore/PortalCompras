@@ -3,12 +3,16 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { formatDateBR, formatDateTimeBR } from "@/lib/formato-data"
+import { useQuery, keepPreviousData } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
-import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { canViewAllByPermission, formatResponsibleName } from "@/lib/quotations/ownership"
+import {
+  purchaseOrdersListQueryOptions,
+  type PurchaseOrderListRow,
+} from "@/lib/queries/purchase-orders-list"
 import { LastUpdated } from "@/components/ui/last-updated"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -38,33 +42,7 @@ import { getPOStatusForBuyer, poStatusBadgeClass } from "@/lib/po-status"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { TableRowActions } from "@/components/ui/table-row-actions"
 
-type PurchaseOrderStatus =
-  | "draft"
-  | "awaiting_approval"
-  | "processing"
-  | "sent"
-  | "refused"
-  | "error"
-  | "integration_error"
-  | "completed"
-  | "cancelled"
-
-type PurchaseOrder = {
-  id: string
-  code: string
-  supplier_name: string
-  supplier_cnpj: string | null
-  total_price: number | null
-  delivery_days: number | null
-  payment_condition: string | null
-  quotation_code: string | null
-  status: PurchaseOrderStatus
-  created_at: string
-  updated_at: string | null
-  created_by: string | null
-  responsible_name?: string
-  purchase_order_items: { id: string }[]
-}
+type PurchaseOrder = PurchaseOrderListRow
 
 type Filters = {
   search: string
@@ -107,6 +85,7 @@ const money = new Intl.NumberFormat("pt-BR", {
 
 export default function PedidosPage() {
   const router = useRouter()
+  const supabase = React.useMemo(() => createClient(), [])
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
   const { hasPermission, loading: permLoading } = usePermissions()
   const viewAllOrders = canViewAllByPermission(
@@ -114,8 +93,28 @@ export default function PedidosPage() {
     "order.view_all",
   )
 
-  const [orders, setOrders] = React.useState<PurchaseOrder[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const scope = viewAllOrders ? "all" : (userId ?? "")
+  const listEnabled =
+    !userLoading &&
+    !permLoading &&
+    !!companyId &&
+    (viewAllOrders || !!userId)
+
+  const pollingIntervalMs = usePollingIntervalMs()
+
+  const ordersQuery = useQuery({
+    ...purchaseOrdersListQueryOptions(supabase, companyId ?? "", scope),
+    enabled: listEnabled,
+    placeholderData: keepPreviousData,
+    refetchInterval: listEnabled ? pollingIntervalMs : false,
+  })
+
+  const orders = ordersQuery.data ?? []
+  const loading = ordersQuery.isLoading
+  const lastUpdated =
+    ordersQuery.dataUpdatedAt > 0 ? new Date(ordersQuery.dataUpdatedAt) : null
+  const isRefreshing = ordersQuery.isFetching && !ordersQuery.isLoading
+
   const [exporting, setExporting] = React.useState(false)
   const [showAllFilters, setShowAllFilters] = React.useState(false)
   const [page, setPage] = React.useState(1)
@@ -127,86 +126,6 @@ export default function PedidosPage() {
     responsible: [],
   })
   const searchInputRef = React.useRef<HTMLDivElement>(null)
-  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
-  const [isRefreshing, setIsRefreshing] = React.useState(false)
-  const companyIdRef = React.useRef(companyId)
-  companyIdRef.current = companyId
-
-  const loadOrders = React.useCallback(
-    async (silent = false) => {
-      if (userLoading || permLoading || !companyId) return
-      const started = companyId
-      const stillHere = () => companyIdRef.current === started
-
-      if (!silent) setLoading(true)
-      const supabase = createClient()
-      const viewAll = canViewAllByPermission(
-        { isSuperAdmin, hasRole, hasPermission },
-        "order.view_all",
-      )
-      let query = supabase
-        .from("purchase_orders")
-        .select(
-          "id, code, supplier_name, supplier_cnpj, total_price, delivery_days, payment_condition, quotation_code, status, created_at, updated_at, created_by, purchase_order_items(id)",
-        )
-        .eq("company_id", companyId)
-      if (!viewAll && userId) {
-        query = query.eq("created_by", userId)
-      }
-      const { data } = await query.order("created_at", { ascending: false })
-
-      if (!stillHere()) return
-
-      const rows = ((data as unknown) as PurchaseOrder[]) ?? []
-      const ownerIds = [
-        ...new Set(rows.map((o) => o.created_by).filter((id): id is string => Boolean(id))),
-      ]
-      let nameById = new Map<string, string>()
-      if (ownerIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("id, full_name")
-          .in("id", ownerIds)
-        nameById = new Map(
-          ((profiles ?? []) as { id: string; full_name: string | null }[]).map((p) => [
-            p.id,
-            p.full_name ?? "",
-          ]),
-        )
-      }
-
-      setOrders(
-        rows.map((o) => ({
-          ...o,
-          responsible_name: o.created_by ? nameById.get(o.created_by) ?? "" : "",
-        })),
-      )
-      setLastUpdated(new Date())
-      if (!silent) setLoading(false)
-    },
-    [companyId, userId, userLoading, permLoading, hasPermission, isSuperAdmin, hasRole],
-  )
-
-  React.useEffect(() => {
-    void loadOrders(false)
-  }, [loadOrders])
-
-  const refreshPedidos = React.useCallback(async () => {
-    setIsRefreshing(true)
-    try {
-      await loadOrders(true)
-    } finally {
-      setIsRefreshing(false)
-    }
-  }, [loadOrders])
-
-  const pollingIntervalMs = usePollingIntervalMs()
-
-  useAutoRefresh({
-    intervalMs: pollingIntervalMs,
-    onRefresh: refreshPedidos,
-    enabled: Boolean(companyId) && !userLoading && !permLoading,
-  })
 
   const handleFilterChange =
     (field: keyof Filters) =>

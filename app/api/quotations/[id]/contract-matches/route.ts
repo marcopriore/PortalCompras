@@ -7,12 +7,6 @@ import {
   type Contract,
 } from "@/types/contracts"
 import {
-  buildContractMatchesCacheKey,
-  getContractMatchesCached,
-  hashContractMatchSelections,
-  setContractMatchesCache,
-} from "@/lib/contracts/contract-matches-cache"
-import {
   findContractMatchesForQuotationItem,
   pickBestContractMatch,
   contractLinkFromMatch,
@@ -153,18 +147,6 @@ export async function POST(request: Request, context: RouteCtx) {
       })
     }
 
-    const cacheKey = buildContractMatchesCacheKey(
-      ctx.companyId,
-      quotationId,
-      hashContractMatchSelections(inputs),
-    )
-    const cached = getContractMatchesCached<{ items: ContractMatchResponseItem[] }>(
-      cacheKey,
-    )
-    if (cached) {
-      return NextResponse.json(cached)
-    }
-
     const supplierIds = [...new Set(inputs.map((i) => i.supplierId))]
 
     const { data: contractRows, error: contractErr } = await ctx.supabase
@@ -207,9 +189,7 @@ export async function POST(request: Request, context: RouteCtx) {
       }
     })
 
-    const responseBody = { items }
-    setContractMatchesCache(cacheKey, responseBody)
-    return NextResponse.json(responseBody)
+    return NextResponse.json({ items })
   } catch (error) {
     const message = error instanceof Error ? error.message : "Internal error"
     return NextResponse.json({ error: message }, { status: 500 })

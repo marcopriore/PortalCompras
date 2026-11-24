@@ -87,10 +87,10 @@ describe("canAccessCompradorPath", () => {
     expect(canAccessCompradorPath("/comprador/cotacoes/123/equalizacao", ctx)).toBe(true)
   })
 
-  it("permissoes route requires admin role", () => {
+  it("permissoes route requires settings.manage", () => {
     expect(canAccessCompradorPath("/comprador/configuracoes/permissoes", makeCtx())).toBe(false)
     expect(canAccessCompradorPath("/comprador/configuracoes/permissoes", makeCtx({
-      hasRole: (r) => r === "admin",
+      hasPermission: (p) => p === "settings.manage",
     }))).toBe(true)
   })
 

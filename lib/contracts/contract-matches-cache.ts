@@ -1,25 +1,8 @@
-type CacheEntry = {
-  expiresAt: number
-  payload: unknown
-}
-
-const TTL_MS = 60_000
-const MAX_ENTRIES = 200
-
-const store = new Map<string, CacheEntry>()
-
-function pruneIfNeeded(): void {
-  if (store.size <= MAX_ENTRIES) return
-  const now = Date.now()
-  for (const [key, entry] of store) {
-    if (entry.expiresAt <= now) store.delete(key)
-  }
-  while (store.size > MAX_ENTRIES) {
-    const first = store.keys().next().value
-    if (!first) break
-    store.delete(first)
-  }
-}
+/**
+ * Helpers para chave/hashing de contract-matches.
+ * Persistência em Map com TTL foi removida — cache cross-request no módulo
+ * não é seguro em runtime serverless nem no client.
+ */
 
 export function hashContractMatchSelections(
   selections: Array<{
@@ -51,17 +34,12 @@ export function buildContractMatchesCacheKey(
   return `${companyId}:${quotationId}:${selectionsHash}`
 }
 
-export function getContractMatchesCached<T>(key: string): T | null {
-  const entry = store.get(key)
-  if (!entry) return null
-  if (entry.expiresAt <= Date.now()) {
-    store.delete(key)
-    return null
-  }
-  return entry.payload as T
+/** @deprecated Sem cache — sempre retorna null. */
+export function getContractMatchesCached<T>(_key: string): T | null {
+  return null
 }
 
-export function setContractMatchesCache(key: string, payload: unknown): void {
-  pruneIfNeeded()
-  store.set(key, { expiresAt: Date.now() + TTL_MS, payload })
+/** @deprecated Sem cache — no-op. */
+export function setContractMatchesCache(_key: string, _payload: unknown): void {
+  /* intentional no-op */
 }

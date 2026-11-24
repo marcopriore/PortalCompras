@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useMemo, useState } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -35,27 +36,13 @@ import {
   canViewAllQuotations,
   formatResponsibleName,
 } from "@/lib/quotations/ownership"
+import {
+  quotationsListQueryOptions,
+  type QuotationListRow,
+} from "@/lib/queries/quotations-list"
+import { queryKeys } from "@/lib/queries/keys"
 
-type QuotationSupplier = { supplier_name: string | null }
-type QuotationItem = {
-  material_code: string | null
-  material_description: string | null
-}
-
-interface Quotation {
-  id: string
-  code: string
-  description: string
-  status: "draft" | "waiting" | "analysis" | "completed" | "cancelled"
-  category: string | null
-  payment_condition: string | null
-  response_deadline: string | null
-  created_at: string
-  created_by: string | null
-  responsible_name?: string
-  quotation_suppliers?: QuotationSupplier[] | null
-  quotation_items?: QuotationItem[] | null
-}
+type Quotation = QuotationListRow
 
 const statusConfig = {
   draft: { label: "Rascunho", variant: "outline" as const },
@@ -77,8 +64,8 @@ function getStatusLabel(
 
 export default function CotacoesPage() {
   const router = useRouter()
-  const [quotations, setQuotations] = useState<Quotation[]>([])
-  const [loadingData, setLoadingData] = useState(true)
+  const queryClient = useQueryClient()
+  const supabase = useMemo(() => createClient(), [])
   const [cloningId, setCloningId] = useState<string | null>(null)
 
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
@@ -90,6 +77,25 @@ export default function CotacoesPage() {
     hasRole,
     hasPermission,
   })
+
+  const scope = viewAllQuotations ? "all" : (userId ?? "")
+  const listEnabled =
+    !userLoading &&
+    !permLoading &&
+    !!companyId &&
+    (viewAllQuotations || !!userId)
+
+  const quotationsQuery = useQuery({
+    ...quotationsListQueryOptions(supabase, companyId ?? "", scope),
+    enabled: listEnabled,
+  })
+
+  const quotations = quotationsQuery.data ?? []
+  const loadingData =
+    userLoading ||
+    permLoading ||
+    quotationsQuery.isLoading ||
+    (!quotationsQuery.data && listEnabled && quotationsQuery.isPending)
 
   const [search, setSearch] = useState("")
   const searchRef = React.useRef<HTMLDivElement>(null)
@@ -195,6 +201,9 @@ export default function CotacoesPage() {
       }
 
       toast.success(`Cotação clonada como ${newQuotation.code}!`)
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.quotationsList(companyId, scope),
+      })
       router.push(`/comprador/cotacoes/${newId}/editar`)
     } catch {
       toast.error("Erro ao clonar cotação.")
@@ -269,61 +278,6 @@ export default function CotacoesPage() {
       ]}
     />
   )
-
-  useEffect(() => {
-    const fetchQuotations = async () => {
-      if (userLoading || permLoading || !companyId) {
-        return
-      }
-
-      const supabase = createClient()
-      let query = supabase
-        .from("quotations")
-        .select(
-          "*, quotation_suppliers(supplier_name), quotation_items(material_code, material_description)",
-        )
-        .eq("company_id", companyId)
-      if (!viewAllQuotations && userId) {
-        query = query.eq("created_by", userId)
-      }
-      const { data, error } = await query.order("created_at", { ascending: false })
-
-      if (error) {
-        console.error("Erro ao buscar cotações:", error)
-        setQuotations([])
-        setLoadingData(false)
-        return
-      }
-
-      const rows = (data ?? []) as Quotation[]
-      const ownerIds = [
-        ...new Set(rows.map((q) => q.created_by).filter((id): id is string => Boolean(id))),
-      ]
-      let nameById = new Map<string, string>()
-      if (ownerIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("id, full_name")
-          .in("id", ownerIds)
-        nameById = new Map(
-          ((profiles ?? []) as { id: string; full_name: string | null }[]).map((p) => [
-            p.id,
-            p.full_name ?? "",
-          ]),
-        )
-      }
-
-      setQuotations(
-        rows.map((q) => ({
-          ...q,
-          responsible_name: q.created_by ? nameById.get(q.created_by) ?? "" : "",
-        })),
-      )
-      setLoadingData(false)
-    }
-
-    fetchQuotations()
-  }, [companyId, userId, userLoading, permLoading, viewAllQuotations])
 
   const hasActiveFilters =
     !!search ||

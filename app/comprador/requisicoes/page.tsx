@@ -4,10 +4,17 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { formatDateBR } from "@/lib/formato-data"
 
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import { canViewAllByPermission } from "@/lib/quotations/ownership"
+import {
+  requisitionsListQueryOptions,
+  type RequisitionListRow,
+  type RequisitionPriority,
+} from "@/lib/queries/requisitions-list"
+import { queryKeys } from "@/lib/queries/keys"
 
 import { RequisicoesImportExcelDialog } from "@/components/comprador/requisicoes-import-excel-dialog"
 
@@ -34,22 +41,7 @@ import {
   type RequisitionStatus,
 } from "@/lib/requisitions/status"
 
-type Priority = "normal" | "urgent" | "critical"
-
-type RequisitionItemRel = { id: string }
-
-type Requisition = {
-  id: string
-  code: string
-  title: string
-  requester_name: string | null
-  cost_center: string | null
-  needed_by: string | null
-  priority: Priority
-  status: RequisitionStatus
-  created_at: string
-  requisition_items: RequisitionItemRel[]
-}
+type Priority = RequisitionPriority
 
 export function getStatusMeta(status: RequisitionStatus): { label: string; className: string } {
   return getRequisitionStatusMeta(status)
@@ -68,6 +60,8 @@ export function getPriorityMeta(priority: Priority): { label: string; className:
 
 export default function RequisicoesPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
+  const supabase = React.useMemo(() => createClient(), [])
   const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
   const { hasPermission, canWrite, loading: permLoading } = usePermissions()
 
@@ -76,8 +70,20 @@ export default function RequisicoesPage() {
     "requisition.view_all",
   )
 
-  const [requisitions, setRequisitions] = React.useState<Requisition[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const scope = canViewAll ? "all" : (userId ?? "")
+  const listEnabled =
+    !userLoading &&
+    !permLoading &&
+    !!companyId &&
+    (canViewAll || !!userId)
+
+  const requisitionsQuery = useQuery({
+    ...requisitionsListQueryOptions(supabase, companyId ?? "", scope),
+    enabled: listEnabled,
+  })
+
+  const requisitions: RequisitionListRow[] = requisitionsQuery.data ?? []
+  const loading = requisitionsQuery.isLoading
 
   const [search, setSearch] = React.useState("")
   const searchInputRef = React.useRef<HTMLDivElement>(null)
@@ -100,33 +106,12 @@ export default function RequisicoesPage() {
     setPage(1)
   }, [search, status, priority, dateFrom, dateTo])
 
-  const loadRequisitions = React.useCallback(async () => {
-    if (userLoading || permLoading || !companyId) return
-
-    const supabase = createClient()
-    setLoading(true)
-    try {
-      let query = supabase
-        .from("requisitions")
-        .select("*, requisition_items(id)")
-        .eq("company_id", companyId)
-        .order("created_at", { ascending: false })
-
-      if (!canViewAll && userId) {
-        query = query.eq("requester_id", userId)
-      }
-
-      const { data } = await query
-
-      setRequisitions(((data ?? []) as unknown) as Requisition[])
-    } finally {
-      setLoading(false)
-    }
-  }, [companyId, userLoading, permLoading, canViewAll, userId])
-
-  React.useEffect(() => {
-    void loadRequisitions()
-  }, [loadRequisitions])
+  const invalidateRequisitionsList = React.useCallback(() => {
+    if (!companyId) return
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.requisitionsList(companyId, scope),
+    })
+  }, [queryClient, companyId, scope])
 
   const hasActiveFilters =
     !!search.trim() || status.length > 0 || priority.length > 0 || !!dateFrom || !!dateTo
@@ -190,7 +175,7 @@ export default function RequisicoesPage() {
         <div className="flex flex-wrap items-center justify-end gap-2">
           <RequisicoesImportExcelDialog
             canImportExcel={hasPermission("import.excel")}
-            onImported={() => loadRequisitions()}
+            onImported={invalidateRequisitionsList}
           />
 
           {canWrite("requisition.create.buyer") ? (

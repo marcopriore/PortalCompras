@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { subMonths } from "date-fns"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   formatDateBR,
   formatMonthShortBR,
@@ -49,6 +49,12 @@ import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions, type PermissionKey } from "@/lib/hooks/usePermissions"
 import { cn } from "@/lib/utils"
+import {
+  reportsDashboardBundleQueryOptions,
+  type ReportsQuotation,
+} from "@/lib/queries/reports-bundle"
+import { reportsSavingBundleQueryOptions } from "@/lib/queries/reports-saving"
+import { queryKeys } from "@/lib/queries/keys"
 
 const relatoriosDisponiveis: Array<{
   id: number
@@ -89,39 +95,12 @@ const relatoriosDisponiveis: Array<{
   },
 ]
 
-type Quotation = {
-  id: string
-  code: string | null
-  description: string | null
-  status: "draft" | "waiting" | "analysis" | "completed" | "cancelled"
-  category: string | null
-  created_at: string
-}
+type Quotation = ReportsQuotation
 
 type QuotationSupplierRow = {
   quotation_id: string
   supplier_name: string | null
 }
-
-type PurchaseOrderStatus =
-  | "draft"
-  | "processing"
-  | "sent"
-  | "completed"
-  | "cancelled"
-  | "error"
-  | "refused"
-
-const AVATAR_COLORS = [
-  "#4f46e5",
-  "#0891b2",
-  "#059669",
-  "#d97706",
-  "#dc2626",
-  "#7c3aed",
-  "#db2777",
-  "#0284c7",
-]
 
 function getStatusLabel(status: Quotation["status"]): string {
   if (status === "draft") return "Rascunho"
@@ -143,13 +122,14 @@ function getStatusColor(status: Quotation["status"]): string {
 }
 
 export default function RelatoriosPage() {
+  const queryClient = useQueryClient()
+  const supabase = useMemo(() => createClient(), [])
   const [periodo, setPeriodo] = useState("mes_atual")
   const [customDateFrom, setCustomDateFrom] = useState("")
   const [customDateTo, setCustomDateTo] = useState("")
   const [customDateError, setCustomDateError] = useState("")
   const [categoria, setCategoria] = useState<string[]>([])
   const [fornecedorFilter, setFornecedorFilter] = useState<string[]>([])
-  const [coberturaPrecoAlvo, setCoberturaPrecoAlvo] = useState<number | null>(null)
 
   const { companyId, loading: userLoading } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
@@ -168,34 +148,12 @@ export default function RelatoriosPage() {
     canReportsQuotations
   const showExportsTab = visibleExports.length > 0
   const reportsDefaultTab = showDashboardsTab ? "dashboards" : "exportar"
-  const [quotations, setQuotations] = useState<Quotation[]>([])
-  const [dashLoading, setDashLoading] = useState(true)
-  const [completedOrdersCount, setCompletedOrdersCount] = useState<number | null>(null)
-  const [avgLeadTime, setAvgLeadTime] = useState<number | null>(null)
-  const [leadTimeProcessoMensal, setLeadTimeProcessoMensal] = useState<
-    { month: string; media: number | null; meta: number }[]
-  >([])
-  const [leadTimeFornecedorMedio, setLeadTimeFornecedorMedio] = useState<number | null>(null)
-  const [leadTimeFornecedorPorFornecedor, setLeadTimeFornecedorPorFornecedor] = useState<
-    { name: string; media: number }[]
-  >([])
-  const [pedidosPorStatus, setPedidosPorStatus] = useState<
-    { name: string; value: number; color: string }[]
-  >([])
-  const [topSuppliersByOrders, setTopSuppliersByOrders] = useState<{ name: string; value: number }[]>(
-    [],
-  )
-  const [leadTimeTarget, setLeadTimeTarget] = useState<number>(10)
+  const [savedLeadTimeTarget, setSavedLeadTimeTarget] = useState<number | null>(null)
   const [editingTarget, setEditingTarget] = useState<number | null>(null)
-  const [spendPorCategoria, setSpendPorCategoria] = useState<{ name: string; value: number }[]>([])
-  const [spendPorMes, setSpendPorMes] = useState<{ month: string; total: number }[]>([])
 
   const [categoryLoading, setCategoryLoading] = useState(false)
   const [supplierLoading, setSupplierLoading] = useState(false)
-  const [savingTotal, setSavingTotal] = useState<number | null>(null)
-  const [savingPorMes, setSavingPorMes] = useState<{ month: string; saving: number }[]>([])
-  const [savingPorCategoria, setSavingPorCategoria] = useState<{ name: string; value: number }[]>([])
-  const [savingLoading, setSavingLoading] = useState(false)
+  const [savingExportLoading, setSavingExportLoading] = useState(false)
 
   const periodoRange = useMemo(() => {
     const now = new Date()
@@ -235,361 +193,51 @@ export default function RelatoriosPage() {
   /** Compat: início do intervalo (equivalente ao antigo periodStartIso) */
   const periodStartIso = periodoRange.from
 
-  useEffect(() => {
-    if (userLoading || !companyId) return
+  const reportsQuery = useQuery({
+    ...reportsDashboardBundleQueryOptions(
+      supabase,
+      companyId ?? "",
+      periodoRange,
+      fornecedorFilter,
+    ),
+    enabled: !userLoading && Boolean(companyId),
+  })
 
-    const fetchRealData = async () => {
-      setDashLoading(true)
-      const supabase = createClient()
+  const bundle = reportsQuery.data
+  const dashLoading = reportsQuery.isLoading
+  const quotations = bundle?.quotations ?? []
+  const completedOrdersCount = bundle?.completedOrdersCount ?? null
+  const avgLeadTime = bundle?.avgLeadTime ?? null
+  const leadTimeFornecedorMedio = bundle?.leadTimeFornecedorMedio ?? null
+  const leadTimeFornecedorPorFornecedor =
+    bundle?.leadTimeFornecedorPorFornecedor ?? []
+  const pedidosPorStatus = bundle?.pedidosPorStatus ?? []
+  const topSuppliersByOrders = bundle?.topSuppliersByOrders ?? []
+  const spendPorCategoria = bundle?.spendPorCategoria ?? []
+  const spendPorMes = bundle?.spendPorMes ?? []
+  const coberturaPrecoAlvo = bundle?.coberturaPrecoAlvo ?? null
+  const leadTimeTarget =
+    savedLeadTimeTarget ?? bundle?.leadTimeTarget ?? 10
+  const leadTimeProcessoMensal = useMemo(() => {
+    const rows = bundle?.leadTimeProcessoMensal ?? []
+    return rows.map((row) => ({ ...row, meta: leadTimeTarget }))
+  }, [bundle?.leadTimeProcessoMensal, leadTimeTarget])
 
-      const [
-        quotationsRes,
-        completedOrdersCountRes,
-        ordersByStatusRes,
-        ordersBySupplierRes,
-        ltSettingRes,
-        spendItemsRes,
-        quotationsForSpendRes,
-        monthlySpendOrdersRes,
-        itensCobertura,
-        processoOrdersRes,
-        fornecedorLeadTimeRes,
-      ] = await Promise.all([
-        supabase
-          .from("quotations")
-          .select("id, code, description, status, category, created_at")
-          .eq("company_id", companyId)
-          .gte("created_at", periodoRange.from)
-          .lte("created_at", periodoRange.to)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("purchase_orders")
-          .select("*", { count: "exact", head: true })
-          .eq("company_id", companyId)
-          .eq("status", "completed")
-          .gte("created_at", periodoRange.from)
-          .lte("created_at", periodoRange.to),
-        supabase
-          .from("purchase_orders")
-          .select("status")
-          .eq("company_id", companyId)
-          .gte("created_at", periodoRange.from)
-          .lte("created_at", periodoRange.to),
-        supabase
-          .from("purchase_orders")
-          .select("supplier_name")
-          .eq("company_id", companyId)
-          .gte("created_at", periodoRange.from)
-          .lte("created_at", periodoRange.to)
-          .not("supplier_name", "is", null)
-          .neq("supplier_name", ""),
-        supabase
-          .from("company_settings")
-          .select("value")
-          .eq("company_id", companyId)
-          .eq("key", "lead_time_target_days")
-          .single(),
-        supabase
-          .from("purchase_order_items")
-          .select(
-            "total_price, purchase_orders!inner(company_id, status, quotation_id, created_at, supplier_name)",
-          )
-          .eq("purchase_orders.company_id", companyId)
-          .eq("purchase_orders.status", "completed")
-          .gte("purchase_orders.created_at", periodoRange.from)
-          .lte("purchase_orders.created_at", periodoRange.to),
-        supabase
-          .from("quotations")
-          .select("id, category")
-          .eq("company_id", companyId),
-        supabase
-          .from("purchase_orders")
-          .select("created_at, total_price, supplier_name")
-          .eq("company_id", companyId)
-          .eq("status", "completed")
-          .gte("created_at", periodoRange.from)
-          .lte("created_at", periodoRange.to)
-          .not("total_price", "is", null),
-        supabase
-          .from("items")
-          .select("id, target_price")
-          .eq("company_id", companyId)
-          .eq("status", "active"),
-        supabase
-          .from("purchase_orders")
-          .select("created_at, requisition_code, supplier_name")
-          .eq("company_id", companyId)
-          .in("status", ["sent", "processing", "completed"])
-          .not("requisition_code", "is", null)
-          .neq("requisition_code", "")
-          .gte("created_at", periodoRange.from)
-          .lte("created_at", periodoRange.to),
-        supabase
-          .from("purchase_order_items")
-          .select(
-            "delivery_days, purchase_orders!inner(company_id, status, supplier_name, created_at)",
-          )
-          .eq("purchase_orders.company_id", companyId)
-          .in("purchase_orders.status", ["sent", "processing", "completed"])
-          .not("delivery_days", "is", null)
-          .gt("delivery_days", 0)
-          .gte("purchase_orders.created_at", periodoRange.from)
-          .lte("purchase_orders.created_at", periodoRange.to),
-      ])
-
-      setQuotations((quotationsRes.data as Quotation[]) ?? [])
-
-      const parsedTarget = ltSettingRes.data?.value
-        ? Number.parseInt(String(ltSettingRes.data.value), 10)
-        : 10
-      const safeTarget = Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : 10
-      setLeadTimeTarget(safeTarget)
-      setEditingTarget(null)
-
-      const completedCount = completedOrdersCountRes.count ?? 0
-      setCompletedOrdersCount(completedCount)
-
-      const statusLabels: Record<string, string> = {
-        draft: "Rascunho",
-        processing: "Em Processamento",
-        sent: "Enviado",
-        completed: "Concluído",
-        cancelled: "Cancelado",
-        error: "Erro",
-        refused: "Recusado",
-      }
-      const pedidosStatus = Object.entries(
-        (
-          ((ordersByStatusRes.data as { status: PurchaseOrderStatus }[] | null) ?? []).reduce(
-            (acc, o) => {
-              const label = statusLabels[o.status] ?? o.status
-              acc[label] = (acc[label] ?? 0) + 1
-              return acc
-            },
-            {} as Record<string, number>,
-          )
-        ),
-      )
-        .map(([name, value], idx) => ({
-          name,
-          value,
-          color: AVATAR_COLORS[idx % AVATAR_COLORS.length],
-        }))
-        .sort((a, b) => b.value - a.value)
-      setPedidosPorStatus(pedidosStatus)
-
-      const topByOrders = Object.entries(
-        (
-          ((ordersBySupplierRes.data as { supplier_name: string }[] | null) ?? []).reduce(
-            (acc, o) => {
-              acc[o.supplier_name] = (acc[o.supplier_name] ?? 0) + 1
-              return acc
-            },
-            {} as Record<string, number>,
-          )
-        ),
-      )
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([name, value]) => ({ name, value }))
-      setTopSuppliersByOrders(topByOrders)
-
-      const quotationCategoryMap = new Map(
-        (
-          (quotationsForSpendRes.data as { id: string; category: string | null }[] | null) ?? []
-        ).map((q) => [q.id, q.category ?? "Sem Categoria"]),
-      )
-      const spendCat = Object.entries(
-        (
-          (
-            (spendItemsRes.data as {
-              total_price: number | null
-              purchase_orders:
-                | { quotation_id: string | null; supplier_name: string | null }
-                | { quotation_id: string | null; supplier_name: string | null }[]
-                | null
-            }[] | null) ?? []
-          ).reduce((acc, item) => {
-            const po = Array.isArray(item.purchase_orders)
-              ? item.purchase_orders[0]
-              : item.purchase_orders
-            const supplierName = po?.supplier_name?.trim() ?? ""
-            if (fornecedorFilter.length > 0 && !fornecedorFilter.includes(supplierName)) {
-              return acc
-            }
-            const quotationId = po?.quotation_id ?? null
-            const category = quotationId
-              ? (quotationCategoryMap.get(quotationId) ?? "Sem Categoria")
-              : "Sem Categoria"
-            acc[category] = (acc[category] ?? 0) + Number(item.total_price ?? 0)
-            return acc
-          }, {} as Record<string, number>)
-        ),
-      )
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 6)
-        .map(([name, value]) => ({ name, value }))
-      setSpendPorCategoria(spendCat)
-
-      const spendMonthMap = (
-        (monthlySpendOrdersRes.data as {
-          created_at: string
-          total_price: number | null
-          supplier_name: string | null
-        }[] | null) ?? []
-      )
-        .filter((po) => {
-          if (fornecedorFilter.length === 0) return true
-          const sn = po.supplier_name?.trim() ?? ""
-          return fornecedorFilter.includes(sn)
-        })
-        .reduce((acc, po) => {
-          const month = `${formatMonthShortBR(po.created_at)}/${formatDateBR(po.created_at).slice(-2)}`
-          acc[month] = (acc[month] ?? 0) + Number(po.total_price ?? 0)
-          return acc
-        }, {} as Record<string, number>)
-      setSpendPorMes(
-        Object.entries(spendMonthMap).map(([month, total]) => ({ month, total })),
-      )
-
-      const itensAtivos = ((itensCobertura.data ?? []) as {
-        id: string
-        target_price: number | null
-      }[])
-      const totalAtivos = itensAtivos.length
-      const comTarget = itensAtivos.filter(
-        (i) => i.target_price != null && Number(i.target_price) > 0,
-      ).length
-      setCoberturaPrecoAlvo(
-        totalAtivos > 0 ? Math.round((comTarget / totalAtivos) * 100) : null,
-      )
-
-      const processoOrders = ((processoOrdersRes.data ?? []) as {
-        created_at: string
-        requisition_code: string | null
-        supplier_name: string | null
-      }[]).filter((o) => {
-        if (fornecedorFilter.length === 0) return true
-        const sn = o.supplier_name?.trim() ?? ""
-        return fornecedorFilter.includes(sn)
-      })
-
-      const processoReqCodes = [
-        ...new Set(processoOrders.map((o) => o.requisition_code).filter(Boolean)),
-      ] as string[]
-
-      let processoReqMap = new Map<string, string>()
-      if (processoReqCodes.length > 0) {
-        const { data: processoReqs } = await supabase
-          .from("requisitions")
-          .select("code, created_at")
-          .eq("company_id", companyId)
-          .in("code", processoReqCodes)
-        processoReqMap = new Map(
-          ((processoReqs ?? []) as { code: string; created_at: string }[]).map((r) => [
-            r.code,
-            r.created_at,
-          ]),
-        )
-      }
-
-      const processoBuckets: { key: string; month: string; values: number[] }[] = []
-      for (let i = 5; i >= 0; i--) {
-        const d = subMonths(new Date(), i)
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-        const m = formatMonthShortBR(d)
-        processoBuckets.push({
-          key,
-          month: m,
-          values: [],
-        })
-      }
-      const processoBucketByKey = new Map(processoBuckets.map((b) => [b.key, b]))
-
-      const processoDiasPedido: number[] = []
-      processoOrders.forEach((po) => {
-        if (!po.requisition_code || !processoReqMap.has(po.requisition_code)) return
-        const reqDate = new Date(processoReqMap.get(po.requisition_code) as string)
-        const poDate = new Date(po.created_at)
-        const days = Math.max(
-          0,
-          Math.round((poDate.getTime() - reqDate.getTime()) / (1000 * 60 * 60 * 24)),
-        )
-        processoDiasPedido.push(days)
-        const d = new Date(po.created_at)
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-        const bucket = processoBucketByKey.get(key)
-        if (bucket) bucket.values.push(days)
-      })
-
-      setAvgLeadTime(
-        processoDiasPedido.length > 0
-          ? Math.round(
-              processoDiasPedido.reduce((a, v) => a + v, 0) / processoDiasPedido.length,
-            )
-          : null,
-      )
-
-      setLeadTimeProcessoMensal(
-        processoBuckets.map((b) => ({
-          month: b.month,
-          media: b.values.length
-            ? Math.round(b.values.reduce((a, v) => a + v, 0) / b.values.length)
-            : null,
-          meta: safeTarget,
-        })),
-      )
-
-      const fornecedorItems = ((fornecedorLeadTimeRes.data ?? []) as {
-        delivery_days: number | null
-        purchase_orders:
-          | { supplier_name: string | null; created_at: string }
-          | { supplier_name: string | null; created_at: string }[]
-          | null
-      }[]).filter((item) => {
-        if (fornecedorFilter.length === 0) return true
-        const po = Array.isArray(item.purchase_orders)
-          ? item.purchase_orders[0]
-          : item.purchase_orders
-        const sn = po?.supplier_name?.trim() ?? ""
-        return fornecedorFilter.includes(sn)
-      })
-
-      const fornecedorDaysMap = new Map<string, number[]>()
-      const allDays: number[] = []
-
-      fornecedorItems.forEach((item) => {
-        if (!item.delivery_days || item.delivery_days <= 0) return
-        const po = Array.isArray(item.purchase_orders)
-          ? item.purchase_orders[0]
-          : item.purchase_orders
-        const supplier = po?.supplier_name?.trim() || "Outros"
-        if (!fornecedorDaysMap.has(supplier)) fornecedorDaysMap.set(supplier, [])
-        fornecedorDaysMap.get(supplier)!.push(item.delivery_days)
-        allDays.push(item.delivery_days)
-      })
-
-      const mediaGeralForn =
-        allDays.length > 0
-          ? Math.round(allDays.reduce((a, b) => a + b, 0) / allDays.length)
-          : null
-      setLeadTimeFornecedorMedio(mediaGeralForn)
-
-      setLeadTimeFornecedorPorFornecedor(
-        Array.from(fornecedorDaysMap.entries())
-          .map(([name, days]) => ({
-            name,
-            media: Math.round(days.reduce((a, b) => a + b, 0) / days.length),
-          }))
-          .sort((a, b) => a.media - b.media)
-          .slice(0, 8),
-      )
-
-      setDashLoading(false)
-    }
-
-    fetchRealData()
-  }, [companyId, periodoRange, userLoading, fornecedorFilter])
+  const savingQuery = useQuery({
+    ...reportsSavingBundleQueryOptions(
+      supabase,
+      companyId ?? "",
+      periodoRange,
+      fornecedorFilter,
+      categoria,
+    ),
+    enabled: !userLoading && Boolean(companyId),
+  })
+  const savingBundle = savingQuery.data
+  const savingTotal = savingBundle?.savingTotal ?? null
+  const savingPorMes = savingBundle?.savingPorMes ?? []
+  const savingPorCategoria = savingBundle?.savingPorCategoria ?? []
+  const savingLoading = savingQuery.isLoading
 
   const diasNoPeriodo = useMemo(() => {
     const diff = new Date(periodoRange.to).getTime() - new Date(periodoRange.from).getTime()
@@ -703,131 +351,6 @@ export default function RelatoriosPage() {
     const yyyy = String(now.getFullYear())
     return `${dd}${mm}${yyyy}`
   }
-
-  const fetchSavingData = useCallback(async () => {
-    if (!companyId) return
-    setSavingLoading(true)
-    try {
-      const supabase = createClient()
-
-      const range = { from: periodoRange.from, to: periodoRange.to }
-      let query = supabase
-        .from("purchase_order_items")
-        .select(
-          "unit_price, quantity, quotation_item_id, purchase_orders!inner(company_id, status, created_at, quotation_id, supplier_name)",
-        )
-        .eq("purchase_orders.company_id", companyId)
-        .in("purchase_orders.status", ["sent", "processing", "completed"])
-        .not("quotation_item_id", "is", null)
-
-      if (fornecedorFilter.length > 0) {
-        query = query.in("purchase_orders.supplier_name", fornecedorFilter)
-      }
-
-      query = query.gte("purchase_orders.created_at", range.from).lte("purchase_orders.created_at", range.to)
-
-      const { data: poItems } = await query
-
-      const items = (poItems ?? []) as {
-        unit_price: number | null
-        quantity: number | null
-        quotation_item_id: string | null
-        purchase_orders:
-          | { created_at: string; quotation_id: string | null; supplier_name: string | null }
-          | { created_at: string; quotation_id: string | null; supplier_name: string | null }[]
-          | null
-      }[]
-
-      const qtItemIds = [
-        ...new Set(items.map((i) => i.quotation_item_id).filter((id): id is string => Boolean(id))),
-      ]
-
-      if (qtItemIds.length === 0) {
-        setSavingTotal(null)
-        setSavingPorMes([])
-        setSavingPorCategoria([])
-        return
-      }
-
-      const { data: qtItems } = await supabase
-        .from("quotation_items")
-        .select("id, target_price, quotation_id")
-        .in("id", qtItemIds)
-        .not("target_price", "is", null)
-
-      const targetMap = new Map(
-        ((qtItems ?? []) as { id: string; target_price: number; quotation_id: string }[]).map(
-          (i) => [i.id, { target: Number(i.target_price), quotationId: i.quotation_id }],
-        ),
-      )
-
-      const quotationIds = [
-        ...new Set(
-          Array.from(targetMap.values())
-            .map((v) => v.quotationId)
-            .filter((id): id is string => Boolean(id)),
-        ),
-      ]
-      let categoryMap = new Map<string, string>()
-      if (quotationIds.length > 0) {
-        const { data: qts } = await supabase
-          .from("quotations")
-          .select("id, category")
-          .in("id", quotationIds)
-        categoryMap = new Map(
-          ((qts ?? []) as { id: string; category: string | null }[]).map((q) => [
-            q.id,
-            q.category?.trim() || "Sem Categoria",
-          ]),
-        )
-      }
-
-      let total = 0
-      let hasAny = false
-      const monthMap = new Map<string, number>()
-      const catMap = new Map<string, number>()
-
-      items.forEach((item) => {
-        if (!item.quotation_item_id || item.unit_price == null || item.quantity == null) return
-        const info = targetMap.get(item.quotation_item_id)
-        if (!info) return
-
-        const po = Array.isArray(item.purchase_orders)
-          ? item.purchase_orders[0]
-          : item.purchase_orders
-
-        const category = categoryMap.get(info.quotationId) ?? "Sem Categoria"
-        if (categoria.length > 0 && !categoria.includes(category)) return
-
-        const saving = (info.target - Number(item.unit_price)) * Number(item.quantity)
-        total += saving
-        hasAny = true
-
-        if (po?.created_at) {
-          const month = `${formatMonthShortBR(po.created_at)}/${formatDateBR(po.created_at).slice(-2)}`
-          monthMap.set(month, (monthMap.get(month) ?? 0) + saving)
-        }
-
-        catMap.set(category, (catMap.get(category) ?? 0) + saving)
-      })
-
-      setSavingTotal(hasAny ? total : null)
-      setSavingPorMes(Array.from(monthMap.entries()).map(([month, saving]) => ({ month, saving })))
-      setSavingPorCategoria(
-        Array.from(catMap.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 6)
-          .map(([name, value]) => ({ name, value })),
-      )
-    } finally {
-      setSavingLoading(false)
-    }
-  }, [companyId, periodoRange, categoria, fornecedorFilter])
-
-  useEffect(() => {
-    if (userLoading || !companyId) return
-    void fetchSavingData()
-  }, [companyId, userLoading, fetchSavingData])
 
   const showUnavailableData = (message: string) => {
     try {
@@ -1160,7 +683,7 @@ export default function RelatoriosPage() {
 
   const handleExportSaving = async () => {
     if (!companyId) return
-    setSavingLoading(true)
+    setSavingExportLoading(true)
     try {
       const supabase = createClient()
       const range = { from: periodoRange.from, to: periodoRange.to }
@@ -1294,13 +817,13 @@ export default function RelatoriosPage() {
 
       await downloadExcel(workbook, `relatorio_saving_${getTodayDDMMYYYY()}.xlsx`)
     } finally {
-      setSavingLoading(false)
+      setSavingExportLoading(false)
     }
   }
 
   const handleExportLeadTime = async () => {
     if (!companyId) return
-    setSavingLoading(true)
+    setSavingExportLoading(true)
     try {
       const supabase = createClient()
       const range = { from: periodoRange.from, to: periodoRange.to }
@@ -1533,7 +1056,7 @@ export default function RelatoriosPage() {
 
       await downloadExcel(wb, `tempo_processo_compras_${getTodayDDMMYYYY()}.xlsx`)
     } finally {
-      setSavingLoading(false)
+      setSavingExportLoading(false)
     }
   }
 
@@ -1550,9 +1073,13 @@ export default function RelatoriosPage() {
         },
         { onConflict: "company_id,key" },
       )
-    setLeadTimeTarget(editingTarget)
-    setLeadTimeProcessoMensal((prev) => prev.map((row) => ({ ...row, meta: editingTarget })))
+    setSavedLeadTimeTarget(editingTarget)
     setEditingTarget(null)
+    if (companyId) {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.reportsBundle(companyId),
+      })
+    }
   }
 
   if (userLoading || permissionsLoading) {
@@ -2395,8 +1922,8 @@ export default function RelatoriosPage() {
                     disabled={
                       (relatorio.id === 1 && categoryLoading) ||
                       (relatorio.id === 2 && supplierLoading) ||
-                      (relatorio.id === 3 && savingLoading) ||
-                      (relatorio.id === 4 && savingLoading)
+                      (relatorio.id === 3 && savingExportLoading) ||
+                      (relatorio.id === 4 && savingExportLoading)
                     }
                     onClick={() => {
                       if (relatorio.id === 1) return void handleExportSpend()
@@ -2407,7 +1934,8 @@ export default function RelatoriosPage() {
                   >
                     {(relatorio.id === 1 && categoryLoading) ||
                     (relatorio.id === 2 && supplierLoading) ||
-                    ((relatorio.id === 3 || relatorio.id === 4) && savingLoading) ? (
+                    ((relatorio.id === 3 || relatorio.id === 4) &&
+                    savingExportLoading) ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Gerando...

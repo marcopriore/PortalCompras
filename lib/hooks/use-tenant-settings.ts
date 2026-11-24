@@ -1,64 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { useTenant } from "@/contexts/tenant-context"
 import {
   getTenantSettingDefinition,
   type TenantSettingKey,
 } from "@/lib/settings/tenant-settings-registry"
+import { tenantSettingsQueryOptions } from "@/lib/queries/tenant-settings-fetch"
 
 function defaultFor(key: TenantSettingKey): number {
   return getTenantSettingDefinition(key)?.defaultValue ?? 0
 }
 
-/** Dedup de fetches idênticos (Strict Mode / múltiplos hooks). */
-const tenantSettingsInflight = new Map<
-  string,
-  Promise<Partial<Record<TenantSettingKey, number>>>
->()
-
-function fetchTenantSettings(
-  keysKey: string,
-): Promise<Partial<Record<TenantSettingKey, number>>> {
-  const cached = tenantSettingsInflight.get(keysKey)
-  if (cached) return cached
-
-  const promise = fetch(`/api/tenant-settings?keys=${encodeURIComponent(keysKey)}`)
-    .then(async (res) => {
-      if (!res.ok) return {}
-      const data = (await res.json()) as {
-        settings?: Partial<Record<TenantSettingKey, number>>
-      }
-      return data.settings ?? {}
-    })
-    .catch(() => ({}))
-    .finally(() => {
-      // libera após um tick para novos mounts pós-navegação ainda compartilharem
-      setTimeout(() => tenantSettingsInflight.delete(keysKey), 1500)
-    })
-
-  tenantSettingsInflight.set(keysKey, promise)
-  return promise
-}
-
 export function useTenantSettings(keys: TenantSettingKey[]) {
+  const { companyId } = useTenant()
   const keysKey = useMemo(() => [...keys].sort().join(","), [keys])
-  const [settings, setSettings] = useState<Partial<Record<TenantSettingKey, number>>>(
-    {},
-  )
-  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
+  const query = useQuery({
+    ...tenantSettingsQueryOptions(companyId ?? "", keysKey),
+    enabled: Boolean(companyId),
+  })
 
-    void fetchTenantSettings(keysKey).then((next) => {
-      if (cancelled) return
-      setSettings(next)
-      setLoading(false)
-    })
-
-    return () => {
-      cancelled = true
-    }
-  }, [keysKey])
+  const settings = query.data ?? {}
 
   const get = useCallback(
     (key: TenantSettingKey): number => {
@@ -69,7 +31,7 @@ export function useTenantSettings(keys: TenantSettingKey[]) {
     [settings],
   )
 
-  return { settings, loading, get }
+  return { settings, loading: query.isLoading, get }
 }
 
 export function useTenantSetting(key: TenantSettingKey): {

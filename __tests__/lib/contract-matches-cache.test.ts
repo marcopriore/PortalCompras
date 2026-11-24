@@ -16,10 +16,9 @@ describe("contract-matches-cache", () => {
     expect(hashContractMatchSelections(a)).toBe(hashContractMatchSelections(b))
   })
 
-  it("cache retorna payload dentro do TTL", () => {
+  it("get/set não persistem payload (cache desativado)", () => {
     const key = buildContractMatchesCacheKey("co", "q", "hash1")
     setContractMatchesCache(key, { items: [{ id: "x" }] })
-    const hit = getContractMatchesCached<{ items: { id: string }[] }>(key)
-    expect(hit?.items[0]?.id).toBe("x")
+    expect(getContractMatchesCached(key)).toBeNull()
   })
 })

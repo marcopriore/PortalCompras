@@ -45,7 +45,12 @@ import {
 } from "lucide-react"
 import type { Contract } from "@/types/contracts"
 import { CONTRACT_KINDS } from "@/types/contracts"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import {
+  contractsListQueryOptions,
+  type ContractListRow,
+} from "@/lib/queries/contracts-list"
 import { formatResponsibleName } from "@/lib/quotations/ownership"
 import { TableRowActions } from "@/components/ui/table-row-actions"
 
@@ -88,16 +93,12 @@ function isExpiringSoon(c: Contract): boolean {
   return days >= 0 && days <= 30
 }
 
-type ContractListRow = Contract & { responsible_name?: string }
-
 export default function ContratosPage() {
   const router = useRouter()
+  const supabase = React.useMemo(() => createClient(), [])
   const { loading: userLoading, isSuperAdmin } = useUser()
   const { hasFeature, hasPermission, canWrite, loading: permissionsLoading } = usePermissions()
   const { companyId } = useTenant()
-
-  const [contracts, setContracts] = React.useState<ContractListRow[]>([])
-  const [loading, setLoading] = React.useState(true)
   const [search, setSearch] = React.useState("")
   const [filterStatus, setFilterStatus] = React.useState<string>("all")
   const [filterContractKind, setFilterContractKind] =
@@ -110,60 +111,16 @@ export default function ContratosPage() {
   const canCreateContract = canWrite("contract.create") || isSuperAdmin
   const canEditContract = canWrite("contract.edit") || isSuperAdmin
 
-  const loadContracts = React.useCallback(
-    async (silent = false) => {
-      if (userLoading || permissionsLoading) return
-      if (!companyId) return
-      if (!canAccess) {
-        if (!silent) setLoading(false)
-        return
-      }
+  const listEnabled =
+    !userLoading && !permissionsLoading && !!companyId && canAccess
 
-      if (!silent) setLoading(true)
-      try {
-        const res = await fetch("/api/contracts")
-        const data = (await res.json()) as { contracts?: Contract[] }
-        if (res.ok && Array.isArray(data.contracts)) {
-          const rows = data.contracts
-          const ownerIds = [
-            ...new Set(
-              rows
-                .map((c) => c.created_by)
-                .filter((id): id is string => Boolean(id)),
-            ),
-          ]
-          let nameById = new Map<string, string>()
-          if (ownerIds.length > 0) {
-            const supabase = createClient()
-            const { data: profiles } = await supabase
-              .from("profiles")
-              .select("id, full_name")
-              .in("id", ownerIds)
-            nameById = new Map(
-              ((profiles ?? []) as { id: string; full_name: string | null }[]).map(
-                (p) => [p.id, p.full_name ?? ""],
-              ),
-            )
-          }
-          setContracts(
-            rows.map((c) => ({
-              ...c,
-              responsible_name: c.created_by
-                ? nameById.get(c.created_by) ?? ""
-                : "",
-            })),
-          )
-        }
-      } finally {
-        if (!silent) setLoading(false)
-      }
-    },
-    [userLoading, permissionsLoading, canAccess, companyId],
-  )
+  const contractsQuery = useQuery({
+    ...contractsListQueryOptions(supabase, companyId ?? ""),
+    enabled: listEnabled,
+  })
 
-  React.useEffect(() => {
-    void loadContracts(false)
-  }, [loadContracts, canAccess])
+  const contracts: ContractListRow[] = contractsQuery.data ?? []
+  const loading = contractsQuery.isLoading
 
   const total = contracts.length
   const ativos = contracts.filter((c) => c.status === "active").length

@@ -3,7 +3,10 @@ import { redirect } from "next/navigation"
 import { cookies, headers } from "next/headers"
 import { Suspense } from "react"
 import { createClient } from "@/lib/supabase/server"
+import { loadSessionUser } from "@/lib/auth/session-user"
 import { TenantProvider } from "@/contexts/tenant-context"
+import { SessionUserProvider } from "@/contexts/session-user-context"
+import { ScopedQueryBridge } from "@/components/providers/scoped-query-bridge"
 import { ImpersonationProvider } from "@/contexts/impersonation-context"
 import { ImpersonationBanner } from "@/components/impersonation/impersonation-banner"
 import { Sidebar } from "@/components/layout/sidebar"
@@ -30,35 +33,21 @@ export default async function SolicitanteLayout({
   }
 
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const sessionUser = await loadSessionUser(supabase)
 
-  if (!user) {
+  if (!sessionUser) {
     redirect("/login")
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("company_id, full_name, is_superadmin, profile_type, role, roles")
-    .eq("id", user.id)
-    .single()
+  const isMaster = sessionUser.isSuperAdmin
+  const isAdmin = sessionUser.roles.includes("admin")
 
-  if (!profile) {
+  if (sessionUser.profileType !== "requester" && !isMaster && !isAdmin) {
     redirect("/login")
   }
 
-  const roles = (profile.roles as string[] | null) ?? []
-  const isMaster = Boolean(profile.is_superadmin)
-  const isAdmin = profile.role === "admin" || roles.includes("admin")
-  const profileType = profile.profile_type ?? "buyer"
-
-  if (profileType !== "requester" && !isMaster && !isAdmin) {
-    redirect("/login")
-  }
-
-  const userName = profile.full_name?.trim() || user.email || "Usuário"
-  const userEmail = user.email || ""
+  const userName = sessionUser.fullName?.trim() || sessionUser.email || "Usuário"
+  const userEmail = sessionUser.email || ""
   const initials =
     userName
       .split(" ")
@@ -70,32 +59,36 @@ export default async function SolicitanteLayout({
   const cookieStore = await cookies()
   const selectedCompanyId =
     cookieStore.get("selected_company_id")?.value ||
-    profile.company_id ||
+    sessionUser.profileCompanyId ||
     null
 
   return (
     <TenantProvider initialCompanyId={selectedCompanyId}>
-      <ImpersonationProvider>
-        <div className="flex h-screen overflow-hidden">
-          <Sidebar type="solicitante" />
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <ImpersonationBanner />
-            <Header
-              userName={userName}
-              userEmail={userEmail}
-              userInitials={initials}
-            />
-            <main className="flex-1 overflow-auto p-6 bg-background">
-              <Suspense fallback={null}>
-                <NavigationProgress />
-              </Suspense>
-              <PasswordExpiryGuard portal="comprador">
-                {children}
-              </PasswordExpiryGuard>
-            </main>
-          </div>
-        </div>
-      </ImpersonationProvider>
+      <SessionUserProvider initialUser={sessionUser}>
+        <ScopedQueryBridge userId={sessionUser.userId}>
+          <ImpersonationProvider>
+            <div className="flex h-screen overflow-hidden">
+              <Sidebar type="solicitante" />
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <ImpersonationBanner />
+                <Header
+                  userName={userName}
+                  userEmail={userEmail}
+                  userInitials={initials}
+                />
+                <main className="flex-1 overflow-auto p-6 bg-background">
+                  <Suspense fallback={null}>
+                    <NavigationProgress />
+                  </Suspense>
+                  <PasswordExpiryGuard portal="comprador">
+                    {children}
+                  </PasswordExpiryGuard>
+                </main>
+              </div>
+            </div>
+          </ImpersonationProvider>
+        </ScopedQueryBridge>
+      </SessionUserProvider>
     </TenantProvider>
   )
 }

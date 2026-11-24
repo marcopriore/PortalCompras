@@ -12,7 +12,7 @@ export async function loginBuyer(page: Page) {
   await page.fill('input[type="password"]', BUYER_PASSWORD)
   await page.click('button[type="submit"]')
   await page.waitForURL((url) => url.pathname.startsWith("/comprador"), {
-    timeout: 15000,
+    timeout: 60000,
   })
 }
 

@@ -1,0 +1,807 @@
+{
+  "label": "fase4",
+  "generatedAt": "2026-11-24T13:28:11.818Z",
+  "runsPerRoute": 3,
+  "routes": [
+    {
+      "id": "dashboard",
+      "path": "/comprador"
+    },
+    {
+      "id": "requisicoes",
+      "path": "/comprador/requisicoes"
+    },
+    {
+      "id": "cotacoes",
+      "path": "/comprador/cotacoes"
+    },
+    {
+      "id": "pedidos",
+      "path": "/comprador/pedidos"
+    },
+    {
+      "id": "contratos",
+      "path": "/comprador/contratos"
+    },
+    {
+      "id": "fornecedores",
+      "path": "/comprador/fornecedores"
+    },
+    {
+      "id": "itens",
+      "path": "/comprador/itens"
+    },
+    {
+      "id": "aprovacoes",
+      "path": "/comprador/aprovacoes"
+    },
+    {
+      "id": "catalogo",
+      "path": "/comprador/catalogo"
+    },
+    {
+      "id": "relatorios",
+      "path": "/comprador/relatorios"
+    },
+    {
+      "id": "pedido-detalhe",
+      "path": "/comprador/pedidos/cc46631f-fa0d-4846-ad11-105d9269972c"
+    },
+    {
+      "id": "equalizacao",
+      "path": "/comprador/cotacoes/3c1a465b-f4d4-461e-a0b5-ab7609d6480d/equalizacao"
+    }
+  ],
+  "summary": [
+    {
+      "routeId": "dashboard",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 4734,
+      "requests_median": 43,
+      "serial_median": 4,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "dashboard",
+      "mode": "nav",
+      "n": 3,
+      "ms_median": 1354,
+      "requests_median": 30,
+      "serial_median": 1,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "requisicoes",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 3475,
+      "requests_median": 16,
+      "serial_median": 5,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "requisicoes",
+      "mode": "nav",
+      "n": 3,
+      "ms_median": 1410,
+      "requests_median": 22,
+      "serial_median": 2,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "cotacoes",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 4740,
+      "requests_median": 16,
+      "serial_median": 4,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "cotacoes",
+      "mode": "nav",
+      "n": 3,
+      "ms_median": 1648,
+      "requests_median": 24,
+      "serial_median": 2,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "pedidos",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 3619,
+      "requests_median": 17,
+      "serial_median": 4,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "pedidos",
+      "mode": "nav",
+      "n": 3,
+      "ms_median": 1601,
+      "requests_median": 12,
+      "serial_median": 1,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "contratos",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 4203,
+      "requests_median": 13,
+      "serial_median": 2,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "contratos",
+      "mode": "nav",
+      "n": 3,
+      "ms_median": 1666,
+      "requests_median": 1,
+      "serial_median": 1,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "fornecedores",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 4301,
+      "requests_median": 18,
+      "serial_median": 4,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "fornecedores",
+      "mode": "nav",
+      "n": 3,
+      "ms_median": 2182,
+      "requests_median": 28,
+      "serial_median": 2,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "itens",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 3570,
+      "requests_median": 18,
+      "serial_median": 4,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "itens",
+      "mode": "nav",
+      "n": 3,
+      "ms_median": 1378,
+      "requests_median": 32,
+      "serial_median": 1,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "aprovacoes",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 3333,
+      "requests_median": 17,
+      "serial_median": 5,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "aprovacoes",
+      "mode": "nav",
+      "n": 3,
+      "ms_median": 1121,
+      "requests_median": 2,
+      "serial_median": 2,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "catalogo",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 3309,
+      "requests_median": 15,
+      "serial_median": 3,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "catalogo",
+      "mode": "nav",
+      "n": 3,
+      "ms_median": 1165,
+      "requests_median": 5,
+      "serial_median": 1,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "relatorios",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 3711,
+      "requests_median": 25,
+      "serial_median": 3,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "relatorios",
+      "mode": "nav",
+      "n": 3,
+      "ms_median": 1487,
+      "requests_median": 33,
+      "serial_median": 1,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "pedido-detalhe",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 3583,
+      "requests_median": 22,
+      "serial_median": 6,
+      "ok_rate": 1,
+      "errors": []
+    },
+    {
+      "routeId": "equalizacao",
+      "mode": "cold",
+      "n": 3,
+      "ms_median": 3932,
+      "requests_median": 30,
+      "serial_median": 3,
+      "ok_rate": 1,
+      "errors": []
+    }
+  ],
+  "raw": [
+    {
+      "routeId": "dashboard",
+      "mode": "cold",
+      "ms": 4734,
+      "requests": 66,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "dashboard",
+      "mode": "nav",
+      "ms": 1847,
+      "requests": 30,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "requisicoes",
+      "mode": "cold",
+      "ms": 6111,
+      "requests": 16,
+      "serial": 5,
+      "ok": true
+    },
+    {
+      "routeId": "requisicoes",
+      "mode": "nav",
+      "ms": 2265,
+      "requests": 10,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "cotacoes",
+      "mode": "cold",
+      "ms": 9674,
+      "requests": 13,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "cotacoes",
+      "mode": "nav",
+      "ms": 2514,
+      "requests": 2,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "pedidos",
+      "mode": "cold",
+      "ms": 4547,
+      "requests": 15,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "pedidos",
+      "mode": "nav",
+      "ms": 1601,
+      "requests": 4,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "contratos",
+      "mode": "cold",
+      "ms": 4203,
+      "requests": 13,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "contratos",
+      "mode": "nav",
+      "ms": 1666,
+      "requests": 34,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "fornecedores",
+      "mode": "cold",
+      "ms": 5750,
+      "requests": 21,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "fornecedores",
+      "mode": "nav",
+      "ms": 2830,
+      "requests": 28,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "itens",
+      "mode": "cold",
+      "ms": 5380,
+      "requests": 18,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "itens",
+      "mode": "nav",
+      "ms": 3403,
+      "requests": 36,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "aprovacoes",
+      "mode": "cold",
+      "ms": 5103,
+      "requests": 14,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "aprovacoes",
+      "mode": "nav",
+      "ms": 1416,
+      "requests": 32,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "catalogo",
+      "mode": "cold",
+      "ms": 4294,
+      "requests": 17,
+      "serial": 5,
+      "ok": true
+    },
+    {
+      "routeId": "catalogo",
+      "mode": "nav",
+      "ms": 1138,
+      "requests": 4,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "relatorios",
+      "mode": "cold",
+      "ms": 5161,
+      "requests": 25,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "relatorios",
+      "mode": "nav",
+      "ms": 1648,
+      "requests": 42,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "pedido-detalhe",
+      "mode": "cold",
+      "ms": 5778,
+      "requests": 22,
+      "serial": 6,
+      "ok": true
+    },
+    {
+      "routeId": "equalizacao",
+      "mode": "cold",
+      "ms": 12241,
+      "requests": 45,
+      "serial": 9,
+      "ok": true
+    },
+    {
+      "routeId": "dashboard",
+      "mode": "cold",
+      "ms": 5088,
+      "requests": 41,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "dashboard",
+      "mode": "nav",
+      "ms": 1354,
+      "requests": 30,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "requisicoes",
+      "mode": "cold",
+      "ms": 3394,
+      "requests": 16,
+      "serial": 5,
+      "ok": true
+    },
+    {
+      "routeId": "requisicoes",
+      "mode": "nav",
+      "ms": 1410,
+      "requests": 22,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "cotacoes",
+      "mode": "cold",
+      "ms": 4740,
+      "requests": 17,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "cotacoes",
+      "mode": "nav",
+      "ms": 1648,
+      "requests": 30,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "pedidos",
+      "mode": "cold",
+      "ms": 3619,
+      "requests": 19,
+      "serial": 6,
+      "ok": true
+    },
+    {
+      "routeId": "pedidos",
+      "mode": "nav",
+      "ms": 1776,
+      "requests": 12,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "contratos",
+      "mode": "cold",
+      "ms": 4303,
+      "requests": 13,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "contratos",
+      "mode": "nav",
+      "ms": 1870,
+      "requests": 1,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "fornecedores",
+      "mode": "cold",
+      "ms": 4301,
+      "requests": 18,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "fornecedores",
+      "mode": "nav",
+      "ms": 2182,
+      "requests": 5,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "itens",
+      "mode": "cold",
+      "ms": 3570,
+      "requests": 17,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "itens",
+      "mode": "nav",
+      "ms": 1378,
+      "requests": 32,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "aprovacoes",
+      "mode": "cold",
+      "ms": 3333,
+      "requests": 17,
+      "serial": 5,
+      "ok": true
+    },
+    {
+      "routeId": "aprovacoes",
+      "mode": "nav",
+      "ms": 1081,
+      "requests": 2,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "catalogo",
+      "mode": "cold",
+      "ms": 3222,
+      "requests": 15,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "catalogo",
+      "mode": "nav",
+      "ms": 1165,
+      "requests": 11,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "relatorios",
+      "mode": "cold",
+      "ms": 3483,
+      "requests": 25,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "relatorios",
+      "mode": "nav",
+      "ms": 1449,
+      "requests": 33,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "pedido-detalhe",
+      "mode": "cold",
+      "ms": 3583,
+      "requests": 22,
+      "serial": 5,
+      "ok": true
+    },
+    {
+      "routeId": "equalizacao",
+      "mode": "cold",
+      "ms": 3536,
+      "requests": 30,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "dashboard",
+      "mode": "cold",
+      "ms": 3327,
+      "requests": 43,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "dashboard",
+      "mode": "nav",
+      "ms": 1336,
+      "requests": 22,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "requisicoes",
+      "mode": "cold",
+      "ms": 3475,
+      "requests": 15,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "requisicoes",
+      "mode": "nav",
+      "ms": 1384,
+      "requests": 22,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "cotacoes",
+      "mode": "cold",
+      "ms": 3060,
+      "requests": 16,
+      "serial": 5,
+      "ok": true
+    },
+    {
+      "routeId": "cotacoes",
+      "mode": "nav",
+      "ms": 1578,
+      "requests": 24,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "pedidos",
+      "mode": "cold",
+      "ms": 2905,
+      "requests": 17,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "pedidos",
+      "mode": "nav",
+      "ms": 1423,
+      "requests": 24,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "contratos",
+      "mode": "cold",
+      "ms": 3192,
+      "requests": 16,
+      "serial": 5,
+      "ok": true
+    },
+    {
+      "routeId": "contratos",
+      "mode": "nav",
+      "ms": 1205,
+      "requests": 1,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "fornecedores",
+      "mode": "cold",
+      "ms": 4003,
+      "requests": 18,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "fornecedores",
+      "mode": "nav",
+      "ms": 2169,
+      "requests": 28,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "itens",
+      "mode": "cold",
+      "ms": 3342,
+      "requests": 18,
+      "serial": 5,
+      "ok": true
+    },
+    {
+      "routeId": "itens",
+      "mode": "nav",
+      "ms": 1329,
+      "requests": 24,
+      "serial": 4,
+      "ok": true
+    },
+    {
+      "routeId": "aprovacoes",
+      "mode": "cold",
+      "ms": 3288,
+      "requests": 17,
+      "serial": 5,
+      "ok": true
+    },
+    {
+      "routeId": "aprovacoes",
+      "mode": "nav",
+      "ms": 1121,
+      "requests": 2,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "catalogo",
+      "mode": "cold",
+      "ms": 3309,
+      "requests": 14,
+      "serial": 2,
+      "ok": true
+    },
+    {
+      "routeId": "catalogo",
+      "mode": "nav",
+      "ms": 1319,
+      "requests": 5,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "relatorios",
+      "mode": "cold",
+      "ms": 3711,
+      "requests": 25,
+      "serial": 3,
+      "ok": true
+    },
+    {
+      "routeId": "relatorios",
+      "mode": "nav",
+      "ms": 1487,
+      "requests": 21,
+      "serial": 1,
+      "ok": true
+    },
+    {
+      "routeId": "pedido-detalhe",
+      "mode": "cold",
+      "ms": 3536,
+      "requests": 23,
+      "serial": 6,
+      "ok": true
+    },
+    {
+      "routeId": "equalizacao",
+      "mode": "cold",
+      "ms": 3932,
+      "requests": 26,
+      "serial": 1,
+      "ok": true
+    }
+  ]
+}

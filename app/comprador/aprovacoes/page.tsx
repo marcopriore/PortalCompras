@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { formatDateBR } from "@/lib/formato-data"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
@@ -44,6 +45,13 @@ import {
 } from "lucide-react"
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { TableRowActions } from "@/components/ui/table-row-actions"
+import {
+  approvalsQueueQueryOptions,
+  type ApprovalPurchaseOrderEntity,
+  type ApprovalRequisitionEntity,
+  type ApprovalRequestRow,
+} from "@/lib/queries/approvals-queue"
+import { queryKeys } from "@/lib/queries/keys"
 
 function SearchWithClear({
   value,
@@ -86,38 +94,9 @@ function SearchWithClear({
 type ApprovalStatus = "pending" | "approved" | "rejected"
 type Priority = "normal" | "urgent" | "critical"
 
-type ApprovalRequest = {
-  id: string
-  company_id: string
-  flow: "requisition" | "order" | "catalog_order"
-  entity_id: string
-  approver_id: string | null
-  approver_name: string | null
-  status: ApprovalStatus
-  rejection_reason: string | null
-  decided_at: string | null
-  created_at: string
-}
-
-type Requisition = {
-  id: string
-  code: string
-  title: string
-  cost_center: string | null
-  status: string
-  requester_name: string | null
-  created_at: string
-  priority: Priority
-}
-
-type PurchaseOrder = {
-  id: string
-  code: string
-  total_price: number | null
-  supplier_name: string
-  status: string
-  created_at: string
-}
+type ApprovalRequest = ApprovalRequestRow
+type Requisition = ApprovalRequisitionEntity
+type PurchaseOrder = ApprovalPurchaseOrderEntity
 
 type ApprovalRequisitionRow = {
   request: ApprovalRequest
@@ -158,13 +137,75 @@ function getPriorityMeta(priority: Priority): { label: string; className: string
 
 export default function AprovacoesPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { companyId, userId, loading: userLoading } = useUser()
   const { hasPermission, loading: permissionsLoading } = usePermissions()
-  const [loading, setLoading] = React.useState(true)
 
-  const [requisitionRows, setRequisitionRows] = React.useState<ApprovalRequisitionRow[]>([])
-  const [orderRows, setOrderRows] = React.useState<ApprovalOrderRow[]>([])
-  const [catalogOrderRows, setCatalogOrderRows] = React.useState<ApprovalOrderRow[]>([])
+  const queueEnabled =
+    !userLoading && !permissionsLoading && Boolean(companyId && userId)
+
+  const approvalsQuery = useQuery({
+    ...approvalsQueueQueryOptions(companyId ?? "", userId ?? ""),
+    enabled: queueEnabled,
+  })
+
+  const loading = approvalsQuery.isLoading
+  const isRefreshing =
+    approvalsQuery.isFetching && !approvalsQuery.isLoading
+
+  const { requisitionRows, orderRows, catalogOrderRows } = React.useMemo(() => {
+    const data = approvalsQuery.data
+    if (!data) {
+      return {
+        requisitionRows: [] as ApprovalRequisitionRow[],
+        orderRows: [] as ApprovalOrderRow[],
+        catalogOrderRows: [] as ApprovalOrderRow[],
+      }
+    }
+
+    const reqMap = new Map(data.requisitions.map((r) => [r.id, r]))
+    const orderMap = new Map(data.orders.map((o) => [o.id, o]))
+    const catalogMap = new Map(data.catalog_orders.map((o) => [o.id, o]))
+
+    return {
+      requisitionRows: data.requisition_requests.map((request) => ({
+        request,
+        requisition: reqMap.get(request.entity_id) ?? null,
+      })),
+      orderRows: data.order_requests.map((request) => ({
+        request,
+        order: orderMap.get(request.entity_id) ?? null,
+      })),
+      catalogOrderRows: data.catalog_order_requests.map((request) => ({
+        request,
+        order: catalogMap.get(request.entity_id) ?? null,
+      })),
+    }
+  }, [approvalsQuery.data])
+
+  const lastUpdated = React.useMemo(() => {
+    if (!approvalsQuery.dataUpdatedAt) return null
+    return new Date(approvalsQuery.dataUpdatedAt)
+  }, [approvalsQuery.dataUpdatedAt])
+
+  const invalidateApprovals = React.useCallback(() => {
+    if (!companyId || !userId) return
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.approvalsQueue(companyId, userId),
+    })
+  }, [queryClient, companyId, userId])
+
+  React.useEffect(() => {
+    if (approvalsQuery.isError) {
+      toast.error("Erro ao carregar aprovações.")
+    }
+  }, [approvalsQuery.isError])
+
+  React.useEffect(() => {
+    if (approvalsQuery.isSuccess) {
+      window.dispatchEvent(new Event("approval-updated"))
+    }
+  }, [approvalsQuery.isSuccess, approvalsQuery.dataUpdatedAt])
 
   const [activeTab, setActiveTab] = React.useState("requisitions")
 
@@ -190,92 +231,10 @@ export default function AprovacoesPage() {
   const [rejectSaving, setRejectSaving] = React.useState(false)
 
   const [actionLoading, setActionLoading] = React.useState<string | null>(null)
-  const [lastUpdated, setLastUpdated] = React.useState<Date | null>(null)
-  const [isRefreshing, setIsRefreshing] = React.useState(false)
-  const approvalContextRef = React.useRef({ companyId, userId })
-  approvalContextRef.current = { companyId, userId }
-
-  const loadData = React.useCallback(async (silent = false) => {
-    if (userLoading || permissionsLoading || !companyId || !userId) return
-    const started = { companyId, userId }
-    const stillHere = () =>
-      approvalContextRef.current.companyId === started.companyId &&
-      approvalContextRef.current.userId === started.userId
-
-    if (!silent) setLoading(true)
-
-    try {
-      const res = await fetch("/api/approvals/queue", { cache: "no-store" })
-      const payload = (await res.json()) as {
-        error?: string
-        data?: {
-          requisition_requests: ApprovalRequest[]
-          order_requests: ApprovalRequest[]
-          catalog_order_requests?: ApprovalRequest[]
-          requisitions: Requisition[]
-          orders: PurchaseOrder[]
-          catalog_orders?: PurchaseOrder[]
-        }
-      }
-
-      if (!res.ok) {
-        if (!silent) toast.error(payload.error || "Erro ao carregar aprovações.")
-        if (stillHere() && !silent) setLoading(false)
-        return
-      }
-
-      const reqRequests = payload.data?.requisition_requests ?? []
-      const orderRequests = payload.data?.order_requests ?? []
-      const catalogRequests = payload.data?.catalog_order_requests ?? []
-      const requisitions = payload.data?.requisitions ?? []
-      const orders = payload.data?.orders ?? []
-      const catalogOrders = payload.data?.catalog_orders ?? []
-
-      const reqMap = new Map(requisitions.map((r) => [r.id, r]))
-      const orderMap = new Map(orders.map((o) => [o.id, o]))
-      const catalogMap = new Map(catalogOrders.map((o) => [o.id, o]))
-
-      if (!stillHere()) return
-      setRequisitionRows(
-        reqRequests.map((request) => ({
-          request,
-          requisition: reqMap.get(request.entity_id) ?? null,
-        })),
-      )
-      setOrderRows(
-        orderRequests.map((request) => ({
-          request,
-          order: orderMap.get(request.entity_id) ?? null,
-        })),
-      )
-      setCatalogOrderRows(
-        catalogRequests.map((request) => ({
-          request,
-          order: catalogMap.get(request.entity_id) ?? null,
-        })),
-      )
-      setLastUpdated(new Date())
-      window.dispatchEvent(new Event("approval-updated"))
-    } catch {
-      if (!silent) toast.error("Erro ao carregar aprovações.")
-    } finally {
-      if (stillHere() && !silent) setLoading(false)
-    }
-  }, [companyId, userId, userLoading, permissionsLoading])
-
-  React.useEffect(() => {
-    if (userLoading || permissionsLoading || !companyId || !userId) return
-    void loadData(false)
-  }, [companyId, userId, userLoading, permissionsLoading, loadData])
 
   const refreshAprovacoes = React.useCallback(async () => {
-    setIsRefreshing(true)
-    try {
-      await loadData(true)
-    } finally {
-      setIsRefreshing(false)
-    }
-  }, [loadData])
+    await approvalsQuery.refetch()
+  }, [approvalsQuery])
 
   const pollingIntervalMs = usePollingIntervalMs()
 
@@ -387,8 +346,7 @@ export default function AprovacoesPage() {
             ? "Pedido do catálogo aprovado e enviado ao fornecedor."
             : "Pedido aprovado com sucesso.",
       )
-      await loadData()
-      window.dispatchEvent(new Event("approval-updated"))
+      invalidateApprovals()
     } catch {
       toast.error("Erro ao aprovar. Tente novamente.")
     } finally {
@@ -433,8 +391,7 @@ export default function AprovacoesPage() {
       setRejectDialogOpen(false)
       setRejectTarget(null)
       setRejectReason("")
-      await loadData()
-      window.dispatchEvent(new Event("approval-updated"))
+      invalidateApprovals()
     } catch {
       toast.error("Erro ao reprovar. Tente novamente.")
     } finally {
