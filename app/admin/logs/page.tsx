@@ -290,7 +290,7 @@ export default function AdminLogsPage() {
   const tenantsQuery = useQuery({
     ...adminCompanyOptionsQueryOptions(() => supabase),
   })
-  const tenants = tenantsQuery.data ?? []
+  const tenants = Array.isArray(tenantsQuery.data) ? tenantsQuery.data : []
 
   const bumpPage = () => setPage(1)
 

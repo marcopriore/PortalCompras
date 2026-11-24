@@ -24,7 +24,7 @@ export function MonitorContent() {
   const tenantsQuery = useQuery({
     ...adminCompanyOptionsQueryOptions(() => supabase),
   })
-  const tenants = tenantsQuery.data ?? []
+  const tenants = Array.isArray(tenantsQuery.data) ? tenantsQuery.data : []
   const loading = tenantsQuery.isLoading
 
   const companyId = searchParams.get("company_id") ?? ""

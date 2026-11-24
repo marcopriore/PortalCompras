@@ -217,6 +217,7 @@ export const queryKeys = {
     ] as const,
 
   adminCompaniesList: () => ["admin", "companies", "list"] as const,
+  adminCompanyOptions: () => ["admin", "companies", "options"] as const,
 
   adminProfilesCount: () => ["admin", "profiles", "count"] as const,
 

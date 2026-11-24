@@ -69,7 +69,7 @@ export function adminCompanyOptionsQueryOptions(
   supabaseFactory: SupabaseClientFactory,
 ) {
   return queryOptions({
-    queryKey: queryKeys.adminCompaniesList(),
+    queryKey: queryKeys.adminCompanyOptions(),
     queryFn: () => fetchAdminCompanyOptions(supabaseFactory()),
   })
 }
