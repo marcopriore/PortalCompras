@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import { companyBranchesOptionsQueryOptions } from "@/lib/queries/company-branches-options"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -48,50 +50,19 @@ export function BranchSelect({
   clearable = false,
   className,
 }: BranchSelectProps) {
-  const [options, setOptions] = React.useState<BranchOption[]>([])
-  const [loading, setLoading] = React.useState(false)
+  const supabase = React.useMemo(() => createClient(), [])
+  const inactiveKey = includeInactiveCodes.join("|")
+  const branchesQuery = useQuery({
+    ...companyBranchesOptionsQueryOptions(
+      companyId ?? "",
+      includeInactiveCodes,
+      () => supabase,
+    ),
+    enabled: Boolean(companyId),
+  })
 
-  React.useEffect(() => {
-    if (!companyId) {
-      setOptions([])
-      return
-    }
-    let alive = true
-    const load = async () => {
-      setLoading(true)
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("company_branches")
-        .select("code, name, active")
-        .eq("company_id", companyId)
-        .order("code", { ascending: true })
-
-      if (!alive) return
-      const rows = (data ?? []) as {
-        code: string
-        name: string
-        active: boolean
-      }[]
-      const allowInactive = new Set(
-        includeInactiveCodes.filter(Boolean).map((c) => c.trim().toUpperCase()),
-      )
-      setOptions(
-        rows
-          .filter(
-            (r) => r.active || allowInactive.has(r.code.trim().toUpperCase()),
-          )
-          .map((r) => ({
-            code: r.code,
-            name: r.name,
-          })),
-      )
-      setLoading(false)
-    }
-    void load()
-    return () => {
-      alive = false
-    }
-  }, [companyId, includeInactiveCodes.join("|")])
+  const options = branchesQuery.data ?? []
+  const loading = branchesQuery.isLoading
 
   return (
     <div className={className ?? (hideLabel ? "space-y-0" : "space-y-2")}>

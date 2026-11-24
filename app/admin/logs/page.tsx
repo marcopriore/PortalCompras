@@ -1,7 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
+import {
+  adminAuditLogsQueryOptions,
+  type AdminAuditLogRow,
+} from '@/lib/queries/admin-audit-logs'
+import { adminCompanyOptionsQueryOptions } from '@/lib/queries/admin-companies-list'
 import { formatDateTimeBR, formatDateTimeSecondsBR } from '@/lib/formato-data'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -22,19 +28,6 @@ import {
 } from '@/components/ui/table'
 import { ScrollText, Sparkles } from 'lucide-react'
 import { TABLE_PAGE_SIZE, TablePagination } from '@/components/ui/table-pagination'
-
-type AuditLog = {
-  id: string
-  company_id: string | null
-  user_name: string | null
-  event_type: string
-  entity: string | null
-  entity_id: string | null
-  description: string
-  metadata: Record<string, unknown> | null
-  created_at: string
-  companies?: { name: string } | null
-}
 
 type AiLogData = {
   prompt: string
@@ -254,6 +247,7 @@ const AUDIT_EVENT_TYPES_FOR_FILTER = AUDIT_EVENT_TYPE_VALUES.map((value) => ({
 }))
 
 export default function AdminLogsPage() {
+  const supabase = useMemo(() => createClient(), [])
   const [search, setSearch] = useState('')
   const [userFilter, setUserFilter] = useState('')
   const [tenantFilter, setTenantFilter] = useState('')
@@ -261,10 +255,6 @@ export default function AdminLogsPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [page, setPage] = useState(1)
-  const [totalCount, setTotalCount] = useState(0)
-  const [logs, setLogs] = useState<AuditLog[]>([])
-  const [loading, setLoading] = useState(false)
-  const [tenants, setTenants] = useState<{ id: string; name: string }[]>([])
   const [aiLogDialog, setAiLogDialog] = useState<{
     open: boolean
     logId: string | null
@@ -277,101 +267,34 @@ export default function AdminLogsPage() {
     loading: false,
   })
 
-  const prevFiltersRef = useRef({
-    search: '',
-    userFilter: '',
-    tenantFilter: '',
-    eventTypeFilter: '',
-    dateFrom: '',
-    dateTo: '',
-  })
-
-  const fetchLogs = useCallback(async () => {
-    const snapshot = {
+  const auditFilters = useMemo(
+    () => ({
       search,
       userFilter,
       tenantFilter,
       eventTypeFilter,
       dateFrom,
       dateTo,
-    }
-    const prev = prevFiltersRef.current
-    const filtersChanged =
-      prev.search !== snapshot.search ||
-      prev.userFilter !== snapshot.userFilter ||
-      prev.tenantFilter !== snapshot.tenantFilter ||
-      prev.eventTypeFilter !== snapshot.eventTypeFilter ||
-      prev.dateFrom !== snapshot.dateFrom ||
-      prev.dateTo !== snapshot.dateTo
+    }),
+    [search, userFilter, tenantFilter, eventTypeFilter, dateFrom, dateTo],
+  )
 
-    if (filtersChanged) {
-      prevFiltersRef.current = snapshot
-      if (page !== 1) {
-        setLoading(true)
-        setPage(1)
-        return
-      }
-    }
+  const logsQuery = useQuery({
+    ...adminAuditLogsQueryOptions(auditFilters, page, PAGE_SIZE, () => supabase),
+  })
 
-    setLoading(true)
+  const logs: AdminAuditLogRow[] = logsQuery.data?.logs ?? []
+  const totalCount = logsQuery.data?.totalCount ?? 0
+  const loading = logsQuery.isLoading
 
-    const supabase = createClient()
-    const from = (page - 1) * PAGE_SIZE
-    const to = from + PAGE_SIZE - 1
-
-    let query = supabase
-      .from('audit_logs')
-      .select('*, companies(name)', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(from, to)
-
-    if (tenantFilter) query = query.eq('company_id', tenantFilter)
-    if (eventTypeFilter) query = query.eq('event_type', eventTypeFilter)
-    if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00.000Z`)
-    if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59.999Z`)
-
-    if (userFilter.trim()) {
-      query = query.ilike('user_name', `%${userFilter.trim()}%`)
-    }
-
-    if (search.trim()) {
-      query = query.ilike('description', `%${search.trim()}%`)
-    }
-
-    const { data, count, error } = await query
-
-    if (!error) {
-      setLogs((data ?? []) as AuditLog[])
-      setTotalCount(count ?? 0)
-    }
-
-    setLoading(false)
-  }, [
-    page,
-    search,
-    userFilter,
-    tenantFilter,
-    eventTypeFilter,
-    dateFrom,
-    dateTo,
-  ])
-
-  useEffect(() => {
-    void fetchLogs()
-  }, [fetchLogs])
+  const tenantsQuery = useQuery({
+    ...adminCompanyOptionsQueryOptions(() => supabase),
+  })
+  const tenants = tenantsQuery.data ?? []
 
   useEffect(() => {
     setPage(1)
   }, [search, userFilter, tenantFilter, eventTypeFilter, dateFrom, dateTo])
-
-  useEffect(() => {
-    async function fetchTenants() {
-      const supabase = createClient()
-      const { data } = await supabase.from('companies').select('id, name').order('name')
-      setTenants(data ?? [])
-    }
-    void fetchTenants()
-  }, [])
 
   async function handleViewAiLog(logId: string) {
     setAiLogDialog({

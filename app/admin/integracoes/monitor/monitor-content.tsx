@@ -2,7 +2,9 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import { adminCompanyOptionsQueryOptions } from "@/lib/queries/admin-companies-list"
 import { AdminIntegracoesSubnav } from "@/components/admin/integracoes-subnav"
 import { IntegrationMonitor } from "@/components/integrations/integration-monitor"
 import {
@@ -18,24 +20,25 @@ import { Loader2 } from "lucide-react"
 export function MonitorContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [tenants, setTenants] = React.useState<{ id: string; name: string }[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const supabase = React.useMemo(() => createClient(), [])
+  const tenantsQuery = useQuery({
+    ...adminCompanyOptionsQueryOptions(() => supabase),
+  })
+  const tenants = tenantsQuery.data ?? []
+  const loading = tenantsQuery.isLoading
 
   const companyId = searchParams.get("company_id") ?? ""
 
+  const autoSelectDone = React.useRef(false)
   React.useEffect(() => {
-    const run = async () => {
-      const supabase = createClient()
-      const { data } = await supabase.from("companies").select("id, name").order("name")
-      const list = (data as { id: string; name: string }[]) ?? []
-      setTenants(list)
-      if (!searchParams.get("company_id") && list.length > 0) {
-        router.replace(`/admin/integracoes/monitor?company_id=${encodeURIComponent(list[0].id)}`)
-      }
-      setLoading(false)
+    if (autoSelectDone.current || loading) return
+    if (!searchParams.get("company_id") && tenants.length > 0) {
+      autoSelectDone.current = true
+      router.replace(
+        `/admin/integracoes/monitor?company_id=${encodeURIComponent(tenants[0].id)}`,
+      )
     }
-    void run()
-  }, [router, searchParams])
+  }, [loading, router, searchParams, tenants])
 
   const onCompanyChange = (id: string) => {
     router.replace(`/admin/integracoes/monitor?company_id=${encodeURIComponent(id)}`)

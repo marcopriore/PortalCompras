@@ -4,8 +4,10 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { AlertCircle, ChevronLeft, Send } from "lucide-react"
 import { toast } from "sonner"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { novoPedidoQuotationQueryOptions } from "@/lib/queries/novo-pedido-quotation"
 import { usePermissions } from "@/lib/hooks/usePermissions"
 import {
   canAccessQuotation,
@@ -119,7 +121,12 @@ export default function NovoPedidoPage({
   const [quotation, setQuotation] = React.useState<Quotation | null>(null)
   const [proposal, setProposal] = React.useState<Proposal | null>(null)
   const [quotationItems, setQuotationItems] = React.useState<QuotationItem[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const supabase = React.useMemo(() => createClient(), [])
+  const loadEnabled = !userLoading && !permLoading && Boolean(companyId && id)
+  const loadQuery = useQuery({
+    ...novoPedidoQuotationQueryOptions(companyId ?? "", id, () => supabase, loadEnabled),
+  })
+  const loading = loadQuery.isLoading || userLoading || permLoading
   const [submitting, setSubmitting] = React.useState(false)
   const [erpError, setErpError] = React.useState<string | null>(null)
   const [form, setForm] = React.useState<{
@@ -134,103 +141,65 @@ export default function NovoPedidoPage({
     new Map(),
   )
 
+  const loadHydratedRef = React.useRef(false)
+
   React.useEffect(() => {
-    if (userLoading || permLoading || !companyId || !id) return
+    if (loadQuery.isLoading || !loadQuery.data) return
+    if (loadHydratedRef.current) return
 
-    const supabase = createClient()
-    let alive = true
+    const dto = loadQuery.data
+    const q = dto.quotation
+    if (
+      q &&
+      !canAccessQuotation({
+        createdBy: q.created_by,
+        userId,
+        canViewAll: viewAllQuotations,
+      })
+    ) {
+      toast.error("Você não tem permissão para acessar esta cotação.")
+      router.replace("/comprador/cotacoes")
+      return
+    }
 
-    const run = async () => {
-      setLoading(true)
+    loadHydratedRef.current = true
+    setQuotation(q)
+    setProposal(dto.proposal)
+    setQuotationItems(dto.quotationItems)
 
-      const [qRes, pRes, qiRes, branchesRes] = await Promise.all([
-        supabase
-          .from("quotations")
-          .select("id, code, description, status, created_by")
-          .eq("id", id)
-          .eq("company_id", companyId)
-          .single(),
-        supabase
-          .from("quotation_proposals")
-          .select("*, proposal_items(*)")
-          .eq("quotation_id", id)
-          .eq("status", "selected")
-          .maybeSingle(),
-        supabase.from("quotation_items").select("*").eq("quotation_id", id),
-        supabase
-          .from("company_branches")
-          .select("id, code, name, address, city, state, zip_code")
-          .eq("company_id", companyId),
-      ])
+    const branchMap = new Map<string, CompanyBranchRow>()
+    for (const row of dto.branchByCode) {
+      branchMap.set(row.code, row)
+    }
+    setBranchByCode(branchMap)
 
-      if (!alive) return
-
-      const q = (qRes.data as Quotation) ?? null
-      if (
-        q &&
-        !canAccessQuotation({
-          createdBy: q.created_by,
-          userId,
-          canViewAll: viewAllQuotations,
+    const selectedProposal = dto.proposal
+    if (q && selectedProposal) {
+      const acceptedItems = selectedProposal.proposal_items.filter(
+        (pi) => pi.item_status === "accepted",
+      )
+      const mappedItems: PurchaseOrderItemForm[] = acceptedItems
+        .map((pi) => {
+          const qi = dto.quotationItems.find((i) => i.id === pi.quotation_item_id)
+          if (!qi) return null
+          if (!qi.site_code) return null
+          return {
+            quotationItemId: qi.id,
+            materialCode: qi.material_code,
+            materialDescription: qi.material_description,
+            quantity: qi.quantity,
+            unitOfMeasure: qi.unit_of_measure,
+            unitPrice: pi.unit_price,
+            taxPercent: pi.tax_percent,
+            siteCode: qi.site_code,
+            deliveryDays: pi.delivery_days ?? null,
+          }
         })
-      ) {
-        toast.error("Você não tem permissão para acessar esta cotação.")
-        router.replace("/comprador/cotacoes")
-        return
-      }
+        .filter(Boolean) as PurchaseOrderItemForm[]
 
-      setQuotation(q)
-      const selectedProposal = (pRes.data as Proposal) ?? null
-      setProposal(selectedProposal)
-      setQuotationItems(((qiRes.data as unknown) as QuotationItem[]) ?? [])
-
-      const branchMap = new Map<string, CompanyBranchRow>()
-      for (const row of (branchesRes.data ?? []) as CompanyBranchRow[]) {
-        branchMap.set(row.code, row)
-      }
-      setBranchByCode(branchMap)
-
-      if (qRes.data && selectedProposal) {
-        const q = qRes.data as Quotation
-        const allItems = (qiRes.data as QuotationItem[]) ?? []
-        const acceptedItems = selectedProposal.proposal_items.filter(
-          (pi) => pi.item_status === "accepted",
-        )
-        const mappedItems: PurchaseOrderItemForm[] = acceptedItems
-          .map((pi) => {
-            const qi = allItems.find((i) => i.id === pi.quotation_item_id)
-            if (!qi) return null
-            if (!qi.site_code) return null
-            return {
-              quotationItemId: qi.id,
-              materialCode: qi.material_code,
-              materialDescription: qi.material_description,
-              quantity: qi.quantity,
-              unitOfMeasure: qi.unit_of_measure,
-              unitPrice: pi.unit_price,
-              taxPercent: pi.tax_percent,
-              siteCode: qi.site_code,
-              deliveryDays: pi.delivery_days ?? null,
-            }
-          })
-          .filter(Boolean) as PurchaseOrderItemForm[]
-
-        setItems(mappedItems)
-        setForm((prev) => ({
-          ...prev,
-          requisitionCode: prev.requisitionCode,
-          observations: prev.observations,
-        }))
-      }
-
-      setLoading(false)
+      setItems(mappedItems)
     }
-
-    run()
-    return () => {
-      alive = false
-    }
-  }, [companyId, id, userId, viewAllQuotations, router, userLoading, permLoading])
+  }, [loadQuery.data, loadQuery.isLoading, router, userId, viewAllQuotations])
 
   const totalPrice = React.useMemo(
     () => items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0),

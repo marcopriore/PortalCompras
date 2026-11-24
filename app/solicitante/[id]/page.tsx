@@ -7,9 +7,14 @@ import {
   formatDateTimeCompactBR,
   formatDateTimeLongBR,
 } from "@/lib/formato-data"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { notifyRequisitionOutboundClient } from "@/lib/integrations/notify-requisition-outbound-client"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { useUser } from "@/lib/hooks/useUser"
+import { useTenant } from "@/contexts/tenant-context"
+import { requisitionDetailQueryOptions } from "@/lib/queries/requisition-detail"
+import { queryKeys } from "@/lib/queries/keys"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
@@ -316,6 +321,12 @@ export default function SolicitanteDetailPage({
   params: Promise<{ id: string }>
 }) {
   const router = useRouter()
+  const queryClient = useQueryClient()
+  const supabase = React.useMemo(() => createClient(), [])
+  const { companyId, userId, isSuperAdmin, hasRole, loading: userLoading } = useUser()
+  const { companyId: tenantCompanyId } = useTenant()
+  const effectiveCompanyId = companyId ?? tenantCompanyId
+  const canViewAll = isSuperAdmin || hasRole("admin")
   const { id } = React.use(params)
 
   const [requisition, setRequisition] = React.useState<Requisition | null>(null)
@@ -324,111 +335,49 @@ export default function SolicitanteDetailPage({
   const [history, setHistory] = React.useState<ApprovalHistory[]>([])
   const [auditLogs, setAuditLogs] = React.useState<AuditLog[]>([])
   const [items, setItems] = React.useState<RequisitionItem[]>([])
-  const [loading, setLoading] = React.useState(true)
   const [cancelOpen, setCancelOpen] = React.useState(false)
   const [cancelling, setCancelling] = React.useState(false)
 
-  const loadData = React.useCallback(async () => {
-    try {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
-        window.location.href = "/login"
-        return
-      }
+  const detailQuery = useQuery({
+    ...requisitionDetailQueryOptions(effectiveCompanyId ?? "", id, () => supabase),
+    enabled: Boolean(effectiveCompanyId && id && !userLoading),
+  })
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("profile_type, is_superadmin, role, roles")
-        .eq("id", user.id)
-        .maybeSingle()
-
-      const roles = Array.isArray(profile?.roles) ? profile.roles : []
-      const viewAll =
-        Boolean(profile?.is_superadmin) ||
-        profile?.role === "admin" ||
-        roles.includes("admin")
-
-      let reqQuery = supabase.from("requisitions").select("*").eq("id", id)
-      if (!viewAll) {
-        reqQuery = reqQuery.eq("requester_id", user.id)
-      }
-
-      const { data: reqData, error: reqError } = await reqQuery.maybeSingle()
-
-      if (reqError || !reqData) {
-        toast.error("Requisição não encontrada.")
-        router.push("/solicitante")
-        return
-      }
-
-      const req = reqData as Requisition
-      setRequisition(req)
-
-      const [historyResult, itemsResult, ordersResult, auditResult] = await Promise.all([
-        supabase
-          .from("approval_requests")
-          .select("id, status, approver_name, rejection_reason, decided_at, created_at")
-          .eq("entity_id", id)
-          .eq("flow", "requisition")
-          .order("created_at", { ascending: true }),
-        supabase
-          .from("requisition_items")
-          .select(REQUISITION_ITEM_ACCOUNT_SELECT)
-          .eq("requisition_id", id)
-          .order("created_at"),
-        supabase
-          .from("purchase_orders")
-          .select(
-            "id, code, status, supplier_name, total_price, created_at, accepted_at, estimated_delivery_date",
-          )
-          .eq("requisition_code", req.code)
-          .order("created_at"),
-        supabase
-          .from("audit_logs")
-          .select("id, event_type, description, created_at, user_name, metadata")
-          .eq("entity", "requisitions")
-          .eq("entity_id", id)
-          .order("created_at", { ascending: true }),
-      ])
-
-      setHistory((historyResult.data as ApprovalHistory[]) ?? [])
-      setAuditLogs((auditResult.data ?? []) as AuditLog[])
-      setItems((itemsResult.data as RequisitionItem[]) ?? [])
-      setOrders((ordersResult.data as PurchaseOrderInfo[]) ?? [])
-
-      let quot: QuotationInfo | null = null
-      if (req.quotation_id) {
-        const { data: qData } = await supabase
-          .from("quotations")
-          .select("id, code, status, created_at")
-          .eq("id", req.quotation_id)
-          .maybeSingle()
-        if (qData) quot = qData as QuotationInfo
-      }
-      setQuotation(quot)
-    } catch {
-      toast.error("Não foi possível carregar a requisição.")
-      router.push("/solicitante")
-    } finally {
-      setLoading(false)
-    }
-  }, [id, router])
+  const loading = userLoading || detailQuery.isLoading
 
   React.useEffect(() => {
-    void loadData()
-  }, [loadData])
+    if (detailQuery.isLoading || !detailQuery.data) return
+    const dto = detailQuery.data
+    const req = dto.requisition
+    if (!req) {
+      toast.error("Requisição não encontrada.")
+      router.push("/solicitante")
+      return
+    }
+    if (!canViewAll && req.requester_id && req.requester_id !== userId) {
+      toast.error("Requisição não encontrada.")
+      router.push("/solicitante")
+      return
+    }
+    setRequisition(req as unknown as Requisition)
+    setQuotation(dto.quotation)
+    setOrders((dto.orders ?? []) as PurchaseOrderInfo[])
+    setHistory((dto.history ?? []) as ApprovalHistory[])
+    setAuditLogs((dto.auditLogs ?? []) as AuditLog[])
+    setItems((dto.items ?? []) as RequisitionItem[])
+  }, [canViewAll, detailQuery.data, detailQuery.isLoading, router, userId])
 
   const pollingIntervalMs = usePollingIntervalMs()
 
   useAutoRefresh({
     intervalMs: pollingIntervalMs,
     onRefresh: () => {
-      void loadData()
+      if (!effectiveCompanyId) return
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.requisitionDetail(effectiveCompanyId, id),
+      })
     },
-    enabled: true,
+    enabled: Boolean(effectiveCompanyId && id),
   })
 
   async function handleCancel() {
@@ -453,7 +402,9 @@ export default function SolicitanteDetailPage({
 
     setCancelOpen(false)
     setCancelling(false)
-    void loadData()
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.requisitionDetail(effectiveCompanyId ?? "", id),
+    })
   }
 
   if (loading) {

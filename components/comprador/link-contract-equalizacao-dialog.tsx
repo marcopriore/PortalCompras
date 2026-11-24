@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Link2, Loader2 } from "lucide-react"
+import { equalizacaoContractMatchesDialogQueryOptions } from "@/lib/queries/equalizacao-contract-matches-dialog"
 import { toast } from "sonner"
 import {
   Dialog,
@@ -74,75 +76,65 @@ export function LinkContractEqualizacaoDialog({
   onConfirm,
   submitting = false,
 }: Props) {
-  const [loading, setLoading] = React.useState(false)
   const [rows, setRows] = React.useState<MatchRow[]>([])
 
+  const selectionInput = React.useMemo(
+    () =>
+      selections.map((s) => ({
+        quotationItemId: s.quotationItemId,
+        supplierId: s.supplierId,
+        materialCode: s.materialCode,
+        quantity: s.quantity,
+      })),
+    [selections],
+  )
+
+  const matchesQuery = useQuery({
+    ...equalizacaoContractMatchesDialogQueryOptions(
+      quotationId,
+      selectionInput,
+      open,
+    ),
+  })
+
+  const loading = matchesQuery.isLoading
+
   React.useEffect(() => {
-    if (!open || selections.length === 0) return
-
-    let cancelled = false
-    setLoading(true)
-
-    void (async () => {
-      try {
-        const res = await fetch(`/api/quotations/${quotationId}/contract-matches`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            selections: selections.map((s) => ({
-              quotationItemId: s.quotationItemId,
-              supplierId: s.supplierId,
-              materialCode: s.materialCode,
-              quantity: s.quantity,
-            })),
-          }),
-        })
-        const data = (await res.json()) as {
-          items?: Array<{
-            quotationItemId: string
-            candidates: ContractMatchCandidate[]
-            suggested: EqualizacaoContractLink | null
-          }>
-          error?: string
-        }
-
-        if (!res.ok) {
-          toast.error(data.error ?? "Não foi possível buscar contratos")
-          return
-        }
-
-        if (cancelled) return
-
-        const nextRows: MatchRow[] = selections.map((sel) => {
-          const apiRow = data.items?.find(
-            (i) => i.quotationItemId === sel.quotationItemId,
-          )
-          const candidates = apiRow?.candidates ?? []
-          const selectedContractItemId =
-            apiRow?.suggested?.contractItemId ??
-            candidates[0]?.contractItemId ??
-            null
-
-          return {
-            quotationItemId: sel.quotationItemId,
-            candidates,
-            linked: Boolean(apiRow?.suggested ?? candidates[0]),
-            selectedContractItemId,
-          }
-        })
-
-        setRows(nextRows)
-      } catch {
-        toast.error("Erro ao buscar contratos compatíveis")
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    })()
-
-    return () => {
-      cancelled = true
+    if (matchesQuery.isError) {
+      toast.error(
+        matchesQuery.error instanceof Error
+          ? matchesQuery.error.message
+          : "Erro ao buscar contratos compatíveis",
+      )
     }
-  }, [open, quotationId, selections])
+  }, [matchesQuery.isError, matchesQuery.error])
+
+  React.useEffect(() => {
+    if (!open || !matchesQuery.data) {
+      if (!open) setRows([])
+      return
+    }
+
+    const nextRows: MatchRow[] = selections.map((sel) => {
+      const apiRow = matchesQuery.data.find(
+        (i) => i.quotationItemId === sel.quotationItemId,
+      )
+      const candidates = apiRow?.candidates ?? []
+      const selectedContractItemId =
+        apiRow?.suggested?.contractItemId ??
+        candidates[0]?.contractItemId ??
+        null
+
+      return {
+        quotationItemId: sel.quotationItemId,
+        candidates,
+        linked: Boolean(apiRow?.suggested ?? candidates[0]),
+        selectedContractItemId,
+      }
+    })
+
+    setRows(nextRows)
+  }, [open, matchesQuery.data, selections])
 
   const handleToggle = (quotationItemId: string, linked: boolean) => {
     setRows((prev) =>

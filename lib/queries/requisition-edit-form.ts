@@ -158,3 +158,46 @@ export function requisitionEditFormQueryOptions(
     enabled: Boolean(companyId && requisitionId),
   })
 }
+
+export async function fetchRequisitionEditFormForRequester(
+  supabase: SupabaseClient,
+  companyId: string,
+  requisitionId: string,
+  requesterId: string,
+): Promise<RequisitionEditFormDto | null> {
+  const { data: owned } = await supabase
+    .from("requisitions")
+    .select("id")
+    .eq("id", requisitionId)
+    .eq("requester_id", requesterId)
+    .maybeSingle()
+
+  if (!owned) {
+    return null
+  }
+
+  return fetchRequisitionEditForm(supabase, companyId, requisitionId)
+}
+
+export function requisitionEditFormRequesterQueryOptions(
+  companyId: string,
+  requisitionId: string,
+  requesterId: string,
+  supabaseFactory: SupabaseClientFactory,
+) {
+  return queryOptions({
+    queryKey: queryKeys.requisitionEditFormRequester(
+      companyId,
+      requisitionId,
+      requesterId,
+    ),
+    queryFn: () =>
+      fetchRequisitionEditFormForRequester(
+        supabaseFactory(),
+        companyId,
+        requisitionId,
+        requesterId,
+      ),
+    enabled: Boolean(companyId && requisitionId && requesterId),
+  })
+}

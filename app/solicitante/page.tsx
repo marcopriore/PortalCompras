@@ -9,8 +9,15 @@ import {
   formatDateTimeLongBR,
   formatExportFileTimestamp,
 } from "@/lib/formato-data"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
+import { useUser } from "@/lib/hooks/useUser"
+import {
+  solicitanteRequisitionsListQueryOptions,
+  type RequisitionListRow,
+} from "@/lib/queries/requisitions-list"
+import { queryKeys } from "@/lib/queries/keys"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -47,19 +54,6 @@ import {
   type RequisitionStatus,
 } from "@/lib/requisitions/status"
 
-type Requisition = {
-  id: string
-  code: string
-  title: string
-  status: RequisitionStatus
-  priority: string
-  created_at: string
-  needed_by: string | null
-  requester_id: string | null
-  requester_name: string | null
-  quotation_id: string | null
-}
-
 const STATUS_OPTIONS = REQUISITION_STATUS_FILTER_OPTIONS.map((o) => ({
   value: o.value,
   label: o.label,
@@ -93,8 +87,26 @@ function getPriorityMeta(priority: string) {
 
 function SolicitantePageInner() {
   const router = useRouter()
-  const [requisitions, setRequisitions] = React.useState<Requisition[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const queryClient = useQueryClient()
+  const supabase = React.useMemo(() => createClient(), [])
+  const {
+    companyId,
+    userId,
+    isSuperAdmin,
+    hasRole,
+    loading: userLoading,
+  } = useUser()
+  const canViewAll = isSuperAdmin || hasRole("admin")
+  const scope = canViewAll ? "all" : (userId ?? "")
+  const listEnabled = !userLoading && !!companyId && (canViewAll || !!userId)
+
+  const listQuery = useQuery({
+    ...solicitanteRequisitionsListQueryOptions(supabase, companyId ?? "", scope),
+    enabled: listEnabled,
+  })
+
+  const requisitions: RequisitionListRow[] = listQuery.data ?? []
+  const loading = userLoading || listQuery.isLoading
   const [exporting, setExporting] = React.useState(false)
   const [search, setSearch] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState<string[]>([...DEFAULT_STATUS])
@@ -103,9 +115,6 @@ function SolicitantePageInner() {
   const [dateTo, setDateTo] = React.useState("")
   const [page, setPage] = React.useState(1)
   const PAGE_SIZE = TABLE_PAGE_SIZE
-
-  const [userId, setUserId] = React.useState<string | null>(null)
-  const [canViewAll, setCanViewAll] = React.useState(false)
 
   React.useEffect(() => {
     setPage(1)
@@ -183,85 +192,17 @@ function SolicitantePageInner() {
   ).length
   const completed = requisitions.filter((r) => r.status === "completed").length
 
-  const loadRequisitions = React.useCallback(async () => {
-    try {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
-        window.location.href = "/login"
-        return
-      }
-
-      setUserId(user.id)
-
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("full_name, profile_type, company_id, is_superadmin, role, roles")
-        .eq("id", user.id)
-        .maybeSingle()
-
-      if (profileError || !profile) {
-        window.location.href = "/login"
-        return
-      }
-
-      const roles = Array.isArray(profile.roles) ? profile.roles : []
-      const isMaster = Boolean(profile.is_superadmin)
-      const isAdmin = profile.role === "admin" || roles.includes("admin")
-      const viewAll = isMaster || isAdmin
-
-      if (profile.profile_type !== "requester" && !viewAll) {
-        window.location.href = "/login"
-        return
-      }
-
-      setCanViewAll(viewAll)
-
-      let query = supabase
-        .from("requisitions")
-        .select(
-          "id, code, title, status, priority, created_at, needed_by, requester_id, requester_name, quotation_id",
-        )
-        .order("created_at", { ascending: false })
-
-      if (profile.company_id) {
-        query = query.eq("company_id", profile.company_id)
-      }
-
-      if (!viewAll) {
-        query = query.eq("requester_id", user.id)
-      }
-
-      const { data, error } = await query
-      if (error) {
-        toast.error("Não foi possível carregar as requisições.")
-        setRequisitions([])
-        return
-      }
-
-      setRequisitions((data as Requisition[]) ?? [])
-    } catch {
-      toast.error("Não foi possível carregar as requisições.")
-      setRequisitions([])
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  React.useEffect(() => {
-    void loadRequisitions()
-  }, [loadRequisitions])
-
   const pollingIntervalMs = usePollingIntervalMs()
 
   useAutoRefresh({
     intervalMs: pollingIntervalMs,
     onRefresh: () => {
-      void loadRequisitions()
+      if (!companyId) return
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.solicitanteRequisitionsList(companyId, scope),
+      })
     },
-    enabled: Boolean(userId),
+    enabled: listEnabled,
   })
 
   const clearFilters = () => {

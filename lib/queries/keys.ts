@@ -189,4 +189,93 @@ export const queryKeys = {
 
   supplierPortalUsers: (companyId: string, supplierId: string) =>
     ["supplier", "portalUsers", companyId, supplierId] as const,
+
+  solicitanteRequisitionsList: (companyId: string, scope: string) =>
+    ["solicitante", "requisitions", "list", companyId, scope] as const,
+
+  solicitanteSettings: (companyId: string, userId: string) =>
+    ["solicitante", "settings", companyId, userId] as const,
+
+  requisitionEditFormRequester: (
+    companyId: string,
+    requisitionId: string,
+    requesterId: string,
+  ) =>
+    [
+      "requisitions",
+      "editForm",
+      companyId,
+      requisitionId,
+      "requester",
+      requesterId,
+    ] as const,
+
+  adminCompaniesList: () => ["admin", "companies", "list"] as const,
+
+  adminProfilesCount: () => ["admin", "profiles", "count"] as const,
+
+  adminAuditLogs: (filtersKey: string, page: number) =>
+    ["admin", "auditLogs", filtersKey, page] as const,
+
+  adminGlobalSuppliers: (search: string, page: number) =>
+    ["admin", "globalSuppliers", search, page] as const,
+
+  adminTenantDetail: (tenantId: string) =>
+    ["admin", "tenant", tenantId, "detail"] as const,
+
+  adminTenantDeleteEligible: (tenantId: string) =>
+    ["admin", "tenant", tenantId, "deleteEligible"] as const,
+
+  adminTenantMetrics: (tenantId: string, periodKey: string) =>
+    ["admin", "tenant", tenantId, "metrics", periodKey] as const,
+
+  adminTenantFeatures: (tenantId: string) =>
+    ["admin", "tenant", tenantId, "features"] as const,
+
+  supportTicketsList: (companyId: string) =>
+    ["support", "tickets", companyId] as const,
+
+  supportCategorias: (companyId: string, tipoKey: string) =>
+    ["support", "categorias", companyId, tipoKey] as const,
+
+  supportTicketDetail: (companyId: string, ticketId: string) =>
+    ["support", "ticket", companyId, ticketId] as const,
+
+  integrationLogs: (mode: string, filtersKey: string, page: number) =>
+    ["integrationLogs", mode, filtersKey, page] as const,
+
+  companyBranchesOptions: (companyId: string, inactiveKey: string) =>
+    ["companyBranches", "options", companyId, inactiveKey] as const,
+
+  costCentersOptions: (companyId: string, inactiveKey: string) =>
+    ["costCenters", "options", companyId, inactiveKey] as const,
+
+  buyerSettingsInitial: (companyId: string, userId: string) =>
+    ["buyer", "settings", "initial", companyId, userId] as const,
+
+  buyerApprovalsConfig: (companyId: string) =>
+    ["buyer", "settings", "approvals", companyId] as const,
+
+  buyerApprovers: (companyId: string) =>
+    ["buyer", "settings", "approvers", companyId] as const,
+
+  buyerPaymentConditionsAll: (companyId: string) =>
+    ["paymentConditions", "all", companyId] as const,
+
+  supplierTermsActive: (companyId: string) =>
+    ["supplierTerms", "active", companyId] as const,
+
+  novoPedidoQuotation: (companyId: string, quotationId: string) =>
+    ["quotations", "novoPedido", companyId, quotationId] as const,
+
+  equalizacaoContractMatchesDialog: (
+    quotationId: string,
+    selectionsKey: string,
+  ) =>
+    [
+      "quotations",
+      "equalizacaoContractMatchesDialog",
+      quotationId,
+      selectionsKey,
+    ] as const,
 } as const

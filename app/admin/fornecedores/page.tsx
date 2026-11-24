@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { useQuery } from "@tanstack/react-query"
 import { formatDateTimeBR } from "@/lib/formato-data"
+import { adminGlobalSuppliersQueryOptions } from "@/lib/queries/admin-global-suppliers"
 import { Building2, Eye, List, RefreshCw, Search, Users } from "lucide-react"
 import { toast } from "sonner"
 import type {
@@ -27,17 +29,6 @@ import {
 import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-pagination"
 import { TableRowActions } from "@/components/ui/table-row-actions"
 
-type ListResponse = {
-  data?: {
-    suppliers: GlobalSupplierRow[]
-    page: number
-    page_size: number
-    total: number
-    total_pages: number
-  }
-  error?: string
-}
-
 function formatCnpj(cnpj: string | null): string {
   if (!cnpj) return "—"
   const d = cnpj.replace(/\D/g, "")
@@ -54,10 +45,7 @@ function formatLogin(iso: string | null): string {
 }
 
 export default function AdminFornecedoresPage() {
-  const [rows, setRows] = React.useState<GlobalSupplierRow[]>([])
-  const [loading, setLoading] = React.useState(true)
   const [page, setPage] = React.useState(1)
-  const [total, setTotal] = React.useState(0)
   const [search, setSearch] = React.useState("")
   const [searchDraft, setSearchDraft] = React.useState("")
   const [detail, setDetail] = React.useState<GlobalSupplierRow | null>(null)
@@ -66,37 +54,19 @@ export default function AdminFornecedoresPage() {
     tenants: GlobalSupplierTenant[]
   } | null>(null)
 
-  const load = React.useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({
-        page: String(page),
-        page_size: String(TABLE_PAGE_SIZE),
-      })
-      if (search.trim()) params.set("search", search.trim())
+  const suppliersQuery = useQuery({
+    ...adminGlobalSuppliersQueryOptions(page, TABLE_PAGE_SIZE, search),
+  })
 
-      const res = await fetch(`/api/admin/suppliers?${params}`, {
-        cache: "no-store",
-      })
-      const payload = (await res.json()) as ListResponse
-      if (!res.ok) {
-        toast.error(payload.error || "Erro ao listar fornecedores.")
-        setRows([])
-        return
-      }
-      setRows(payload.data?.suppliers ?? [])
-      setTotal(payload.data?.total ?? 0)
-    } catch {
-      toast.error("Erro inesperado ao carregar fornecedores.")
-      setRows([])
-    } finally {
-      setLoading(false)
-    }
-  }, [page, search])
+  const rows = suppliersQuery.data?.suppliers ?? []
+  const total = suppliersQuery.data?.total ?? 0
+  const loading = suppliersQuery.isLoading
 
   React.useEffect(() => {
-    void load()
-  }, [load])
+    if (suppliersQuery.isError) {
+      toast.error("Erro inesperado ao carregar fornecedores.")
+    }
+  }, [suppliersQuery.isError])
 
   const applySearch = () => {
     setPage(1)
@@ -157,7 +127,7 @@ export default function AdminFornecedoresPage() {
             type="button"
             variant="ghost"
             size="icon"
-            onClick={() => void load()}
+            onClick={() => void suppliersQuery.refetch()}
             disabled={loading}
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />

@@ -2,7 +2,10 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/lib/hooks/useUser"
+import { requisitionEditFormRequesterQueryOptions } from "@/lib/queries/requisition-edit-form"
 import { logAudit } from "@/lib/audit"
 import { notifyWithEmail } from "@/lib/notify-with-email"
 import { toast } from "sonner"
@@ -102,18 +105,28 @@ export default function SolicitanteEditarRequisicaoPage({
   const router = useRouter()
   const { id } = React.use(params)
   const { accountAssignmentEnabled } = useImplantationConfig()
+  const { companyId, userId, fullName, loading: userLoading } = useUser()
+  const supabase = React.useMemo(() => createClient(), [])
+  const [formReady, setFormReady] = React.useState(false)
+  const editFormHydratedRef = React.useRef(false)
 
-  const [loading, setLoading] = React.useState(true)
+  const editFormQuery = useQuery({
+    ...requisitionEditFormRequesterQueryOptions(
+      companyId ?? "",
+      id,
+      userId ?? "",
+      () => supabase,
+    ),
+    enabled: Boolean(companyId && userId && id && !userLoading),
+  })
+
+  const loading = userLoading || editFormQuery.isLoading || !formReady
   const [saving, setSaving] = React.useState(false)
   const [drafting, setDrafting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [rejectionReason, setRejectionReason] = React.useState<string | null>(null)
   const [requisitionCode, setRequisitionCode] = React.useState<string>("")
   const [currentStatus, setCurrentStatus] = React.useState<"draft" | "rejected" | null>(null)
-
-  const [companyId, setCompanyId] = React.useState<string | null>(null)
-  const [userId, setUserId] = React.useState<string | null>(null)
-  const [userName, setUserName] = React.useState<string>("")
 
   const [form, setForm] = React.useState<RequisitionDraftForm>({
     title: "",
@@ -136,144 +149,28 @@ export default function SolicitanteEditarRequisicaoPage({
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
-    let alive = true
+    if (userLoading || editFormQuery.isLoading) return
 
-    const run = async () => {
-      setLoading(true)
-      try {
-        const supabase = createClient()
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-        if (!user) {
-          window.location.href = "/login"
-          return
-        }
-
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("company_id, full_name, profile_type")
-          .eq("id", user.id)
-          .maybeSingle()
-
-        if (!profile || profile.profile_type !== "requester") {
-          window.location.href = "/login"
-          return
-        }
-
-        const cid = profile.company_id as string
-        setCompanyId(cid)
-        setUserId(user.id)
-        setUserName(profile.full_name ?? "")
-
-        const [rRes, iRes] = await Promise.all([
-          supabase
-            .from("requisitions")
-            .select("*")
-            .eq("id", id)
-            .eq("requester_id", user.id)
-            .maybeSingle(),
-          supabase
-            .from("requisition_items")
-            .select(REQUISITION_ITEM_ACCOUNT_SELECT)
-            .eq("requisition_id", id)
-            .order("created_at"),
-        ])
-
-        if (!alive) return
-
-        const reqData = rRes.data as {
-          id: string
-          code: string
-          title: string
-          description: string | null
-          cost_center: string | null
-          needed_by: string | null
-          priority: Priority
-          status: string
-          rejection_reason: string | null
-        } | null
-
-        if (!reqData || rRes.error) {
-          router.push("/solicitante")
-          return
-        }
-
-        if (reqData.status !== "rejected" && reqData.status !== "draft") {
-          router.push(`/solicitante/${id}`)
-          return
-        }
-
-        setCurrentStatus(reqData.status === "draft" ? "draft" : "rejected")
-        setRequisitionCode(reqData.code)
-        setRejectionReason(reqData.rejection_reason ?? null)
-        setForm({
-          title: reqData.title ?? "",
-          description: reqData.description ?? "",
-          costCenter: reqData.cost_center ?? "",
-          neededBy: formatDateForInput(reqData.needed_by),
-          priority: (reqData.priority as Priority) ?? "normal",
-        })
-
-        const reqItems = (iRes.data ?? []) as Array<
-          RequisitionItemRow & LoadedRequisitionItemRow
-        >
-        let itemsData: CatalogItem[] = []
-        if (reqItems.length > 0) {
-          const materialCodes = [
-            ...new Set(
-              reqItems.map((r) => r.material_code).filter((c): c is string => Boolean(c)),
-            ),
-          ]
-          if (materialCodes.length > 0) {
-            const { data } = await supabase
-              .from("items")
-              .select(
-                "id, code, short_description, long_description, unit_of_measure, commodity_group",
-              )
-              .eq("company_id", cid)
-              .in("code", materialCodes)
-            itemsData = (data ?? []) as CatalogItem[]
-          }
-
-          const itemMap = new Map<string, CatalogItem>()
-          itemsData.forEach((item) => {
-            itemMap.set(item.code, item)
-          })
-
-          const lineItems: RequisitionEditorLineItem[] = reqItems.map((ri) => {
-            const catalogItem = ri.material_code ? itemMap.get(ri.material_code) : null
-            return {
-              id: ri.id,
-              itemId: catalogItem?.id ?? `legacy-${ri.id}`,
-              materialCode: ri.material_code ?? "",
-              materialDescription: ri.material_description ?? "",
-              unitOfMeasure: catalogItem?.unit_of_measure ?? ri.unit_of_measure ?? "",
-              commodityGroup: catalogItem?.commodity_group ?? ri.commodity_group ?? "",
-              quantity: ri.quantity ?? 1,
-              observations: ri.observations ?? "",
-              siteCode: ri.site_code ?? "",
-            }
-          })
-          setItems(lineItems)
-          setAccountConfigs(buildAccountConfigsFromRequisitionItems(reqItems))
-        } else {
-          setItems([])
-          setAccountConfigs({})
-        }
-      } catch {
-        toast.error("Não foi possível carregar a requisição.")
+    if (!editFormQuery.data) {
+      if (!editFormQuery.isLoading) {
         router.push("/solicitante")
-      } finally {
-        if (alive) setLoading(false)
+        setFormReady(true)
       }
+      return
     }
 
-    void run()
-    return () => {
-      alive = false
-    }
-  }, [id, router])
+    if (editFormHydratedRef.current) return
+    editFormHydratedRef.current = true
+
+    const dto = editFormQuery.data
+    setCurrentStatus(dto.status)
+    setRequisitionCode(dto.code)
+    setRejectionReason(dto.rejection_reason)
+    setForm(dto.form)
+    setItems(dto.items)
+    setAccountConfigs(dto.accountConfigs)
+    setFormReady(true)
+  }, [editFormQuery.data, editFormQuery.isLoading, router, userLoading])
 
   const handleAccountConfigChange = (itemId: string) => {
     setAccountConfigErrors((prev) => {
@@ -386,7 +283,7 @@ export default function SolicitanteEditarRequisicaoPage({
         description: `Rascunho ${requisitionCode || id} atualizado`,
         companyId,
         userId,
-        userName: userName || null,
+        userName: fullName ?? null,
         entity: "requisitions",
         entityId: id,
         metadata: { code: requisitionCode || null, status: "draft" },
@@ -576,12 +473,12 @@ export default function SolicitanteEditarRequisicaoPage({
               companyId,
               type: "requisition.created",
               title: "Nova requisição aguardando aprovação",
-              body: `A requisição ${requisitionCode} foi criada por ${userName || "solicitante"} e aguarda sua aprovação.`,
+              body: `A requisição ${requisitionCode} foi criada por ${fullName ?? "solicitante"} e aguarda sua aprovação.`,
               entity: "requisition",
               entityId: id,
               subject: `Nova Requisição — ${requisitionCode}`,
               html: `<p>Olá, <strong>${approver.full_name ?? "Aprovador"}</strong>!</p>
-           <p>A requisição <strong>${requisitionCode}</strong> foi resubmetida por <strong>${userName || "solicitante"}</strong> e aguarda sua aprovação.</p>`,
+           <p>A requisição <strong>${requisitionCode}</strong> foi resubmetida por <strong>${fullName ?? "solicitante"}</strong> e aguarda sua aprovação.</p>`,
               emailPrefKey: "new_requisition_email",
             })
           }

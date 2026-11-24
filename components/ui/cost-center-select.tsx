@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import { costCentersOptionsQueryOptions } from "@/lib/queries/cost-centers-options"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -46,50 +48,18 @@ export function CostCenterSelect({
   includeInactiveCodes = [],
   className,
 }: CostCenterSelectProps) {
-  const [options, setOptions] = React.useState<CostCenterOption[]>([])
-  const [loading, setLoading] = React.useState(false)
+  const supabase = React.useMemo(() => createClient(), [])
+  const costCentersQuery = useQuery({
+    ...costCentersOptionsQueryOptions(
+      companyId ?? "",
+      includeInactiveCodes,
+      () => supabase,
+    ),
+    enabled: Boolean(companyId),
+  })
 
-  React.useEffect(() => {
-    if (!companyId) {
-      setOptions([])
-      return
-    }
-    let alive = true
-    const load = async () => {
-      setLoading(true)
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("cost_centers")
-        .select("id, code, description, active")
-        .eq("company_id", companyId)
-        .order("code", { ascending: true })
-
-      if (!alive) return
-      const rows = (data ?? []) as {
-        id: string
-        code: string
-        description: string
-        active: boolean
-      }[]
-      const allow = new Set(
-        includeInactiveCodes.map((c) => c.trim().toUpperCase()).filter(Boolean),
-      )
-      setOptions(
-        rows
-          .filter((r) => r.active || allow.has(r.code.toUpperCase()))
-          .map((r) => ({
-            id: r.id,
-            code: r.code,
-            description: r.description,
-          })),
-      )
-      setLoading(false)
-    }
-    void load()
-    return () => {
-      alive = false
-    }
-  }, [companyId, includeInactiveCodes.join("|")])
+  const options = costCentersQuery.data ?? []
+  const loading = costCentersQuery.isLoading
 
   return (
     <div className={className ?? (hideLabel ? "space-y-0" : "space-y-2")}>

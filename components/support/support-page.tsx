@@ -39,9 +39,15 @@ import { TABLE_PAGE_SIZE, TablePagination } from "@/components/ui/table-paginati
 import { TableRowActions } from "@/components/ui/table-row-actions"
 import { AttachmentFileList } from "@/components/support/attachment-file-list"
 import { CharacterCounter } from "@/components/support/character-counter"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useTenant } from "@/contexts/tenant-context"
 import { useUser } from "@/lib/hooks/useUser"
-import { createClient } from "@/lib/supabase/client"
+import { useSessionUserInitial } from "@/contexts/session-user-context"
+import {
+  supportCategoriasQueryOptions,
+  supportTicketsListQueryOptions,
+} from "@/lib/queries/support-queries"
+import { queryKeys } from "@/lib/queries/keys"
 import { Checkbox } from "@/components/ui/checkbox"
 import { exportSupportTicketsExcel } from "@/lib/axisdesk/export-support-tickets"
 import {
@@ -107,8 +113,11 @@ export function SupportPage({ portal }: SupportPageProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
   const { companyId } = useTenant()
   const { userId } = useUser()
+  const sessionUser = useSessionUserInitial()
+  const userEmail = sessionUser?.email ?? null
   const companyIdRef = React.useRef(companyId)
   companyIdRef.current = companyId
   const detailBase =
@@ -119,9 +128,12 @@ export function SupportPage({ portal }: SupportPageProps) {
     [searchParams],
   )
 
-  const [tickets, setTickets] = React.useState<AxisDeskChamado[]>([])
-  const [userEmail, setUserEmail] = React.useState<string | null>(null)
-  const [loading, setLoading] = React.useState(true)
+  const ticketsQuery = useQuery({
+    ...supportTicketsListQueryOptions(companyId ?? ""),
+    enabled: Boolean(companyId),
+  })
+  const tickets = ticketsQuery.data ?? []
+  const loading = ticketsQuery.isLoading
   const [refreshing, setRefreshing] = React.useState(false)
   const [exporting, setExporting] = React.useState(false)
 
@@ -133,29 +145,17 @@ export function SupportPage({ portal }: SupportPageProps) {
   const [createCategorias, setCreateCategorias] = React.useState<AxisDeskCategoria[]>([])
   const [createCategoriasLoading, setCreateCategoriasLoading] =
     React.useState(false)
-  const [filterCategorias, setFilterCategorias] = React.useState<AxisDeskCategoria[]>(
-    [],
-  )
+  const filterCategoriasQuery = useQuery({
+    ...supportCategoriasQueryOptions(companyId ?? "", "all"),
+    enabled: Boolean(companyId),
+  })
+  const filterCategorias = filterCategoriasQuery.data ?? []
 
   const [qDraft, setQDraft] = React.useState(filters.q)
 
   React.useEffect(() => {
     setQDraft(filters.q)
   }, [filters.q])
-
-  React.useEffect(() => {
-    let cancelled = false
-    void (async () => {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!cancelled) setUserEmail(user?.email ?? null)
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   const replaceFilters = React.useCallback(
     (patch: Partial<SupportListFilters>) => {
@@ -191,113 +191,43 @@ export function SupportPage({ portal }: SupportPageProps) {
     return () => window.clearTimeout(timer)
   }, [qDraft, filters.q])
 
-  const loadTickets = React.useCallback(
-    async (silent = false) => {
-      if (!companyId) {
-        setTickets([])
-        setLoading(false)
-        setRefreshing(false)
-        return
-      }
-      const started = companyId
-      const stillHere = () => companyIdRef.current === started
-
-      if (!silent) setLoading(true)
-      else setRefreshing(true)
-      try {
-        const res = await fetch("/api/support/tickets", { cache: "no-store" })
-        const payload = (await res.json()) as {
-          data?: AxisDeskChamado[]
-          error?: string
-        }
-        if (!stillHere()) return
-        if (!res.ok) {
-          toast.error(payload.error ?? "Erro ao carregar chamados.")
-          setTickets([])
-          return
-        }
-        setTickets(payload.data ?? [])
-      } catch {
-        if (!stillHere()) return
-        toast.error("Erro ao carregar chamados.")
-        setTickets([])
-      } finally {
-        if (stillHere()) {
-          setLoading(false)
-          setRefreshing(false)
-        }
-      }
-    },
-    [companyId],
-  )
-
-  const loadFilterCategorias = React.useCallback(async () => {
-    if (!companyId) {
-      setFilterCategorias([])
-      return
-    }
-    const started = companyId
-    const stillHere = () => companyIdRef.current === started
+  const refreshTickets = async (silent = false) => {
+    if (!companyId) return
+    if (silent) setRefreshing(true)
     try {
-      const res = await fetch("/api/support/categorias", { cache: "no-store" })
-      const payload = (await res.json()) as {
-        data?: AxisDeskCategoria[]
-        error?: string
-      }
-      if (!stillHere()) return
-      if (!res.ok) {
-        setFilterCategorias([])
-        return
-      }
-      setFilterCategorias(payload.data ?? [])
-    } catch {
-      if (!stillHere()) return
-      setFilterCategorias([])
-    }
-  }, [companyId])
-
-  const loadCreateCategorias = React.useCallback(async (tipo: AxisDeskChamadoTipo) => {
-    setCreateCategoriasLoading(true)
-    try {
-      const res = await fetch(`/api/support/categorias?tipo=${tipo}`, {
-        cache: "no-store",
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.supportTicketsList(companyId),
       })
-      const payload = (await res.json()) as {
-        data?: AxisDeskCategoria[]
-        error?: string
-      }
-      if (!res.ok) {
-        toast.error(payload.error ?? "Erro ao carregar categorias.")
-        setCreateCategorias([])
-        return
-      }
-      setCreateCategorias(payload.data ?? [])
-    } catch {
-      toast.error("Erro ao carregar categorias.")
-      setCreateCategorias([])
     } finally {
-      setCreateCategoriasLoading(false)
+      setRefreshing(false)
     }
-  }, [])
+  }
+
+  const createCategoriasQuery = useQuery({
+    ...supportCategoriasQueryOptions(companyId ?? "", createForm.tipo, createForm.tipo),
+    enabled: createOpen && Boolean(companyId),
+  })
 
   React.useEffect(() => {
-    setTickets([])
-    setFilterCategorias([])
+    if (createCategoriasQuery.data) {
+      setCreateCategorias(createCategoriasQuery.data)
+    }
+  }, [createCategoriasQuery.data])
+
+  React.useEffect(() => {
+    setCreateCategoriasLoading(createCategoriasQuery.isLoading)
+  }, [createCategoriasQuery.isLoading])
+
+  React.useEffect(() => {
+    if (createCategoriasQuery.isError) {
+      toast.error("Erro ao carregar categorias.")
+    }
+  }, [createCategoriasQuery.isError])
+
+  React.useEffect(() => {
     setCreateOpen(false)
     setCreateForm(INITIAL_CREATE_FORM)
-    if (!companyId) {
-      setLoading(false)
-      setRefreshing(false)
-      return
-    }
-    void loadTickets()
-    void loadFilterCategorias()
-  }, [companyId, loadTickets, loadFilterCategorias])
-
-  React.useEffect(() => {
-    if (!createOpen) return
-    void loadCreateCategorias(createForm.tipo)
-  }, [createOpen, createForm.tipo, loadCreateCategorias])
+  }, [companyId])
 
   const filteredTickets = React.useMemo(
     () =>
@@ -398,7 +328,7 @@ export function SupportPage({ portal }: SupportPageProps) {
       toast.success("Chamado criado com sucesso.")
       setCreateOpen(false)
       resetCreateForm()
-      await loadTickets(true)
+      await refreshTickets(true)
       if (payload.data?.id) {
         router.push(`${detailBase}/${payload.data.id}`)
       }
@@ -444,7 +374,7 @@ export function SupportPage({ portal }: SupportPageProps) {
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => void loadTickets(true)}
+            onClick={() => void refreshTickets(true)}
             disabled={refreshing || loading}
           >
             <RefreshCw

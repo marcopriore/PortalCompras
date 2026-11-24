@@ -2,8 +2,15 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { useUser } from '@/lib/hooks/useUser'
+import {
+  adminTenantDetailQueryOptions,
+  adminTenantFeaturesQueryOptions,
+  adminTenantMetricsQueryOptions,
+} from '@/lib/queries/admin-tenant-detail'
+import { queryKeys } from '@/lib/queries/keys'
 import { formatDateBR, formatExportDateStamp } from '@/lib/formato-data'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -346,7 +353,12 @@ type TenantDetailPageProps = {
 export default function TenantDetailPage({ params }: TenantDetailPageProps) {
   const { id } = React.use(params)
   const router = useRouter()
+  const queryClient = useQueryClient()
+  const supabase = useMemo(() => createClient(), [])
   const { userId, isSuperAdmin, loading: userLoading } = useUser()
+  const detailQuery = useQuery({
+    ...adminTenantDetailQueryOptions(id, () => supabase),
+  })
   const [tenant, setTenant] = useState<Tenant | null>(null)
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [metrics, setMetrics] = useState<Metrics>({
@@ -356,7 +368,7 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
     purchaseOrders: 0,
     requisitions: 0,
   })
-  const [loading, setLoading] = useState(true)
+  const loading = detailQuery.isLoading
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'settings' | 'security'>('overview')
   const [editOpen, setEditOpen] = useState(false)
   const [editForm, setEditForm] = useState({
@@ -467,157 +479,52 @@ export default function TenantDetailPage({ params }: TenantDetailPageProps) {
   }, [profiles])
 
   useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true)
-      const supabase = createClient()
-
-      const [tenantRes, profilesRes] = await Promise.all([
-        supabase.from('companies').select('*').eq('id', id).single(),
-        supabase
-          .from('profiles')
-          .select('id, full_name, role, roles, profile_type, status, created_at')
-          .eq('company_id', id)
-          .order('created_at', { ascending: false }),
-      ])
-
-      if (tenantRes.data) {
-        setTenant(tenantRes.data as Tenant)
-        setEditForm({
-          name: (tenantRes.data as Tenant).name,
-          cnpj: (tenantRes.data as Tenant).cnpj || '',
-          status: (tenantRes.data as Tenant).status,
-        })
-      }
-
-      if (profilesRes.data) {
-        setProfiles(profilesRes.data as Profile[])
-      }
-
-      setLoading(false)
-
-      try {
-        const eligRes = await fetch(`/api/admin/tenants/${encodeURIComponent(id)}`, {
-          cache: 'no-store',
-        })
-        if (eligRes.ok) {
-          const payload = (await eligRes.json()) as {
-            data?: { eligible?: boolean }
-          }
-          setDeleteEligible(Boolean(payload.data?.eligible))
-        } else {
-          setDeleteEligible(false)
-        }
-      } catch {
-        setDeleteEligible(false)
-      }
+    if (!detailQuery.data) return
+    const dto = detailQuery.data
+    if (dto.tenant) {
+      setTenant(dto.tenant as Tenant)
+      setEditForm({
+        name: dto.tenant.name,
+        cnpj: dto.tenant.cnpj || '',
+        status: dto.tenant.status,
+      })
     }
+    setProfiles(dto.profiles as Profile[])
+    setDeleteEligible(dto.deleteEligible)
+  }, [detailQuery.data])
 
-    fetchAll()
-  }, [id])
+  const periodKey = `${period}|${customFrom}|${customTo}`
+  const periodStart = useMemo(() => getPeriodStart(period, customFrom), [period, customFrom])
+  const periodEnd = useMemo(
+    () => (period === 'custom' && customTo ? new Date(customTo) : new Date()),
+    [period, customTo],
+  )
+
+  const metricsQuery = useQuery({
+    ...adminTenantMetricsQueryOptions(id, periodKey, periodStart, periodEnd, () => supabase),
+  })
 
   useEffect(() => {
-    if (!id) return
-    const fetchMetrics = async () => {
-      const supabase = createClient()
-      const periodStart = getPeriodStart(period, customFrom)
-      const periodEnd =
-        period === 'custom' && customTo ? new Date(customTo) : new Date()
+    if (!metricsQuery.data) return
+    setMetrics(metricsQuery.data)
+  }, [metricsQuery.data])
 
-      let quotationsQuery = supabase
-        .from('quotations')
-        .select('*', { count: 'exact', head: true })
-        .eq('company_id', id)
-
-      let suppliersQuery = supabase
-        .from('suppliers')
-        .select('*', { count: 'exact', head: true })
-        .eq('company_id', id)
-
-      let itemsQuery = supabase
-        .from('items')
-        .select('*', { count: 'exact', head: true })
-        .eq('company_id', id)
-
-      let purchaseOrdersQuery = supabase
-        .from('purchase_orders')
-        .select('id', { count: 'exact', head: true })
-        .eq('company_id', id)
-        .neq('status', 'draft')
-
-      let requisitionsQuery = supabase
-        .from('requisitions')
-        .select('id', { count: 'exact', head: true })
-        .eq('company_id', id)
-
-      if (periodStart) {
-        const isoStart = periodStart.toISOString()
-        const isoEnd = periodEnd.toISOString()
-        quotationsQuery = quotationsQuery
-          .gte('created_at', isoStart)
-          .lte('created_at', isoEnd)
-        purchaseOrdersQuery = purchaseOrdersQuery
-          .gte('created_at', isoStart)
-          .lte('created_at', isoEnd)
-        requisitionsQuery = requisitionsQuery
-          .gte('created_at', isoStart)
-          .lte('created_at', isoEnd)
-        suppliersQuery = suppliersQuery
-          .gte('created_at', isoStart)
-          .lte('created_at', isoEnd)
-        itemsQuery = itemsQuery
-          .gte('created_at', isoStart)
-          .lte('created_at', isoEnd)
-      }
-
-      const [quotationsRes, suppliersRes, itemsRes, purchaseOrdersRes, requisitionsRes] =
-        await Promise.all([
-          quotationsQuery,
-          suppliersQuery,
-          itemsQuery,
-          purchaseOrdersQuery,
-          requisitionsQuery,
-        ])
-
-      setMetrics((m) => ({
-        ...m,
-        quotations: quotationsRes.count ?? 0,
-        suppliers: suppliersRes.count ?? 0,
-        items: itemsRes.count ?? 0,
-        purchaseOrders: purchaseOrdersRes.count ?? 0,
-        requisitions: requisitionsRes.count ?? 0,
-      }))
-    }
-    fetchMetrics()
-  }, [id, period, customFrom, customTo])
+  const featureKeys = useMemo(() => FEATURES.map((f) => f.key), [])
+  const featuresQuery = useQuery({
+    ...adminTenantFeaturesQueryOptions(
+      id,
+      featureKeys,
+      () => supabase,
+      isSuperAdmin && !userLoading,
+    ),
+  })
 
   useEffect(() => {
-    if (!id || !isSuperAdmin || userLoading) return
-
-    const run = async () => {
-      setFeaturesLoading(true)
-      const supabase = createClient()
-      const state: Record<string, boolean> = {}
-      for (const f of FEATURES) {
-        state[f.key] = false
-      }
-      const { data: featuresRes } = await supabase
-        .from('tenant_features')
-        .select('*')
-        .eq('company_id', id)
-
-      for (const row of featuresRes ?? []) {
-        const r = row as { feature_key?: string; enabled?: boolean }
-        if (!r.feature_key) continue
-        if (state[r.feature_key] == null) continue
-        state[r.feature_key] = Boolean(r.enabled)
-      }
-
-      setFeaturesState(state)
-      setFeaturesLoading(false)
+    setFeaturesLoading(featuresQuery.isLoading)
+    if (featuresQuery.data) {
+      setFeaturesState(featuresQuery.data)
     }
-
-    void run()
-  }, [id, isSuperAdmin, userLoading])
+  }, [featuresQuery.data, featuresQuery.isLoading])
 
   const handleToggle = async (key: FeatureKey, enabled: boolean) => {
     if (!id || !tenant) return

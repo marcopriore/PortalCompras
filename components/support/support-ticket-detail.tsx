@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -46,6 +47,8 @@ import {
   sortHistoricoDesc,
 } from "@/lib/axisdesk/types"
 import { formatDateTimeBR } from "@/lib/formato-data"
+import { supportTicketDetailQueryOptions } from "@/lib/queries/support-queries"
+import { queryKeys } from "@/lib/queries/keys"
 
 type SupportTicketDetailProps = {
   ticketId: string
@@ -78,13 +81,19 @@ function getAvailableActions(
 
 export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const listHref = portal === "comprador" ? "/comprador/suporte" : "/solicitante/suporte"
   const { companyId } = useTenant()
   const companyIdRef = React.useRef(companyId)
   companyIdRef.current = companyId
 
-  const [ticket, setTicket] = React.useState<AxisDeskChamadoDetalhe | null>(null)
-  const [loading, setLoading] = React.useState(true)
+  const detailQuery = useQuery({
+    ...supportTicketDetailQueryOptions(companyId ?? "", ticketId),
+    enabled: Boolean(companyId),
+  })
+
+  const ticket = detailQuery.data ?? null
+  const loading = detailQuery.isLoading
   const [refreshing, setRefreshing] = React.useState(false)
 
   const [actionMessage, setActionMessage] = React.useState("")
@@ -93,71 +102,38 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
   const [pendingAction, setPendingAction] =
     React.useState<AxisDeskChamadoAcao | null>(null)
 
-  const loadTicket = React.useCallback(
-    async (silent = false) => {
-      if (!companyId) {
-        setTicket(null)
-        setLoading(false)
-        setRefreshing(false)
-        return
-      }
-      const started = companyId
-      const stillHere = () => companyIdRef.current === started
-
-      if (!silent) setLoading(true)
-      else setRefreshing(true)
-      try {
-        const res = await fetch(`/api/support/tickets/${ticketId}`, {
-          cache: "no-store",
-        })
-        const payload = (await res.json()) as {
-          data?: AxisDeskChamadoDetalhe
-          error?: string
-        }
-        if (!stillHere()) return
-        if (!res.ok) {
-          toast.error(payload.error ?? "Erro ao carregar chamado.")
-          if (!silent) setTicket(null)
-          return
-        }
-        setTicket(payload.data ?? null)
-      } catch {
-        if (!stillHere()) return
-        toast.error("Erro ao carregar chamado.")
-        if (!silent) setTicket(null)
-      } finally {
-        if (stillHere()) {
-          setLoading(false)
-          setRefreshing(false)
-        }
-      }
-    },
-    [ticketId, companyId],
-  )
-
   const prevCompanyIdRef = React.useRef<string | null>(null)
 
   React.useEffect(() => {
-    if (!companyId) {
-      setTicket(null)
-      setLoading(false)
-      setRefreshing(false)
-      return
-    }
+    if (!companyId) return
     if (
       prevCompanyIdRef.current &&
       prevCompanyIdRef.current !== companyId
     ) {
-      prevCompanyIdRef.current = companyId
       router.replace(listHref)
-      return
     }
     prevCompanyIdRef.current = companyId
-    setTicket(null)
     setActionMessage("")
     setActionAnexos([])
-    void loadTicket()
-  }, [companyId, loadTicket, listHref, router])
+  }, [companyId, listHref, router])
+
+  const refreshTicket = async (silent = false) => {
+    if (!companyId) return
+    if (silent) setRefreshing(true)
+    try {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.supportTicketDetail(companyId, ticketId),
+      })
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  React.useEffect(() => {
+    if (detailQuery.isError) {
+      toast.error("Erro ao carregar chamado.")
+    }
+  }, [detailQuery.isError])
 
   const handleExecuteAction = async (acao: AxisDeskChamadoAcao) => {
     if (!ticket) return
@@ -217,7 +193,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
       toast.success("Ação registrada com sucesso.")
       setActionMessage("")
       setActionAnexos([])
-      await loadTicket(true)
+      await refreshTicket(true)
     } catch {
       toast.error("Erro ao executar ação.")
     } finally {
@@ -324,7 +300,7 @@ export function SupportTicketDetail({ ticketId, portal }: SupportTicketDetailPro
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => void loadTicket(true)}
+          onClick={() => void refreshTicket(true)}
           disabled={refreshing}
         >
           <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />

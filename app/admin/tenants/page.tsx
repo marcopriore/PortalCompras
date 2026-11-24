@@ -1,9 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
+import {
+  adminCompaniesListQueryOptions,
+  type AdminCompanyRow,
+} from '@/lib/queries/admin-companies-list'
+import { queryKeys } from '@/lib/queries/keys'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -29,14 +35,6 @@ import { formatDateBR } from '@/lib/formato-data'
 import { Building2, CheckCircle2, Users, Eye, LogIn, Plus } from 'lucide-react'
 import { logAudit } from '@/lib/audit'
 import { useUser } from '@/lib/hooks/useUser'
-
-type Company = {
-  id: string
-  name: string
-  cnpj: string | null
-  status: string
-  created_at: string
-}
 
 const initialForm = {
   name: '',
@@ -83,44 +81,18 @@ function maskCNPJ(value: string): string {
 
 export default function AdminTenantsPage() {
   const router = useRouter()
-  const [tenants, setTenants] = useState<Company[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
+  const supabase = createClient()
+  const listQuery = useQuery({
+    ...adminCompaniesListQueryOptions(() => supabase),
+  })
+  const tenants: AdminCompanyRow[] = listQuery.data?.companies ?? []
+  const totalUsers = listQuery.data?.totalProfiles ?? 0
+  const loading = listQuery.isLoading
   const [formOpen, setFormOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState(initialForm)
-  const [totalUsers, setTotalUsers] = useState<number>(0)
   const { userId } = useUser()
-
-  useEffect(() => {
-    const supabase = createClient()
-    const fetchData = async () => {
-      setLoading(true)
-      const [{ data, error }, { count, error: usersError }] = await Promise.all([
-        supabase
-          .from('companies')
-          .select('id, name, cnpj, status, created_at')
-          .order('created_at', { ascending: false }),
-        supabase.from('profiles').select('*', { count: 'exact', head: true }),
-      ])
-
-      if (error) {
-        console.error('Erro ao buscar tenants:', error)
-        toast.error('Erro ao carregar tenants.')
-      } else {
-        setTenants((data as Company[]) ?? [])
-      }
-
-      if (usersError) {
-        console.error('Erro ao contar usuários:', usersError)
-      } else if (typeof count === 'number') {
-        setTotalUsers(count)
-      }
-
-      setLoading(false)
-    }
-
-    fetchData()
-  }, [])
 
   const handleChange = (field: keyof typeof initialForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -166,11 +138,10 @@ export default function AdminTenantsPage() {
         return
       }
 
-      const company = payload.company as Company
+      const company = payload.company as AdminCompanyRow
 
-      setTenants((prev) => {
-        if (prev.some((t) => t.id === company.id)) return prev
-        return [company, ...prev]
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.adminCompaniesList(),
       })
       setForm(initialForm)
       setFormOpen(false)

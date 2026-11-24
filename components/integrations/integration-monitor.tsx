@@ -1,7 +1,15 @@
 "use client"
 
 import * as React from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { formatDateTimeSecondsBR } from "@/lib/formato-data"
+import {
+  fetchIntegrationLogDetail,
+  integrationLogsFiltersKey,
+  integrationLogsQueryOptions,
+  type IntegrationLogsFilters,
+} from "@/lib/queries/integration-logs"
+import { queryKeys } from "@/lib/queries/keys"
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -54,16 +62,6 @@ type IntegrationMonitorProps = {
   /** Quando definido (admin), filtra logs apenas deste tenant e oculta o seletor. */
   fixedCompanyId?: string
   hideTitle?: boolean
-}
-
-type LogsResponse = {
-  direction: IntegrationLogDirection
-  page: number
-  page_size: number
-  total: number
-  total_pages: number
-  logs: Array<(InboundLogRow | OutboundLogRow) & { company_name?: string | null }>
-  enabled_outbound_actions?: string[]
 }
 
 function statusBadgeInbound(code: number | null) {
@@ -134,9 +132,7 @@ export function IntegrationMonitor({
   const [tenantFilter, setTenantFilter] = React.useState<string>(
     fixedCompanyId ?? "all",
   )
-  const [loading, setLoading] = React.useState(false)
-  const [data, setData] = React.useState<LogsResponse | null>(null)
-  const [fetchError, setFetchError] = React.useState<string | null>(null)
+  const queryClient = useQueryClient()
   const [detailOpen, setDetailOpen] = React.useState(false)
   const [detailLoading, setDetailLoading] = React.useState(false)
   const [detail, setDetail] = React.useState<Record<string, unknown> | null>(null)
@@ -154,45 +150,33 @@ export function IntegrationMonitor({
 
   const effectiveTenantFilter = fixedCompanyId ?? tenantFilter
 
-  const apiBase =
-    mode === "admin" ? "/api/admin/integration-logs" : "/api/comprador/integration-logs"
+  const logFilters = React.useMemo<IntegrationLogsFilters>(
+    () => ({
+      direction,
+      search,
+      dateFrom,
+      dateTo,
+      successFilter,
+      tenantFilter: effectiveTenantFilter,
+    }),
+    [direction, search, dateFrom, dateTo, successFilter, effectiveTenantFilter],
+  )
 
-  const fetchLogs = React.useCallback(async () => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams()
-      params.set("direction", direction)
-      params.set("page", String(page))
-      if (search.trim()) params.set("search", search.trim())
-      if (dateFrom) params.set("date_from", dateFrom)
-      if (dateTo) params.set("date_to", dateTo)
-      if (direction === "outbound" && successFilter !== "all") {
-        params.set("success", successFilter)
-      }
-      if (mode === "admin" && effectiveTenantFilter !== "all") {
-        params.set("company_id", effectiveTenantFilter)
-      }
+  const logsQuery = useQuery({
+    ...integrationLogsQueryOptions(mode, logFilters, page),
+  })
 
-      const res = await fetch(`${apiBase}?${params.toString()}`)
-      if (!res.ok) {
-        const errJson = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(errJson.error ?? `fetch failed (${res.status})`)
-      }
-      const json = (await res.json()) as LogsResponse
-      setData(json)
-      setEnabledOutboundActions(json.enabled_outbound_actions ?? null)
-      setFetchError(null)
-    } catch (err) {
-      setData(null)
-      setFetchError(err instanceof Error ? err.message : "Falha ao carregar logs")
-    } finally {
-      setLoading(false)
-    }
-  }, [apiBase, direction, page, search, dateFrom, dateTo, successFilter, effectiveTenantFilter, mode])
+  const data = logsQuery.data ?? null
+  const loading = logsQuery.isLoading
+  const fetchError = logsQuery.error
+    ? logsQuery.error instanceof Error
+      ? logsQuery.error.message
+      : "Falha ao carregar logs"
+    : null
 
   React.useEffect(() => {
-    void fetchLogs()
-  }, [fetchLogs])
+    setEnabledOutboundActions(data?.enabled_outbound_actions ?? null)
+  }, [data?.enabled_outbound_actions])
 
   React.useEffect(() => {
     setPage(1)
@@ -203,15 +187,13 @@ export function IntegrationMonitor({
     setDetailLoading(true)
     setDetail(null)
     try {
-      const params = new URLSearchParams()
-      params.set("direction", direction)
-      params.set("id", logId)
-      if (mode === "admin" && effectiveTenantFilter !== "all") {
-        params.set("company_id", effectiveTenantFilter)
-      }
-      const res = await fetch(`${apiBase}?${params.toString()}`)
-      const json = (await res.json()) as { log?: Record<string, unknown> }
-      setDetail(json.log ?? null)
+      const log = await fetchIntegrationLogDetail(
+        mode,
+        direction,
+        logId,
+        effectiveTenantFilter,
+      )
+      setDetail(log)
     } finally {
       setDetailLoading(false)
     }
@@ -252,7 +234,10 @@ export function IntegrationMonitor({
       } else {
         toast.success(`Integração reenviada para ${log.entity_code ?? "o registro"}.`)
       }
-      await fetchLogs()
+      const filtersKey = integrationLogsFiltersKey(mode, logFilters)
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.integrationLogs(mode, filtersKey, page),
+      })
     } catch {
       toast.error("Não foi possível reenviar a integração.")
     } finally {
@@ -291,7 +276,7 @@ export function IntegrationMonitor({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => void fetchLogs()}
+          onClick={() => void logsQuery.refetch()}
           disabled={loading}
           className={hideTitle ? "ml-auto" : undefined}
         >

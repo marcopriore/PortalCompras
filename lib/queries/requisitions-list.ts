@@ -57,3 +57,15 @@ export function requisitionsListQueryOptions(
     queryFn: () => fetchRequisitionsList(supabase, companyId, scope),
   })
 }
+
+export function solicitanteRequisitionsListQueryOptions(
+  supabase: SupabaseClient,
+  companyId: string,
+  scope: "all" | string,
+) {
+  return queryOptions({
+    queryKey: queryKeys.solicitanteRequisitionsList(companyId, scope),
+    queryFn: () => fetchRequisitionsList(supabase, companyId, scope),
+    enabled: Boolean(companyId && scope),
+  })
+}
