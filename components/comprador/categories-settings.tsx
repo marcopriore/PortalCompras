@@ -1,8 +1,11 @@
 "use client"
 
 import * as React from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { categoriesSettingsListQueryOptions } from "@/lib/queries/buyer-settings-lists"
+import { queryKeys } from "@/lib/queries/keys"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -59,8 +62,17 @@ function slugCode(name: string): string {
 
 export function CategoriesSettings() {
   const { companyId } = useUser()
-  const [items, setItems] = React.useState<Category[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const queryClient = useQueryClient()
+  const supabase = React.useMemo(() => createClient(), [])
+  const listQuery = useQuery({
+    ...categoriesSettingsListQueryOptions(
+      companyId ?? "",
+      () => supabase,
+      Boolean(companyId),
+    ),
+  })
+  const items = listQuery.data ?? []
+  const loading = listQuery.isLoading
   const [saving, setSaving] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
   const [dialog, setDialog] = React.useState<{
@@ -77,28 +89,6 @@ export function CategoriesSettings() {
     name: "",
     active: true,
   })
-
-  const load = React.useCallback(async () => {
-    if (!companyId) return
-    setLoading(true)
-    const supabase = createClient()
-    const { data, error } = await supabase
-      .from("categories")
-      .select("id, company_id, code, name, active, created_at")
-      .eq("company_id", companyId)
-      .order("name", { ascending: true })
-    if (error) {
-      toast.error(error.message)
-      setItems([])
-    } else {
-      setItems((data ?? []) as Category[])
-    }
-    setLoading(false)
-  }, [companyId])
-
-  React.useEffect(() => {
-    void load()
-  }, [load])
 
   const openCreate = () => {
     setForm({ code: "", name: "", active: true })
@@ -167,7 +157,9 @@ export function CategoriesSettings() {
         toast.success("Categoria atualizada.")
       }
       setDialog({ open: false, mode: "create", item: null })
-      await load()
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.categoriesSettingsList(companyId),
+      })
     } finally {
       setSaving(false)
     }
@@ -189,7 +181,9 @@ export function CategoriesSettings() {
       }
       toast.success("Categoria excluída.")
       setDeleteDialog({ open: false, item: null })
-      await load()
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.categoriesSettingsList(companyId),
+      })
     } finally {
       setDeleting(false)
     }

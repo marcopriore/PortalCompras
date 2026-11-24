@@ -2,7 +2,10 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/lib/hooks/useUser"
+import { solicitanteSettingsQueryOptions } from "@/lib/queries/solicitante-settings"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -66,6 +69,20 @@ const SOLICITANTE_NOTIF_TYPES = [
 function SolicitanteConfigInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { userId: sessionUserId, companyId: sessionCompanyId, loading: userLoading } =
+    useUser()
+  const supabase = React.useMemo(() => createClient(), [])
+  const settingsHydratedRef = React.useRef(false)
+  const [settingsReady, setSettingsReady] = React.useState(false)
+
+  const settingsQuery = useQuery({
+    ...solicitanteSettingsQueryOptions(
+      sessionCompanyId,
+      sessionUserId ?? "",
+      () => supabase,
+      !userLoading && Boolean(sessionUserId),
+    ),
+  })
   const tabParam = searchParams.get("tab")
   const activeTab: TabKey =
     tabParam === "notificacoes" || tabParam === "seguranca" || tabParam === "perfil"
@@ -75,7 +92,10 @@ function SolicitanteConfigInner() {
   const [userId, setUserId] = React.useState<string | null>(null)
   const [companyId, setCompanyId] = React.useState<string | null>(null)
   const [authEmail, setAuthEmail] = React.useState("")
-  const [loading, setLoading] = React.useState(true)
+  const loading =
+    userLoading ||
+    settingsQuery.isLoading ||
+    (!settingsReady && Boolean(sessionUserId))
 
   const [profileForm, setProfileForm] = React.useState({
     full_name: "",
@@ -119,92 +139,47 @@ function SolicitanteConfigInner() {
     router.replace(`/solicitante/configuracoes?tab=${tab}`)
   }
 
+  /* eslint-disable react-hooks/set-state-in-effect -- reset espelho ao trocar usuário */
   React.useEffect(() => {
-    let alive = true
-    const load = async () => {
-      const supabase = createClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
-        window.location.href = "/login"
-        return
-      }
+    settingsHydratedRef.current = false
+    setSettingsReady(false)
+  }, [sessionUserId])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select(
-          "id, full_name, company_id, profile_type, job_title, department, phone, avatar_url, is_superadmin, roles, role",
-        )
-        .eq("id", user.id)
-        .single()
-
-      if (!profile) {
-        window.location.href = "/login"
-        return
-      }
-
-      const roles = (profile.roles as string[] | null) ?? []
-      const isAdmin =
-        Boolean(profile.is_superadmin) ||
-        profile.role === "admin" ||
-        roles.includes("admin")
-      if (profile.profile_type !== "requester" && !isAdmin) {
-        window.location.href = "/login"
-        return
-      }
-
-      if (!alive) return
-      setUserId(user.id)
-      setCompanyId(profile.company_id)
-      setAuthEmail(user.email ?? "")
-      setProfileForm({
-        full_name: profile.full_name ?? "",
-        job_title: profile.job_title ?? "",
-        department: profile.department ?? "",
-        phone: profile.phone ?? "",
-        avatar_url: profile.avatar_url ?? null,
-      })
-
-      if (profile.company_id) {
-        const { data: prefs } = await supabase
-          .from("notification_preferences")
-          .select(
-            "new_requisition_bell, new_requisition_email, requisition_approval_bell, requisition_approval_email",
-          )
-          .eq("user_id", user.id)
-          .eq("company_id", profile.company_id)
-          .maybeSingle()
-
-        if (prefs) {
-          setNotifExists(true)
-          setNotifForm({
-            new_requisition_bell: Boolean(prefs.new_requisition_bell ?? true),
-            new_requisition_email: Boolean(prefs.new_requisition_email ?? false),
-            requisition_approval_bell: Boolean(
-              prefs.requisition_approval_bell ?? true,
-            ),
-            requisition_approval_email: Boolean(
-              prefs.requisition_approval_email ?? false,
-            ),
-          })
-        }
-      }
-
-      const { data: factors } = await supabase.auth.mfa.listFactors()
-      const verified = factors?.totp?.find((f) => f.status === "verified")
-      if (verified) {
-        setMfaEnabled(true)
-        setMfaFactorId(verified.id)
-      }
-
-      setLoading(false)
+  React.useEffect(() => {
+    if (userLoading) return
+    if (!sessionUserId && settingsQuery.isError) {
+      window.location.href = "/login"
+      return
     }
-    void load()
-    return () => {
-      alive = false
+    if (settingsQuery.error instanceof Error) {
+      if (
+        settingsQuery.error.message === "unauthenticated" ||
+        settingsQuery.error.message === "forbidden" ||
+        settingsQuery.error.message === "profile_not_found"
+      ) {
+        window.location.href = "/login"
+      }
     }
-  }, [])
+  }, [sessionUserId, settingsQuery.error, settingsQuery.isError, userLoading])
+
+  /* eslint-disable react-hooks/set-state-in-effect -- sync formulário a partir do DTO da query */
+  React.useEffect(() => {
+    if (settingsQuery.isLoading || !settingsQuery.data) return
+    if (settingsHydratedRef.current) return
+    settingsHydratedRef.current = true
+    const dto = settingsQuery.data
+    setUserId(dto.userId)
+    setCompanyId(dto.companyId)
+    setAuthEmail(dto.authEmail)
+    setProfileForm(dto.profileForm)
+    setNotifForm(dto.notifForm)
+    setNotifExists(dto.notifExists)
+    setMfaEnabled(dto.mfaEnabled)
+    setMfaFactorId(dto.mfaFactorId)
+    setSettingsReady(true)
+  }, [settingsQuery.data, settingsQuery.isLoading])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleSaveProfile = async () => {
     if (!userId) return

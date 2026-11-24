@@ -1,8 +1,11 @@
 "use client"
 
 import * as React from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import { costCentersSettingsListQueryOptions } from "@/lib/queries/buyer-settings-lists"
+import { queryKeys } from "@/lib/queries/keys"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -48,8 +51,17 @@ export type CostCenter = {
 
 export function CostCentersSettings() {
   const { companyId } = useUser()
-  const [items, setItems] = React.useState<CostCenter[]>([])
-  const [loading, setLoading] = React.useState(true)
+  const queryClient = useQueryClient()
+  const supabase = React.useMemo(() => createClient(), [])
+  const listQuery = useQuery({
+    ...costCentersSettingsListQueryOptions(
+      companyId ?? "",
+      () => supabase,
+      Boolean(companyId),
+    ),
+  })
+  const items = listQuery.data ?? []
+  const loading = listQuery.isLoading
   const [saving, setSaving] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
   const [dialog, setDialog] = React.useState<{
@@ -66,28 +78,6 @@ export function CostCentersSettings() {
     description: "",
     active: true,
   })
-
-  const load = React.useCallback(async () => {
-    if (!companyId) return
-    setLoading(true)
-    const supabase = createClient()
-    const { data, error } = await supabase
-      .from("cost_centers")
-      .select("id, company_id, code, description, active, created_at")
-      .eq("company_id", companyId)
-      .order("code", { ascending: true })
-    if (error) {
-      toast.error(error.message)
-      setItems([])
-    } else {
-      setItems((data ?? []) as CostCenter[])
-    }
-    setLoading(false)
-  }, [companyId])
-
-  React.useEffect(() => {
-    void load()
-  }, [load])
 
   const handleSave = async () => {
     if (!companyId) return
@@ -115,11 +105,6 @@ export function CostCentersSettings() {
           toast.error("Erro ao salvar: " + error.message)
           return
         }
-        setItems((prev) =>
-          [...prev, data as CostCenter].sort((a, b) =>
-            a.code.localeCompare(b.code),
-          ),
-        )
       } else if (dialog.item) {
         const { error } = await supabase
           .from("cost_centers")
@@ -129,15 +114,11 @@ export function CostCentersSettings() {
           toast.error("Erro ao salvar: " + error.message)
           return
         }
-        setItems((prev) =>
-          prev
-            .map((row) =>
-              row.id === dialog.item!.id
-                ? { ...row, code, description, active: form.active }
-                : row,
-            )
-            .sort((a, b) => a.code.localeCompare(b.code)),
-        )
+      }
+      if (companyId) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.costCentersSettingsList(companyId),
+        })
       }
       setDialog((d) => ({ ...d, open: false }))
       toast.success("Centro de custo salvo.")
@@ -157,7 +138,11 @@ export function CostCentersSettings() {
         toast.error("Erro ao excluir: " + error.message)
         return
       }
-      setItems((prev) => prev.filter((r) => r.id !== item.id))
+      if (companyId) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.costCentersSettingsList(companyId),
+        })
+      }
       setDeleteDialog({ open: false, item: null })
       toast.success("Centro de custo removido.")
     } finally {

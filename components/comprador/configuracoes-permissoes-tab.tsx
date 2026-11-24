@@ -1,8 +1,11 @@
 "use client"
 
 import * as React from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useUser } from "@/lib/hooks/useUser"
 import { usePermissions } from "@/lib/hooks/usePermissions"
+import { permissionGroupsQueryOptions } from "@/lib/queries/permission-groups"
+import { queryKeys } from "@/lib/queries/keys"
 import { logAudit } from "@/lib/audit"
 import {
   PERMISSION_CATALOG,
@@ -56,9 +59,8 @@ export function ConfiguracoesPermissoesTab() {
   const { userId, companyId, isSuperAdmin, loading: userLoading } = useUser()
   const { hasPermission } = usePermissions()
 
-  const [loading, setLoading] = React.useState(true)
+  const queryClient = useQueryClient()
   const [saving, setSaving] = React.useState(false)
-  const [groups, setGroups] = React.useState<PermissionGroup[]>([])
   const [successMessage, setSuccessMessage] = React.useState<string | null>(null)
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
@@ -83,30 +85,16 @@ export function ConfiguracoesPermissoesTab() {
     [],
   )
 
-  const loadGroups = React.useCallback(async () => {
-    setLoading(true)
-    setErrorMessage(null)
-    try {
-      const res = await fetch("/api/admin/permission-groups?withRules=1", {
-        cache: "no-store",
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        setErrorMessage(data.error ?? "Não foi possível carregar os grupos.")
-        return
-      }
-      setGroups((data.groups ?? []) as PermissionGroup[])
-    } catch {
-      setErrorMessage("Não foi possível carregar os grupos.")
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const groupsQuery = useQuery({
+    ...permissionGroupsQueryOptions(!userLoading && canManage),
+  })
+  const loading = groupsQuery.isLoading
+  const groups = (groupsQuery.data ?? []) as PermissionGroup[]
 
-  React.useEffect(() => {
-    if (userLoading || !canManage) return
-    void loadGroups()
-  }, [userLoading, canManage, loadGroups])
+  const reloadGroups = React.useCallback(async () => {
+    setErrorMessage(null)
+    await queryClient.invalidateQueries({ queryKey: queryKeys.permissionGroupsList() })
+  }, [queryClient])
 
   const openCreate = () => {
     editLoadIdRef.current += 1
@@ -273,7 +261,7 @@ export function ConfiguracoesPermissoesTab() {
       }
 
       setEditorOpen(false)
-      await loadGroups()
+      await reloadGroups()
     } finally {
       setSaving(false)
     }
@@ -304,7 +292,7 @@ export function ConfiguracoesPermissoesTab() {
       })
     }
     setSuccessMessage("Grupo excluído.")
-    await loadGroups()
+    await reloadGroups()
   }
 
   if (userLoading) {

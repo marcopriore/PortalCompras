@@ -8,14 +8,21 @@ import { CostCentersSettings } from "@/components/comprador/cost-centers-setting
 import { BranchSettings } from "@/components/comprador/branch-settings"
 import { CategoriesSettings } from "@/components/comprador/categories-settings"
 import { SettingsCollapsibleCard } from "@/components/ui/settings-collapsible-card"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
 import { useUser } from "@/lib/hooks/useUser"
+import {
+  buyerApprovalsConfigQueryOptions,
+  buyerApproversQueryOptions,
+  buyerPaymentConditionsAllQueryOptions,
+  buyerSettingsInitialQueryOptions,
+  supplierTermsActiveQueryOptions,
+} from "@/lib/queries/buyer-settings-queries"
+import { contractPoLinkPromptQueryOptions } from "@/lib/queries/contract-po-link-prompt"
+import { queryKeys } from "@/lib/queries/keys"
 import { notifyCompanyLogoUpdated } from "@/lib/hooks/use-company-logo"
 import { usePermissions } from "@/lib/hooks/usePermissions"
-import {
-  CONTRACT_PO_LINK_PROMPT_KEY,
-  parseContractPoLinkPrompt,
-} from "@/lib/contracts/contract-balance-settings"
+import { CONTRACT_PO_LINK_PROMPT_KEY } from "@/lib/contracts/contract-balance-settings"
 import { logAudit } from "@/lib/audit"
 import { formatDateBR } from "@/lib/formato-data"
 import { toast } from "sonner"
@@ -424,6 +431,11 @@ function getAvatarColor(name: string): string {
 export default function ConfiguracoesPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
+  const supabase = React.useMemo(() => createClient(), [])
+  const settingsHydratedRef = React.useRef(false)
+  const approvalsHydratedRef = React.useRef(false)
+  const termsHydratedRef = React.useRef(false)
   const { companyId, userId, isSuperAdmin, loading: userLoading } = useUser()
   const { hasPermission, hasFeature, loading: permissionsLoading } = usePermissions()
 
@@ -576,12 +588,73 @@ export default function ConfiguracoesPage() {
     approvals: { success: null, error: null },
   })
 
-  const [loading, setLoading] = React.useState(true)
+  const [settingsReady, setSettingsReady] = React.useState(false)
 
-  const [paymentConditions, setPaymentConditions] = React.useState<PaymentCondition[]>([])
-  const [loadingConditions, setLoadingConditions] = React.useState(false)
-  const [contractPoLinkPrompt, setContractPoLinkPrompt] = React.useState(true)
-  const [loadingContractSettings, setLoadingContractSettings] = React.useState(false)
+  const settingsInitialQuery = useQuery({
+    ...buyerSettingsInitialQueryOptions(
+      companyId ?? "",
+      userId ?? "",
+      () => supabase,
+      !userLoading && Boolean(companyId && userId),
+    ),
+  })
+
+  const approvalsConfigQuery = useQuery({
+    ...buyerApprovalsConfigQueryOptions(
+      companyId ?? "",
+      () => supabase,
+      !userLoading &&
+        Boolean(companyId && canManageApprovals && activeTab === "aprovacoes"),
+    ),
+  })
+
+  const approversQuery = useQuery({
+    ...buyerApproversQueryOptions(
+      companyId ?? "",
+      () => supabase,
+      !userLoading && Boolean(companyId && activeTab === "aprovacoes"),
+    ),
+  })
+
+  const paymentConditionsQuery = useQuery({
+    ...buyerPaymentConditionsAllQueryOptions(
+      companyId ?? "",
+      () => supabase,
+      !userLoading &&
+        Boolean(companyId && canManageCompany && activeTab === "campos"),
+    ),
+  })
+
+  const contractPromptQuery = useQuery({
+    ...contractPoLinkPromptQueryOptions(companyId ?? "", () => supabase),
+    enabled:
+      !userLoading &&
+      activeTab === "campos" &&
+      Boolean(companyId && canManageCompany && contractBalanceEnabled),
+  })
+
+  const supplierTermsQuery = useQuery({
+    ...supplierTermsActiveQueryOptions(
+      companyId ?? "",
+      !userLoading && activeTab === "termos" && Boolean(companyId),
+    ),
+  })
+
+  const loading =
+    userLoading ||
+    (Boolean(companyId && userId) &&
+      (settingsInitialQuery.isLoading || !settingsReady))
+
+  const paymentConditions = (paymentConditionsQuery.data ??
+    []) as PaymentCondition[]
+  const loadingConditions = paymentConditionsQuery.isLoading
+  const [contractPoLinkPromptOverride, setContractPoLinkPromptOverride] =
+    React.useState<boolean | null>(null)
+  const contractPoLinkPrompt =
+    contractPoLinkPromptOverride ??
+    contractPromptQuery.data ??
+    true
+  const loadingContractSettings = contractPromptQuery.isLoading
   const [savingContractPrompt, setSavingContractPrompt] = React.useState(false)
   const [conditionDialog, setConditionDialog] = React.useState<{
     open: boolean
@@ -608,214 +681,104 @@ export default function ConfiguracoesPage() {
     version_date: new Date().toISOString().slice(0, 10),
   })
   const [activeTerm, setActiveTerm] = React.useState<SupplierTerm | null>(null)
-  const [termLoading, setTermLoading] = React.useState(false)
+  const termLoading = supplierTermsQuery.isLoading
   const [termSaving, setTermSaving] = React.useState(false)
   const [termMessage, setTermMessage] = React.useState<{
     success: string | null
     error: string | null
   }>({ success: null, error: null })
 
+  /* eslint-disable react-hooks/set-state-in-effect -- reset espelhos ao trocar tenant/usuário */
   React.useEffect(() => {
-    const run = async () => {
-      if (userLoading || !companyId || !userId) return
-      setLoading(true)
-      try {
-        const supabase = createClient()
+    settingsHydratedRef.current = false
+    setSettingsReady(false)
+    approvalsHydratedRef.current = false
+    termsHydratedRef.current = false
+    setContractPoLinkPromptOverride(null)
+  }, [companyId, userId])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-        const { data: authUser } = await supabase.auth.getUser()
-        if (authUser?.user?.email) setAuthEmail(authUser.user.email)
-
-        const [profileRes, companyRes, notifRes] = await Promise.all([
-          supabase.from("profiles").select("*").eq("id", userId).single(),
-          supabase.from("companies").select("*").eq("id", companyId).single(),
-          supabase
-            .from("notification_preferences")
-            .select("*")
-            .eq("user_id", userId)
-            .eq("company_id", companyId)
-            .maybeSingle(),
-        ])
-
-        if (profileRes.data) {
-          const p = profileRes.data as any
-          setProfileForm({
-            full_name: p.full_name ?? "",
-            job_title: p.job_title ?? "",
-            department: p.department ?? "",
-            phone: p.phone ?? "",
-            avatar_url: p.avatar_url ?? null,
-          })
-        }
-
-        if (companyRes.data) {
-          const c = companyRes.data as any
-          setCompanyForm({
-            name: c.name ?? "",
-            trade_name: c.trade_name ?? "",
-            cnpj: c.cnpj ? String(c.cnpj) : "",
-            state_reg: c.state_reg ?? "",
-            address: c.address ?? "",
-            city: c.city ?? "",
-            state: c.state ?? "",
-            zip_code: c.zip_code ?? "",
-            logo_url: c.logo_url ?? null,
-          })
-        }
-
-        if (notifRes.data) {
-          setNotifForm(notificationFormFromRow(notifRes.data as Record<string, unknown>))
-          setNotifExists(true)
-        } else {
-          setNotifForm(defaultNotificationForm())
-          setNotifExists(false)
-        }
-
-        const { data: factorsData } = await supabase.auth.mfa.listFactors()
-        const fd = factorsData as {
-          totp?: { id: string; factor_type?: string; status?: string }[]
-          all?: { id: string; factor_type?: string; status?: string }[]
-        } | null
-        const factorList =
-          fd?.totp && fd.totp.length > 0 ? fd.totp : (fd?.all ?? [])
-        const totpFactor = factorList.find(
-          (f) =>
-            String(f.factor_type ?? "").toLowerCase() === "totp" &&
-            f.status === "verified",
-        )
-        setMfaEnabled(!!totpFactor)
-        if (totpFactor) setMfaFactorId(totpFactor.id)
-        else setMfaFactorId(null)
-      } finally {
-        setLoading(false)
-      }
+  React.useEffect(() => {
+    if (paymentConditionsQuery.error) {
+      toast.error("Não foi possível carregar as condições de pagamento.")
     }
-    run()
-  }, [companyId, userId, userLoading])
+  }, [paymentConditionsQuery.error])
+
+  /* eslint-disable react-hooks/set-state-in-effect -- sync formulário a partir do DTO da query */
+  React.useEffect(() => {
+    if (settingsInitialQuery.isLoading || !settingsInitialQuery.data) return
+    if (settingsHydratedRef.current) return
+    settingsHydratedRef.current = true
+    const dto = settingsInitialQuery.data
+    setAuthEmail(dto.authEmail)
+    setProfileForm(dto.profileForm)
+    setCompanyForm(dto.companyForm)
+    if (dto.notifExists && dto.notifRow) {
+      setNotifForm(notificationFormFromRow(dto.notifRow))
+      setNotifExists(true)
+    } else {
+      setNotifForm(defaultNotificationForm())
+      setNotifExists(false)
+    }
+    setMfaEnabled(dto.mfaEnabled)
+    setMfaFactorId(dto.mfaFactorId)
+    setSettingsReady(true)
+  }, [settingsInitialQuery.data, settingsInitialQuery.isLoading])
 
   React.useEffect(() => {
-    const loadApprovals = async () => {
-      if (userLoading || !companyId || !canManageApprovals || activeTab !== "aprovacoes") return
-      const supabase = createClient()
-      const [tfRes, levelsRes] = await Promise.all([
-        supabase
-          .from("tenant_features")
-          .select("feature_key, enabled")
-          .eq("company_id", companyId)
-          .in("feature_key", [
-            "approval_requisition",
-            "approval_order",
-            "approval_catalog_order",
-          ]),
-        supabase
-          .from("approval_levels")
-          .select("id, flow, cost_center, category, min_value, max_value, approver_id, approver_name")
-          .eq("company_id", companyId),
-      ])
-      const tfData = (tfRes.data ?? []) as { feature_key: string; enabled: boolean }[]
-      tfData.forEach((row) => {
-        if (row.feature_key === "approval_requisition") setApprovalRequisitionEnabled(Boolean(row.enabled))
-        if (row.feature_key === "approval_order") setApprovalOrderEnabled(Boolean(row.enabled))
-        if (row.feature_key === "approval_catalog_order")
-          setApprovalCatalogEnabled(Boolean(row.enabled))
+    if (!approvalsConfigQuery.data || approvalsHydratedRef.current) return
+    if (activeTab !== "aprovacoes") return
+    approvalsHydratedRef.current = true
+    const dto = approvalsConfigQuery.data
+    setApprovalRequisitionEnabled(dto.approvalRequisitionEnabled)
+    setApprovalOrderEnabled(dto.approvalOrderEnabled)
+    setApprovalCatalogEnabled(dto.approvalCatalogEnabled)
+    const levels = dto.rules.map((r) => ({
+      ...r,
+      flow: (r.flow ?? "requisition") as "requisition" | "order" | "catalog_order",
+    }))
+    setApprovalRules(levels.filter((l) => l.flow === "requisition"))
+    setApprovalOrderRules(levels.filter((l) => l.flow === "order"))
+    setApprovalCatalogRules(levels.filter((l) => l.flow === "catalog_order"))
+  }, [activeTab, approvalsConfigQuery.data])
+
+  React.useEffect(() => {
+    if (!approversQuery.data) return
+    if (activeTab !== "aprovacoes") return
+    setApproversRequisition(approversQuery.data.requisition)
+    setApproversOrder(approversQuery.data.order)
+  }, [activeTab, approversQuery.data])
+
+  React.useEffect(() => {
+    if (supplierTermsQuery.isLoading) return
+    if (activeTab !== "termos") return
+    if (termsHydratedRef.current) return
+    termsHydratedRef.current = true
+    const term = supplierTermsQuery.data
+    if (term) {
+      setActiveTerm(term)
+      setTermForm({
+        title: term.title,
+        content: term.content,
+        version: term.version,
+        version_date: term.version_date,
       })
-      const levels = ((levelsRes.data ?? []) as ApprovalRule[]).map((r) => ({
-        ...r,
-        flow: (r.flow ?? "requisition") as "requisition" | "order" | "catalog_order",
+    } else {
+      setActiveTerm(null)
+      setTermForm((f) => ({
+        ...f,
+        title: "Termos e Condições de Fornecimento",
+        content: "",
+        version: "1.0",
+        version_date: new Date().toISOString().slice(0, 10),
       }))
-      setApprovalRules(levels.filter((l) => l.flow === "requisition"))
-      setApprovalOrderRules(levels.filter((l) => l.flow === "order"))
-      setApprovalCatalogRules(levels.filter((l) => l.flow === "catalog_order"))
     }
-    loadApprovals()
-  }, [activeTab, companyId, canManageApprovals, userLoading])
-
-  React.useEffect(() => {
-    const loadApprovers = async () => {
-      if (userLoading || !companyId || activeTab !== "aprovacoes") return
-      const supabase = createClient()
-      const [reqRes, orderRes] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, full_name, role, roles")
-          .eq("company_id", companyId)
-          .overlaps("roles", ["approver_requisition", "admin", "manager"]),
-        supabase
-          .from("profiles")
-          .select("id, full_name, role, roles")
-          .eq("company_id", companyId)
-          .overlaps("roles", ["approver_order", "admin", "manager"]),
-      ])
-      setApproversRequisition(((reqRes.data as unknown) as ApproverProfile[]) ?? [])
-      setApproversOrder(((orderRes.data as unknown) as ApproverProfile[]) ?? [])
-    }
-    loadApprovers()
-  }, [companyId, activeTab, userLoading])
-
-  React.useEffect(() => {
-    if (userLoading || activeTab !== "campos" || !companyId || !canManageCompany) return
-    let cancelled = false
-    const supabase = createClient()
-    setLoadingConditions(true)
-    void supabase
-      .from("payment_conditions")
-      .select("*")
-      .eq("company_id", companyId)
-      .order("code", { ascending: true })
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error) {
-          console.error(error)
-          toast.error("Não foi possível carregar as condições de pagamento.")
-          setPaymentConditions([])
-        } else {
-          setPaymentConditions((data ?? []) as PaymentCondition[])
-        }
-        setLoadingConditions(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [activeTab, companyId, canManageCompany, userLoading])
-
-  React.useEffect(() => {
-    if (
-      userLoading ||
-      activeTab !== "campos" ||
-      !companyId ||
-      !canManageCompany ||
-      !contractBalanceEnabled
-    ) {
-      return
-    }
-    let cancelled = false
-    const supabase = createClient()
-    setLoadingContractSettings(true)
-    void supabase
-      .from("company_settings")
-      .select("value")
-      .eq("company_id", companyId)
-      .eq("key", CONTRACT_PO_LINK_PROMPT_KEY)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return
-        if (error) {
-          console.error(error)
-          setContractPoLinkPrompt(true)
-        } else {
-          setContractPoLinkPrompt(
-            parseContractPoLinkPrompt(data?.value as string | null | undefined),
-          )
-        }
-        setLoadingContractSettings(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [activeTab, companyId, canManageCompany, userLoading, contractBalanceEnabled])
+  }, [activeTab, supplierTermsQuery.data, supplierTermsQuery.isLoading])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const handleContractPoLinkPromptChange = async (enabled: boolean) => {
     if (!companyId || !canManageCompany) return
-    setContractPoLinkPrompt(enabled)
+    setContractPoLinkPromptOverride(enabled)
     setSavingContractPrompt(true)
     try {
       const supabase = createClient()
@@ -831,48 +794,12 @@ export default function ConfiguracoesPage() {
       toast.success("Preferência de vínculo com contrato atualizada.")
     } catch (e) {
       console.error(e)
-      setContractPoLinkPrompt(!enabled)
+      setContractPoLinkPromptOverride(!enabled)
       toast.error("Não foi possível salvar a preferência.")
     } finally {
       setSavingContractPrompt(false)
     }
   }
-
-  React.useEffect(() => {
-    if (userLoading || activeTab !== "termos" || !companyId) return
-    let cancelled = false
-    setTermLoading(true)
-    fetch(`/api/supplier-terms?company_id=${companyId}`)
-      .then((r) => r.json())
-      .then((json: { term: SupplierTerm | null }) => {
-        if (cancelled) return
-        if (json.term) {
-          setActiveTerm(json.term)
-          setTermForm({
-            title: json.term.title,
-            content: json.term.content,
-            version: json.term.version,
-            version_date: json.term.version_date,
-          })
-        } else {
-          setActiveTerm(null)
-          setTermForm((f) => ({
-            ...f,
-            title: "Termos e Condições de Fornecimento",
-            content: "",
-            version: "1.0",
-            version_date: new Date().toISOString().slice(0, 10),
-          }))
-        }
-      })
-      .catch(console.error)
-      .finally(() => {
-        if (!cancelled) setTermLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [activeTab, companyId, userLoading])
 
   const handleSaveTerm = async () => {
     if (!companyId) return
@@ -935,9 +862,6 @@ export default function ConfiguracoesPage() {
           toast.error("Erro ao salvar: " + error.message)
           return
         }
-        setPaymentConditions((prev) =>
-          [...prev, data as PaymentCondition].sort((a, b) => a.code.localeCompare(b.code)),
-        )
       } else if (conditionDialog.item) {
         const { error } = await supabase
           .from("payment_conditions")
@@ -951,15 +875,11 @@ export default function ConfiguracoesPage() {
           toast.error("Erro ao salvar: " + error.message)
           return
         }
-        setPaymentConditions((prev) =>
-          prev
-            .map((pc) =>
-              pc.id === conditionDialog.item!.id
-                ? { ...pc, code, description, active: conditionForm.active }
-                : pc,
-            )
-            .sort((a, b) => a.code.localeCompare(b.code)),
-        )
+      }
+      if (companyId) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.buyerPaymentConditionsAll(companyId),
+        })
       }
       setConditionDialog((d) => ({ ...d, open: false }))
     } finally {
@@ -978,7 +898,11 @@ export default function ConfiguracoesPage() {
         toast.error("Erro ao excluir: " + error.message)
         return
       }
-      setPaymentConditions((prev) => prev.filter((pc) => pc.id !== item.id))
+      if (companyId) {
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.buyerPaymentConditionsAll(companyId),
+        })
+      }
       setDeleteConditionDialog({ open: false, item: null })
       toast.success("Condição removida.")
     } finally {
@@ -1078,12 +1002,9 @@ export default function ConfiguracoesPage() {
         }
       }
 
-      const { data } = await supabase
-        .from("payment_conditions")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("code", { ascending: true })
-      setPaymentConditions((data ?? []) as PaymentCondition[])
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.buyerPaymentConditionsAll(companyId),
+      })
 
       const msg = `Importação concluída: ${created} criados/atualizados, ${deleted} excluídos, ${errors} erros.`
       if (errors === 0) toast.success(msg)

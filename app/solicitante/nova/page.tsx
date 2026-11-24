@@ -2,7 +2,10 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/lib/hooks/useUser"
+import { userDefaultCostCenterQueryOptions } from "@/lib/queries/user-default-cost-center"
 import { logAudit } from "@/lib/audit"
 import { notifyWithEmail } from "@/lib/notify-with-email"
 import { notifyRequisitionOutboundClient } from "@/lib/integrations/notify-requisition-outbound-client"
@@ -23,10 +26,7 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip"
 import { ChevronLeft, X, Paperclip } from "lucide-react"
-import {
-  CostCenterSelect,
-  loadUserDefaultCostCenterCode,
-} from "@/components/ui/cost-center-select"
+import { CostCenterSelect } from "@/components/ui/cost-center-select"
 import { RequisitionLineItemsSection } from "@/components/requisitions/requisition-line-items-section"
 import type { RequisitionEditorLineItem } from "@/lib/requisitions/line-items-helpers"
 import { validateRequisitionLineSiteCodes } from "@/lib/requisitions/line-items-helpers"
@@ -55,10 +55,15 @@ export default function SolicitanteNovaPage() {
   const router = useRouter()
   const { accountAssignmentEnabled } = useImplantationConfig()
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const {
+    companyId,
+    userId,
+    fullName: userName,
+    profileType,
+    loading: userLoading,
+  } = useUser()
+  const supabase = React.useMemo(() => createClient(), [])
 
-  const [companyId, setCompanyId] = React.useState<string | null>(null)
-  const [userId, setUserId] = React.useState<string | null>(null)
-  const [userName, setUserName] = React.useState<string>("")
   const [saving, setSaving] = React.useState(false)
   const [drafting, setDrafting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -83,32 +88,29 @@ export default function SolicitanteNovaPage() {
   // Anexos
   const [attachments, setAttachments] = React.useState<AttachedFile[]>([])
 
-  // Carregar usuário
+  const defaultCostCenterQuery = useQuery({
+    ...userDefaultCostCenterQueryOptions(userId ?? "", () => supabase),
+    enabled: Boolean(userId) && !userLoading,
+  })
+
   React.useEffect(() => {
-    const run = async () => {
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        window.location.href = "/login"
-        return
-      }
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("company_id, full_name, profile_type")
-        .eq("id", user.id)
-        .single()
-      if (!profile || profile.profile_type !== "requester") {
-        window.location.href = "/login"
-        return
-      }
-      setUserId(user.id)
-      setCompanyId(profile.company_id)
-      setUserName(profile.full_name ?? "")
-      const defaultCc = await loadUserDefaultCostCenterCode(user.id)
-      if (defaultCc) setCostCenter(defaultCc)
+    if (userLoading) return
+    if (!userId) {
+      window.location.href = "/login"
+      return
     }
-    void run()
-  }, [])
+    if (profileType && profileType !== "requester") {
+      window.location.href = "/login"
+    }
+  }, [userId, profileType, userLoading])
+
+  /* eslint-disable react-hooks/set-state-in-effect -- sync default centro de custo do perfil */
+  React.useEffect(() => {
+    const code = defaultCostCenterQuery.data?.trim() ?? ""
+    if (!code) return
+    setCostCenter((prev) => (prev ? prev : code))
+  }, [defaultCostCenterQuery.data])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function handleAccountConfigChange(itemId: string) {
     setAccountConfigErrors((prev) => {

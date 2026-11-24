@@ -265,6 +265,17 @@ export const queryKeys = {
   supplierTermsActive: (companyId: string) =>
     ["supplierTerms", "active", companyId] as const,
 
+  costCentersSettingsList: (companyId: string) =>
+    ["costCenters", "settingsList", companyId] as const,
+
+  companyBranchesSettingsList: (companyId: string) =>
+    ["companyBranches", "settingsList", companyId] as const,
+
+  categoriesSettingsList: (companyId: string) =>
+    ["categories", "settingsList", companyId] as const,
+
+  permissionGroupsList: () => ["permissionGroups", "list"] as const,
+
   novoPedidoQuotation: (companyId: string, quotationId: string) =>
     ["quotations", "novoPedido", companyId, quotationId] as const,
 

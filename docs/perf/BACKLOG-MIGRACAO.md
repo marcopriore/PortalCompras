@@ -2,7 +2,7 @@
 
 Ordem sugerida de lotes pós Fase 5. Cada lote = 1 commit (ou poucos).
 
-## Feito (Fases 1–4)
+## Feito (Fases 1–4 + fechamento Lotes A–C)
 
 - Sessão server + QueryProvider remount (`userId:companyId`)
 - Listas comprador: REQ, COT, PO, contratos, fornecedores, itens, aprovações
@@ -10,55 +10,37 @@ Ordem sugerida de lotes pós Fase 5. Cada lote = 1 commit (ou poucos).
 - Hooks: permissions, tenant-settings, tenant-feature-config
 - Cache módulo contract-matches removido
 - ESLint `set-state-in-effect` = error
+- `app/comprador/cotacoes/nova`, `[id]/editar`, `novo-pedido`, `[id]` (detalhe)
+- `app/comprador/requisicoes/nova`, `[id]/editar`, `[id]` (detalhe)
+- `app/comprador/contratos/novo`, `[id]`
+- Equalização: payment_conditions, contract_po_link_prompt, contract-matches (`useQuery`)
+- Portal fornecedor (dashboard, cot/ped/contratos, usuários, perfil, atividades)
+- Solicitante: lista, detalhe, editar
+- **`app/solicitante/nova`** → `useUser` + `userDefaultCostCenterQueryOptions`
+- **`app/solicitante/configuracoes`** → `solicitanteSettingsQueryOptions` + hidratação documentada
+- **`app/comprador/configuracoes/page.tsx`** → `buyer-settings-queries.ts`, `contract-po-link-prompt.ts`, `useQuery` por aba
+- Abas settings: CC/filiais/categorias (`buyer-settings-lists.ts`), permissões (`permission-groups.ts`)
+- Suporte, admin tenants/logs/fornecedores/integrações, hooks compartilhados, selects
 
-## Lote A — Comprador restante (forms + secundários)
+## Deferidos (não bloqueiam operação)
 
-- [x] `app/comprador/cotacoes/nova`, `[id]/editar` (busca catálogo, payment_conditions, import REQ, prefill REQ → `lib/queries/*`)
-- [x] `app/comprador/cotacoes/novo-pedido` → `lib/queries/novo-pedido-quotation.ts`
-- [x] `app/comprador/cotacoes/[id]/page` (detalhe → `lib/queries/quotation-detail.ts`)
-- [x] `app/comprador/requisicoes/nova` (centro custo default → `user-default-cost-center`), `[id]/editar` → `requisition-edit-form`
-- [x] `app/comprador/requisicoes/[id]` (detalhe + anexos → `lib/queries/requisition-detail.ts`)
-- [ ] `app/comprador/pedidos/novo` (só mutação `createDraftFromRequisition` — defer useMutation)
-- [x] `app/comprador/contratos/novo` (fornecedores, payment_conditions, busca itens; sessionStorage prefill mantido)
-- [x] `app/comprador/contratos/[id]` (detalhe + payment_conditions query)
-- [ ] `app/comprador/configuracoes/**` (queries prontas em `buyer-settings-queries.ts`; página ainda hidrata por `useEffect`)
-- [x] Equalização: payment_conditions, contract_po_link_prompt, contract-matches (`useQuery`)
-- [ ] PO detalhe: reduzir sync DTO→state (ou documentar disables restantes)
+- [ ] `app/comprador/pedidos/novo` — só mutação `createDraftFromRequisition` (defer `useMutation`)
+- [ ] PO detalhe: reduzir sync DTO→state restante (equalização/pedido — exceções em `LINT-DEBT.md`)
+- [ ] Dialogs: import Excel REQ (catálogo on-demand), `create-po-from-contract` (init local)
+- [ ] Shell fornecedor / seletor cliente — sem fetch de dados; só POST `activate-tenant`
+- [ ] `components/comprador/configuracoes-usuarios-tab.tsx` — ainda `useEffect` + loadProfiles
 
-## Lote B — Portal fornecedor
+---
 
-- [x] Dashboard, cotações lista/detalhe, pedidos lista/detalhe
-- [x] Contratos, usuários, perfil, atividades
-- [ ] Shell / seletor de cliente (se ainda refetch desnecessário) — sem fetch de dados; selector só POST activate-tenant
-
-## Lote C — Solicitante + suporte + admin
-
-- [x] `app/solicitante` lista → `solicitanteRequisitionsList` / `requisitions-list`
-- [x] `app/solicitante/[id]` detalhe → `requisition-detail`
-- [x] `app/solicitante/[id]/editar` → `requisition-edit-form` (requester)
-- [ ] `app/solicitante/nova`, `configuracoes` (ainda `useEffect`; helpers em `solicitante-settings.ts`)
-- [x] `components/support/**` → `lib/queries/support-queries.ts`
-- [x] Admin: `tenants`, `tenants/[id]`, `logs`, `fornecedores`
-- [x] Admin: `integracoes/*` tenant list → `admin-companies-list`
-- [x] `components/integrations/integration-monitor.tsx` → `integration-logs.ts`
-
-## Lote D — Hooks / componentes compartilhados
-
-- [x] `use-notifications` → `lib/queries/notifications.ts`
-- [x] `use-company-logo`, `use-supplier-score`, `use-tenant-feature-flags` → `lib/queries/*`
-- [x] Selects com fetch (`branch-select`, `cost-center-select`) → `company-branches-options`, `cost-centers-options`
-- [x] `link-contract-equalizacao-dialog` → `equalizacao-contract-matches-dialog.ts`
-- [ ] Dialogs restantes com load (import Excel REQ — catálogo on-demand; `create-po-from-contract` só init local)
-
-## Lote E — Prefetch SSR + lint limpo
+## Lote E — residual (único bloco pendente)
 
 - [ ] Prefetch + `HydrationBoundary` nas listas críticas
-- [ ] `npm run lint` com 0 erros `set-state-in-effect` (só exceções documentadas)
-- [ ] Remedir `fase-final` vs `antes`
+- [ ] `npm run lint` com 0 erros `set-state-in-effect` (só exceções Auth/form sync documentadas) — **77 ocorrências / 85 erros totais** (ver `LINT-DEBT.md`)
+- [ ] Remedir `fase-final` vs `antes` (Playwright perf)
 
 ## Critério de encerramento total
 
-- [ ] Backlog acima zerado
+- [ ] Backlog Lote E zerado
 - [ ] Lint limpo (exceções Auth/form sync só)
 - [ ] Baseline comparável salva
 - [ ] Docs atualizados
