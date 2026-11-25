@@ -98,6 +98,7 @@ import {
   type ItemAccountConfigFieldErrors,
 } from "@/lib/po-account-assignment"
 import { savePurchaseOrderAccountConfigs } from "@/lib/po-account-assignment-persist"
+import { persistLineEditsThenSendRefusedOrder } from "@/lib/purchase-orders/persist-then-resend"
 import { copyRequisitionAccountConfigToPurchaseOrderItem } from "@/lib/requisitions/account-config-bridge"
 import type { PurchaseOrderItemAccountAssignmentInput } from "@/types/po-account-assignment"
 import { useNumericLimits } from "@/lib/hooks/use-numeric-limits"
@@ -1899,43 +1900,54 @@ export default function PurchaseOrderDetailPage({
     try {
       const supabase = createClient()
 
-      const { error: orderError } = await supabase
-        .from("purchase_orders")
-        .update({
-          payment_condition: editForm.payment_condition.trim() || null,
-          delivery_days: editForm.delivery_days.trim()
-            ? (() => {
-                const n = parseInt(editForm.delivery_days, 10)
-                return Number.isNaN(n) ? null : n
-              })()
-            : null,
-          delivery_address: editForm.delivery_address.trim() || null,
-          observations: editForm.observations.trim() || null,
-          status: "sent",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", order.id)
-        .eq("company_id", companyId)
+      const resent = await persistLineEditsThenSendRefusedOrder({
+        persistLineEdits: async () => {
+          const itemResults = await Promise.all(
+            editItems.map((row) =>
+              supabase
+                .from("purchase_order_items")
+                .update({ quantity: row.quantity })
+                .eq("id", row.id)
+                .eq("company_id", companyId),
+            ),
+          )
+          const firstItemErr = itemResults.find((r) => r.error)?.error
+          if (firstItemErr) throw firstItemErr
 
-      if (orderError) throw orderError
+          const accountResult = await savePurchaseOrderAccountConfigs(
+            supabase,
+            companyId,
+            accountConfigs,
+          )
+          if (!accountResult.ok) {
+            toast.error(accountResult.message)
+            return false
+          }
+          return true
+        },
+        sendToSupplier: async () => {
+          const { error: orderError } = await supabase
+            .from("purchase_orders")
+            .update({
+              payment_condition: editForm.payment_condition.trim() || null,
+              delivery_days: editForm.delivery_days.trim()
+                ? (() => {
+                    const n = parseInt(editForm.delivery_days, 10)
+                    return Number.isNaN(n) ? null : n
+                  })()
+                : null,
+              delivery_address: editForm.delivery_address.trim() || null,
+              observations: editForm.observations.trim() || null,
+              status: "sent",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", order.id)
+            .eq("company_id", companyId)
 
-      const itemResults = await Promise.all(
-        editItems.map((row) =>
-          supabase.from("purchase_order_items").update({ quantity: row.quantity }).eq("id", row.id),
-        ),
-      )
-      const firstItemErr = itemResults.find((r) => r.error)?.error
-      if (firstItemErr) throw firstItemErr
-
-      const accountResult = await savePurchaseOrderAccountConfigs(
-        supabase,
-        companyId,
-        accountConfigs,
-      )
-      if (!accountResult.ok) {
-        toast.error(accountResult.message)
-        return
-      }
+          if (orderError) throw orderError
+        },
+      })
+      if (!resent) return
 
       void notifySupplierOrderSent({
         id: order.id,
