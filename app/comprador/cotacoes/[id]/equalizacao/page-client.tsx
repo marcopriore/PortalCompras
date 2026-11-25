@@ -91,6 +91,10 @@ import {
   canAccessQuotation,
   canViewAllQuotations,
 } from "@/lib/quotations/ownership"
+import {
+  nextEqualizationItemSelections,
+  nextEqualizationTargetPrices,
+} from "@/lib/quotations/equalization-item-selections"
 import { OWN_REQUISITION_ORDER_BLOCKED_MESSAGE } from "@/lib/requisitions/own-requisition-guard"
 import { useAutoRefresh } from "@/lib/hooks/use-auto-refresh"
 import { usePollingIntervalMs } from "@/lib/hooks/use-polling-interval"
@@ -727,7 +731,8 @@ export default function EqualizacaoPageClient({
         options,
       )
 
-      if (resolvedRoundId !== selectedRoundIdRef.current) {
+      const roundChanged = resolvedRoundId !== selectedRoundIdRef.current
+      if (roundChanged) {
         setSelectedRoundId(resolvedRoundId)
       }
 
@@ -737,21 +742,22 @@ export default function EqualizacaoPageClient({
       const items = dto.quotationItems as QuotationItem[]
       const q = dto.quotation as Quotation | null
       const suppliers = dto.quotationSuppliers as QuotationSupplier[]
+      const itemIds = items.map((i) => i.id)
 
       setTargetPrices(
-        Object.fromEntries(
-          items.map((i) => [
-            i.id,
-            i.target_price != null ? Number(i.target_price) : null,
-          ]),
-        ),
+        nextEqualizationTargetPrices({
+          fromDto: Object.fromEntries(
+            items.map((i) => [
+              i.id,
+              i.target_price != null ? Number(i.target_price) : null,
+            ]),
+          ),
+          pending: targetPricePendingRef.current,
+        }),
       )
 
+      const acceptedByItemId: Record<string, string> = {}
       if (q?.status === "completed") {
-        const initial: Record<string, string | null> = {}
-        items.forEach((qi) => {
-          initial[qi.id] = null
-        })
         const roundProposals = resolvedRoundId
           ? allCatalog.filter((p) => p.round_id === resolvedRoundId)
           : []
@@ -762,18 +768,21 @@ export default function EqualizacaoPageClient({
         probs.forEach((p) => {
           p.proposal_items.forEach((pi) => {
             if (pi.item_status === "accepted") {
-              initial[pi.quotation_item_id] = p.id
+              acceptedByItemId[pi.quotation_item_id] = p.id
             }
           })
         })
-        setItemSelections(initial)
-      } else {
-        const initial: Record<string, string | null> = {}
-        items.forEach((qi) => {
-          initial[qi.id] = null
-        })
-        setItemSelections(initial)
       }
+
+      setItemSelections((previous) =>
+        nextEqualizationItemSelections({
+          itemIds,
+          previous,
+          roundChanged,
+          quotationCompleted: q?.status === "completed",
+          acceptedByItemId,
+        }),
+      )
       setLastUpdated(new Date())
       setContractMatchLoadGeneration((g) => g + 1)
     },
