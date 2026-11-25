@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { isContractUploadActor } from "@/lib/contracts/contract-upload-access"
+import { requireApiWritePermission } from "@/lib/permissions/require-api-write"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
 
 export const runtime = "nodejs"
@@ -39,12 +41,16 @@ async function getAuthedContext() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("company_id, is_superadmin")
+    .select("company_id, is_superadmin, profile_type")
     .eq("id", user.id)
     .single()
 
   if (!profile?.company_id) {
     return { error: NextResponse.json({ error: "Company not found" }, { status: 404 }) }
+  }
+
+  if (!isContractUploadActor(profile)) {
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) }
   }
 
   const isSuperAdmin = Boolean(profile.is_superadmin)
@@ -60,6 +66,7 @@ async function getAuthedContext() {
   return {
     supabase,
     companyId,
+    userId: user.id,
     isSuperAdmin,
   }
 }
@@ -70,6 +77,15 @@ export async function POST(request: Request, context: RouteCtx) {
   try {
     const ctx = await getAuthedContext()
     if ("error" in ctx) return ctx.error
+
+    const forbidden = await requireApiWritePermission(
+      ctx.supabase,
+      ctx.userId,
+      ctx.companyId,
+      ctx.isSuperAdmin,
+      "contract.edit",
+    )
+    if (forbidden) return forbidden
 
     const { id: contractId } = await context.params
 
