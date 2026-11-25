@@ -55,30 +55,30 @@ export default async function FornecedorLayout({
 
   return (
     <TenantProvider initialCompanyId={activeCompanyId}>
-      <Suspense
-        fallback={
-          <div className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">
-            Carregando…
-          </div>
-        }
-      >
-        <FornecedorPortalShell
-          userName={fullName}
-          userEmail={userEmail}
-          userInitials={initials}
-          supplierClients={supplierClients}
-          activeCompanyId={activeCompanyId}
-          activeSupplierId={activeSupplierId}
-        >
-          <SessionUserProvider initialUser={sessionUser}>
-            <ScopedQueryBridge userId={sessionUser.userId}>
+      <SessionUserProvider initialUser={sessionUser}>
+        <ScopedQueryBridge userId={sessionUser.userId}>
+          <Suspense
+            fallback={
+              <div className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+                Carregando…
+              </div>
+            }
+          >
+            <FornecedorPortalShell
+              userName={fullName}
+              userEmail={userEmail}
+              userInitials={initials}
+              supplierClients={supplierClients}
+              activeCompanyId={activeCompanyId}
+              activeSupplierId={activeSupplierId}
+            >
               <PasswordExpiryGuard portal="fornecedor">
                 {children}
               </PasswordExpiryGuard>
-            </ScopedQueryBridge>
-          </SessionUserProvider>
-        </FornecedorPortalShell>
-      </Suspense>
+            </FornecedorPortalShell>
+          </Suspense>
+        </ScopedQueryBridge>
+      </SessionUserProvider>
     </TenantProvider>
   )
 }
