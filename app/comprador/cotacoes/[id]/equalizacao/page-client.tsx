@@ -116,7 +116,10 @@ import { useSupplierScores } from "@/lib/hooks/use-supplier-score"
 import { toast } from "sonner"
 import { formatDateBR } from "@/lib/formato-data"
 import { formatBranchDeliveryAddress } from "@/lib/branches/format-branch-address"
-import { groupLinesBySiteCode } from "@/lib/branches/group-by-site-code"
+import {
+  groupLinesBySiteAndRequisition,
+  normalizeRequisitionCode,
+} from "@/lib/branches/group-by-site-code"
 import type { CompanyBranch } from "@/lib/branches/types"
 
 type QuotationItem = {
@@ -1886,6 +1889,7 @@ export default function EqualizacaoPageClient({
           contractId: string | null
           contractItemId: string | null
           siteCode: string
+          sourceRequisitionCode: string | null
         }[] = []
 
         let maxDeliveryDaysFromItems = 0
@@ -1918,6 +1922,7 @@ export default function EqualizacaoPageClient({
             contractId: link?.contractId ?? null,
             contractItemId: link?.contractItemId ?? null,
             siteCode: qi.site_code,
+            sourceRequisitionCode: normalizeRequisitionCode(qi.source_requisition_code),
           })
         }
 
@@ -1927,19 +1932,9 @@ export default function EqualizacaoPageClient({
         const poDeliveryDays =
           maxDeliveryDaysFromItems > 0 ? maxDeliveryDaysFromItems : headerDeliveryDays
 
-        const reqCodesFromLines = [
-          ...new Set(
-            linesForPo
-              .map((qi) => qi.source_requisition_code?.trim())
-              .filter((code): code is string => Boolean(code)),
-          ),
-        ]
-        const requisitionCodeForPo =
-          reqCodesFromLines.length === 1 ? reqCodesFromLines[0] : reqCodesFromLines[0] ?? null
+        const poGroups = groupLinesBySiteAndRequisition(itemsPayload)
 
-        const branchGroups = groupLinesBySiteCode(itemsPayload)
-
-        for (const [siteCode, branchItems] of branchGroups) {
+        for (const { siteCode, requisitionCode: requisitionCodeForPo, lines: branchItems } of poGroups) {
           const branch = branchByCode.get(siteCode)
           const deliveryAddress = formatBranchDeliveryAddress(branch)
           if (!deliveryAddress) {
@@ -2012,6 +2007,7 @@ export default function EqualizacaoPageClient({
             contract_id: i.contractId,
             contract_item_id: i.contractItemId,
             site_code: i.siteCode,
+            source_requisition_code: i.sourceRequisitionCode,
           }))
 
           const { error: purchaseOrderItemsInsertError } = await supabase
