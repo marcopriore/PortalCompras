@@ -1,5 +1,11 @@
 import { NextResponse, after } from "next/server"
 import { createCatalogPurchaseOrders } from "@/lib/catalog/create-catalog-purchase-orders"
+import {
+  claimCatalogCartItems,
+  restoreCatalogCartItems,
+  toCatalogCheckoutLines,
+  type ClaimedCatalogCartItem,
+} from "@/lib/catalog/claim-cart-items"
 import { notifyCatalogCheckout } from "@/lib/catalog/notify-catalog-checkout"
 import { enqueueCatalogOrderApprovals } from "@/lib/catalog/enqueue-catalog-order-approvals"
 import {
@@ -15,8 +21,11 @@ import { hasCatalogViewAccessFromKeys } from "@/lib/permissions/catalog-access"
 import { triggerRequisitionOutbound } from "@/lib/integrations/trigger-requisition-outbound"
 import { loadTenantFeatureConfig } from "@/lib/settings/tenant-feature-settings"
 import { createServiceRoleClient } from "@/lib/supabase/service-role"
+import type { SupabaseClient } from "@supabase/supabase-js"
 
 export async function POST(request: Request) {
+  let claimedItems: ClaimedCatalogCartItem[] | null = null
+  let dbForRestore: SupabaseClient | null = null
   try {
     const ctx = await getCatalogAuthContext()
     if ("error" in ctx) return ctx.error
@@ -77,21 +86,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 })
     }
 
-    const { data: cartItems } = await db
-      .from("catalog_cart_items")
-      .select("*")
-      .eq("cart_id", cart.id)
-
-    if (!cartItems?.length) {
+    // Claim first so a concurrent checkout (double-click / two tabs) cannot
+    // create a second REQ/PO set and double-reserve contract balance.
+    const claimed = await claimCatalogCartItems(db, cart.id)
+    if (!claimed.ok) {
+      return NextResponse.json({ error: claimed.error }, { status: 500 })
+    }
+    if (claimed.items.length === 0) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 })
     }
+    claimedItems = claimed.items
+    dbForRestore = db
 
     const result = await createCatalogPurchaseOrders(
       db,
       ctx.companyId,
       ctx.userId,
       ctx.fullName,
-      cartItems as Parameters<typeof createCatalogPurchaseOrders>[4],
+      toCatalogCheckoutLines(claimed.items),
       {
         title: body.title ?? "",
         costCenter: body.cost_center ?? "",
@@ -103,8 +115,12 @@ export async function POST(request: Request) {
     )
 
     if (!result.ok) {
+      await restoreCatalogCartItems(db, claimed.items)
+      claimedItems = null
       return NextResponse.json({ error: result.error }, { status: 400 })
     }
+    // Pedidos criados: o catch não deve repor o carrinho (evita retry duplicado).
+    claimedItems = null
 
     if (postCheckoutMode === "cost_center_approval") {
       const service = createServiceRoleClient()
@@ -134,6 +150,7 @@ export async function POST(request: Request) {
             await db.from("requisitions").delete().eq("id", requisitionId)
           }),
         )
+        await restoreCatalogCartItems(db, claimed.items)
         return NextResponse.json({ error: enqueued.error }, { status: 400 })
       }
     }
@@ -181,12 +198,9 @@ export async function POST(request: Request) {
       },
     ])
 
-    await Promise.all([
-      db.from("catalog_cart_items").delete().eq("cart_id", cart.id),
-      auditRows.length > 0
-        ? db.from("audit_logs").insert(auditRows)
-        : Promise.resolve(),
-    ])
+    if (auditRows.length > 0) {
+      await db.from("audit_logs").insert(auditRows)
+    }
 
     for (const po of result.result.purchaseOrders) {
       triggerRequisitionOutbound(ctx.companyId, po.requisitionId, "requisition.created")
@@ -209,6 +223,9 @@ export async function POST(request: Request) {
       purchase_orders: result.result.purchaseOrders,
     })
   } catch (error) {
+    if (claimedItems && dbForRestore) {
+      await restoreCatalogCartItems(dbForRestore, claimedItems)
+    }
     const message = error instanceof Error ? error.message : "Internal error"
     return NextResponse.json({ error: message }, { status: 500 })
   }
