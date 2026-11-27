@@ -19,6 +19,23 @@ export type ApprovalRequestRow = {
   created_at: string
 }
 
+/**
+ * Patch de cancelamento do PO na reprova de alçada `catalog_order`.
+ *
+ * `purchase_orders.contract_balance_applied` só aceita `reserved` | `consumed` | NULL
+ * (CHECK da migration 034). Gravar `"released"` falha o UPDATE: a AR já foi
+ * marcada rejected, a REQ vai para rejected e o PO fica `awaiting_approval`.
+ *
+ * Cancelar sem mexer na flag deixa `trg_po_contract_balance_on_status_change`
+ * liberar a reserva e anular o campo — o mesmo caminho de Cancelar Pedido.
+ */
+export function catalogOrderRejectionPoPatch(reason: string) {
+  return {
+    status: "cancelled" as const,
+    cancellation_reason: reason,
+  }
+}
+
 export function mapApprovalToApi(
   row: ApprovalRequestRow,
   entity?: {
@@ -336,19 +353,9 @@ async function applyCatalogOrderRejection(
     }
   }
 
-  try {
-    await service.rpc("release_contract_balance", { p_order_id: purchaseOrderId })
-  } catch {
-    /* best-effort */
-  }
-
   const { error: cancelErr } = await service
     .from("purchase_orders")
-    .update({
-      status: "cancelled",
-      cancellation_reason: reason,
-      contract_balance_applied: "released",
-    })
+    .update(catalogOrderRejectionPoPatch(reason))
     .eq("id", purchaseOrderId)
     .eq("company_id", companyId)
 
