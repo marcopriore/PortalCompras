@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { mapApprovalToApi } from "@/lib/api/external/approval-service"
+import {
+  catalogOrderRejectionPoPatch,
+  mapApprovalToApi,
+} from "@/lib/api/external/approval-service"
 import { isApiScope } from "@/lib/api/external/scopes"
 
 describe("mapApprovalToApi", () => {
@@ -34,5 +37,16 @@ describe("API scopes approvals", () => {
   it("reconhece approvals:read e approvals:write", () => {
     expect(isApiScope("approvals:read")).toBe(true)
     expect(isApiScope("approvals:write")).toBe(true)
+  })
+})
+
+describe("catalogOrderRejectionPoPatch", () => {
+  it("cancela o PO sem gravar contract_balance_applied (CHECK só reserved|consumed|NULL)", () => {
+    const patch = catalogOrderRejectionPoPatch("Fora da política")
+    expect(patch).toEqual({
+      status: "cancelled",
+      cancellation_reason: "Fora da política",
+    })
+    expect(patch).not.toHaveProperty("contract_balance_applied")
   })
 })
